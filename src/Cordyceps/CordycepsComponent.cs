@@ -2,6 +2,7 @@ using System;
 using System.Drawing;
 using System.Reflection;
 using System.Text;
+using Cordyceps.Core;
 using Grasshopper.Kernel;
 using Rhino;
 
@@ -12,6 +13,7 @@ namespace Cordyceps
     /// </summary>
     public class CordycepsComponent : GH_Component
     {
+        private static readonly object _lock = new object();
         private static McpServer _mcpServer;
         private static CordycepsComponent _activeInstance;
         private static int _currentPort = 8080;
@@ -56,24 +58,27 @@ namespace Cordyceps
             int port = 8080;
             if (!DA.GetData(0, ref port)) return;
 
-            // Track active instance for callbacks
-            _activeInstance = this;
-
-            // Handle port change
-            if (_mcpServer != null && _mcpServer.IsRunning && port != _currentPort)
+            lock (_lock)
             {
-                RhinoApp.WriteLine($"Cordyceps: Port changed from {_currentPort} to {port}, restarting server...");
-                StopServer();
+                // Track active instance for callbacks
+                _activeInstance = this;
+
+                // Handle port change
+                if (_mcpServer != null && _mcpServer.IsRunning && port != _currentPort)
+                {
+                    RhinoApp.WriteLine($"Cordyceps: Port changed from {_currentPort} to {port}, restarting server...");
+                    StopServer();
+                }
+
+                // Start server if not running (component being enabled starts the server)
+                if (_mcpServer == null || !_mcpServer.IsRunning)
+                {
+                    _currentPort = port;
+                    StartServer(port);
+                }
             }
 
-            // Start server if not running (component being enabled starts the server)
-            if (_mcpServer == null || !_mcpServer.IsRunning)
-            {
-                _currentPort = port;
-                StartServer(port);
-            }
-
-            // Set outputs
+            // Set outputs (outside lock to avoid potential deadlock)
             DA.SetData(0, GetAboutInfo());
             DA.SetData(1, GetStatusInfo());
             DA.SetData(2, _mcpServer?.LastCommand ?? "(server not running)");
@@ -86,10 +91,13 @@ namespace Cordyceps
         {
             base.RemovedFromDocument(document);
 
-            if (_activeInstance == this)
+            lock (_lock)
             {
-                StopServer();
-                _activeInstance = null;
+                if (_activeInstance == this)
+                {
+                    StopServer();
+                    _activeInstance = null;
+                }
             }
         }
 
@@ -172,15 +180,24 @@ namespace Cordyceps
         /// </summary>
         public static void RefreshComponent()
         {
-            if (_activeInstance != null)
+            CordycepsComponent instance;
+            lock (_lock)
+            {
+                instance = _activeInstance;
+            }
+
+            if (instance != null)
             {
                 RhinoApp.InvokeOnUiThread(new Action(() =>
                 {
                     try
                     {
-                        _activeInstance?.ExpireSolution(true);
+                        instance?.ExpireSolution(true);
                     }
-                    catch { }
+                    catch (Exception ex)
+                    {
+                        DebugLog.Warn($"RefreshComponent failed: {ex.Message}");
+                    }
                 }));
             }
         }

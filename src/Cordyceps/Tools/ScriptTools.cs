@@ -35,80 +35,34 @@ namespace Cordyceps.Tools
             _server?.RecordCommand("set_script_code");
             return _context.ExecuteOnUiThread(() =>
             {
-                var doc = _context.GetActiveDocument();
-                if (doc == null)
-                {
-                    return JsonConvert.SerializeObject(new { success = false, error = "No active Grasshopper document" });
-                }
-
-                if (!Guid.TryParse(id, out Guid guid))
-                {
-                    return JsonConvert.SerializeObject(new { success = false, error = "Invalid component ID" });
-                }
-
-                var component = doc.FindObject(guid, true);
-                if (component == null)
-                {
-                    return JsonConvert.SerializeObject(new { success = false, error = $"Component not found: {id}" });
-                }
-
-                bool codeSet = false;
+                if (!ToolHelpers.TryGetComponentWithDoc(_context, id, out var doc, out var component, out var error))
+                    return ToolHelpers.ErrorResponse(error);
 
                 try
                 {
                     dynamic scriptComp = component;
+                    scriptComp.SetSource(code);
 
-                    // Try SetSource method (Rhino 8)
+                    // Try to sync parameters from script
                     try
                     {
-                        scriptComp.SetSource(code);
-                        codeSet = true;
+                        scriptComp.SetParametersFromScript();
                     }
-                    catch
+                    catch (Exception paramEx)
                     {
-                        // Try Source property
-                        try
-                        {
-                            scriptComp.Source = code;
-                            codeSet = true;
-                        }
-                        catch
-                        {
-                            // Try reflection
-                            var setSourceMethod = component.GetType().GetMethod("SetSource", new[] { typeof(string) });
-                            if (setSourceMethod != null)
-                            {
-                                setSourceMethod.Invoke(component, new object[] { code });
-                                codeSet = true;
-                            }
-                        }
+                        DebugLog.Debug($"SetParametersFromScript not available or failed: {paramEx.Message}");
                     }
 
-                    if (codeSet)
+                    // Expire solution
+                    if (component is IGH_ActiveObject activeObj)
                     {
-                        // Try to sync parameters
-                        try
-                        {
-                            scriptComp.SetParametersFromScript();
-                        }
-                        catch { }
-
-                        // Expire solution
-                        if (component is IGH_ActiveObject activeObj)
-                        {
-                            activeObj.ExpireSolution(true);
-                        }
-                        doc.NewSolution(false);
+                        activeObj.ExpireSolution(true);
                     }
+                    doc.NewSolution(false);
                 }
                 catch (Exception ex)
                 {
                     return JsonConvert.SerializeObject(new { success = false, error = $"Failed to set code: {ex.Message}" });
-                }
-
-                if (!codeSet)
-                {
-                    return JsonConvert.SerializeObject(new { success = false, error = "Could not set code for this component type" });
                 }
 
                 // Get parameter info
@@ -148,27 +102,11 @@ namespace Cordyceps.Tools
             _server?.RecordCommand("configure_script_component");
             return _context.ExecuteOnUiThread(() =>
             {
-                var doc = _context.GetActiveDocument();
-                if (doc == null)
-                {
-                    return JsonConvert.SerializeObject(new { success = false, error = "No active Grasshopper document" });
-                }
-
-                if (!Guid.TryParse(id, out Guid guid))
-                {
-                    return JsonConvert.SerializeObject(new { success = false, error = "Invalid component ID" });
-                }
-
-                var component = doc.FindObject(guid, true);
-                if (component == null)
-                {
-                    return JsonConvert.SerializeObject(new { success = false, error = $"Component not found: {id}" });
-                }
+                if (!ToolHelpers.TryGetComponentWithDoc(_context, id, out var doc, out var component, out var error))
+                    return ToolHelpers.ErrorResponse(error);
 
                 if (!(component is IGH_Component ghComponent))
-                {
-                    return JsonConvert.SerializeObject(new { success = false, error = "Not an IGH_Component" });
-                }
+                    return ToolHelpers.ErrorResponse("Not an IGH_Component");
 
                 // Parse input/output definitions
                 var inputDefs = ParseParamDefs(inputs);
@@ -266,7 +204,10 @@ namespace Cordyceps.Tools
                                     scriptComp.SetSource(fullSource);
                                     message += ", source set";
                                 }
-                                catch { }
+                                catch (Exception srcEx)
+                                {
+                                    DebugLog.Warn($"Failed to set source in VariableParameter fallback: {srcEx.Message}");
+                                }
                             }
                         }
                     }

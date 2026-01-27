@@ -34,33 +34,11 @@ namespace Cordyceps.Tools
             _server?.RecordCommand("connect_components");
             return _context.ExecuteOnUiThread(() =>
             {
-                var doc = _context.GetActiveDocument();
-                if (doc == null)
-                {
-                    return JsonConvert.SerializeObject(new { success = false, error = "No active Grasshopper document" });
-                }
+                if (!ToolHelpers.TryGetComponentWithDoc(_context, sourceId, out var doc, out var srcObj, out var error))
+                    return ToolHelpers.ErrorResponse($"Source: {error}");
 
-                if (!Guid.TryParse(sourceId, out Guid srcGuid))
-                {
-                    return JsonConvert.SerializeObject(new { success = false, error = "Invalid source component ID" });
-                }
-
-                var srcObj = doc.FindObject(srcGuid, true);
-                if (srcObj == null)
-                {
-                    return JsonConvert.SerializeObject(new { success = false, error = $"Source component not found: {sourceId}" });
-                }
-
-                if (!Guid.TryParse(targetId, out Guid tgtGuid))
-                {
-                    return JsonConvert.SerializeObject(new { success = false, error = "Invalid target component ID" });
-                }
-
-                var tgtObj = doc.FindObject(tgtGuid, true);
-                if (tgtObj == null)
-                {
-                    return JsonConvert.SerializeObject(new { success = false, error = $"Target component not found: {targetId}" });
-                }
+                if (!ToolHelpers.TryGetComponent(_context, targetId, out var tgtObj, out error))
+                    return ToolHelpers.ErrorResponse($"Target: {error}");
 
                 IGH_Param sourceOutput = GetOutputParameter(srcObj, sourceParam);
                 if (sourceOutput == null)
@@ -112,33 +90,11 @@ namespace Cordyceps.Tools
             _server?.RecordCommand("disconnect_components");
             return _context.ExecuteOnUiThread(() =>
             {
-                var doc = _context.GetActiveDocument();
-                if (doc == null)
-                {
-                    return JsonConvert.SerializeObject(new { success = false, error = "No active Grasshopper document" });
-                }
+                if (!ToolHelpers.TryGetComponentWithDoc(_context, sourceId, out var doc, out var srcObj, out var error))
+                    return ToolHelpers.ErrorResponse($"Source: {error}");
 
-                if (!Guid.TryParse(sourceId, out Guid srcGuid))
-                {
-                    return JsonConvert.SerializeObject(new { success = false, error = "Invalid source component ID" });
-                }
-
-                var srcObj = doc.FindObject(srcGuid, true);
-                if (srcObj == null)
-                {
-                    return JsonConvert.SerializeObject(new { success = false, error = $"Source component not found: {sourceId}" });
-                }
-
-                if (!Guid.TryParse(targetId, out Guid tgtGuid))
-                {
-                    return JsonConvert.SerializeObject(new { success = false, error = "Invalid target component ID" });
-                }
-
-                var tgtObj = doc.FindObject(tgtGuid, true);
-                if (tgtObj == null)
-                {
-                    return JsonConvert.SerializeObject(new { success = false, error = $"Target component not found: {targetId}" });
-                }
+                if (!ToolHelpers.TryGetComponent(_context, targetId, out var tgtObj, out error))
+                    return ToolHelpers.ErrorResponse($"Target: {error}");
 
                 IGH_Param sourceOutput = GetOutputParameter(srcObj, sourceParam);
                 if (sourceOutput == null)
@@ -172,22 +128,8 @@ namespace Cordyceps.Tools
             _server?.RecordCommand("clear_component_inputs");
             return _context.ExecuteOnUiThread(() =>
             {
-                var doc = _context.GetActiveDocument();
-                if (doc == null)
-                {
-                    return JsonConvert.SerializeObject(new { success = false, error = "No active Grasshopper document" });
-                }
-
-                if (!Guid.TryParse(id, out Guid guid))
-                {
-                    return JsonConvert.SerializeObject(new { success = false, error = "Invalid component ID" });
-                }
-
-                var component = doc.FindObject(guid, true);
-                if (component == null)
-                {
-                    return JsonConvert.SerializeObject(new { success = false, error = $"Component not found: {id}" });
-                }
+                if (!ToolHelpers.TryGetComponentWithDoc(_context, id, out var doc, out var component, out var error))
+                    return ToolHelpers.ErrorResponse(error);
 
                 IEnumerable<IGH_Param> inputs = null;
                 if (component is IGH_Component comp)
@@ -240,11 +182,8 @@ namespace Cordyceps.Tools
             _server?.RecordCommand("get_connections");
             return _context.ExecuteOnUiThread(() =>
             {
-                var doc = _context.GetActiveDocument();
-                if (doc == null)
-                {
-                    return JsonConvert.SerializeObject(new { success = false, error = "No active Grasshopper document" });
-                }
+                if (!ToolHelpers.TryGetActiveDocument(_context, out var doc, out var error))
+                    return ToolHelpers.ErrorResponse(error);
 
                 var connections = new List<object>();
 
@@ -391,11 +330,8 @@ namespace Cordyceps.Tools
             _server?.RecordCommand("bulk_connect");
             return _context.ExecuteOnUiThread(() =>
             {
-                var doc = _context.GetActiveDocument();
-                if (doc == null)
-                {
-                    return JsonConvert.SerializeObject(new { success = false, error = "No active Grasshopper document" });
-                }
+                if (!ToolHelpers.TryGetActiveDocument(_context, out var doc, out var error))
+                    return ToolHelpers.ErrorResponse(error);
 
                 List<dynamic> connectionList;
                 try
@@ -666,43 +602,26 @@ namespace Cordyceps.Tools
             _server?.RecordCommand("validate_connection");
             return _context.ExecuteOnUiThread(() =>
             {
-                var doc = _context.GetActiveDocument();
-                if (doc == null)
-                {
-                    return JsonConvert.SerializeObject(new { valid = false, error = "No active Grasshopper document" });
-                }
+                if (!ToolHelpers.TryGetActiveDocument(_context, out var doc, out var error))
+                    return ToolHelpers.ErrorResponse(error);
 
                 if (string.IsNullOrEmpty(sourceId))
-                {
-                    return JsonConvert.SerializeObject(new { valid = false, error = "Missing sourceId" });
-                }
+                    return ToolHelpers.ErrorResponse("Missing sourceId");
 
                 if (string.IsNullOrEmpty(targetId))
-                {
-                    return JsonConvert.SerializeObject(new { valid = false, error = "Missing targetId" });
-                }
+                    return ToolHelpers.ErrorResponse("Missing targetId");
 
-                if (!Guid.TryParse(sourceId, out Guid srcGuid))
-                {
-                    return JsonConvert.SerializeObject(new { valid = false, error = $"Invalid source ID: {sourceId}" });
-                }
+                if (!ToolHelpers.TryParseGuid(sourceId, out var srcGuid, out error))
+                    return ToolHelpers.ErrorResponse($"Source: {error}");
 
-                var srcObj = doc.FindObject(srcGuid, true);
-                if (srcObj == null)
-                {
-                    return JsonConvert.SerializeObject(new { valid = false, error = $"Source not found: {sourceId}" });
-                }
+                if (!ToolHelpers.TryFindComponent(doc, srcGuid, out var srcObj, out error))
+                    return ToolHelpers.ErrorResponse($"Source: {error}");
 
-                if (!Guid.TryParse(targetId, out Guid tgtGuid))
-                {
-                    return JsonConvert.SerializeObject(new { valid = false, error = $"Invalid target ID: {targetId}" });
-                }
+                if (!ToolHelpers.TryParseGuid(targetId, out var tgtGuid, out error))
+                    return ToolHelpers.ErrorResponse($"Target: {error}");
 
-                var tgtObj = doc.FindObject(tgtGuid, true);
-                if (tgtObj == null)
-                {
-                    return JsonConvert.SerializeObject(new { valid = false, error = $"Target not found: {targetId}" });
-                }
+                if (!ToolHelpers.TryFindComponent(doc, tgtGuid, out var tgtObj, out error))
+                    return ToolHelpers.ErrorResponse($"Target: {error}");
 
                 // Get source output parameter
                 IGH_Param sourceOutput = null;
@@ -724,7 +643,7 @@ namespace Cordyceps.Tools
 
                 if (sourceOutput == null)
                 {
-                    return JsonConvert.SerializeObject(new { valid = false, error = "Could not find source output parameter" });
+                    return JsonConvert.SerializeObject(new { success = false, error = "Could not find source output parameter" });
                 }
 
                 // Get target input parameter
@@ -747,7 +666,7 @@ namespace Cordyceps.Tools
 
                 if (targetInput == null)
                 {
-                    return JsonConvert.SerializeObject(new { valid = false, error = "Could not find target input parameter" });
+                    return JsonConvert.SerializeObject(new { success = false, error = "Could not find target input parameter" });
                 }
 
                 // Analyze type compatibility
@@ -796,6 +715,7 @@ namespace Cordyceps.Tools
 
                 return JsonConvert.SerializeObject(new
                 {
+                    success = true,
                     valid = isValid,
                     sourceComponent = srcObj.NickName ?? srcObj.Name,
                     sourceParam = sourceOutput.Name,

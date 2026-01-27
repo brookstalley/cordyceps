@@ -13,6 +13,10 @@ namespace Cordyceps.Core
     /// </summary>
     public static class ComponentRegistry
     {
+        // Constants
+        private const int MAX_COMPONENTS_LIST = 100;
+        private const int MAX_SEARCH_RESULTS = 50;
+
         // Common component name aliases
         private static readonly Dictionary<string, string> NameAliases = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
         {
@@ -193,7 +197,7 @@ namespace Cordyceps.Core
             if (string.IsNullOrWhiteSpace(query))
             {
                 // Return all component names
-                foreach (var proxy in Instances.ComponentServer.ObjectProxies.Take(100))
+                foreach (var proxy in Instances.ComponentServer.ObjectProxies.Take(MAX_COMPONENTS_LIST))
                 {
                     results.Add(new ComponentInfo
                     {
@@ -213,7 +217,7 @@ namespace Cordyceps.Core
                     .Where(p => p.Desc.Name.ToLowerInvariant().Contains(normalizedQuery)
                              || (p.Desc.Description?.ToLowerInvariant().Contains(normalizedQuery) ?? false))
                     .OrderBy(p => p.Desc.Name.Length)
-                    .Take(50);
+                    .Take(MAX_SEARCH_RESULTS);
 
                 foreach (var proxy in matches)
                 {

@@ -31,11 +31,8 @@ namespace Cordyceps.Tools
             _server?.RecordCommand("execute_preview");
             return _context.ExecuteOnUiThread(() =>
             {
-                var doc = _context.GetActiveDocument();
-                if (doc == null)
-                {
-                    return JsonConvert.SerializeObject(new { success = false, error = "No active Grasshopper document" });
-                }
+                if (!ToolHelpers.TryGetActiveDocument(_context, out var doc, out var error))
+                    return ToolHelpers.ErrorResponse(error);
 
                 doc.NewSolution(false);
 

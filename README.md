@@ -10,7 +10,7 @@ Cordyceps is a Grasshopper plugin that gives AI agents (like Claude) direct cont
 
 Imagine telling Claude: *"Create a parametric facade pattern with hexagonal cells that vary in size based on attractor points"*—and watching it build the Grasshopper definition in real-time. That's Cordyceps.
 
-It exposes **50+ MCP tools** that let AI agents:
+It exposes **74 MCP tools** that let AI agents:
 - Add and configure any Grasshopper component
 - Create and manage wiring between components
 - Set slider values, configure value lists, write script components
@@ -110,7 +110,7 @@ Here are **real prompts** you can use (all actually work with Cordyceps):
 
 > "Set up a sunlight analysis workflow: create a sun path component, connect it to a mesh shadow calculation, and output the results to a panel"
 
-### The Claude Can't Do (Yet)
+### What Claude Can't Do (Yet)
 - Directly import external files (use Rhino commands via `execute_script`)
 - Interact with the Rhino viewport camera
 - Run Grasshopper clusters/user objects

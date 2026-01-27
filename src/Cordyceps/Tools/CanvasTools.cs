@@ -40,11 +40,8 @@ namespace Cordyceps.Tools
             {
                 try
                 {
-                    var doc = _context.GetActiveDocument();
-                    if (doc == null)
-                    {
-                        return JsonConvert.SerializeObject(new { success = false, error = "No active Grasshopper document" });
-                    }
+                    if (!ToolHelpers.TryGetActiveDocument(_context, out var doc, out var error))
+                        return ToolHelpers.ErrorResponse(error);
 
                     Core.DebugLog.Debug($"Creating component: {type}");
 
@@ -126,22 +123,8 @@ namespace Cordyceps.Tools
             _server?.RecordCommand("delete_component");
             return _context.ExecuteOnUiThread(() =>
             {
-                var doc = _context.GetActiveDocument();
-                if (doc == null)
-                {
-                    return JsonConvert.SerializeObject(new { success = false, error = "No active Grasshopper document" });
-                }
-
-                if (!Guid.TryParse(id, out Guid guid))
-                {
-                    return JsonConvert.SerializeObject(new { success = false, error = "Invalid component ID" });
-                }
-
-                var component = doc.FindObject(guid, true);
-                if (component == null)
-                {
-                    return JsonConvert.SerializeObject(new { success = false, error = $"Component not found: {id}" });
-                }
+                if (!ToolHelpers.TryGetComponentWithDoc(_context, id, out var doc, out var component, out var error))
+                    return ToolHelpers.ErrorResponse(error);
 
                 doc.RemoveObject(component, true);
                 doc.NewSolution(true);
@@ -159,22 +142,8 @@ namespace Cordyceps.Tools
             _server?.RecordCommand("move_component");
             return _context.ExecuteOnUiThread(() =>
             {
-                var doc = _context.GetActiveDocument();
-                if (doc == null)
-                {
-                    return JsonConvert.SerializeObject(new { success = false, error = "No active Grasshopper document" });
-                }
-
-                if (!Guid.TryParse(id, out Guid guid))
-                {
-                    return JsonConvert.SerializeObject(new { success = false, error = "Invalid component ID" });
-                }
-
-                var component = doc.FindObject(guid, true);
-                if (component == null)
-                {
-                    return JsonConvert.SerializeObject(new { success = false, error = $"Component not found: {id}" });
-                }
+                if (!ToolHelpers.TryGetComponent(_context, id, out var component, out var error))
+                    return ToolHelpers.ErrorResponse(error);
 
                 component.Attributes.Pivot = new PointF((float)x, (float)y);
                 component.Attributes.ExpireLayout();
@@ -208,22 +177,8 @@ namespace Cordyceps.Tools
             _server?.RecordCommand("get_component_info");
             return _context.ExecuteOnUiThread(() =>
             {
-                var doc = _context.GetActiveDocument();
-                if (doc == null)
-                {
-                    return JsonConvert.SerializeObject(new { success = false, error = "No active Grasshopper document" });
-                }
-
-                if (!Guid.TryParse(id, out Guid guid))
-                {
-                    return JsonConvert.SerializeObject(new { success = false, error = "Invalid component ID" });
-                }
-
-                var obj = doc.FindObject(guid, true);
-                if (obj == null)
-                {
-                    return JsonConvert.SerializeObject(new { success = false, error = $"Component not found: {id}" });
-                }
+                if (!ToolHelpers.TryGetComponent(_context, id, out var obj, out var error))
+                    return ToolHelpers.ErrorResponse(error);
 
                 var info = new Dictionary<string, object>
                 {
@@ -291,11 +246,8 @@ namespace Cordyceps.Tools
             _server?.RecordCommand("get_all_components");
             return _context.ExecuteOnUiThread(() =>
             {
-                var doc = _context.GetActiveDocument();
-                if (doc == null)
-                {
-                    return JsonConvert.SerializeObject(new { success = false, error = "No active Grasshopper document" });
-                }
+                if (!ToolHelpers.TryGetActiveDocument(_context, out var doc, out var error))
+                    return ToolHelpers.ErrorResponse(error);
 
                 var components = new List<object>();
                 foreach (var obj in doc.Objects)
@@ -434,22 +386,8 @@ namespace Cordyceps.Tools
             _server?.RecordCommand("rename_component");
             return _context.ExecuteOnUiThread(() =>
             {
-                var doc = _context.GetActiveDocument();
-                if (doc == null)
-                {
-                    return JsonConvert.SerializeObject(new { success = false, error = "No active Grasshopper document" });
-                }
-
-                if (!Guid.TryParse(id, out Guid guid))
-                {
-                    return JsonConvert.SerializeObject(new { success = false, error = "Invalid component ID" });
-                }
-
-                var component = doc.FindObject(guid, true);
-                if (component == null)
-                {
-                    return JsonConvert.SerializeObject(new { success = false, error = $"Component not found: {id}" });
-                }
+                if (!ToolHelpers.TryGetComponent(_context, id, out var component, out var error))
+                    return ToolHelpers.ErrorResponse(error);
 
                 // Use nickname if provided, otherwise use name
                 string newName = nickname ?? name;
@@ -481,22 +419,12 @@ namespace Cordyceps.Tools
             _server?.RecordCommand("manage_zoomable_inputs");
             return _context.ExecuteOnUiThread(() =>
             {
-                var doc = _context.GetActiveDocument();
-                if (doc == null)
-                {
-                    return JsonConvert.SerializeObject(new { success = false, error = "No active Grasshopper document" });
-                }
+                if (!ToolHelpers.TryGetComponentWithDoc(_context, id, out var doc, out var obj, out var error))
+                    return ToolHelpers.ErrorResponse(error);
 
-                if (!Guid.TryParse(id, out Guid guid))
-                {
-                    return JsonConvert.SerializeObject(new { success = false, error = "Invalid component ID" });
-                }
-
-                var component = doc.FindObject(guid, true) as IGH_Component;
+                var component = obj as IGH_Component;
                 if (component == null)
-                {
-                    return JsonConvert.SerializeObject(new { success = false, error = $"Component not found or not a component: {id}" });
-                }
+                    return ToolHelpers.ErrorResponse("Object is not a component");
 
                 // Check if component supports variable parameters
                 var varParamComp = component as IGH_VariableParameterComponent;
@@ -614,22 +542,8 @@ namespace Cordyceps.Tools
             _server?.RecordCommand("get_component_bounds");
             return _context.ExecuteOnUiThread(() =>
             {
-                var doc = _context.GetActiveDocument();
-                if (doc == null)
-                {
-                    return JsonConvert.SerializeObject(new { success = false, error = "No active Grasshopper document" });
-                }
-
-                if (!Guid.TryParse(id, out Guid guid))
-                {
-                    return JsonConvert.SerializeObject(new { success = false, error = "Invalid component ID" });
-                }
-
-                var component = doc.FindObject(guid, true);
-                if (component == null)
-                {
-                    return JsonConvert.SerializeObject(new { success = false, error = $"Component not found: {id}" });
-                }
+                if (!ToolHelpers.TryGetComponent(_context, id, out var component, out var error))
+                    return ToolHelpers.ErrorResponse(error);
 
                 var bounds = component.Attributes.Bounds;
                 var pivot = component.Attributes.Pivot;
@@ -664,11 +578,8 @@ namespace Cordyceps.Tools
             _server?.RecordCommand("validate_layout");
             return _context.ExecuteOnUiThread(() =>
             {
-                var doc = _context.GetActiveDocument();
-                if (doc == null)
-                {
-                    return JsonConvert.SerializeObject(new { success = false, error = "No active Grasshopper document" });
-                }
+                if (!ToolHelpers.TryGetActiveDocument(_context, out var doc, out var error))
+                    return ToolHelpers.ErrorResponse(error);
 
                 var overlaps = new List<object>();
                 var suggestions = new List<string>();
@@ -763,11 +674,8 @@ namespace Cordyceps.Tools
             _server?.RecordCommand("auto_space_components");
             return _context.ExecuteOnUiThread(() =>
             {
-                var doc = _context.GetActiveDocument();
-                if (doc == null)
-                {
-                    return JsonConvert.SerializeObject(new { success = false, error = "No active Grasshopper document" });
-                }
+                if (!ToolHelpers.TryGetActiveDocument(_context, out var doc, out var error))
+                    return ToolHelpers.ErrorResponse(error);
 
                 // Parse component IDs if provided
                 List<Guid> targetIds = null;
@@ -914,11 +822,8 @@ namespace Cordyceps.Tools
             _server?.RecordCommand("add_constant");
             return _context.ExecuteOnUiThread(() =>
             {
-                var doc = _context.GetActiveDocument();
-                if (doc == null)
-                {
-                    return JsonConvert.SerializeObject(new { success = false, error = "No active Grasshopper document" });
-                }
+                if (!ToolHelpers.TryGetActiveDocument(_context, out var doc, out var error))
+                    return ToolHelpers.ErrorResponse(error);
 
                 // Create a panel
                 var panel = new GH_Panel();
@@ -1032,16 +937,11 @@ namespace Cordyceps.Tools
             _server?.RecordCommand("get_component_by_nickname");
             return _context.ExecuteOnUiThread(() =>
             {
-                var doc = _context.GetActiveDocument();
-                if (doc == null)
-                {
-                    return JsonConvert.SerializeObject(new { success = false, error = "No active Grasshopper document" });
-                }
+                if (!ToolHelpers.TryGetActiveDocument(_context, out var doc, out var error))
+                    return ToolHelpers.ErrorResponse(error);
 
                 if (string.IsNullOrEmpty(nickname))
-                {
-                    return JsonConvert.SerializeObject(new { success = false, error = "Nickname is required" });
-                }
+                    return ToolHelpers.ErrorResponse("Nickname is required");
 
                 var matches = new List<object>();
 
@@ -1119,21 +1019,11 @@ namespace Cordyceps.Tools
             _server?.RecordCommand("bulk_move_components");
             return _context.ExecuteOnUiThread(() =>
             {
-                var doc = _context.GetActiveDocument();
-                if (doc == null)
-                {
-                    return JsonConvert.SerializeObject(new { success = false, error = "No active Grasshopper document" });
-                }
+                if (!ToolHelpers.TryGetActiveDocument(_context, out var doc, out var error))
+                    return ToolHelpers.ErrorResponse(error);
 
-                List<dynamic> moveList;
-                try
-                {
-                    moveList = JsonConvert.DeserializeObject<List<dynamic>>(moves);
-                }
-                catch (Exception ex)
-                {
-                    return JsonConvert.SerializeObject(new { success = false, error = $"Failed to parse moves JSON: {ex.Message}" });
-                }
+                if (!ToolHelpers.TryDeserializeList<dynamic>(moves, out var moveList, out error))
+                    return ToolHelpers.ErrorResponse(error);
 
                 if (moveList == null || moveList.Count == 0)
                 {

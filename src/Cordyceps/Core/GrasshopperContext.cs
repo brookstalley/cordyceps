@@ -12,6 +12,8 @@ namespace Cordyceps.Core
     /// </summary>
     public class GrasshopperContext
     {
+        private const int DEFAULT_SOLUTION_DELAY_MS = 10;
+
         /// <summary>
         /// Execute an action on the Rhino UI thread and return the result
         /// </summary>
@@ -121,7 +123,7 @@ namespace Cordyceps.Core
                 var doc = GetActiveDocument();
                 if (doc != null)
                 {
-                    doc.ScheduleSolution(10);
+                    doc.ScheduleSolution(DEFAULT_SOLUTION_DELAY_MS);
                 }
             }));
         }

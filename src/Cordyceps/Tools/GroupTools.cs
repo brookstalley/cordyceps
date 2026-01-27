@@ -34,11 +34,8 @@ namespace Cordyceps.Tools
             _server?.RecordCommand("create_group");
             return _context.ExecuteOnUiThread(() =>
             {
-                var doc = _context.GetActiveDocument();
-                if (doc == null)
-                {
-                    return JsonConvert.SerializeObject(new { success = false, error = "No active Grasshopper document" });
-                }
+                if (!ToolHelpers.TryGetActiveDocument(_context, out var doc, out var error))
+                    return ToolHelpers.ErrorResponse(error);
 
                 var group = new GH_Group();
                 group.NickName = name;
@@ -60,7 +57,10 @@ namespace Cordyceps.Tools
                         }
                         group.Colour = groupColor;
                     }
-                    catch { }
+                    catch (Exception ex)
+                    {
+                        DebugLog.Warn($"Failed to parse color '{color}': {ex.Message}");
+                    }
                 }
 
                 doc.AddObject(group, false);
@@ -85,23 +85,12 @@ namespace Cordyceps.Tools
             _server?.RecordCommand("add_to_group");
             return _context.ExecuteOnUiThread(() =>
             {
-                var doc = _context.GetActiveDocument();
-                if (doc == null)
-                {
-                    return JsonConvert.SerializeObject(new { success = false, error = "No active Grasshopper document" });
-                }
+                if (!ToolHelpers.TryGetActiveDocument(_context, out var doc, out var error))
+                    return ToolHelpers.ErrorResponse(error);
 
                 // Parse component IDs
-                List<Guid> guids;
-                try
-                {
-                    var idsArray = JsonConvert.DeserializeObject<string[]>(componentIds);
-                    guids = idsArray.Select(s => Guid.Parse(s)).ToList();
-                }
-                catch
-                {
-                    return JsonConvert.SerializeObject(new { success = false, error = "Invalid component IDs format" });
-                }
+                if (!ToolHelpers.TryParseGuidArray(componentIds, out var guids, out error))
+                    return ToolHelpers.ErrorResponse(error);
 
                 // Find the objects
                 var objects = new List<IGH_DocumentObject>();
@@ -155,9 +144,9 @@ namespace Cordyceps.Tools
                         }
                         group.Colour = parsedColor;
                     }
-                    catch
+                    catch (Exception ex)
                     {
-                        // Ignore invalid color
+                        DebugLog.Warn($"Failed to parse color '{color}': {ex.Message}");
                     }
                 }
 
@@ -221,22 +210,11 @@ namespace Cordyceps.Tools
             _server?.RecordCommand("delete_group");
             return _context.ExecuteOnUiThread(() =>
             {
-                var doc = _context.GetActiveDocument();
-                if (doc == null)
-                {
-                    return JsonConvert.SerializeObject(new { success = false, error = "No active Grasshopper document" });
-                }
+                if (!ToolHelpers.TryGetComponentWithDoc(_context, id, out var doc, out var obj, out var error))
+                    return ToolHelpers.ErrorResponse(error);
 
-                if (!Guid.TryParse(id, out Guid guid))
-                {
-                    return JsonConvert.SerializeObject(new { success = false, error = "Invalid group ID" });
-                }
-
-                var group = doc.FindObject(guid, true) as GH_Group;
-                if (group == null)
-                {
-                    return JsonConvert.SerializeObject(new { success = false, error = $"Group not found: {id}" });
-                }
+                if (!(obj is GH_Group group))
+                    return ToolHelpers.ErrorResponse($"Object is not a group: {id}");
 
                 doc.RemoveObject(group, true);
 
@@ -256,22 +234,11 @@ namespace Cordyceps.Tools
             _server?.RecordCommand("set_group_color");
             return _context.ExecuteOnUiThread(() =>
             {
-                var doc = _context.GetActiveDocument();
-                if (doc == null)
-                {
-                    return JsonConvert.SerializeObject(new { success = false, error = "No active Grasshopper document" });
-                }
+                if (!ToolHelpers.TryGetComponent(_context, id, out var obj, out var error))
+                    return ToolHelpers.ErrorResponse(error);
 
-                if (!Guid.TryParse(id, out Guid guid))
-                {
-                    return JsonConvert.SerializeObject(new { success = false, error = "Invalid group ID" });
-                }
-
-                var group = doc.FindObject(guid, true) as GH_Group;
-                if (group == null)
-                {
-                    return JsonConvert.SerializeObject(new { success = false, error = $"Group not found: {id}" });
-                }
+                if (!(obj is GH_Group group))
+                    return ToolHelpers.ErrorResponse($"Object is not a group: {id}");
 
                 try
                 {
@@ -309,34 +276,15 @@ namespace Cordyceps.Tools
             _server?.RecordCommand("remove_from_group");
             return _context.ExecuteOnUiThread(() =>
             {
-                var doc = _context.GetActiveDocument();
-                if (doc == null)
-                {
-                    return JsonConvert.SerializeObject(new { success = false, error = "No active Grasshopper document" });
-                }
+                if (!ToolHelpers.TryGetComponent(_context, groupId, out var obj, out var error))
+                    return ToolHelpers.ErrorResponse(error);
 
-                if (!Guid.TryParse(groupId, out Guid gGuid))
-                {
-                    return JsonConvert.SerializeObject(new { success = false, error = "Invalid group ID" });
-                }
-
-                var group = doc.FindObject(gGuid, true) as GH_Group;
-                if (group == null)
-                {
-                    return JsonConvert.SerializeObject(new { success = false, error = $"Group not found: {groupId}" });
-                }
+                if (!(obj is GH_Group group))
+                    return ToolHelpers.ErrorResponse($"Object is not a group: {groupId}");
 
                 // Parse component IDs
-                List<Guid> guids;
-                try
-                {
-                    var idsArray = JsonConvert.DeserializeObject<string[]>(componentIds);
-                    guids = idsArray.Select(s => Guid.Parse(s)).ToList();
-                }
-                catch
-                {
-                    return JsonConvert.SerializeObject(new { success = false, error = "Invalid component IDs format" });
-                }
+                if (!ToolHelpers.TryParseGuidArray(componentIds, out var guids, out error))
+                    return ToolHelpers.ErrorResponse(error);
 
                 int removedCount = 0;
                 var removedIds = new List<string>();
@@ -385,22 +333,11 @@ namespace Cordyceps.Tools
             _server?.RecordCommand("rename_group");
             return _context.ExecuteOnUiThread(() =>
             {
-                var doc = _context.GetActiveDocument();
-                if (doc == null)
-                {
-                    return JsonConvert.SerializeObject(new { success = false, error = "No active Grasshopper document" });
-                }
+                if (!ToolHelpers.TryGetComponent(_context, id, out var obj, out var error))
+                    return ToolHelpers.ErrorResponse(error);
 
-                if (!Guid.TryParse(id, out Guid guid))
-                {
-                    return JsonConvert.SerializeObject(new { success = false, error = "Invalid group ID" });
-                }
-
-                var group = doc.FindObject(guid, true) as GH_Group;
-                if (group == null)
-                {
-                    return JsonConvert.SerializeObject(new { success = false, error = $"Group not found: {id}" });
-                }
+                if (!(obj is GH_Group group))
+                    return ToolHelpers.ErrorResponse($"Object is not a group: {id}");
 
                 string oldName = group.NickName;
                 group.NickName = newName;
@@ -424,11 +361,8 @@ namespace Cordyceps.Tools
             _server?.RecordCommand("get_all_groups");
             return _context.ExecuteOnUiThread(() =>
             {
-                var doc = _context.GetActiveDocument();
-                if (doc == null)
-                {
-                    return JsonConvert.SerializeObject(new { success = false, error = "No active Grasshopper document" });
-                }
+                if (!ToolHelpers.TryGetActiveDocument(_context, out var doc, out var error))
+                    return ToolHelpers.ErrorResponse(error);
 
                 var groups = new List<object>();
 

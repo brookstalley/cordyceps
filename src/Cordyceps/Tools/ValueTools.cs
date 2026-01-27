@@ -38,22 +38,8 @@ namespace Cordyceps.Tools
             _server?.RecordCommand("set_component_value");
             return _context.ExecuteOnUiThread(() =>
             {
-                var doc = _context.GetActiveDocument();
-                if (doc == null)
-                {
-                    return JsonConvert.SerializeObject(new { success = false, error = "No active Grasshopper document" });
-                }
-
-                if (!Guid.TryParse(id, out Guid guid))
-                {
-                    return JsonConvert.SerializeObject(new { success = false, error = "Invalid component ID" });
-                }
-
-                var component = doc.FindObject(guid, true);
-                if (component == null)
-                {
-                    return JsonConvert.SerializeObject(new { success = false, error = $"Component not found: {id}" });
-                }
+                if (!ToolHelpers.TryGetComponentWithDoc(_context, id, out var doc, out var component, out var error))
+                    return ToolHelpers.ErrorResponse(error);
 
                 // Handle different component types
                 if (component is GH_Panel panel)
@@ -73,6 +59,12 @@ namespace Cordyceps.Tools
                             double.TryParse(parts[1], out double defaultVal) &&
                             double.TryParse(parts[2], out double maxVal))
                         {
+                            // Validate slider range: min <= default <= max
+                            if (minVal > defaultVal || defaultVal > maxVal)
+                            {
+                                return JsonConvert.SerializeObject(new { success = false, error = $"Invalid slider range: min ({minVal}) must be <= default ({defaultVal}) must be <= max ({maxVal})" });
+                            }
+
                             // Determine if this is an integer slider based on the values
                             bool isInteger = (minVal == Math.Floor(minVal)) &&
                                            (defaultVal == Math.Floor(defaultVal)) &&
@@ -261,22 +253,8 @@ namespace Cordyceps.Tools
             _server?.RecordCommand("toggle_preview");
             return _context.ExecuteOnUiThread(() =>
             {
-                var doc = _context.GetActiveDocument();
-                if (doc == null)
-                {
-                    return JsonConvert.SerializeObject(new { success = false, error = "No active Grasshopper document" });
-                }
-
-                if (!Guid.TryParse(id, out Guid guid))
-                {
-                    return JsonConvert.SerializeObject(new { success = false, error = "Invalid component ID" });
-                }
-
-                var component = doc.FindObject(guid, true);
-                if (component == null)
-                {
-                    return JsonConvert.SerializeObject(new { success = false, error = $"Component not found: {id}" });
-                }
+                if (!ToolHelpers.TryGetComponentWithDoc(_context, id, out var doc, out var component, out var error))
+                    return ToolHelpers.ErrorResponse(error);
 
                 if (component is IGH_PreviewObject previewObj)
                 {
@@ -307,22 +285,8 @@ namespace Cordyceps.Tools
             _server?.RecordCommand("toggle_enabled");
             return _context.ExecuteOnUiThread(() =>
             {
-                var doc = _context.GetActiveDocument();
-                if (doc == null)
-                {
-                    return JsonConvert.SerializeObject(new { success = false, error = "No active Grasshopper document" });
-                }
-
-                if (!Guid.TryParse(id, out Guid guid))
-                {
-                    return JsonConvert.SerializeObject(new { success = false, error = "Invalid component ID" });
-                }
-
-                var component = doc.FindObject(guid, true);
-                if (component == null)
-                {
-                    return JsonConvert.SerializeObject(new { success = false, error = $"Component not found: {id}" });
-                }
+                if (!ToolHelpers.TryGetComponentWithDoc(_context, id, out var doc, out var component, out var error))
+                    return ToolHelpers.ErrorResponse(error);
 
                 if (component is IGH_ActiveObject activeObj)
                 {
@@ -354,28 +318,12 @@ namespace Cordyceps.Tools
             _server?.RecordCommand("bake_geometry");
             return _context.ExecuteOnUiThread(() =>
             {
-                var doc = _context.GetActiveDocument();
-                if (doc == null)
-                {
-                    return JsonConvert.SerializeObject(new { success = false, error = "No active Grasshopper document" });
-                }
+                if (!ToolHelpers.TryGetComponent(_context, id, out var component, out var error))
+                    return ToolHelpers.ErrorResponse(error);
 
                 var rhinoDoc = RhinoDoc.ActiveDoc;
                 if (rhinoDoc == null)
-                {
-                    return JsonConvert.SerializeObject(new { success = false, error = "No active Rhino document" });
-                }
-
-                if (!Guid.TryParse(id, out Guid guid))
-                {
-                    return JsonConvert.SerializeObject(new { success = false, error = "Invalid component ID" });
-                }
-
-                var component = doc.FindObject(guid, true);
-                if (component == null)
-                {
-                    return JsonConvert.SerializeObject(new { success = false, error = $"Component not found: {id}" });
-                }
+                    return ToolHelpers.ErrorResponse("No active Rhino document");
 
                 // Get or create the target layer
                 int layerIndex = -1;
@@ -451,22 +399,8 @@ namespace Cordyceps.Tools
             _server?.RecordCommand("configure_value_list");
             return _context.ExecuteOnUiThread(() =>
             {
-                var doc = _context.GetActiveDocument();
-                if (doc == null)
-                {
-                    return JsonConvert.SerializeObject(new { success = false, error = "No active Grasshopper document" });
-                }
-
-                if (!Guid.TryParse(id, out Guid guid))
-                {
-                    return JsonConvert.SerializeObject(new { success = false, error = "Invalid component ID" });
-                }
-
-                var component = doc.FindObject(guid, true);
-                if (component == null)
-                {
-                    return JsonConvert.SerializeObject(new { success = false, error = $"Component not found: {id}" });
-                }
+                if (!ToolHelpers.TryGetComponentWithDoc(_context, id, out var doc, out var component, out var error))
+                    return ToolHelpers.ErrorResponse(error);
 
                 // Check if it's a Value List
                 if (!(component is GH_ValueList valueList))

@@ -21,14 +21,21 @@ namespace Cordyceps
     /// MCP Server using HttpListener with manual protocol implementation.
     /// Discovers tools via reflection on [McpServerTool] attributes.
     /// </summary>
-    public class McpServer
+    public class McpServer : IDisposable
     {
+        // Configuration constants
+        private const int DEFAULT_PORT = 8080;
+        private const int SHUTDOWN_TIMEOUT_SECONDS = 2;
+        private const int SSE_KEEPALIVE_INTERVAL_MS = 15000;
+        private const int LOG_TRUNCATE_LENGTH = 200;
+
         private HttpListener _listener;
         private CancellationTokenSource _cts;
         private Task _listenerTask;
         private int _port;
         private GrasshopperContext _context;
         private readonly List<ToolInfo> _tools = new List<ToolInfo>();
+        private bool _disposed;
 
         // Active SSE sessions
         private readonly List<SseSession> _sseSessions = new List<SseSession>();
@@ -57,7 +64,7 @@ namespace Cordyceps
         /// <summary>
         /// Start the MCP server on the specified port
         /// </summary>
-        public void Start(int port = 8080)
+        public void Start(int port = DEFAULT_PORT)
         {
             if (IsRunning)
             {
@@ -123,7 +130,7 @@ namespace Cordyceps
                 _listener?.Stop();
                 _listener?.Close();
 
-                try { _listenerTask?.Wait(TimeSpan.FromSeconds(2)); }
+                try { _listenerTask?.Wait(TimeSpan.FromSeconds(SHUTDOWN_TIMEOUT_SECONDS)); }
                 catch (AggregateException) { }
             }
             catch (Exception ex)
@@ -285,7 +292,15 @@ namespace Cordyceps
             catch (Exception ex)
             {
                 RhinoApp.WriteLine($"Cordyceps: Request error: {ex.Message}");
-                try { response.StatusCode = 500; response.Close(); } catch { }
+                try
+                {
+                    response.StatusCode = 500;
+                    response.Close();
+                }
+                catch (Exception closeEx)
+                {
+                    Core.DebugLog.Warn($"Failed to close error response: {closeEx.Message}");
+                }
             }
         }
 
@@ -313,7 +328,7 @@ namespace Cordyceps
                 // Keep connection alive
                 while (!ct.IsCancellationRequested && !session.IsCancelled)
                 {
-                    await Task.Delay(15000, ct);
+                    await Task.Delay(SSE_KEEPALIVE_INTERVAL_MS, ct);
                     if (!session.IsCancelled)
                         await session.WriteAsync(": keepalive\n\n");
                 }
@@ -344,7 +359,7 @@ namespace Cordyceps
                 using var reader = new StreamReader(request.InputStream, Encoding.UTF8);
                 var json = await reader.ReadToEndAsync();
 
-                RhinoApp.WriteLine($"Cordyceps: Received: {json.Substring(0, Math.Min(200, json.Length))}...");
+                RhinoApp.WriteLine($"Cordyceps: Received: {json.Substring(0, Math.Min(LOG_TRUNCATE_LENGTH, json.Length))}...");
 
                 using var doc = JsonDocument.Parse(json);
                 var root = doc.RootElement;
@@ -409,7 +424,7 @@ namespace Cordyceps
                     DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull
                 });
 
-                RhinoApp.WriteLine($"Cordyceps: Responding: {responseJson.Substring(0, Math.Min(200, responseJson.Length))}...");
+                RhinoApp.WriteLine($"Cordyceps: Responding: {responseJson.Substring(0, Math.Min(LOG_TRUNCATE_LENGTH, responseJson.Length))}...");
 
                 // Send response directly via HTTP
                 var bytes = Encoding.UTF8.GetBytes(responseJson);
@@ -852,15 +867,44 @@ x=50 (Inputs)  x=250 (Math)  x=400 (Transform)  x=700 (Output)
                     await _stream.FlushAsync();
                     return true;
                 }
-                catch
+                catch (Exception ex)
                 {
                     // Client disconnected - mark as cancelled
+                    Core.DebugLog.Debug($"SSE write failed (client likely disconnected): {ex.Message}");
                     _cancelled = true;
                     return false;
                 }
                 finally { _writeLock.Release(); }
             }
         }
+
+        #region IDisposable
+
+        /// <summary>
+        /// Dispose resources used by the MCP server
+        /// </summary>
+        public void Dispose()
+        {
+            Dispose(true);
+            GC.SuppressFinalize(this);
+        }
+
+        /// <summary>
+        /// Dispose implementation
+        /// </summary>
+        protected virtual void Dispose(bool disposing)
+        {
+            if (_disposed) return;
+
+            if (disposing)
+            {
+                Stop();
+            }
+
+            _disposed = true;
+        }
+
+        #endregion
     }
 
     // Attributes for tool discovery (matching the MCP SDK pattern)

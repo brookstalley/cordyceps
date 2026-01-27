@@ -5,7 +5,6 @@ using Cordyceps.Core;
 using Grasshopper;
 using Grasshopper.Kernel;
 using Newtonsoft.Json;
-using Rhino;
 
 namespace Cordyceps.Tools
 {
@@ -30,11 +29,8 @@ namespace Cordyceps.Tools
             _server?.RecordCommand("get_document_info");
             return _context.ExecuteOnUiThread(() =>
             {
-                var doc = _context.GetActiveDocument();
-                if (doc == null)
-                {
-                    return JsonConvert.SerializeObject(new { success = false, error = "No active Grasshopper document" });
-                }
+                if (!ToolHelpers.TryGetActiveDocument(_context, out var doc, out var error))
+                    return ToolHelpers.ErrorResponse(error);
 
                 // Count different object types
                 int componentCount = 0;
@@ -76,11 +72,8 @@ namespace Cordyceps.Tools
             _server?.RecordCommand("clear_document");
             return _context.ExecuteOnUiThread(() =>
             {
-                var doc = _context.GetActiveDocument();
-                if (doc == null)
-                {
-                    return JsonConvert.SerializeObject(new { success = false, error = "No active Grasshopper document" });
-                }
+                if (!ToolHelpers.TryGetActiveDocument(_context, out var doc, out var error))
+                    return ToolHelpers.ErrorResponse(error);
 
                 int removedCount = doc.ObjectCount;
 
@@ -103,11 +96,8 @@ namespace Cordyceps.Tools
             _server?.RecordCommand("save_document");
             return _context.ExecuteOnUiThread(() =>
             {
-                var doc = _context.GetActiveDocument();
-                if (doc == null)
-                {
-                    return JsonConvert.SerializeObject(new { success = false, error = "No active Grasshopper document" });
-                }
+                if (!ToolHelpers.TryGetActiveDocument(_context, out var doc, out var error))
+                    return ToolHelpers.ErrorResponse(error);
 
                 if (string.IsNullOrEmpty(filePath))
                 {
@@ -244,11 +234,8 @@ namespace Cordyceps.Tools
             _server?.RecordCommand("set_solver_enabled");
             return _context.ExecuteOnUiThread(() =>
             {
-                var doc = _context.GetActiveDocument();
-                if (doc == null)
-                {
-                    return JsonConvert.SerializeObject(new { success = false, error = "No active Grasshopper document" });
-                }
+                if (!ToolHelpers.TryGetActiveDocument(_context, out var doc, out var error))
+                    return ToolHelpers.ErrorResponse(error);
 
                 doc.Enabled = enabled;
 
@@ -271,11 +258,8 @@ namespace Cordyceps.Tools
             _server?.RecordCommand("recompute_solution");
             return _context.ExecuteOnUiThread(() =>
             {
-                var doc = _context.GetActiveDocument();
-                if (doc == null)
-                {
-                    return JsonConvert.SerializeObject(new { success = false, error = "No active Grasshopper document" });
-                }
+                if (!ToolHelpers.TryGetActiveDocument(_context, out var doc, out var error))
+                    return ToolHelpers.ErrorResponse(error);
 
                 doc.NewSolution(true);
 

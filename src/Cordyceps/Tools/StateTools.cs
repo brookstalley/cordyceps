@@ -32,11 +32,8 @@ namespace Cordyceps.Tools
             _server?.RecordCommand("snapshot");
             return _context.ExecuteOnUiThread(() =>
             {
-                var doc = _context.GetActiveDocument();
-                if (doc == null)
-                {
-                    return JsonConvert.SerializeObject(new { success = false, error = "No active Grasshopper document" });
-                }
+                if (!ToolHelpers.TryGetActiveDocument(_context, out var doc, out var error))
+                    return ToolHelpers.ErrorResponse(error);
 
                 string snapshotName = name ?? Guid.NewGuid().ToString();
 
@@ -177,7 +174,10 @@ namespace Cordyceps.Tools
                     File.Delete(path);
                 }
             }
-            catch { /* Ignore file deletion errors */ }
+            catch (Exception ex)
+            {
+                DebugLog.Warn($"Failed to delete snapshot file '{path}': {ex.Message}");
+            }
 
             Snapshots.Remove(name);
 

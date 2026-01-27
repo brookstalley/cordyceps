@@ -15,6 +15,8 @@ namespace Cordyceps.Tools
     [McpServerToolType]
     public class InspectionTools
     {
+        private const int MAX_TRACE_DEPTH = 50;
+
         private readonly GrasshopperContext _context;
         private readonly McpServer _server;
 
@@ -30,11 +32,8 @@ namespace Cordyceps.Tools
             _server?.RecordCommand("get_canvas_status");
             return _context.ExecuteOnUiThread(() =>
             {
-                var doc = _context.GetActiveDocument();
-                if (doc == null)
-                {
-                    return JsonConvert.SerializeObject(new { success = false, error = "No active Grasshopper document" });
-                }
+                if (!ToolHelpers.TryGetActiveDocument(_context, out var doc, out var error))
+                    return ToolHelpers.ErrorResponse(error);
 
                 var components = new List<object>();
                 int okCount = 0, errorCount = 0, warningCount = 0, disconnectedCount = 0;
@@ -128,11 +127,8 @@ namespace Cordyceps.Tools
             _server?.RecordCommand("get_disconnected_inputs");
             return _context.ExecuteOnUiThread(() =>
             {
-                var doc = _context.GetActiveDocument();
-                if (doc == null)
-                {
-                    return JsonConvert.SerializeObject(new { success = false, error = "No active Grasshopper document" });
-                }
+                if (!ToolHelpers.TryGetActiveDocument(_context, out var doc, out var error))
+                    return ToolHelpers.ErrorResponse(error);
 
                 var disconnected = new List<object>();
 
@@ -183,22 +179,8 @@ namespace Cordyceps.Tools
             _server?.RecordCommand("trace_data_flow");
             return _context.ExecuteOnUiThread(() =>
             {
-                var doc = _context.GetActiveDocument();
-                if (doc == null)
-                {
-                    return JsonConvert.SerializeObject(new { success = false, error = "No active Grasshopper document" });
-                }
-
-                if (!Guid.TryParse(id, out Guid guid))
-                {
-                    return JsonConvert.SerializeObject(new { success = false, error = "Invalid component ID" });
-                }
-
-                var component = doc.FindObject(guid, true);
-                if (component == null)
-                {
-                    return JsonConvert.SerializeObject(new { success = false, error = $"Component not found: {id}" });
-                }
+                if (!ToolHelpers.TryGetComponent(_context, id, out var component, out var error))
+                    return ToolHelpers.ErrorResponse(error);
 
                 var traced = new List<object>();
                 var visited = new HashSet<Guid>();
@@ -234,22 +216,8 @@ namespace Cordyceps.Tools
             _server?.RecordCommand("get_component_outputs");
             return _context.ExecuteOnUiThread(() =>
             {
-                var doc = _context.GetActiveDocument();
-                if (doc == null)
-                {
-                    return JsonConvert.SerializeObject(new { success = false, error = "No active Grasshopper document" });
-                }
-
-                if (!Guid.TryParse(id, out Guid guid))
-                {
-                    return JsonConvert.SerializeObject(new { success = false, error = "Invalid component ID" });
-                }
-
-                var obj = doc.FindObject(guid, true);
-                if (obj == null)
-                {
-                    return JsonConvert.SerializeObject(new { success = false, error = $"Component not found: {id}" });
-                }
+                if (!ToolHelpers.TryGetComponent(_context, id, out var obj, out var error))
+                    return ToolHelpers.ErrorResponse(error);
 
                 var outputs = new List<object>();
 
@@ -314,11 +282,8 @@ namespace Cordyceps.Tools
             _server?.RecordCommand("get_debug_reports");
             return _context.ExecuteOnUiThread(() =>
             {
-                var doc = _context.GetActiveDocument();
-                if (doc == null)
-                {
-                    return JsonConvert.SerializeObject(new { success = false, error = "No active Grasshopper document" });
-                }
+                if (!ToolHelpers.TryGetActiveDocument(_context, out var doc, out var error))
+                    return ToolHelpers.ErrorResponse(error);
 
                 var reports = new List<object>();
 
@@ -375,22 +340,8 @@ namespace Cordyceps.Tools
             _server?.RecordCommand("get_geometry");
             return _context.ExecuteOnUiThread(() =>
             {
-                var doc = _context.GetActiveDocument();
-                if (doc == null)
-                {
-                    return JsonConvert.SerializeObject(new { success = false, error = "No active Grasshopper document" });
-                }
-
-                if (!Guid.TryParse(id, out Guid guid))
-                {
-                    return JsonConvert.SerializeObject(new { success = false, error = "Invalid component ID" });
-                }
-
-                var obj = doc.FindObject(guid, true);
-                if (obj == null)
-                {
-                    return JsonConvert.SerializeObject(new { success = false, error = $"Component not found: {id}" });
-                }
+                if (!ToolHelpers.TryGetComponent(_context, id, out var obj, out var error))
+                    return ToolHelpers.ErrorResponse(error);
 
                 var outputs = new List<object>();
                 IEnumerable<IGH_Param> outputParams = null;
@@ -658,22 +609,8 @@ namespace Cordyceps.Tools
             _server?.RecordCommand("suggest_connections");
             return _context.ExecuteOnUiThread(() =>
             {
-                var doc = _context.GetActiveDocument();
-                if (doc == null)
-                {
-                    return JsonConvert.SerializeObject(new { success = false, error = "No active Grasshopper document" });
-                }
-
-                if (!Guid.TryParse(sourceId, out Guid sourceGuid))
-                {
-                    return JsonConvert.SerializeObject(new { success = false, error = "Invalid source component ID" });
-                }
-
-                var sourceObj = doc.FindObject(sourceGuid, true);
-                if (sourceObj == null)
-                {
-                    return JsonConvert.SerializeObject(new { success = false, error = $"Source component not found: {sourceId}" });
-                }
+                if (!ToolHelpers.TryGetComponentWithDoc(_context, sourceId, out var doc, out var sourceObj, out var error))
+                    return ToolHelpers.ErrorResponse(error);
 
                 // Get the output parameter
                 IGH_Param outputParam = null;
@@ -941,7 +878,7 @@ namespace Cordyceps.Tools
         private void TraceUpstream(IGH_DocumentObject obj, List<object> traced, HashSet<Guid> visited, int depth)
         {
             if (visited.Contains(obj.InstanceGuid)) return;
-            if (depth > 50) return; // Prevent infinite loops
+            if (depth > MAX_TRACE_DEPTH) return; // Prevent infinite loops
 
             visited.Add(obj.InstanceGuid);
 
@@ -985,7 +922,7 @@ namespace Cordyceps.Tools
         private void TraceDownstream(IGH_DocumentObject obj, List<object> traced, HashSet<Guid> visited, int depth)
         {
             if (visited.Contains(obj.InstanceGuid)) return;
-            if (depth > 50) return;
+            if (depth > MAX_TRACE_DEPTH) return;
 
             visited.Add(obj.InstanceGuid);
 
