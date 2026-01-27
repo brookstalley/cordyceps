@@ -26,9 +26,9 @@ namespace Cordyceps.Tools
             _server = server;
         }
 
-        [McpServerTool, Description("Add a component to the Grasshopper canvas by name or GUID")]
+        [McpServerTool, Description("Add a component to the Grasshopper canvas by name or GUID. Use GUID or 'Category/Name' format to avoid ambiguity.")]
         public string AddComponent(
-            [Description("Component type name (e.g., 'Circle', 'Addition') or GUID")] string type,
+            [Description("Component type name (e.g., 'Circle', 'Addition'), GUID, or category-qualified name ('Curve/Circle')")] string type,
             [Description("X position on canvas")] double x,
             [Description("Y position on canvas")] double y,
             [Description("Optional nickname/display name for the component")] string nickname = null)
@@ -45,8 +45,33 @@ namespace Cordyceps.Tools
 
                     Core.DebugLog.Debug($"Creating component: {type}");
 
-                    // Create the component
-                    var component = ComponentRegistry.CreateComponent(type);
+                    // Try to create the component, handling disambiguation
+                    var (component, matches) = ComponentRegistry.TryCreateComponent(type);
+
+                    // Check if disambiguation is needed
+                    if (matches != null && matches.Count > 1)
+                    {
+                        Core.DebugLog.Info($"Ambiguous component name '{type}' - {matches.Count} matches found");
+                        return JsonConvert.SerializeObject(new
+                        {
+                            success = false,
+                            error = "ambiguous_name",
+                            message = $"Multiple components match '{type}'. Specify using GUID or 'Category/Name' format.",
+                            matchCount = matches.Count,
+                            matches = matches.Select(m => new
+                            {
+                                name = m.Name,
+                                guid = m.Guid,
+                                category = m.Category,
+                                subcategory = m.SubCategory,
+                                role = m.Role,
+                                description = m.Description,
+                                inputs = m.Inputs?.Select(i => $"{i.Name} ({i.Type})").ToList(),
+                                outputs = m.Outputs?.Select(o => $"{o.Name} ({o.Type})").ToList()
+                            })
+                        });
+                    }
+
                     if (component == null)
                     {
                         Core.DebugLog.Warn($"Unknown component type: {type}");
@@ -77,10 +102,31 @@ namespace Cordyceps.Tools
 
                     Core.DebugLog.Info($"Component added: {component.NickName ?? component.Name} ({component.InstanceGuid})");
 
-                    // Get component bounds for layout planning
+                    // Get component bounds and details for response
                     var bounds = component.Attributes.Bounds;
                     int inputCount = 0;
                     int outputCount = 0;
+                    string category = null;
+                    string subcategory = null;
+
+                    // Try to get category info from proxy - use ComponentGuid for accurate lookup
+                    IGH_ObjectProxy proxy = null;
+                    if (component is IGH_ActiveObject activeObj)
+                    {
+                        proxy = Instances.ComponentServer.ObjectProxies
+                            .FirstOrDefault(p => p.Guid == activeObj.ComponentGuid);
+                    }
+                    // Fallback to name-based lookup if ComponentGuid didn't match
+                    if (proxy == null)
+                    {
+                        proxy = Instances.ComponentServer.ObjectProxies
+                            .FirstOrDefault(p => p.Desc.Name == component.Name);
+                    }
+                    if (proxy != null)
+                    {
+                        category = proxy.Desc.Category;
+                        subcategory = proxy.Desc.SubCategory;
+                    }
 
                     if (component is IGH_Component ghComp)
                     {
@@ -93,12 +139,17 @@ namespace Cordyceps.Tools
                         outputCount = 1;
                     }
 
+                    var role = ComponentRegistry.GetRole(category, subcategory);
+
                     return JsonConvert.SerializeObject(new
                     {
                         success = true,
                         id = component.InstanceGuid.ToString(),
                         type = component.Name,
                         nickname = component.NickName,
+                        category = category,
+                        subcategory = subcategory,
+                        role = role,
                         x = component.Attributes.Pivot.X,
                         y = component.Attributes.Pivot.Y,
                         width = bounds.Width,
@@ -269,12 +320,42 @@ namespace Cordyceps.Tools
                         ["y"] = obj.Attributes.Pivot.Y
                     };
 
+                    // Look up category info from proxy using ComponentGuid for accuracy
+                    string category = null;
+                    string subcategory = null;
+                    if (obj is IGH_ActiveObject activeObj)
+                    {
+                        var proxy = Instances.ComponentServer.ObjectProxies
+                            .FirstOrDefault(p => p.Guid == activeObj.ComponentGuid);
+                        if (proxy != null)
+                        {
+                            category = proxy.Desc.Category;
+                            subcategory = proxy.Desc.SubCategory;
+                        }
+                    }
+
                     if (obj is IGH_Component comp)
                     {
-                        compInfo["category"] = comp.Category;
+                        // Fallback to component's own category if proxy not found
+                        category = category ?? comp.Category;
+                        subcategory = subcategory ?? comp.SubCategory;
+                        compInfo["category"] = category;
+                        compInfo["subcategory"] = subcategory;
+                        compInfo["role"] = ComponentRegistry.GetRole(category, subcategory);
                         compInfo["inputCount"] = comp.Params.Input.Count;
                         compInfo["outputCount"] = comp.Params.Output.Count;
                         compInfo["runtimeMessageLevel"] = comp.RuntimeMessageLevel.ToString();
+                    }
+                    else if (obj is IGH_Param param)
+                    {
+                        // Fallback for parameters not found in server
+                        category = category ?? "Params";
+                        subcategory = subcategory ?? "Unknown";
+                        compInfo["category"] = category;
+                        compInfo["subcategory"] = subcategory;
+                        compInfo["role"] = ComponentRegistry.GetRole(category, subcategory);
+                        compInfo["sourceCount"] = param.SourceCount;
+                        compInfo["recipientCount"] = param.Recipients.Count;
                     }
 
                     components.Add(compInfo);
@@ -352,12 +433,15 @@ namespace Cordyceps.Tools
                         // Ignore errors creating instances
                     }
 
+                    var role = ComponentRegistry.GetRole(result.Category, result.SubCategory);
+
                     enhancedResults.Add(new
                     {
                         name = result.Name,
                         description = result.Description,
                         category = result.Category,
                         subCategory = result.SubCategory,
+                        role = role,
                         guid = result.Guid,
                         deprecated = isDeprecated,
                         upgrade = upgradeInfo != null ? new
@@ -983,12 +1067,40 @@ namespace Cordyceps.Tools
                             ["y"] = obj.Attributes.Pivot.Y
                         };
 
+                        // Look up category from proxy using ComponentGuid for accuracy
+                        string category = null;
+                        string subcategory = null;
+                        if (obj is IGH_ActiveObject activeObj)
+                        {
+                            var proxy = Instances.ComponentServer.ObjectProxies
+                                .FirstOrDefault(p => p.Guid == activeObj.ComponentGuid);
+                            if (proxy != null)
+                            {
+                                category = proxy.Desc.Category;
+                                subcategory = proxy.Desc.SubCategory;
+                            }
+                        }
+
                         if (obj is IGH_Component comp)
                         {
-                            info["category"] = comp.Category;
+                            category = category ?? comp.Category;
+                            subcategory = subcategory ?? comp.SubCategory;
+                            info["category"] = category;
+                            info["subcategory"] = subcategory;
+                            info["role"] = ComponentRegistry.GetRole(category, subcategory);
                             info["inputCount"] = comp.Params.Input.Count;
                             info["outputCount"] = comp.Params.Output.Count;
                             info["runtimeMessageLevel"] = comp.RuntimeMessageLevel.ToString();
+                        }
+                        else if (obj is IGH_Param param)
+                        {
+                            category = category ?? "Params";
+                            subcategory = subcategory ?? "Unknown";
+                            info["category"] = category;
+                            info["subcategory"] = subcategory;
+                            info["role"] = ComponentRegistry.GetRole(category, subcategory);
+                            info["sourceCount"] = param.SourceCount;
+                            info["recipientCount"] = param.Recipients.Count;
                         }
 
                         matches.Add(info);

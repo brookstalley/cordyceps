@@ -251,6 +251,190 @@ namespace Cordyceps.Core
 
             return normalized;
         }
+
+        /// <summary>
+        /// Get all components that exactly match a name, with full details for disambiguation.
+        /// Supports category-qualified names like "Curve/Circle" or "Circle (Curve)".
+        /// </summary>
+        public static List<ComponentMatch> GetExactMatches(string type)
+        {
+            if (string.IsNullOrWhiteSpace(type))
+                return new List<ComponentMatch>();
+
+            var normalized = NormalizeTypeName(type.Trim());
+            string categoryFilter = null;
+
+            // Check for category-qualified format: "Category/Name" or "Name (Category)"
+            if (normalized.Contains("/"))
+            {
+                var parts = normalized.Split('/');
+                if (parts.Length == 2)
+                {
+                    categoryFilter = parts[0].Trim();
+                    normalized = parts[1].Trim();
+                }
+            }
+            else if (normalized.Contains("(") && normalized.EndsWith(")"))
+            {
+                var parenIndex = normalized.LastIndexOf('(');
+                categoryFilter = normalized.Substring(parenIndex + 1).TrimEnd(')').Trim();
+                normalized = normalized.Substring(0, parenIndex).Trim();
+            }
+
+            // Find all exact name matches
+            var matches = Instances.ComponentServer.ObjectProxies
+                .Where(p => p.Desc.Name.Equals(normalized, StringComparison.OrdinalIgnoreCase))
+                .Where(p => categoryFilter == null ||
+                            p.Desc.Category.Equals(categoryFilter, StringComparison.OrdinalIgnoreCase))
+                .ToList();
+
+            var results = new List<ComponentMatch>();
+
+            foreach (var proxy in matches)
+            {
+                var match = CreateComponentMatch(proxy);
+                if (match != null)
+                    results.Add(match);
+            }
+
+            // Sort: components before parameters (more commonly desired)
+            return results.OrderBy(m => m.Role == "parameter" ? 1 : 0).ToList();
+        }
+
+        /// <summary>
+        /// Create a ComponentMatch with full details from a proxy
+        /// </summary>
+        private static ComponentMatch CreateComponentMatch(IGH_ObjectProxy proxy)
+        {
+            if (proxy == null) return null;
+
+            var match = new ComponentMatch
+            {
+                Name = proxy.Desc.Name,
+                Description = proxy.Desc.Description,
+                Category = proxy.Desc.Category,
+                SubCategory = proxy.Desc.SubCategory,
+                Guid = proxy.Guid.ToString(),
+                Role = GetRole(proxy.Desc.Category, proxy.Desc.SubCategory),
+                Inputs = new List<ParameterInfo>(),
+                Outputs = new List<ParameterInfo>()
+            };
+
+            // Try to get input/output details by creating a temporary instance
+            try
+            {
+                var instance = proxy.CreateInstance();
+                if (instance is IGH_Component comp)
+                {
+                    foreach (var input in comp.Params.Input)
+                    {
+                        match.Inputs.Add(new ParameterInfo
+                        {
+                            Name = input.Name,
+                            Nickname = input.NickName,
+                            Type = input.TypeName,
+                            Access = input.Access.ToString().ToLower(),
+                            Optional = input.Optional
+                        });
+                    }
+
+                    foreach (var output in comp.Params.Output)
+                    {
+                        match.Outputs.Add(new ParameterInfo
+                        {
+                            Name = output.Name,
+                            Nickname = output.NickName,
+                            Type = output.TypeName
+                        });
+                    }
+                }
+            }
+            catch
+            {
+                // Ignore errors creating instances - still return basic info
+            }
+
+            return match;
+        }
+
+        /// <summary>
+        /// Determine the role of a component based on category and subcategory
+        /// </summary>
+        public static string GetRole(string category, string subCategory)
+        {
+            if (category == "Params")
+            {
+                if (subCategory == "Input")
+                    return "input";
+                return "parameter";
+            }
+            return "component";
+        }
+
+        /// <summary>
+        /// Try to create a component, returning disambiguation info if multiple matches exist.
+        /// Returns (component, null) on success, (null, matches) if disambiguation needed, (null, null) if not found.
+        /// </summary>
+        public static (IGH_DocumentObject component, List<ComponentMatch> matches) TryCreateComponent(string type)
+        {
+            if (string.IsNullOrWhiteSpace(type))
+                return (null, null);
+
+            // If it's a GUID, create directly - no ambiguity
+            if (Guid.TryParse(type, out Guid guid))
+            {
+                var component = CreateByGuid(guid);
+                return (component, null);
+            }
+
+            // Check for known GUIDs first (unambiguous)
+            var normalized = NormalizeTypeName(type);
+            if (KnownGuids.TryGetValue(normalized, out Guid knownGuid))
+            {
+                var component = CreateByGuid(knownGuid);
+                if (component != null)
+                    return (component, null);
+            }
+
+            // Special handling for Panel and Number Slider (unambiguous)
+            var lowerName = normalized.ToLowerInvariant();
+            if (lowerName == "panel")
+                return (new GH_Panel(), null);
+            if (lowerName == "number slider")
+            {
+                var slider = new GH_NumberSlider();
+                slider.SetInitCode("0.0 < 0.5 < 1.0");
+                return (slider, null);
+            }
+
+            // Get all exact matches
+            var matches = GetExactMatches(type);
+
+            if (matches.Count == 0)
+            {
+                // Try fuzzy match as fallback
+                var proxy = Instances.ComponentServer.ObjectProxies
+                    .FirstOrDefault(p => p.Desc.Name.IndexOf(normalized, StringComparison.OrdinalIgnoreCase) >= 0);
+
+                if (proxy != null)
+                {
+                    var component = proxy.CreateInstance() as IGH_DocumentObject;
+                    return (component, null);
+                }
+
+                return (null, null);  // Not found
+            }
+
+            if (matches.Count == 1)
+            {
+                // Unambiguous - create it
+                var component = CreateByGuid(Guid.Parse(matches[0].Guid));
+                return (component, null);
+            }
+
+            // Multiple matches - return disambiguation info
+            return (null, matches);
+        }
     }
 
     /// <summary>
@@ -263,5 +447,32 @@ namespace Cordyceps.Core
         public string Category { get; set; }
         public string SubCategory { get; set; }
         public string Guid { get; set; }
+    }
+
+    /// <summary>
+    /// Detailed match information for disambiguation
+    /// </summary>
+    public class ComponentMatch
+    {
+        public string Name { get; set; }
+        public string Description { get; set; }
+        public string Category { get; set; }
+        public string SubCategory { get; set; }
+        public string Guid { get; set; }
+        public string Role { get; set; }  // "component", "parameter", or "input"
+        public List<ParameterInfo> Inputs { get; set; }
+        public List<ParameterInfo> Outputs { get; set; }
+    }
+
+    /// <summary>
+    /// Parameter information for inputs/outputs
+    /// </summary>
+    public class ParameterInfo
+    {
+        public string Name { get; set; }
+        public string Nickname { get; set; }
+        public string Type { get; set; }
+        public string Access { get; set; }
+        public bool Optional { get; set; }
     }
 }

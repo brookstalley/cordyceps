@@ -18,15 +18,15 @@ using Rhino;
 namespace Cordyceps
 {
     /// <summary>
-    /// MCP Server using HttpListener with manual protocol implementation.
+    /// MCP Server using HttpListener with Streamable HTTP transport.
+    /// Implements the MCP 2025-06-18 specification with stateless mode.
     /// Discovers tools via reflection on [McpServerTool] attributes.
     /// </summary>
     public class McpServer : IDisposable
     {
         // Configuration constants
-        private const int DEFAULT_PORT = 8080;
+        private const int DEFAULT_PORT = 26929;
         private const int SHUTDOWN_TIMEOUT_SECONDS = 2;
-        private const int SSE_KEEPALIVE_INTERVAL_MS = 15000;
         private const int LOG_TRUNCATE_LENGTH = 200;
 
         private HttpListener _listener;
@@ -36,10 +36,6 @@ namespace Cordyceps
         private GrasshopperContext _context;
         private readonly List<ToolInfo> _tools = new List<ToolInfo>();
         private bool _disposed;
-
-        // Active SSE sessions
-        private readonly List<SseSession> _sseSessions = new List<SseSession>();
-        private readonly object _sessionsLock = new object();
 
         /// <summary>
         /// Whether the server is currently running
@@ -94,8 +90,7 @@ namespace Cordyceps
                 _listenerTask = Task.Run(() => ListenLoopAsync(_cts.Token), _cts.Token);
 
                 IsRunning = true;
-                RhinoApp.WriteLine($"Cordyceps: MCP server started on http://127.0.0.1:{_port}");
-                RhinoApp.WriteLine($"Cordyceps: SSE endpoint: http://127.0.0.1:{_port}/sse");
+                RhinoApp.WriteLine($"Cordyceps: MCP server started on http://127.0.0.1:{_port}/mcp");
             }
             catch (Exception ex)
             {
@@ -119,13 +114,6 @@ namespace Cordyceps
 
             try
             {
-                lock (_sessionsLock)
-                {
-                    foreach (var session in _sseSessions)
-                        session.Cancel();
-                    _sseSessions.Clear();
-                }
-
                 _cts?.Cancel();
                 _listener?.Stop();
                 _listener?.Close();
@@ -240,7 +228,7 @@ namespace Cordyceps
         }
 
         /// <summary>
-        /// Handle an incoming HTTP request
+        /// Handle an incoming HTTP request (Streamable HTTP transport)
         /// </summary>
         private async Task HandleRequestAsync(HttpListenerContext context, CancellationToken ct)
         {
@@ -249,45 +237,45 @@ namespace Cordyceps
 
             try
             {
-                // Add CORS headers
-                response.Headers.Add("Access-Control-Allow-Origin", "*");
-                response.Headers.Add("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
-                response.Headers.Add("Access-Control-Allow-Headers", "Content-Type, Accept");
-
-                if (request.HttpMethod == "OPTIONS")
-                {
-                    response.StatusCode = 204;
-                    response.Close();
-                    return;
-                }
-
                 var path = request.Url?.AbsolutePath ?? "/";
                 RhinoApp.WriteLine($"Cordyceps: {request.HttpMethod} {path} from {request.RemoteEndPoint}");
 
-                if (path == "/sse" && request.HttpMethod == "GET")
+                // Security: Validate Origin header (DNS rebinding protection)
+                if (!ValidateOrigin(request, response))
+                    return;
+
+                // CORS preflight
+                if (request.HttpMethod == "OPTIONS")
                 {
-                    RhinoApp.WriteLine("Cordyceps: SSE connection starting...");
-                    await HandleSseAsync(context, ct);
-                    RhinoApp.WriteLine("Cordyceps: SSE connection ended");
+                    HandleCorsPreFlight(response);
+                    return;
                 }
-                else if (path == "/message" && request.HttpMethod == "POST")
+
+                // Streamable HTTP endpoint (MCP 2025-06-18)
+                if (path == "/mcp")
                 {
-                    await HandleJsonRpcAsync(context);
+                    if (request.HttpMethod == "POST")
+                    {
+                        await HandleMcpPostAsync(context);
+                    }
+                    else
+                    {
+                        // GET and DELETE return 405 in stateless mode
+                        response.StatusCode = 405;
+                        response.Close();
+                    }
+                    return;
                 }
-                else if (path == "/" || path == "/health")
+
+                // Health check endpoint (keep for debugging)
+                if (path == "/" || path == "/health")
                 {
-                    response.StatusCode = 200;
-                    response.ContentType = "application/json";
-                    var health = JsonSerializer.Serialize(new { status = "ok", server = "Cordyceps MCP" });
-                    var bytes = Encoding.UTF8.GetBytes(health);
-                    await response.OutputStream.WriteAsync(bytes, 0, bytes.Length);
-                    response.Close();
+                    await HandleHealthCheckAsync(response);
+                    return;
                 }
-                else
-                {
-                    response.StatusCode = 404;
-                    response.Close();
-                }
+
+                response.StatusCode = 404;
+                response.Close();
             }
             catch (Exception ex)
             {
@@ -305,57 +293,84 @@ namespace Cordyceps
         }
 
         /// <summary>
-        /// Handle SSE connection for server-to-client streaming
+        /// Validate Origin header to prevent DNS rebinding attacks
         /// </summary>
-        private async Task HandleSseAsync(HttpListenerContext context, CancellationToken ct)
+        private bool ValidateOrigin(HttpListenerRequest request, HttpListenerResponse response)
         {
-            var response = context.Response;
-            response.ContentType = "text/event-stream";
-            response.Headers.Add("Cache-Control", "no-cache");
-            response.Headers.Add("Connection", "keep-alive");
-
-            var session = new SseSession(response.OutputStream);
-            lock (_sessionsLock) { _sseSessions.Add(session); }
-
-            try
+            var origin = request.Headers["Origin"];
+            if (!string.IsNullOrEmpty(origin))
             {
-                // Send endpoint event telling client where to POST messages (absolute URL, IPv4)
-                var endpointUrl = $"http://127.0.0.1:{_port}/message";
-                RhinoApp.WriteLine($"Cordyceps: Sending SSE endpoint event: {endpointUrl}");
-                await session.WriteAsync($"event: endpoint\ndata: {endpointUrl}\n\n");
-                RhinoApp.WriteLine("Cordyceps: SSE endpoint event sent, connection open");
-
-                // Keep connection alive
-                while (!ct.IsCancellationRequested && !session.IsCancelled)
+                try
                 {
-                    await Task.Delay(SSE_KEEPALIVE_INTERVAL_MS, ct);
-                    if (!session.IsCancelled)
-                        await session.WriteAsync(": keepalive\n\n");
+                    var originUri = new Uri(origin);
+                    if (originUri.Host != "127.0.0.1" && originUri.Host != "localhost")
+                    {
+                        RhinoApp.WriteLine($"Cordyceps: Rejected request from non-localhost origin: {origin}");
+                        response.StatusCode = 403;
+                        response.Close();
+                        return false;
+                    }
+                }
+                catch (UriFormatException)
+                {
+                    RhinoApp.WriteLine($"Cordyceps: Rejected request with malformed origin: {origin}");
+                    response.StatusCode = 403;
+                    response.Close();
+                    return false;
                 }
             }
-            catch (OperationCanceledException) { }
-            catch (Exception)
-            {
-                // Client disconnected - normal behavior, no logging needed
-            }
-            finally
-            {
-                lock (_sessionsLock) { _sseSessions.Remove(session); }
-                try { response.Close(); } catch { }
-                RhinoApp.WriteLine("Cordyceps: SSE connection ended");
-            }
+            return true;
         }
 
         /// <summary>
-        /// Handle JSON-RPC request (MCP protocol)
+        /// Handle CORS preflight requests
         /// </summary>
-        private async Task HandleJsonRpcAsync(HttpListenerContext context)
+        private void HandleCorsPreFlight(HttpListenerResponse response)
+        {
+            response.Headers.Add("Access-Control-Allow-Origin", "http://localhost");
+            response.Headers.Add("Access-Control-Allow-Methods", "POST, OPTIONS");
+            response.Headers.Add("Access-Control-Allow-Headers", "Content-Type, Accept");
+            response.Headers.Add("Access-Control-Max-Age", "86400");
+            response.StatusCode = 204;
+            response.Close();
+        }
+
+        /// <summary>
+        /// Handle health check requests
+        /// </summary>
+        private async Task HandleHealthCheckAsync(HttpListenerResponse response)
+        {
+            response.StatusCode = 200;
+            response.ContentType = "application/json";
+            var health = JsonSerializer.Serialize(new { status = "ok", server = "Cordyceps MCP", transport = "streamable-http" });
+            var bytes = Encoding.UTF8.GetBytes(health);
+            await response.OutputStream.WriteAsync(bytes, 0, bytes.Length);
+            response.Close();
+        }
+
+        /// <summary>
+        /// Handle POST /mcp requests (Streamable HTTP transport)
+        /// </summary>
+        private async Task HandleMcpPostAsync(HttpListenerContext context)
         {
             var request = context.Request;
             var response = context.Response;
 
             try
             {
+                // Validate Accept header per MCP spec (must include both JSON and SSE)
+                var accept = request.Headers["Accept"] ?? "";
+                if (!accept.Contains("application/json") || !accept.Contains("text/event-stream"))
+                {
+                    RhinoApp.WriteLine($"Cordyceps: Invalid Accept header: {accept}");
+                    response.StatusCode = 406; // Not Acceptable
+                    response.Close();
+                    return;
+                }
+
+                // Add CORS header for actual requests
+                response.Headers.Add("Access-Control-Allow-Origin", "http://localhost");
+
                 using var reader = new StreamReader(request.InputStream, Encoding.UTF8);
                 var json = await reader.ReadToEndAsync();
 
@@ -385,11 +400,12 @@ namespace Cordyceps
                     errorCode = -32603;
                 }
 
-                // Don't send response for notifications (per JSON-RPC 2.0 spec)
+                // Notifications return 202 Accepted with empty body (per MCP Streamable HTTP spec)
                 if (isNotification)
                 {
-                    RhinoApp.WriteLine($"Cordyceps: Notification '{method}' processed (no response required)");
-                    response.StatusCode = 204;  // No Content
+                    RhinoApp.WriteLine($"Cordyceps: Notification '{method}' processed");
+                    response.StatusCode = 202;  // Accepted
+                    response.Close();
                     return;
                 }
 
@@ -426,15 +442,10 @@ namespace Cordyceps
 
                 RhinoApp.WriteLine($"Cordyceps: Responding: {responseJson.Substring(0, Math.Min(LOG_TRUNCATE_LENGTH, responseJson.Length))}...");
 
-                // Send response directly via HTTP
+                // Send response via HTTP
                 var bytes = Encoding.UTF8.GetBytes(responseJson);
                 await response.OutputStream.WriteAsync(bytes, 0, bytes.Length);
                 await response.OutputStream.FlushAsync();
-                RhinoApp.WriteLine("Cordyceps: HTTP response sent");
-
-                // Also broadcast via SSE for clients expecting that
-                await BroadcastSseMessageAsync(responseJson);
-                RhinoApp.WriteLine("Cordyceps: SSE broadcast sent");
             }
             catch (Exception ex)
             {
@@ -509,6 +520,34 @@ Before working with Grasshopper, read these essential resources using `resources
 - **`gh://docs/best-practices`** - Common mistakes and how to avoid them
 
 For any specific component, read `gh://component/{name}` (e.g., `gh://component/Circle`) to get full parameter details.
+
+## Component Disambiguation
+
+Some component names are ambiguous. For example, 'Circle' matches both:
+- **Circle (Curve)** - Creates circles from plane, radius, etc. (role: component)
+- **Circle (Params/Geometry)** - Container to hold circle data (role: parameter)
+
+When you call `add_component` with an ambiguous name, you'll get an `ambiguous_name` error with all matching components, including their GUIDs, categories, and I/O signatures.
+
+### To resolve ambiguity:
+- Use the GUID directly: `add_component(type: 'guid-here', ...)`
+- Use category-qualified name: `add_component(type: 'Curve/Circle', ...)`
+
+### Role Field
+Every component response includes a `role` field:
+- **component** - Processing component (takes inputs, produces outputs)
+- **parameter** - Data container (Params category, non-Input subcategory)
+- **input** - Interactive input (Params category, Input subcategory like Number Slider)
+
+### Params Subcategories
+Components in the 'Params' category fall into these subcategories:
+- **Input** - Interactive controls: Number Slider, Boolean Toggle, Value List, etc.
+- **Geometry** - Geometry containers: Point, Curve, Brep, Mesh, Surface, etc.
+- **Primitive** - Value containers: Integer, Number, Text, Boolean, etc.
+- **Util** - Data flow components: Relay, Cluster Input/Output, Data Dam, etc.
+- **Rhino** - Viewport interaction: Plane, Box, Colour Gradient, etc.
+
+Most of the time you want 'component' role items, not 'parameter' role items.
 
 ## Canvas Layout Guidelines (IMPORTANT)
 
@@ -780,42 +819,6 @@ x=50 (Inputs)  x=250 (Math)  x=400 (Transform)  x=700 (Output)
         }
 
         /// <summary>
-        /// Broadcast a message to all SSE sessions
-        /// </summary>
-        private async Task BroadcastSseMessageAsync(string jsonMessage)
-        {
-            List<SseSession> sessions;
-            lock (_sessionsLock)
-            {
-                sessions = _sseSessions.ToList();
-            }
-
-            var deadSessions = new List<SseSession>();
-
-            foreach (var session in sessions)
-            {
-                var success = await session.WriteAsync($"event: message\ndata: {jsonMessage}\n\n");
-                if (!success)
-                {
-                    deadSessions.Add(session);
-                }
-            }
-
-            // Remove dead sessions
-            if (deadSessions.Count > 0)
-            {
-                lock (_sessionsLock)
-                {
-                    foreach (var dead in deadSessions)
-                    {
-                        _sseSessions.Remove(dead);
-                    }
-                }
-                RhinoApp.WriteLine($"Cordyceps: Removed {deadSessions.Count} disconnected SSE client(s)");
-            }
-        }
-
-        /// <summary>
         /// Record that a command was executed
         /// </summary>
         public void RecordCommand(string commandType)
@@ -842,40 +845,6 @@ x=50 (Inputs)  x=250 (Math)  x=400 (Transform)  x=700 (Output)
             public string Description { get; set; }
             public string Type { get; set; }
             public bool IsRequired { get; set; }
-        }
-
-        private class SseSession
-        {
-            private readonly Stream _stream;
-            private readonly SemaphoreSlim _writeLock = new SemaphoreSlim(1, 1);
-            private volatile bool _cancelled;
-
-            public bool IsCancelled => _cancelled;
-
-            public SseSession(Stream stream) => _stream = stream;
-
-            public void Cancel() => _cancelled = true;
-
-            public async Task<bool> WriteAsync(string data)
-            {
-                if (_cancelled) return false;
-                await _writeLock.WaitAsync();
-                try
-                {
-                    var bytes = Encoding.UTF8.GetBytes(data);
-                    await _stream.WriteAsync(bytes, 0, bytes.Length);
-                    await _stream.FlushAsync();
-                    return true;
-                }
-                catch (Exception ex)
-                {
-                    // Client disconnected - mark as cancelled
-                    Core.DebugLog.Debug($"SSE write failed (client likely disconnected): {ex.Message}");
-                    _cancelled = true;
-                    return false;
-                }
-                finally { _writeLock.Release(); }
-            }
         }
 
         #region IDisposable

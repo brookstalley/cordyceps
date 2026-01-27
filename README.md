@@ -23,9 +23,9 @@ It exposes **76 MCP tools** that let AI agents:
 
 **Rhino 8.21 or later** — Cordyceps requires .NET 8, which shipped with Rhino 8.21. Earlier versions won't load the plugin.
 
-**An MCP client with SSE support** — Cordyceps is a *pure SSE (Server-Sent Events) MCP server*. It runs an HTTP server directly from the Grasshopper plugin. You'll need an MCP client that can connect to SSE endpoints. [Claude Code](https://docs.anthropic.com/en/docs/claude-code) works great.
+**An MCP client with Streamable HTTP support** — Cordyceps implements the MCP 2025-06-18 specification using *Streamable HTTP* transport. It runs an HTTP server directly from the Grasshopper plugin. [Claude Code](https://docs.anthropic.com/en/docs/claude-code), Cursor, and VS Code Copilot all support this natively.
 
-**Not compatible with Claude Desktop's stdio mode** — Claude Desktop expects MCP servers to communicate via stdin/stdout as subprocess. Cordyceps runs inside Rhino's process. Use Claude Code or another SSE-capable client.
+**For Claude Desktop** — Use `mcp-remote` to bridge: `npx -y mcp-remote http://127.0.0.1:26929/mcp`
 
 ## Quick Start
 
@@ -52,19 +52,32 @@ Launch Rhino 8, then open Grasshopper. Drop the **Cordyceps** component onto you
 When the component loads, you'll see a message in the Rhino command line:
 
 ```
-Cordyceps: MCP server started on http://127.0.0.1:8080
-Cordyceps: SSE endpoint: http://127.0.0.1:8080/sse
+Cordyceps: MCP server started on http://127.0.0.1:26929/mcp
 ```
 
 ### 3. Connect Your MCP Client
 
-For **Claude Code**, configure the MCP server in your settings:
+For **Claude Code**, **Cursor**, or **VS Code Copilot**, configure the MCP server:
 
 ```json
 {
   "mcpServers": {
     "grasshopper": {
-      "url": "http://127.0.0.1:8080/sse"
+      "type": "streamable-http",
+      "url": "http://127.0.0.1:26929/mcp"
+    }
+  }
+}
+```
+
+For **Claude Desktop** (via mcp-remote bridge):
+
+```json
+{
+  "mcpServers": {
+    "grasshopper": {
+      "command": "npx",
+      "args": ["-y", "mcp-remote", "http://127.0.0.1:26929/mcp"]
     }
   }
 }
@@ -224,8 +237,8 @@ Cordyceps also exposes documentation as MCP resources that Claude can read:
 ### "Can't connect to MCP server"
 - Ensure the Cordyceps component is on your canvas
 - Check Rhino command line for "MCP server started" message
-- Verify port 8080 isn't in use; if it is, the component output shows the actual port
-- Make sure your MCP client uses **SSE mode**, not stdio
+- Verify port 26929 isn't in use; if it is, the component's port input can be changed
+- Make sure your MCP client supports **Streamable HTTP** transport
 
 ### "Connection times out"
 - The component must remain on the canvas—removing it stops the server
@@ -261,8 +274,8 @@ Cordyceps runs entirely within Rhino's process:
 │  │  ┌─────────────────────────────────┐  │  │
 │  │  │     Cordyceps Component         │  │  │
 │  │  │  ┌───────────────────────────┐  │  │  │
-│  │  │  │      MCP Server (SSE)     │◄─┼──┼──┼── Claude / MCP Client
-│  │  │  │      http://127.0.0.1:8080│  │  │  │
+│  │  │  │   MCP Server (HTTP)       │◄─┼──┼──┼── Claude / MCP Client
+│  │  │  │   http://127.0.0.1:26929  │  │  │  │
 │  │  │  └───────────────────────────┘  │  │  │
 │  │  │         │                       │  │  │
 │  │  │         ▼                       │  │  │
@@ -282,7 +295,7 @@ Cordyceps runs entirely within Rhino's process:
 └─────────────────────────────────────────────┘
 ```
 
-All Grasshopper operations execute on the UI thread via `GrasshopperContext.ExecuteOnUiThread()`. The MCP server handles HTTP/SSE on background threads, then marshals tool calls appropriately.
+All Grasshopper operations execute on the UI thread via `GrasshopperContext.ExecuteOnUiThread()`. The MCP server handles HTTP requests on background threads, then marshals tool calls appropriately.
 
 ## Acknowledgments
 

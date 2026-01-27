@@ -16,7 +16,7 @@ namespace Cordyceps
         private static readonly object _lock = new object();
         private static McpServer _mcpServer;
         private static CordycepsComponent _activeInstance;
-        private static int _currentPort = 8080;
+        private static int _currentPort = 26929;
 
         /// <summary>
         /// Initialize a new instance of the CordycepsComponent class
@@ -34,7 +34,7 @@ namespace Cordyceps
         protected override void RegisterInputParams(GH_InputParamManager pManager)
         {
             pManager.AddIntegerParameter("HttpPort", "P",
-                "Port for MCP HTTP/SSE server", GH_ParamAccess.item, 8080);
+                "Port for MCP HTTP server", GH_ParamAccess.item, 26929);
         }
 
         /// <summary>
@@ -55,7 +55,7 @@ namespace Cordyceps
         /// </summary>
         protected override void SolveInstance(IGH_DataAccess DA)
         {
-            int port = 8080;
+            int port = 26929;
             if (!DA.GetData(0, ref port)) return;
 
             lock (_lock)
@@ -170,7 +170,7 @@ namespace Cordyceps
             sb.AppendLine("Server: LISTENING (MCP Protocol)");
             sb.AppendLine($"Port: {_mcpServer.Port}");
             sb.AppendLine($"Commands received: {_mcpServer.CommandCount}");
-            sb.AppendLine($"SSE endpoint: http://localhost:{_mcpServer.Port}/sse");
+            sb.AppendLine($"MCP endpoint: http://localhost:{_mcpServer.Port}/mcp");
 
             return sb.ToString();
         }

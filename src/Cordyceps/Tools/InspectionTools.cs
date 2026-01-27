@@ -222,6 +222,12 @@ namespace Cordyceps.Tools
                             compName == searchLower ||
                             typeName == searchLower)
                         {
+                            // Look up category from proxy using ComponentGuid for accuracy
+                            var proxy = Instances.ComponentServer.ObjectProxies
+                                .FirstOrDefault(p => p.Guid == comp.ComponentGuid);
+                            var proxyCategory = proxy?.Desc.Category ?? comp.Category;
+                            var proxySubCategory = proxy?.Desc.SubCategory ?? comp.SubCategory;
+
                             matchingComponents.Add(new
                             {
                                 id = comp.InstanceGuid.ToString(),
@@ -229,8 +235,9 @@ namespace Cordyceps.Tools
                                 nickname = comp.NickName,
                                 displayName = ToolHelpers.GetDisplayName(comp),
                                 typeName = comp.GetType().Name,
-                                category = comp.Category,
-                                subCategory = comp.SubCategory,
+                                category = proxyCategory,
+                                subCategory = proxySubCategory,
+                                role = ComponentRegistry.GetRole(proxyCategory, proxySubCategory),
                                 inputCount = comp.Params.Input.Count,
                                 outputCount = comp.Params.Output.Count,
                                 position = new { x = comp.Attributes.Pivot.X, y = comp.Attributes.Pivot.Y }
@@ -248,6 +255,12 @@ namespace Cordyceps.Tools
                             paramName == searchLower ||
                             typeName == searchLower)
                         {
+                            // Look up category from proxy using ComponentGuid for accuracy
+                            var proxy = Instances.ComponentServer.ObjectProxies
+                                .FirstOrDefault(p => p.Guid == param.ComponentGuid);
+                            var category = proxy?.Desc.Category ?? "Params";
+                            var subCategory = proxy?.Desc.SubCategory ?? "Unknown";
+
                             matchingComponents.Add(new
                             {
                                 id = param.InstanceGuid.ToString(),
@@ -255,7 +268,9 @@ namespace Cordyceps.Tools
                                 nickname = param.NickName,
                                 displayName = ToolHelpers.GetDisplayName(param),
                                 typeName = param.GetType().Name,
-                                isParameter = true,
+                                category = category,
+                                subCategory = subCategory,
+                                role = ComponentRegistry.GetRole(category, subCategory),
                                 position = new { x = param.Attributes.Pivot.X, y = param.Attributes.Pivot.Y }
                             });
                         }
@@ -326,6 +341,12 @@ namespace Cordyceps.Tools
 
                     if (obj is IGH_Component comp)
                     {
+                        // Look up category from proxy using ComponentGuid for accuracy
+                        var proxy = Instances.ComponentServer.ObjectProxies
+                            .FirstOrDefault(p => p.Guid == comp.ComponentGuid);
+                        var category = proxy?.Desc.Category ?? comp.Category;
+                        var subCategory = proxy?.Desc.SubCategory ?? comp.SubCategory;
+
                         components.Add(new
                         {
                             id = comp.InstanceGuid.ToString(),
@@ -333,7 +354,9 @@ namespace Cordyceps.Tools
                             nickname = comp.NickName,
                             displayName = ToolHelpers.GetDisplayName(comp),
                             typeName = comp.GetType().Name,
-                            category = comp.Category,
+                            category = category,
+                            subCategory = subCategory,
+                            role = ComponentRegistry.GetRole(category, subCategory),
                             inputCount = comp.Params.Input.Count,
                             outputCount = comp.Params.Output.Count,
                             position = new { x = comp.Attributes.Pivot.X, y = comp.Attributes.Pivot.Y }
@@ -341,6 +364,12 @@ namespace Cordyceps.Tools
                     }
                     else if (obj is IGH_Param param)
                     {
+                        // Look up category from proxy using ComponentGuid for accuracy
+                        var proxy = Instances.ComponentServer.ObjectProxies
+                            .FirstOrDefault(p => p.Guid == param.ComponentGuid);
+                        var category = proxy?.Desc.Category ?? "Params";
+                        var subCategory = proxy?.Desc.SubCategory ?? "Unknown";
+
                         components.Add(new
                         {
                             id = param.InstanceGuid.ToString(),
@@ -348,7 +377,9 @@ namespace Cordyceps.Tools
                             nickname = param.NickName,
                             displayName = ToolHelpers.GetDisplayName(param),
                             typeName = param.GetType().Name,
-                            isParameter = true,
+                            category = category,
+                            subCategory = subCategory,
+                            role = ComponentRegistry.GetRole(category, subCategory),
                             position = new { x = param.Attributes.Pivot.X, y = param.Attributes.Pivot.Y }
                         });
                     }
