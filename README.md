@@ -42,6 +42,20 @@ async with ClientSession(transport) as session:
     })
 ```
 
+## Example
+
+Here's what happens when you give Claude this natural language prompt:
+
+> Create an array of cylinders radiating out from the origin on the XY plane, with settings for number of cylinders, length and diameter of the cylinders, and distance from origin. Then make copies of the whole array in Z, with additional settings for number of copies and distance between copies.
+
+![Radial Cylinder Array Animation](docs/images/radial_cylinders_animation.gif)
+
+The AI interprets the request and builds the complete Grasshopper definition step by step—adding sliders for parameters, creating the angle domain, rotating vectors radially, constructing planes for cylinder orientation, and setting up the Z-axis linear array.
+
+**Final result:**
+
+![Radial Cylinders Viewport](docs/images/radial_cylinders_viewport.png)
+
 ## Tools
 
 **Canvas**: `add_component`, `delete_component`, `move_component`, `search_components`, `get_all_components`

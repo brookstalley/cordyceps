@@ -36,11 +36,12 @@ Use `validate_layout()` to check overlaps. Fix overlapping components manually w
 ## Workflow
 
 1. `set_solver_enabled(false)` — prevent partial recalculation during construction
-2. Add components with `add_component(type, x, y)` using proper spacing
-3. Wire with `bulk_connect(connections)` for efficiency
-4. `set_solver_enabled(true)` — run the definition
-5. `get_canvas_status()` — check for errors/warnings
-6. `validate_layout()` — check for overlaps
+2. **If creating oriented geometry** (cylinders, cones, extrusions), read `gh://docs/geometry-orientation` first — oriented geometry extends along the plane's Z-axis, not X or Y
+3. Add components with `add_component(type, x, y)` using proper spacing
+4. Wire with `bulk_connect(connections)` for efficiency
+5. `set_solver_enabled(true)` — run the definition
+6. `get_canvas_status()` — check for errors/warnings
+7. `validate_layout()` — check for overlaps
 
 ## Key Tools
 
@@ -52,6 +53,8 @@ Validation: `get_canvas_status`, `validate_connection`, `validate_layout`, `get_
 
 Debugging: `get_component_outputs(id)`, `trace_data_flow(id, direction)`
 
+Visualization: `capture_canvas(outputPath)`, `capture_viewport(outputPath)`, `get_available_views()`
+
 ## Common Errors
 
 1. Adding components with solver enabled → partial recalculation errors OR slow performance
@@ -60,6 +63,20 @@ Debugging: `get_component_outputs(id)`, `trace_data_flow(id, direction)`
 4. Getting max(N,M) outputs instead of N×M → need to graft one input. See `gh://docs/data-trees`
 5. Unvalidated connections → silent type coercion failures
 6. Component overlaps → unreadable canvas. **Fix**: Use `validate_layout()` to detect, then `move_component()` to fix manually
+7. Geometry pointing wrong direction → oriented geometry (Cylinder, Cone, etc.) extends along the plane's **Z-axis**. Using XY Plane gives vertical geometry; use YZ Plane or Plane Normal for horizontal. See `gh://docs/geometry-orientation`
+
+## Capturing Images
+
+Use capture tools to see what you've built:
+
+- `capture_canvas(outputPath)` — Save the Grasshopper canvas as an image. Auto-fits to content by default.
+- `capture_canvas(outputPath, fitContent=false)` — Capture current view without auto-fitting.
+- `capture_canvas_region(outputPath, xMin, yMin, xMax, yMax)` — Capture a specific canvas region.
+- `capture_viewport(outputPath)` — Save the Rhino 3D viewport showing geometry preview.
+- `capture_viewport(outputPath, view="Top", width=1920, height=1080)` — Capture a specific view at custom resolution.
+- `get_available_views()` — List available Rhino viewports (Perspective, Top, Front, etc.)
+
+All capture functions return `base64` image data when `includeBase64=true`, useful for inline display.
 
 ## Resources
 
