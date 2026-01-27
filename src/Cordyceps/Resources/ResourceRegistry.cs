@@ -78,10 +78,6 @@ namespace Cordyceps.Resources
                 "How planes work in Grasshopper, which axis components use for direction, and how to create correctly oriented geometry");
 
             // Pattern resources
-            RegisterEmbeddedResource("gh://patterns/radial-array", "Knowledge.Patterns.RadialArray.md",
-                "Radial Array Pattern",
-                "Create N copies of geometry arranged in a circle around a center point");
-
             RegisterEmbeddedResource("gh://patterns/linear-array", "Knowledge.Patterns.LinearArray.md",
                 "Linear Array Pattern",
                 "Create N copies of geometry arranged in a straight line along a direction");

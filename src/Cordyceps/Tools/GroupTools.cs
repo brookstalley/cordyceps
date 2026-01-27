@@ -355,6 +355,97 @@ namespace Cordyceps.Tools
             });
         }
 
+        [McpServerTool, Description("Move all components in a group by an offset")]
+        public string MoveGroup(
+            [Description("Group GUID or name")] string group,
+            [Description("X offset to move")] double dx,
+            [Description("Y offset to move")] double dy)
+        {
+            _server?.RecordCommand("move_group");
+            return _context.ExecuteOnUiThread(() =>
+            {
+                if (!ToolHelpers.TryGetActiveDocument(_context, out var doc, out var error))
+                    return ToolHelpers.ErrorResponse(error);
+
+                // Find group by GUID or name
+                GH_Group targetGroup = null;
+                if (Guid.TryParse(group, out Guid groupGuid))
+                {
+                    targetGroup = doc.FindObject(groupGuid, true) as GH_Group;
+                }
+
+                if (targetGroup == null)
+                {
+                    // Try to find by name
+                    foreach (var obj in doc.Objects)
+                    {
+                        if (obj is GH_Group g &&
+                            (g.NickName.Equals(group, StringComparison.OrdinalIgnoreCase) ||
+                             g.Name.Equals(group, StringComparison.OrdinalIgnoreCase)))
+                        {
+                            targetGroup = g;
+                            break;
+                        }
+                    }
+                }
+
+                if (targetGroup == null)
+                    return ToolHelpers.ErrorResponse($"Group not found: {group}");
+
+                var memberIds = targetGroup.ObjectIDs?.ToList() ?? new List<Guid>();
+                if (memberIds.Count == 0)
+                {
+                    return JsonConvert.SerializeObject(new
+                    {
+                        success = true,
+                        groupId = targetGroup.InstanceGuid.ToString(),
+                        groupName = targetGroup.NickName,
+                        movedCount = 0,
+                        message = "Group has no members to move"
+                    });
+                }
+
+                int movedCount = 0;
+                foreach (var memberId in memberIds)
+                {
+                    var member = doc.FindObject(memberId, true);
+                    if (member?.Attributes != null)
+                    {
+                        var currentPivot = member.Attributes.Pivot;
+                        member.Attributes.Pivot = new PointF(
+                            currentPivot.X + (float)dx,
+                            currentPivot.Y + (float)dy);
+                        member.Attributes.ExpireLayout();
+                        movedCount++;
+                    }
+                }
+
+                targetGroup.ExpireCaches();
+                Instances.ActiveCanvas?.Invalidate();
+
+                // Get updated group bounds
+                var newBounds = targetGroup.Attributes?.Bounds ?? RectangleF.Empty;
+
+                return JsonConvert.SerializeObject(new
+                {
+                    success = true,
+                    groupId = targetGroup.InstanceGuid.ToString(),
+                    groupName = targetGroup.NickName,
+                    movedCount,
+                    offset = new { dx, dy },
+                    bounds = new
+                    {
+                        x = newBounds.X,
+                        y = newBounds.Y,
+                        width = newBounds.Width,
+                        height = newBounds.Height,
+                        right = newBounds.Right,
+                        bottom = newBounds.Bottom
+                    }
+                });
+            });
+        }
+
         [McpServerTool, Description("Get all visual groups on the canvas")]
         public string GetAllGroups()
         {
@@ -371,6 +462,7 @@ namespace Cordyceps.Tools
                     if (obj is GH_Group group)
                     {
                         var memberIds = group.ObjectIDs?.Select(g => g.ToString()).ToList() ?? new List<string>();
+                        var groupBounds = group.Attributes?.Bounds ?? RectangleF.Empty;
 
                         groups.Add(new
                         {
@@ -378,7 +470,16 @@ namespace Cordyceps.Tools
                             name = group.NickName,
                             color = ColorTranslator.ToHtml(group.Colour),
                             memberCount = memberIds.Count,
-                            memberIds
+                            memberIds,
+                            bounds = new
+                            {
+                                x = groupBounds.X,
+                                y = groupBounds.Y,
+                                width = groupBounds.Width,
+                                height = groupBounds.Height,
+                                right = groupBounds.Right,
+                                bottom = groupBounds.Bottom
+                            }
                         });
                     }
                 }

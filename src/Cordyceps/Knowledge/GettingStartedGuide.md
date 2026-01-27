@@ -17,13 +17,21 @@ Grasshopper uses hierarchical data trees with paths like `{0;0;1}`, not flat arr
 
 ## Layout
 
-Components have physical dimensions and overlap if placed poorly.
+**Goal: Avoid backwards wires. Prefer vertical stacking over horizontal spread.**
 
-Typical sizes: Number Slider ~200x20px, Panel ~100x50px, Components ~80x50px.
+Components have physical dimensions. Place carefully to avoid overlaps.
 
-Spacing: 150px horizontal between columns, 70px vertical between rows. Inputs at x≈50, processing at x≈250,400,550..., outputs rightmost.
+Typical sizes: Number Slider ~200x20px, Panel ~100x50px, Components ~60-80x50px.
 
-Use `validate_layout()` to check overlaps.
+**Spacing:**
+- **Horizontal**: 60-80px between columns (about 1x component width)
+- **Vertical**: 70px between stacked components
+- **Inputs**: Stack sliders vertically at x≈50, y=50/120/190/260...
+- **Processing**: Columns at x≈300, 380, 460... (after sliders' right edge)
+
+**Key principle**: Minimize horizontal spread. Stack inputs vertically. Only spread horizontally to follow data flow direction.
+
+Use `validate_layout()` to check overlaps. Fix overlapping components manually with `move_component()`.
 
 ## Workflow
 
@@ -49,8 +57,9 @@ Debugging: `get_component_outputs(id)`, `trace_data_flow(id, direction)`
 1. Adding components with solver enabled → partial recalculation errors OR slow performance
 2. Overlapping components → unreadable canvas
 3. Wrong role → using Circle parameter instead of Circle component
-4. Tree mismatch → unexpected cross-products or null data
+4. Getting max(N,M) outputs instead of N×M → need to graft one input. See `gh://docs/data-trees`
 5. Unvalidated connections → silent type coercion failures
+6. Component overlaps → unreadable canvas. **Fix**: Use `validate_layout()` to detect, then `move_component()` to fix manually
 
 ## Resources
 
@@ -59,4 +68,4 @@ Debugging: `get_component_outputs(id)`, `trace_data_flow(id, direction)`
 - `gh://docs/geometry-orientation` — how planes work, which axis is "direction" for oriented geometry
 - `gh://docs/type-system` — type compatibility
 - `gh://component/{name}` — any component's inputs/outputs (includes orientation hints)
-- `gh://patterns/*` — radial-array, linear-array, grid-array
+- `gh://patterns/*` — linear-array, grid-array

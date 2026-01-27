@@ -382,25 +382,39 @@ namespace Cordyceps.Tools
 
                 foreach (var result in basicResults)
                 {
-                    // Get enhanced information
-                    var isDeprecated = DeprecationRegistry.Instance.IsDeprecated(result.Name);
-                    var upgradeInfo = DeprecationRegistry.Instance.GetUpgradeInfo(result.Name);
-
                     // Try to get plugin info based on category
                     var pluginInfo = PluginRegistry.Instance.GetPluginForCategory(result.Category);
 
-                    // Try to create instance for parameter info
+                    // Try to create instance for parameter info and deprecation checking
                     var inputs = new List<object>();
                     var outputs = new List<object>();
+                    var isDeprecated = false;
+                    UpgradeInfo upgradeInfo = null;
+                    var proxyObsolete = false;
+                    var typeNameObsolete = false;
 
                     try
                     {
                         if (Guid.TryParse(result.Guid, out Guid guid))
                         {
+                            // Check deprecation by GUID (correct approach)
+                            isDeprecated = DeprecationRegistry.Instance.IsDeprecated(guid);
+                            upgradeInfo = DeprecationRegistry.Instance.GetUpgradeInfo(guid);
+
                             var proxy = Instances.ComponentServer.ObjectProxies.FirstOrDefault(p => p.Guid == guid);
                             if (proxy != null)
                             {
+                                // Check proxy.Obsolete property
+                                proxyObsolete = proxy.Obsolete;
+
                                 var instance = proxy.CreateInstance();
+
+                                // Check if type name contains OBSOLETE (another deprecation indicator)
+                                if (instance != null)
+                                {
+                                    typeNameObsolete = instance.GetType().Name.Contains("OBSOLETE", StringComparison.OrdinalIgnoreCase);
+                                }
+
                                 if (instance is IGH_Component comp)
                                 {
                                     foreach (var input in comp.Params.Input)
@@ -433,6 +447,9 @@ namespace Cordyceps.Tools
                         // Ignore errors creating instances
                     }
 
+                    // Component is deprecated if ANY deprecation indicator is true
+                    var finalDeprecated = isDeprecated || proxyObsolete || typeNameObsolete;
+
                     var role = ComponentRegistry.GetRole(result.Category, result.SubCategory);
 
                     enhancedResults.Add(new
@@ -443,7 +460,7 @@ namespace Cordyceps.Tools
                         subCategory = result.SubCategory,
                         role = role,
                         guid = result.Guid,
-                        deprecated = isDeprecated,
+                        deprecated = finalDeprecated,
                         upgrade = upgradeInfo != null ? new
                         {
                             toName = upgradeInfo.ToName,
@@ -459,11 +476,17 @@ namespace Cordyceps.Tools
                     });
                 }
 
+                // Sort results: non-deprecated first, then by name length (shorter = more specific match)
+                var sortedResults = enhancedResults
+                    .OrderBy(r => ((dynamic)r).deprecated ? 1 : 0)
+                    .ThenBy(r => ((dynamic)r).name.Length)
+                    .ToList();
+
                 return JsonConvert.SerializeObject(new
                 {
                     success = true,
-                    count = enhancedResults.Count,
-                    components = enhancedResults
+                    count = sortedResults.Count,
+                    components = sortedResults
                 });
             });
         }
@@ -717,9 +740,9 @@ namespace Cordyceps.Tools
                     var comp2 = sortedByX[i + 1];
 
                     var gap = comp2.Attributes.Bounds.X - comp1.Attributes.Bounds.Right;
-                    if (gap > 0 && gap < 50) // Less than 50 units is tight
+                    if (gap > 0 && gap < 40) // Less than 40px is too tight
                     {
-                        suggestions.Add($"Tight horizontal spacing ({gap:F0}px) between '{ToolHelpers.GetDisplayName(comp1)}' and '{ToolHelpers.GetDisplayName(comp2)}' - consider 100-150px gaps");
+                        suggestions.Add($"Tight horizontal spacing ({gap:F0}px) between '{ToolHelpers.GetDisplayName(comp1)}' and '{ToolHelpers.GetDisplayName(comp2)}' - consider 60-80px gaps");
                     }
                 }
 
@@ -760,11 +783,12 @@ namespace Cordyceps.Tools
             });
         }
 
-        [McpServerTool, Description("Automatically space components to eliminate overlaps")]
+        // TODO: V1.1 - Re-enable when auto-spacing is improved to preserve intentional layout
+        // [McpServerTool, Description("Automatically space components to eliminate overlaps")]
         public string AutoSpaceComponents(
-            [Description("Spacing mode: 'horizontal', 'vertical', 'grid', or 'flow' (respects data flow, stacks unconnected components vertically)")] string mode = "horizontal",
+            [Description("Spacing mode: 'flow' (default, respects data flow direction, stacks components at same depth vertically), 'vertical' (stack all vertically), 'horizontal' (WARNING: destroys vertical stacking), 'grid'")] string mode = "flow",
             [Description("JSON array of component IDs to arrange (optional, defaults to all)")] string componentIds = null,
-            [Description("Spacing between components in pixels")] int spacing = 100,
+            [Description("Spacing between components in pixels. Default 60 is about 1x component width.")] int spacing = 60,
             [Description("Component ID to keep fixed as anchor (optional)")] string anchor = null)
         {
             _server?.RecordCommand("auto_space_components");

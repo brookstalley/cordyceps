@@ -27,13 +27,17 @@ When placing a component at (x, y), that coordinate is the **pivot point**, not 
 
 ## Spacing Rules
 
-| Spacing Type | Pixels |
-|--------------|--------|
-| Between columns | 150 minimum |
-| After sliders | 200 (sliders are wide) |
-| Vertical between sliders | 70 |
-| Vertical between components | 70-100 |
-| Between groups | 50 |
+**Goal: Avoid backwards wires, minimize horizontal spread, prefer vertical stacking when readable.**
+
+| Spacing Type | Pixels | Notes |
+|--------------|--------|-------|
+| Horizontal between columns | 60-80 | ~1x component width; just enough to avoid overlap |
+| After sliders | 60-80 | Sliders are wide but wire to their right edge |
+| Vertical between stacked inputs | 70 | Sliders, panels at same X should stack vertically |
+| Vertical between components | 50-70 | Tighter than horizontal |
+| Between groups | 30 |  |
+
+**Key principle**: Horizontal spacing should be just enough to prevent overlapping—about 1-1.5x a typical component's width (60-80px). Excessive horizontal spacing makes definitions hard to read.
 
 ## Standard Layout
 
@@ -80,11 +84,13 @@ Calculate next position: `next_x = previous.right + 150`
 ## Workflow
 
 1. `set_solver_enabled(false)`
-2. Add inputs at x=50, y=50/120/190... (70px gaps)
-3. Add processing at x=250, 400, 550...
-4. Use `get_component_bounds` for precise positioning
-5. Wire with `bulk_connect`
-6. `set_solver_enabled(true)`
-7. `get_canvas_status()` then `validate_layout()`
-8. `add_to_group` for organization
-9. Use `auto_space_components(mode="flow")` if layout needs fixing
+2. Add inputs at x=50, y=50/120/190... (70px vertical gaps, stacked)
+3. Add processing columns at x=300, 380, 460... (60-80px gaps)
+4. Wire with `bulk_connect`
+5. `set_solver_enabled(true)`
+6. `get_canvas_status()` then `validate_layout()`
+7. `add_to_group` for organization
+
+## Fixing Overlaps
+
+**Best approach**: Place components correctly initially using the spacing rules above. Use `validate_layout()` to detect any problems, then use `move_component()` to fix specific overlaps manually.
