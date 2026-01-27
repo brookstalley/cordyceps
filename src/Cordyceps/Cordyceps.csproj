@@ -1,0 +1,62 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <!-- Cross-platform Rhino 8.21+ (macOS + Windows) - .NET 8 for MCP SDK -->
+    <TargetFramework>net8.0</TargetFramework>
+    <OutputType>Library</OutputType>
+    <EnableDynamicLoading>true</EnableDynamicLoading>
+    <TargetExt>.gha</TargetExt>
+    <NoWarn>NU1701;NETSDK1086</NoWarn>
+
+    <!-- Only allow Release builds -->
+    <Configurations>Release</Configurations>
+  </PropertyGroup>
+
+  <!-- Block Debug builds with a clear error message -->
+  <Target Name="BlockDebugBuilds" BeforeTargets="Build" Condition=" '$(Configuration)' != 'Release' ">
+    <Error Text="Only Release builds are supported. Use 'dotnet build' (defaults to Release) or 'dotnet build -c Release'." />
+  </Target>
+
+  <PropertyGroup>
+    <!-- Release optimization settings -->
+    <Optimize>true</Optimize>
+    <DebugType>none</DebugType>
+    <DebugSymbols>false</DebugSymbols>
+  </PropertyGroup>
+
+  <PropertyGroup>
+    <!-- Specifies information for Assembly -->
+    <Version>1.0.0</Version>
+    <Title>Cordyceps</Title>
+    <Company>Brooks Talley</Company>
+    <Description>Grasshopper MCP Bridge - Claude takes control of Grasshopper</Description>
+    <!-- Embed build timestamp into assembly -->
+    <SourceRevisionId>build$([System.DateTime]::UtcNow.ToString("yyyyMMddHHmmss"))</SourceRevisionId>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Grasshopper (Rhino 8) -->
+    <PackageReference Include="Grasshopper" Version="8.0.23304.9001" ExcludeAssets="runtime" />
+
+    <!-- JSON serialization -->
+    <PackageReference Include="Newtonsoft.Json" Version="13.0.3" />
+  </ItemGroup>
+
+  <!-- Reference WinForms for cross-platform .NET 7.0 -->
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NETFramework.ReferenceAssemblies.net48" Version="1.0.3" ExcludeAssets="all" GeneratePathProperty="true" />
+    <Reference Include="$(PkgMicrosoft_NETFramework_ReferenceAssemblies_net48)\build\.NETFramework\v4.8\System.Windows.Forms.dll" Private="False" />
+    <PackageReference Include="System.Drawing.Common" Version="8.0.0" ExcludeAssets="runtime" />
+  </ItemGroup>
+
+  <!-- Post-build: Copy .gha to releases folder for Grasshopper to load -->
+  <Target Name="CopyToReleases" AfterTargets="Build">
+    <PropertyGroup>
+      <ReleasesFolder>$(MSBuildProjectDirectory)\..\..\releases</ReleasesFolder>
+    </PropertyGroup>
+    <MakeDir Directories="$(ReleasesFolder)" Condition="!Exists('$(ReleasesFolder)')" />
+    <Copy SourceFiles="$(TargetPath)" DestinationFolder="$(ReleasesFolder)" />
+    <Message Importance="High" Text="Copied $(TargetFileName) to $(ReleasesFolder)" />
+  </Target>
+
+</Project>

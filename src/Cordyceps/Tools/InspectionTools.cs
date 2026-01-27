@@ -1,0 +1,669 @@
+using System;
+using System.Collections.Generic;
+using System.ComponentModel;
+using System.Linq;
+using Cordyceps.Core;
+using Grasshopper;
+using Grasshopper.Kernel;
+using Newtonsoft.Json;
+
+namespace Cordyceps.Tools
+{
+    /// <summary>
+    /// Inspection and diagnostic operations
+    /// </summary>
+    [McpServerToolType]
+    public class InspectionTools
+    {
+        private readonly GrasshopperContext _context;
+        private readonly McpServer _server;
+
+        public InspectionTools(GrasshopperContext context, McpServer server)
+        {
+            _context = context;
+            _server = server;
+        }
+
+        [McpServerTool, Description("Get the status of all components on the canvas (OK, ERROR, WARNING, DISCONNECTED)")]
+        public string GetCanvasStatus()
+        {
+            _server?.RecordCommand("get_canvas_status");
+            return _context.ExecuteOnUiThread(() =>
+            {
+                var doc = _context.GetActiveDocument();
+                if (doc == null)
+                {
+                    return JsonConvert.SerializeObject(new { success = false, error = "No active Grasshopper document" });
+                }
+
+                var components = new List<object>();
+                int okCount = 0, errorCount = 0, warningCount = 0, disconnectedCount = 0;
+
+                foreach (var obj in doc.Objects)
+                {
+                    if (obj is IGH_Component comp)
+                    {
+                        string status = "OK";
+                        string statusMessage = "";
+
+                        // Check runtime messages
+                        if (comp.RuntimeMessageLevel == GH_RuntimeMessageLevel.Error)
+                        {
+                            status = "ERROR";
+                            statusMessage = string.Join("; ", comp.RuntimeMessages(GH_RuntimeMessageLevel.Error));
+                            errorCount++;
+                        }
+                        else if (comp.RuntimeMessageLevel == GH_RuntimeMessageLevel.Warning)
+                        {
+                            status = "WARNING";
+                            statusMessage = string.Join("; ", comp.RuntimeMessages(GH_RuntimeMessageLevel.Warning));
+                            warningCount++;
+                        }
+                        else
+                        {
+                            // Check for disconnected required inputs
+                            bool hasDisconnected = false;
+                            var disconnectedInputs = new List<string>();
+
+                            foreach (var input in comp.Params.Input)
+                            {
+                                if (!input.Optional && input.SourceCount == 0 && input.VolatileDataCount == 0)
+                                {
+                                    hasDisconnected = true;
+                                    disconnectedInputs.Add(input.Name);
+                                }
+                            }
+
+                            if (hasDisconnected)
+                            {
+                                status = "DISCONNECTED";
+                                statusMessage = $"Missing inputs: {string.Join(", ", disconnectedInputs)}";
+                                disconnectedCount++;
+                            }
+                            else
+                            {
+                                okCount++;
+                            }
+                        }
+
+                        components.Add(new
+                        {
+                            id = comp.InstanceGuid.ToString(),
+                            name = comp.Name,
+                            nickname = comp.NickName,
+                            status,
+                            message = statusMessage,
+                            inputCount = comp.Params.Input.Count,
+                            outputCount = comp.Params.Output.Count
+                        });
+                    }
+                }
+
+                return JsonConvert.SerializeObject(new
+                {
+                    success = true,
+                    summary = new
+                    {
+                        total = components.Count,
+                        ok = okCount,
+                        error = errorCount,
+                        warning = warningCount,
+                        disconnected = disconnectedCount
+                    },
+                    components
+                });
+            });
+        }
+
+        [McpServerTool, Description("Get all disconnected (unconnected required) inputs across components")]
+        public string GetDisconnectedInputs(
+            [Description("Filter by component type: 'all', 'script', or component name")] string type = "all")
+        {
+            _server?.RecordCommand("get_disconnected_inputs");
+            return _context.ExecuteOnUiThread(() =>
+            {
+                var doc = _context.GetActiveDocument();
+                if (doc == null)
+                {
+                    return JsonConvert.SerializeObject(new { success = false, error = "No active Grasshopper document" });
+                }
+
+                var disconnected = new List<object>();
+
+                foreach (var obj in doc.Objects)
+                {
+                    if (obj is IGH_Component comp)
+                    {
+                        // Filter by type
+                        bool include = type == "all"
+                            || (type == "script" && (comp.Name.Contains("Script") || comp.GetType().Name.Contains("Script")))
+                            || comp.Name.IndexOf(type, StringComparison.OrdinalIgnoreCase) >= 0;
+
+                        if (!include) continue;
+
+                        foreach (var input in comp.Params.Input)
+                        {
+                            if (!input.Optional && input.SourceCount == 0 && input.VolatileDataCount == 0)
+                            {
+                                disconnected.Add(new
+                                {
+                                    componentId = comp.InstanceGuid.ToString(),
+                                    componentName = comp.Name,
+                                    componentNickname = comp.NickName,
+                                    inputName = input.Name,
+                                    inputNickname = input.NickName,
+                                    inputIndex = comp.Params.Input.IndexOf(input),
+                                    inputType = input.TypeName
+                                });
+                            }
+                        }
+                    }
+                }
+
+                return JsonConvert.SerializeObject(new
+                {
+                    success = true,
+                    count = disconnected.Count,
+                    disconnected
+                });
+            });
+        }
+
+        [McpServerTool, Description("Trace the data flow upstream or downstream from a component")]
+        public string TraceDataFlow(
+            [Description("Component GUID to trace from")] string id,
+            [Description("Direction: 'upstream' or 'downstream'")] string direction = "upstream")
+        {
+            _server?.RecordCommand("trace_data_flow");
+            return _context.ExecuteOnUiThread(() =>
+            {
+                var doc = _context.GetActiveDocument();
+                if (doc == null)
+                {
+                    return JsonConvert.SerializeObject(new { success = false, error = "No active Grasshopper document" });
+                }
+
+                if (!Guid.TryParse(id, out Guid guid))
+                {
+                    return JsonConvert.SerializeObject(new { success = false, error = "Invalid component ID" });
+                }
+
+                var component = doc.FindObject(guid, true);
+                if (component == null)
+                {
+                    return JsonConvert.SerializeObject(new { success = false, error = $"Component not found: {id}" });
+                }
+
+                var traced = new List<object>();
+                var visited = new HashSet<Guid>();
+
+                if (direction.ToLowerInvariant() == "upstream")
+                {
+                    TraceUpstream(component, traced, visited, 0);
+                }
+                else
+                {
+                    TraceDownstream(component, traced, visited, 0);
+                }
+
+                return JsonConvert.SerializeObject(new
+                {
+                    success = true,
+                    startComponent = new
+                    {
+                        id = component.InstanceGuid.ToString(),
+                        name = component.Name
+                    },
+                    direction,
+                    count = traced.Count,
+                    trace = traced
+                });
+            });
+        }
+
+        [McpServerTool, Description("Get the output values/data from a component")]
+        public string GetComponentOutputs(
+            [Description("Component GUID")] string id)
+        {
+            _server?.RecordCommand("get_component_outputs");
+            return _context.ExecuteOnUiThread(() =>
+            {
+                var doc = _context.GetActiveDocument();
+                if (doc == null)
+                {
+                    return JsonConvert.SerializeObject(new { success = false, error = "No active Grasshopper document" });
+                }
+
+                if (!Guid.TryParse(id, out Guid guid))
+                {
+                    return JsonConvert.SerializeObject(new { success = false, error = "Invalid component ID" });
+                }
+
+                var obj = doc.FindObject(guid, true);
+                if (obj == null)
+                {
+                    return JsonConvert.SerializeObject(new { success = false, error = $"Component not found: {id}" });
+                }
+
+                var outputs = new List<object>();
+
+                if (obj is IGH_Component comp)
+                {
+                    foreach (var output in comp.Params.Output)
+                    {
+                        var data = new List<string>();
+                        foreach (var item in output.VolatileData.AllData(true))
+                        {
+                            data.Add(item?.ToString() ?? "null");
+                        }
+
+                        outputs.Add(new
+                        {
+                            name = output.Name,
+                            nickname = output.NickName,
+                            type = output.TypeName,
+                            dataCount = output.VolatileDataCount,
+                            branchCount = output.VolatileData.PathCount,
+                            recipientCount = output.Recipients.Count,
+                            // Limit data preview to first 10 items
+                            preview = data.Take(10).ToList(),
+                            truncated = data.Count > 10
+                        });
+                    }
+                }
+                else if (obj is IGH_Param param)
+                {
+                    var data = new List<string>();
+                    foreach (var item in param.VolatileData.AllData(true))
+                    {
+                        data.Add(item?.ToString() ?? "null");
+                    }
+
+                    outputs.Add(new
+                    {
+                        name = param.Name,
+                        nickname = param.NickName,
+                        type = param.TypeName,
+                        dataCount = param.VolatileDataCount,
+                        branchCount = param.VolatileData.PathCount,
+                        recipientCount = param.Recipients.Count,
+                        preview = data.Take(10).ToList(),
+                        truncated = data.Count > 10
+                    });
+                }
+
+                return JsonConvert.SerializeObject(new
+                {
+                    success = true,
+                    id = obj.InstanceGuid.ToString(),
+                    name = obj.Name,
+                    outputs
+                });
+            });
+        }
+
+[McpServerTool, Description("Get all debug report outputs (dbg_Report, out, Report) from script components")]
+        public string GetDebugReports()
+        {
+            _server?.RecordCommand("get_debug_reports");
+            return _context.ExecuteOnUiThread(() =>
+            {
+                var doc = _context.GetActiveDocument();
+                if (doc == null)
+                {
+                    return JsonConvert.SerializeObject(new { success = false, error = "No active Grasshopper document" });
+                }
+
+                var reports = new List<object>();
+
+                foreach (var obj in doc.Objects)
+                {
+                    if (!(obj is IGH_Component comp)) continue;
+
+                    // Filter to script components
+                    string typeName = comp.GetType().Name;
+                    if (!typeName.Contains("Script") && !typeName.Contains("CSharp") && !typeName.Contains("Python"))
+                        continue;
+
+                    // Find dbg_Report or similar output
+                    var reportParam = comp.Params.Output.FirstOrDefault(p =>
+                        p.Name.Contains("Report") || p.Name.Contains("report") ||
+                        p.Name == "dbg_Report" || p.Name == "out");
+
+                    if (reportParam != null && reportParam.VolatileDataCount > 0)
+                    {
+                        var reportData = new List<string>();
+                        foreach (var item in reportParam.VolatileData.AllData(true))
+                        {
+                            var val = item?.ToString();
+                            if (val != null)
+                                reportData.Add(val);
+                        }
+
+                        if (reportData.Count > 0)
+                        {
+                            reports.Add(new
+                            {
+                                componentId = comp.InstanceGuid.ToString(),
+                                componentName = comp.NickName ?? comp.Name,
+                                paramName = reportParam.Name,
+                                report = string.Join("\n", reportData)
+                            });
+                        }
+                    }
+                }
+
+                return JsonConvert.SerializeObject(new
+                {
+                    success = true,
+                    count = reports.Count,
+                    reports
+                });
+            });
+        }
+
+        [McpServerTool, Description("Get geometry information from a component's output (bounding box, counts, validity)")]
+        public string GetGeometry(
+            [Description("Component GUID")] string id)
+        {
+            _server?.RecordCommand("get_geometry");
+            return _context.ExecuteOnUiThread(() =>
+            {
+                var doc = _context.GetActiveDocument();
+                if (doc == null)
+                {
+                    return JsonConvert.SerializeObject(new { success = false, error = "No active Grasshopper document" });
+                }
+
+                if (!Guid.TryParse(id, out Guid guid))
+                {
+                    return JsonConvert.SerializeObject(new { success = false, error = "Invalid component ID" });
+                }
+
+                var obj = doc.FindObject(guid, true);
+                if (obj == null)
+                {
+                    return JsonConvert.SerializeObject(new { success = false, error = $"Component not found: {id}" });
+                }
+
+                var outputs = new List<object>();
+                IEnumerable<IGH_Param> outputParams = null;
+
+                if (obj is IGH_Component comp)
+                {
+                    outputParams = comp.Params.Output;
+                }
+                else if (obj is IGH_Param param)
+                {
+                    outputParams = new[] { param };
+                }
+
+                if (outputParams != null)
+                {
+                    foreach (var output in outputParams)
+                    {
+                        var geometryInfo = new List<object>();
+
+                        foreach (var data in output.VolatileData.AllData(true))
+                        {
+                            var info = SerializeGeometryInfo(data);
+                            if (info != null)
+                                geometryInfo.Add(info);
+                        }
+
+                        if (geometryInfo.Count > 0)
+                        {
+                            outputs.Add(new
+                            {
+                                name = output.Name,
+                                type = output.TypeName,
+                                count = geometryInfo.Count,
+                                // Limit to first 10 items
+                                items = geometryInfo.Take(10).ToList(),
+                                truncated = geometryInfo.Count > 10
+                            });
+                        }
+                    }
+                }
+
+                return JsonConvert.SerializeObject(new
+                {
+                    success = true,
+                    id = obj.InstanceGuid.ToString(),
+                    name = obj.Name,
+                    outputs
+                });
+            });
+        }
+
+        private object SerializeGeometryInfo(object val)
+        {
+            if (val == null) return null;
+
+            // Handle GH wrapper types
+            if (val is Grasshopper.Kernel.Types.IGH_Goo goo)
+            {
+                val = goo.ScriptVariable();
+                if (val == null) return new { type = goo.GetType().Name, value = "null" };
+            }
+
+            // Primitives and strings
+            if (val is string s)
+                return new { type = "string", value = s.Length > 200 ? s.Substring(0, 200) + "..." : s };
+            if (val is int || val is double || val is float || val is bool || val is long)
+                return new { type = val.GetType().Name, value = val };
+
+            // Rhino geometry types
+            if (val is Rhino.Geometry.Point3d pt)
+                return new { type = "Point3d", x = pt.X, y = pt.Y, z = pt.Z };
+            if (val is Rhino.Geometry.Vector3d vec)
+                return new { type = "Vector3d", x = vec.X, y = vec.Y, z = vec.Z };
+            if (val is Rhino.Geometry.Plane plane)
+                return new
+                {
+                    type = "Plane",
+                    origin = new { x = plane.Origin.X, y = plane.Origin.Y, z = plane.Origin.Z },
+                    normal = new { x = plane.Normal.X, y = plane.Normal.Y, z = plane.Normal.Z }
+                };
+
+            if (val is Rhino.Geometry.Mesh mesh)
+            {
+                var bbox = mesh.GetBoundingBox(true);
+                return new
+                {
+                    type = "Mesh",
+                    faces = mesh.Faces.Count,
+                    vertices = mesh.Vertices.Count,
+                    isValid = mesh.IsValid,
+                    isClosed = mesh.IsClosed,
+                    bbox = FormatBoundingBox(bbox)
+                };
+            }
+
+            if (val is Rhino.Geometry.Curve curve)
+            {
+                var bbox = curve.GetBoundingBox(true);
+                return new
+                {
+                    type = "Curve",
+                    length = curve.GetLength(),
+                    isClosed = curve.IsClosed,
+                    bbox = FormatBoundingBox(bbox)
+                };
+            }
+
+            if (val is Rhino.Geometry.Brep brep)
+            {
+                var bbox = brep.GetBoundingBox(true);
+                return new
+                {
+                    type = "Brep",
+                    faces = brep.Faces.Count,
+                    edges = brep.Edges.Count,
+                    isValid = brep.IsValid,
+                    isSolid = brep.IsSolid,
+                    bbox = FormatBoundingBox(bbox)
+                };
+            }
+
+            if (val is Rhino.Geometry.Surface surface)
+            {
+                var bbox = surface.GetBoundingBox(true);
+                return new
+                {
+                    type = "Surface",
+                    bbox = FormatBoundingBox(bbox)
+                };
+            }
+
+            // Fallback
+            return new { type = val.GetType().Name, value = val.ToString() };
+        }
+
+        private object FormatBoundingBox(Rhino.Geometry.BoundingBox bbox)
+        {
+            return new
+            {
+                min = new { x = bbox.Min.X, y = bbox.Min.Y, z = bbox.Min.Z },
+                max = new { x = bbox.Max.X, y = bbox.Max.Y, z = bbox.Max.Z }
+            };
+        }
+
+        [McpServerTool, Description("Get debug log entries from the Cordyceps log buffer")]
+        public string GetDebugLog(
+            [Description("Maximum number of entries to return (default 100)")] int limit = 100,
+            [Description("Clear the log buffer after retrieval")] bool clear = false)
+        {
+            _server?.RecordCommand("get_debug_log");
+
+            if (limit <= 0) limit = 100;
+
+            var entries = DebugLog.GetEntries(clear);
+
+            // Take only the most recent entries up to limit
+            var recentEntries = entries.Count > limit
+                ? entries.GetRange(entries.Count - limit, limit)
+                : entries;
+
+            var logLines = new List<object>();
+            foreach (var entry in recentEntries)
+            {
+                logLines.Add(new
+                {
+                    timestamp = entry.Timestamp.ToString("HH:mm:ss.fff"),
+                    level = entry.Level,
+                    message = entry.Message
+                });
+            }
+
+            return JsonConvert.SerializeObject(new
+            {
+                success = true,
+                entries = logLines,
+                count = logLines.Count,
+                totalBuffered = entries.Count,
+                cleared = clear
+            });
+        }
+
+        [McpServerTool, Description("Clear the debug log buffer")]
+        public string ClearDebugLog()
+        {
+            _server?.RecordCommand("clear_debug_log");
+            DebugLog.Clear();
+            return JsonConvert.SerializeObject(new { success = true, message = "Debug log cleared" });
+        }
+
+        #region Helper Methods
+
+        private void TraceUpstream(IGH_DocumentObject obj, List<object> traced, HashSet<Guid> visited, int depth)
+        {
+            if (visited.Contains(obj.InstanceGuid)) return;
+            if (depth > 50) return; // Prevent infinite loops
+
+            visited.Add(obj.InstanceGuid);
+
+            IEnumerable<IGH_Param> inputs = null;
+
+            if (obj is IGH_Component comp)
+            {
+                inputs = comp.Params.Input;
+            }
+            else if (obj is IGH_Param param)
+            {
+                inputs = new[] { param };
+            }
+
+            if (inputs == null) return;
+
+            foreach (var input in inputs)
+            {
+                foreach (var source in input.Sources)
+                {
+                    var sourceObj = source.Attributes.GetTopLevel.DocObject;
+
+                    traced.Add(new
+                    {
+                        id = sourceObj.InstanceGuid.ToString(),
+                        name = sourceObj.Name,
+                        nickname = sourceObj.NickName,
+                        depth = depth + 1,
+                        connectedVia = new
+                        {
+                            fromOutput = source.Name,
+                            toInput = input.Name
+                        }
+                    });
+
+                    TraceUpstream(sourceObj, traced, visited, depth + 1);
+                }
+            }
+        }
+
+        private void TraceDownstream(IGH_DocumentObject obj, List<object> traced, HashSet<Guid> visited, int depth)
+        {
+            if (visited.Contains(obj.InstanceGuid)) return;
+            if (depth > 50) return;
+
+            visited.Add(obj.InstanceGuid);
+
+            IEnumerable<IGH_Param> outputs = null;
+
+            if (obj is IGH_Component comp)
+            {
+                outputs = comp.Params.Output;
+            }
+            else if (obj is IGH_Param param)
+            {
+                outputs = new[] { param };
+            }
+
+            if (outputs == null) return;
+
+            foreach (var output in outputs)
+            {
+                foreach (var recipient in output.Recipients)
+                {
+                    var recipientObj = recipient.Attributes.GetTopLevel.DocObject;
+
+                    traced.Add(new
+                    {
+                        id = recipientObj.InstanceGuid.ToString(),
+                        name = recipientObj.Name,
+                        nickname = recipientObj.NickName,
+                        depth = depth + 1,
+                        connectedVia = new
+                        {
+                            fromOutput = output.Name,
+                            toInput = recipient.Name
+                        }
+                    });
+
+                    TraceDownstream(recipientObj, traced, visited, depth + 1);
+                }
+            }
+        }
+
+        #endregion
+    }
+}
