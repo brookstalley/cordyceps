@@ -1,222 +1,90 @@
-# Canvas Layout Best Practices
+# Canvas Layout Guide
 
-This guide helps you create readable, well-organized Grasshopper definitions. Following these conventions ensures components don't overlap and the canvas remains navigable.
+## Core Concept: Pivot vs Bounds
 
-## Understanding Pivot vs Bounds
+When placing a component at (x, y), that coordinate is the **pivot point**, not the top-left corner.
 
-This is the most important concept for layout planning.
+| Component Type | Pivot Location | Typical Bounds |
+|----------------|----------------|----------------|
+| Number Slider | Left edge | 200×20, extends right |
+| Standard component | Center | 80-120×40-80 |
+| Panel | Top-left | 100-200×50-100, expands with content |
 
-### The Pivot Point
-When you place a component with `add_component(x=50, y=50)`, the coordinate (50, 50) is the **pivot point** - a reference point used for positioning. This is NOT the top-left corner of the component.
-
-### The Bounds Rectangle
-The component actually occupies a **bounds rectangle** that extends around the pivot:
-
-```
-Slider placed at pivot (50, 50):
-
-         pivot
-           ↓
-       ┌───●─────────────────────────┐
-       │   Number Slider             │  height=20
-       └─────────────────────────────┘
-       ←─────── width=200 ──────────→
-
-Bounds: x=50, y=40, width=200, height=20
-Right edge at x=250, not at x=50!
-```
-
-Different component types have different pivot locations:
-- **Sliders**: Pivot is on the left edge; bounds extend ~200px to the right
-- **Standard components**: Pivot is roughly centered
-- **Panels**: Pivot is near the top-left corner
-
-### Why This Matters
-If you place a slider at x=50, its right edge is at approximately x=250. To avoid overlap, the next column should start at x=250+gap, not x=50+gap.
-
-### Using Bounds in Responses
-Spatial operations (`add_component`, `move_component`, `add_to_group`, `remove_from_group`) return bounds with convenience fields:
-- `x`, `y`: Top-left corner of the bounding rectangle
-- `width`, `height`: Dimensions of the rectangle
-- `right`, `bottom`: Pre-computed edges (x+width, y+height)
-
-Use `right` to determine where the next column should start:
-```
-next_column_x = previous_component.bounds.right + 150
-```
+**Key rule**: Slider at x=50 has right edge at ~x=250. Next column starts at x=250+gap, not x=50+gap.
 
 ## Component Dimensions
 
-Understanding component sizes is essential for proper spacing.
+| Component | Width | Height |
+|-----------|-------|--------|
+| Number Slider | 150-250 | 20 |
+| Panel | 100-200 | 50-100 |
+| Toggle | 80 | 20 |
+| Value List | 120 | 30 |
+| Simple component (1-2 I/O) | 80-100 | 40 |
+| Medium component (3-4 I/O) | 100-120 | 50-60 |
+| Complex component (5+) | 120-150 | 60-80 |
+| Group | Adds ~40px padding | Adds ~40px padding |
 
-### Input Components
-| Component | Typical Width | Height | Notes |
-|-----------|--------------|--------|-------|
-| Number Slider | 150-250 | 20 | Width varies with range display |
-| Panel | 100-200 | 50-100 | Expands with content |
-| Toggle | 80 | 20 | Compact boolean input |
-| Value List | 120 | 30 | Dropdown selector |
-| Point Parameter | 80 | 40 | Single input/output |
+## Spacing Rules
 
-### Standard Components
-| Component Type | Typical Width | Height per I/O |
-|----------------|--------------|----------------|
-| Simple (1-2 I/O) | 80-100 | 40 |
-| Medium (3-4 I/O) | 100-120 | 50-60 |
-| Complex (5+ I/O) | 120-150 | 60-80 |
-| Script Component | 100-140 | Varies with I/O count |
+| Spacing Type | Pixels |
+|--------------|--------|
+| Between columns | 150 minimum |
+| After sliders | 200 (sliders are wide) |
+| Vertical between sliders | 70 |
+| Vertical between components | 70-100 |
+| Between groups | 50 |
 
-### Special Components
-| Component | Width | Height | Notes |
-|-----------|-------|--------|-------|
-| Cluster | 80-120 | Varies | Depends on I/O count |
-| Scribble | Variable | Variable | Text annotation |
-| Group | +40 padding | +40 padding | Adds margin around contents |
+## Standard Layout
 
-## Spacing Conventions
+| Column | X Position | Contents |
+|--------|------------|----------|
+| Inputs | 50 | Sliders, parameters |
+| Constants | 50-150 | Panels with 0, 1, Pi |
+| Processing 1 | 250 | First operations |
+| Processing 2+ | 400, 550, 700... | +150 per column |
 
-### Horizontal Spacing
-- **Between columns**: 150 units minimum
-- **Between sliders and first component**: 200 units (sliders are wide)
-- **Between tightly related components**: 100 units
-- **Between groups**: 50 units
-
-### Vertical Spacing
-- **Between slider rows**: 70 units
-- **Between component rows**: 70-100 units
-- **Between groups**: 50 units
-- **Within a vertical stack**: 60 units
-
-## Layout Patterns
-
-### Standard Left-to-Right Flow
-
-```
-x=50        x=250       x=400       x=550       x=700       x=850
-|           |           |           |           |           |
-[Slider1]   [Math]------[Transform]-[Geometry]--[Output]
-[Slider2]---/           |
-[Slider3]---------------/
-```
-
-### Recommended Column Positions
-- **Inputs (sliders, parameters)**: x = 50
-- **Constants (panels with 0, 1, 2, Pi)**: x = 50-150, below sliders
-- **First processing column**: x = 250
-- **Subsequent columns**: x = 400, 550, 700, 850... (150-unit increments)
-
-### Vertical Organization
-- **Primary data flow**: y = 50-150
-- **Secondary branches**: y = 200-300
-- **Constants and helpers**: y = 300+
+| Row | Y Position | Contents |
+|-----|------------|----------|
+| Primary flow | 50-150 | Main data path |
+| Secondary | 200-300 | Branches |
+| Constants | 300+ | Helper values |
 
 ## Handling Constants
 
-Constants (0, 1, 2, π, etc.) are frequently needed. Choose the best approach:
+**Preferred**: Use component defaults (many components default to 0 or standard values)
+- `Construct Point` → (0,0,0)
+- `XY Plane` → World XY at origin
+- `Unit X/Y/Z` → factor 1
 
-### Option 1: Use Component Defaults (Preferred)
-Many components have sensible defaults when inputs are unconnected:
-- `Construct Point` → defaults to (0, 0, 0)
-- `XY Plane` → defaults to world XY at origin
-- `Unit X/Y/Z` → default factor is 1
-- `Number` parameter → can be set directly with right-click
+**When explicit constants needed**: Create panels at y=250+ with clear nicknames ("Zero", "One", "Pi")
 
-### Option 2: Panels for Explicit Constants
-When you need visible, reusable constants:
-- Create a dedicated "Constants" area below sliders (y = 250+)
-- Use clear nicknames: "Zero", "One", "Two", "2Pi"
-- Group related constants together
+## Using Bounds from Responses
 
-Example layout:
+Spatial operations return bounds:
 ```
-x=50, y=50:   [Count Slider]
-x=50, y=120:  [Diameter Slider]
-x=50, y=190:  [Offset Slider]
-
-x=100, y=280: [Panel: 0] nicknamed "Zero"
-x=100, y=330: [Panel: 1] nicknamed "One"
-x=100, y=380: [Panel: 2] nicknamed "Two"
+{x, y, width, height, right, bottom}
 ```
 
-### Option 3: Derive from Math
-For π and mathematical constants:
-- Use the `Pi` component with factor input
-- Panel with "2" → Pi component gives 2π
+Calculate next position: `next_x = previous.right + 150`
 
-## Groups
+## Common Mistakes
 
-### Group Sizing
-Groups automatically expand to contain their members plus padding:
-- **Padding**: ~20-30 units on each side
-- **Total added size**: ~40-60 units width and height
+| Mistake | Fix |
+|---------|-----|
+| Component at x=100 after slider at x=50 | Use x=250+ (slider needs ~200 width) |
+| Vertical gap of 20px | Use 70px minimum |
+| Overlapping groups | Check bounds, leave 50px between |
+| Assuming panel stays small | Panels expand; leave extra space |
 
-### Group Placement Strategy
-1. Add all components first with proper spacing
-2. Use `get_component_bounds` to find the extent of components to group
-3. Create the group - it will auto-size
-4. Leave 50+ units between adjacent groups
+## Workflow
 
-### Recommended Group Organization
-- **"Inputs"** (green): All sliders and input parameters
-- **"Processing"** (blue): Mathematical and data operations
-- **"Geometry"** (orange): Geometry creation and transformation
-- **"Output"** (purple): Final results and visualization
-
-## Common Layout Mistakes
-
-### 1. Ignoring Slider Width
-**Wrong**: Placing a component at x=100 next to a slider at x=50
-**Right**: Place next component at x=250+ (slider needs ~200 width)
-
-### 2. Vertical Cramping
-**Wrong**: Components at y=50, y=70, y=90 (20-unit gaps)
-**Right**: Components at y=50, y=120, y=190 (70-unit gaps)
-
-### 3. Group Overlap
-**Wrong**: Two groups both starting at y=50
-**Right**: Check bounds after creating first group, start second group 50+ units below
-
-### 4. Panel Expansion
-**Wrong**: Assuming panel stays at initial size
-**Right**: Panels grow with content - leave extra space or set fixed size
-
-## Example: Radial Array Layout
-
-This layout creates cylinders arranged in a circle:
-
-```
-INPUTS (x=50, green group)
-├── y=50:  [Count Slider: 2<8<16]
-├── y=120: [Diameter Slider: 10<50<100]
-└── y=190: [Offset Slider: 0<100<200]
-
-CONSTANTS (x=150, below inputs)
-├── y=280: [Panel: 2]
-├── y=340: [Panel: 0]
-└── y=400: [Panel: 1]
-
-MATH (x=300-550, blue group)
-├── y=50:  [Pi] ─────────► [Division: 2π/Count] ─► [Series]
-├── y=120: [Division: Diameter/2]
-└── Connections from sliders and constants
-
-GEOMETRY (x=400-900, orange group)
-├── y=190: [Construct Point] ─► [Rotate 3D] ─► [XY Plane] ─► [Cylinder]
-├── y=260: [Origin Point (0,0,0)]
-└── y=330: [Unit Z]
-```
-
-## Workflow Summary
-
-1. **Plan the layout** before adding components
-2. **Disable solver**: `set_solver_enabled(false)`
-3. **Add inputs** at x=50, stacked vertically with 70-unit gaps
-4. **Add constants** below inputs if needed
-5. **Add processing** starting at x=250, in 150-unit columns
-6. **Add geometry** in rightmost columns
-7. **Check bounds**: Use `get_component_bounds` for precise positioning
-8. **Wire connections** with `bulk_connect`
-9. **Enable solver**: `set_solver_enabled(true)`
-10. **Validate**: `get_canvas_status()` then `validate_layout()`
-11. **Group**: `add_to_group` for visual organization
-12. **Final check**: Ensure groups don't overlap
+1. `set_solver_enabled(false)`
+2. Add inputs at x=50, y=50/120/190... (70px gaps)
+3. Add processing at x=250, 400, 550...
+4. Use `get_component_bounds` for precise positioning
+5. Wire with `bulk_connect`
+6. `set_solver_enabled(true)`
+7. `get_canvas_status()` then `validate_layout()`
+8. `add_to_group` for organization
+9. Use `auto_space_components(mode="flow")` if layout needs fixing

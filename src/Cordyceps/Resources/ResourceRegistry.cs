@@ -49,6 +49,10 @@ namespace Cordyceps.Resources
         private void Initialize()
         {
             // Register static documentation resources from embedded markdown files
+            RegisterEmbeddedResource("gh://docs/getting-started", "Knowledge.GettingStartedGuide.md",
+                "Getting Started with Grasshopper",
+                "Essential guide for AI agents - read this first! Covers key concepts, workflow, common mistakes, and tool overview");
+
             RegisterEmbeddedResource("gh://docs/data-trees", "Knowledge.DataTreesGuide.md",
                 "Grasshopper Data Trees Guide",
                 "Comprehensive guide to understanding Grasshopper's data tree system, paths, access modes, and common patterns");
@@ -68,6 +72,10 @@ namespace Cordyceps.Resources
             RegisterEmbeddedResource("gh://docs/canvas-layout", "Knowledge.CanvasLayoutGuide.md",
                 "Canvas Layout Best Practices",
                 "Component dimensions, spacing conventions, and layout patterns for readable Grasshopper definitions");
+
+            RegisterEmbeddedResource("gh://docs/geometry-orientation", "Knowledge.GeometryOrientationGuide.md",
+                "Geometry and Orientation Guide",
+                "How planes work in Grasshopper, which axis components use for direction, and how to create correctly oriented geometry");
 
             // Pattern resources
             RegisterEmbeddedResource("gh://patterns/radial-array", "Knowledge.Patterns.RadialArray.md",
@@ -250,6 +258,55 @@ namespace Cordyceps.Resources
     {
         private const string UriPrefix = "gh://component/";
 
+        // Orientation and usage hints for specific component inputs
+        // Key format: "ComponentName:InputName" (case-insensitive)
+        private static readonly Dictionary<string, string> InputHints = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        {
+            // Cylinder orientation
+            { "Cylinder:Base", "**Orientation:** Cylinder extends along the plane's Z-axis. To make cylinders point in direction D, use a plane where Z = D." },
+
+            // Cone orientation
+            { "Cone:Base", "**Orientation:** Cone extends along the plane's Z-axis with tip at origin. Z-axis points from tip toward base." },
+
+            // Circle/Arc orientation
+            { "Circle:Plane", "**Orientation:** Circle lies in the plane's XY surface." },
+            { "Circle CNR:Normal", "**Orientation:** The normal vector becomes the plane's Z-axis. Circle lies perpendicular to this vector." },
+            { "Arc:Plane", "**Orientation:** Arc lies in the plane's XY surface." },
+
+            // Rectangle
+            { "Rectangle:Plane", "**Orientation:** Rectangle lies in the plane's XY surface, centered at origin." },
+
+            // Text
+            { "Text 3D:Plane", "**Orientation:** Text faces along the plane's Z-axis (viewer direction)." },
+
+            // Extrusion (not plane-based, but direction matters)
+            { "Extrude:Direction", "**Direction:** Geometry is extruded along this vector. Length of vector determines extrusion distance." },
+
+            // Plane construction
+            { "Construct Plane:X-Axis", "**Note:** Z-axis is computed as X × Y (cross product). If you need geometry pointing in direction D, set X and Y perpendicular to D so that Z = D." },
+            { "Plane Normal:Normal", "**Orientation:** This vector becomes the plane's Z-axis. X and Y axes are computed automatically perpendicular to it." },
+
+            // Move/Transform
+            { "Move:Motion", "**Translation:** Objects move in this vector direction by the vector's length." },
+            { "Rotate:Angle", "**Units:** Angle is in radians. Use Pi component for conversion (Pi = 180°, 2*Pi = 360°)." },
+            { "Rotate 3D:Axis", "**Rotation:** Objects rotate around this axis vector using the right-hand rule." },
+
+            // Scale
+            { "Scale:Center", "**Scaling:** Objects scale relative to this point. Points closer to center move less." },
+
+            // Loft
+            { "Loft:Curves", "**Order:** Curves are lofted in list order. First curve connects to second, second to third, etc." },
+        };
+
+        // Component-level notes that appear after inputs/outputs
+        private static readonly Dictionary<string, string> ComponentNotes = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        {
+            { "Cylinder", "## Orientation Note\n\nThe cylinder extends along the base plane's **Z-axis**. If you want a cylinder pointing in a specific direction:\n- Use `Plane Normal` with your direction as the Normal input\n- Or use `Construct Plane` ensuring Z (computed as X × Y) points in your desired direction\n\nSee `gh://docs/geometry-orientation` for detailed guidance." },
+            { "Cone", "## Orientation Note\n\nThe cone extends along the base plane's **Z-axis**, with the tip at the plane origin. The base circle is at distance `Length` along Z.\n\nSee `gh://docs/geometry-orientation` for detailed guidance." },
+            { "Construct Plane", "## Usage Note\n\nThe Z-axis is automatically computed as the cross product of X and Y (X × Y). Most oriented geometry in Grasshopper uses the **Z-axis as the primary direction**.\n\nIf you need geometry pointing in direction D:\n1. Choose any X perpendicular to D\n2. Compute Y = D × X (or let Grasshopper orthogonalize)\n3. Z will equal D\n\nAlternatively, use `Plane Normal` which takes the direction directly.\n\nSee `gh://docs/geometry-orientation` for detailed guidance." },
+            { "Plane Normal", "## Usage Note\n\nThis component creates a plane from a point and a normal vector. The normal becomes the **Z-axis** of the plane. X and Y axes are computed automatically.\n\nThis is often the easiest way to create planes for oriented geometry when you know the direction but don't care about rotation around that axis.\n\nSee `gh://docs/geometry-orientation` for detailed guidance." },
+        };
+
         public IEnumerable<object> ListResources()
         {
             // Return a template resource that describes the pattern
@@ -328,6 +385,13 @@ namespace Cordyceps.Resources
                                 sb.AppendLine($"  - {input.Description}");
                             }
                             sb.AppendLine($"  - Access: {input.Access}");
+
+                            // Add orientation/usage hints if available
+                            var hintKey = $"{match.Name}:{input.Name}";
+                            if (InputHints.TryGetValue(hintKey, out var hint))
+                            {
+                                sb.AppendLine($"  - {hint}");
+                            }
                         }
                         sb.AppendLine();
 
@@ -340,6 +404,13 @@ namespace Cordyceps.Resources
                             {
                                 sb.AppendLine($"  - {output.Description}");
                             }
+                        }
+
+                        // Add component-level notes if available
+                        if (ComponentNotes.TryGetValue(match.Name, out var note))
+                        {
+                            sb.AppendLine();
+                            sb.AppendLine(note);
                         }
                     }
                 }

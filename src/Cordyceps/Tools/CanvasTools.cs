@@ -762,7 +762,7 @@ namespace Cordyceps.Tools
 
         [McpServerTool, Description("Automatically space components to eliminate overlaps")]
         public string AutoSpaceComponents(
-            [Description("Spacing mode: 'horizontal', 'vertical', or 'grid'")] string mode = "horizontal",
+            [Description("Spacing mode: 'horizontal', 'vertical', 'grid', or 'flow' (respects data flow, stacks unconnected components vertically)")] string mode = "horizontal",
             [Description("JSON array of component IDs to arrange (optional, defaults to all)")] string componentIds = null,
             [Description("Spacing between components in pixels")] int spacing = 100,
             [Description("Component ID to keep fixed as anchor (optional)")] string anchor = null)
@@ -889,6 +889,116 @@ namespace Cordyceps.Tools
                                 gridX += comp.Attributes.Bounds.Width + spacing;
                             }
                             movedCount++;
+                        }
+                        break;
+
+                    case "flow":
+                        // Arrange respecting data flow: components at same depth stack vertically
+                        // Depth = longest path from any source (component with no inputs connected)
+                        var componentSet = new HashSet<Guid>(components.Select(c => c.InstanceGuid));
+                        var depths = new Dictionary<Guid, int>();
+                        var downstream = new Dictionary<Guid, List<Guid>>();
+
+                        // Initialize
+                        foreach (var comp in components)
+                        {
+                            depths[comp.InstanceGuid] = 0;
+                            downstream[comp.InstanceGuid] = new List<Guid>();
+                        }
+
+                        // Build downstream adjacency from actual wire connections
+                        foreach (var comp in components)
+                        {
+                            if (comp is IGH_Component ghComp)
+                            {
+                                foreach (var input in ghComp.Params.Input)
+                                {
+                                    foreach (var source in input.Sources)
+                                    {
+                                        var sourceCompId = source.Attributes?.GetTopLevel?.DocObject?.InstanceGuid;
+                                        if (sourceCompId.HasValue && componentSet.Contains(sourceCompId.Value))
+                                        {
+                                            if (!downstream[sourceCompId.Value].Contains(comp.InstanceGuid))
+                                            {
+                                                downstream[sourceCompId.Value].Add(comp.InstanceGuid);
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                            else if (comp is IGH_Param param)
+                            {
+                                foreach (var source in param.Sources)
+                                {
+                                    var sourceCompId = source.Attributes?.GetTopLevel?.DocObject?.InstanceGuid;
+                                    if (sourceCompId.HasValue && componentSet.Contains(sourceCompId.Value))
+                                    {
+                                        if (!downstream[sourceCompId.Value].Contains(comp.InstanceGuid))
+                                        {
+                                            downstream[sourceCompId.Value].Add(comp.InstanceGuid);
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        // Compute depths using BFS from sources (components with no upstream in set)
+                        var hasUpstream = new HashSet<Guid>();
+                        foreach (var kvp in downstream)
+                        {
+                            foreach (var target in kvp.Value)
+                            {
+                                hasUpstream.Add(target);
+                            }
+                        }
+
+                        var sources = components.Where(c => !hasUpstream.Contains(c.InstanceGuid)).ToList();
+                        var queue = new Queue<Guid>();
+                        foreach (var src in sources)
+                        {
+                            queue.Enqueue(src.InstanceGuid);
+                            depths[src.InstanceGuid] = 0;
+                        }
+
+                        // BFS to find longest path (max depth)
+                        while (queue.Count > 0)
+                        {
+                            var current = queue.Dequeue();
+                            var currentDepth = depths[current];
+                            foreach (var next in downstream[current])
+                            {
+                                if (depths[next] < currentDepth + 1)
+                                {
+                                    depths[next] = currentDepth + 1;
+                                    queue.Enqueue(next);
+                                }
+                            }
+                        }
+
+                        // Group by depth
+                        var byDepth = components.GroupBy(c => depths[c.InstanceGuid])
+                            .OrderBy(g => g.Key)
+                            .ToList();
+
+                        // Position each column
+                        float flowX = startX;
+                        foreach (var depthGroup in byDepth)
+                        {
+                            // Sort within column by original Y position for stability
+                            var columnComps = depthGroup.OrderBy(c => c.Attributes.Pivot.Y).ToList();
+                            float flowY = startY;
+                            float maxWidthInColumn = 0;
+
+                            foreach (var comp in columnComps)
+                            {
+                                comp.Attributes.Pivot = new PointF(flowX, flowY);
+                                comp.Attributes.ExpireLayout();
+                                flowY += comp.Attributes.Bounds.Height + spacing;
+                                maxWidthInColumn = Math.Max(maxWidthInColumn, comp.Attributes.Bounds.Width);
+                                movedCount++;
+                            }
+
+                            flowX += maxWidthInColumn + spacing;
                         }
                         break;
 

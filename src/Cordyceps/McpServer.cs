@@ -508,120 +508,18 @@ namespace Cordyceps
 
         private string GetServerInstructions()
         {
-            return @"# Cordyceps MCP Server - Grasshopper Control
+            return @"Cordyceps: MCP control of Grasshopper (parametric 3D design).
 
-## IMPORTANT: Read Documentation First
+READ FIRST: gh://docs/getting-started (use resources/read)
 
-Before working with Grasshopper, read these essential resources using `resources/read`:
+Key points:
+- Disable solver during construction: set_solver_enabled(false)
+- Ambiguous names return error with matches; use GUID or Category/Name format
+- Check role field: component (processing), parameter (container), input (slider/toggle)
+- Spacing: 150px horizontal, 70px vertical between components
+- Always validate: get_canvas_status(), validate_layout()
 
-- **`gh://docs/data-trees`** - CRITICAL: Grasshopper's data tree system is unintuitive. Read this first.
-- **`gh://docs/canvas-layout`** - CRITICAL: Layout conventions for readable definitions.
-- **`gh://docs/type-system`** - Type compatibility and coercion rules
-- **`gh://docs/best-practices`** - Common mistakes and how to avoid them
-
-For any specific component, read `gh://component/{name}` (e.g., `gh://component/Circle`) to get full parameter details.
-
-## Component Disambiguation
-
-Some component names are ambiguous. For example, 'Circle' matches both:
-- **Circle (Curve)** - Creates circles from plane, radius, etc. (role: component)
-- **Circle (Params/Geometry)** - Container to hold circle data (role: parameter)
-
-When you call `add_component` with an ambiguous name, you'll get an `ambiguous_name` error with all matching components, including their GUIDs, categories, and I/O signatures.
-
-### To resolve ambiguity:
-- Use the GUID directly: `add_component(type: 'guid-here', ...)`
-- Use category-qualified name: `add_component(type: 'Curve/Circle', ...)`
-
-### Role Field
-Every component response includes a `role` field:
-- **component** - Processing component (takes inputs, produces outputs)
-- **parameter** - Data container (Params category, non-Input subcategory)
-- **input** - Interactive input (Params category, Input subcategory like Number Slider)
-
-### Params Subcategories
-Components in the 'Params' category fall into these subcategories:
-- **Input** - Interactive controls: Number Slider, Boolean Toggle, Value List, etc.
-- **Geometry** - Geometry containers: Point, Curve, Brep, Mesh, Surface, etc.
-- **Primitive** - Value containers: Integer, Number, Text, Boolean, etc.
-- **Util** - Data flow components: Relay, Cluster Input/Output, Data Dam, etc.
-- **Rhino** - Viewport interaction: Plane, Box, Colour Gradient, etc.
-
-Most of the time you want 'component' role items, not 'parameter' role items.
-
-## Canvas Layout Guidelines (IMPORTANT)
-
-Proper spacing prevents overlapping components and unreadable definitions:
-
-### Component Dimensions
-- **Number Sliders**: ~200px wide, 20px tall - need horizontal space!
-- **Panels**: ~100px wide, expand with content
-- **Standard components**: ~100px wide, 40-60px tall
-
-### Spacing Conventions
-- **Horizontal gaps**: 150px between columns
-- **Vertical gaps**: 70px between stacked components
-- **Groups**: Add 40px padding around contents
-
-### Layout Pattern
-```
-x=50 (Inputs)  x=250 (Math)  x=400 (Transform)  x=700 (Output)
-[Slider]        [Pi]          [Rotate]           [Geometry]
-[Slider]        [Division]    [Move]
-[Panel: 0]
-[Panel: 1]
-```
-
-### Layout Tools
-- `get_component_bounds(id)` - Get actual component dimensions
-- `validate_layout()` - Check for overlaps and spacing issues
-- `auto_space_components(mode)` - Auto-fix overlapping components
-- `add_constant(value, x, y)` - Quick way to add constant panels
-
-## Standard Workflow
-
-1. **Plan first**: Use `suggest_pattern(description)` to find relevant patterns
-2. **Read pattern**: If found, read the pattern resource (e.g., `gh://patterns/radial-array`)
-3. **Disable solver**: `set_solver_enabled(enabled: false)`
-4. **Add inputs** at x=50, stacked vertically with 70px gaps
-5. **Add constants** below inputs if needed (0, 1, 2, Pi are common)
-6. **Add processing** at x=250, 400, 550... (150px increments)
-7. **Add outputs** at rightmost position
-8. **Connect**: Use `bulk_connect` for efficiency
-9. **Enable solver**: `set_solver_enabled(enabled: true)`
-10. **Validate**: `get_canvas_status()` then `validate_layout()`
-11. **Organize**: `add_to_group` for visual clarity
-
-## Key Concepts
-
-- **Data Trees**: Hierarchical data with paths like `{0;0;1}`. Mismatched trees cause cross-products.
-- **Access Modes**: Item (single value), List (flat list), Tree (full hierarchy).
-- **Type Coercion**: Grasshopper converts types automatically but some fail silently.
-
-## Available Resources
-
-### Documentation
-- `gh://docs/data-trees` - Data tree fundamentals (READ THIS FIRST)
-- `gh://docs/canvas-layout` - Layout best practices (READ THIS FIRST)
-- `gh://docs/type-system` - Type compatibility matrix
-- `gh://docs/best-practices` - Patterns and anti-patterns
-- `gh://docs/component-patterns` - Common workflows
-
-### Patterns (pre-built component workflows)
-- `gh://patterns/radial-array` - Arrange objects in a circle
-- `gh://patterns/linear-array` - Arrange objects in a line
-- `gh://patterns/grid-array` - Create 2D grids
-
-### Dynamic
-- `gh://component/{name}` - Documentation for any component
-
-## Avoiding Mistakes
-
-1. **Layout first**: Plan positions before adding. Sliders need 200px width.
-2. **Validate connections**: Use `validate_connection` before `connect_components`
-3. **Check deprecation**: Use `search_components` to see if components are deprecated
-4. **Name components**: Use `rename_component` for debugging
-5. **Validate layout**: Always run `validate_layout()` after building
+Resources: gh://docs/getting-started, gh://docs/data-trees, gh://component/{name}, gh://patterns/*
 ";
         }
 

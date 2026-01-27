@@ -51,11 +51,13 @@
 
   <!-- Embedded documentation resources -->
   <ItemGroup>
+    <EmbeddedResource Include="Knowledge\GettingStartedGuide.md" />
     <EmbeddedResource Include="Knowledge\DataTreesGuide.md" />
     <EmbeddedResource Include="Knowledge\TypeSystemGuide.md" />
     <EmbeddedResource Include="Knowledge\BestPracticesGuide.md" />
     <EmbeddedResource Include="Knowledge\ComponentPatternsGuide.md" />
     <EmbeddedResource Include="Knowledge\CanvasLayoutGuide.md" />
+    <EmbeddedResource Include="Knowledge\GeometryOrientationGuide.md" />
     <EmbeddedResource Include="Knowledge\Patterns\RadialArray.md" />
     <EmbeddedResource Include="Knowledge\Patterns\LinearArray.md" />
     <EmbeddedResource Include="Knowledge\Patterns\GridArray.md" />
