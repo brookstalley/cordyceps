@@ -86,9 +86,15 @@ namespace Cordyceps.Tools
                             }
                         }
 
+                        // Use nickname if set and different from name, otherwise use name
+                        string displayName = !string.IsNullOrEmpty(comp.NickName) && comp.NickName != comp.Name
+                            ? comp.NickName
+                            : comp.Name;
+
                         components.Add(new
                         {
                             id = comp.InstanceGuid.ToString(),
+                            displayName,
                             name = comp.Name,
                             nickname = comp.NickName,
                             status,

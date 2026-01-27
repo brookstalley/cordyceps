@@ -30,10 +30,11 @@ namespace Cordyceps.Tools
         public string AddComponent(
             [Description("Component type name (e.g., 'Circle', 'Addition') or GUID")] string type,
             [Description("X position on canvas")] double x,
-            [Description("Y position on canvas")] double y)
+            [Description("Y position on canvas")] double y,
+            [Description("Optional nickname/display name for the component")] string nickname = null)
         {
             _server?.RecordCommand("add_component");
-            Core.DebugLog.Info($"AddComponent called: type='{type}', x={x}, y={y}");
+            Core.DebugLog.Info($"AddComponent called: type='{type}', x={x}, y={y}, nickname='{nickname}'");
 
             return _context.ExecuteOnUiThread(() =>
             {
@@ -64,6 +65,12 @@ namespace Cordyceps.Tools
                         component.CreateAttributes();
                     }
 
+                    // Set nickname if provided
+                    if (!string.IsNullOrEmpty(nickname))
+                    {
+                        component.NickName = nickname;
+                    }
+
                     // Set position
                     component.Attributes.Pivot = new PointF((float)x, (float)y);
 
@@ -71,7 +78,7 @@ namespace Cordyceps.Tools
                     doc.AddObject(component, false);
                     doc.NewSolution(true);
 
-                    Core.DebugLog.Info($"Component added: {component.Name} ({component.InstanceGuid})");
+                    Core.DebugLog.Info($"Component added: {component.NickName ?? component.Name} ({component.InstanceGuid})");
 
                     // Get component bounds for layout planning
                     var bounds = component.Attributes.Bounds;
@@ -94,6 +101,7 @@ namespace Cordyceps.Tools
                         success = true,
                         id = component.InstanceGuid.ToString(),
                         type = component.Name,
+                        nickname = component.NickName,
                         x = component.Attributes.Pivot.X,
                         y = component.Attributes.Pivot.Y,
                         width = bounds.Width,
@@ -1013,6 +1021,198 @@ namespace Cordyceps.Tools
                 found = true,
                 count = suggestions.Count,
                 suggestions = suggestions
+            });
+        }
+
+        [McpServerTool, Description("Find a component by its nickname (display name)")]
+        public string GetComponentByNickname(
+            [Description("Nickname to search for (exact or partial match)")] string nickname,
+            [Description("If true, require exact match; if false (default), allow partial/case-insensitive match")] bool exact = false)
+        {
+            _server?.RecordCommand("get_component_by_nickname");
+            return _context.ExecuteOnUiThread(() =>
+            {
+                var doc = _context.GetActiveDocument();
+                if (doc == null)
+                {
+                    return JsonConvert.SerializeObject(new { success = false, error = "No active Grasshopper document" });
+                }
+
+                if (string.IsNullOrEmpty(nickname))
+                {
+                    return JsonConvert.SerializeObject(new { success = false, error = "Nickname is required" });
+                }
+
+                var matches = new List<object>();
+
+                foreach (var obj in doc.Objects)
+                {
+                    bool isMatch = false;
+
+                    if (exact)
+                    {
+                        isMatch = obj.NickName == nickname;
+                    }
+                    else
+                    {
+                        isMatch = obj.NickName != null &&
+                            obj.NickName.IndexOf(nickname, StringComparison.OrdinalIgnoreCase) >= 0;
+                    }
+
+                    if (isMatch)
+                    {
+                        var info = new Dictionary<string, object>
+                        {
+                            ["id"] = obj.InstanceGuid.ToString(),
+                            ["name"] = obj.Name,
+                            ["nickname"] = obj.NickName,
+                            ["type"] = obj.GetType().Name,
+                            ["x"] = obj.Attributes.Pivot.X,
+                            ["y"] = obj.Attributes.Pivot.Y
+                        };
+
+                        if (obj is IGH_Component comp)
+                        {
+                            info["category"] = comp.Category;
+                            info["inputCount"] = comp.Params.Input.Count;
+                            info["outputCount"] = comp.Params.Output.Count;
+                            info["runtimeMessageLevel"] = comp.RuntimeMessageLevel.ToString();
+                        }
+
+                        matches.Add(info);
+                    }
+                }
+
+                if (matches.Count == 0)
+                {
+                    return JsonConvert.SerializeObject(new
+                    {
+                        success = true,
+                        found = false,
+                        message = $"No component found with nickname '{nickname}'"
+                    });
+                }
+
+                // If single match, return it directly; otherwise return list
+                if (matches.Count == 1)
+                {
+                    var result = (Dictionary<string, object>)matches[0];
+                    result["success"] = true;
+                    result["found"] = true;
+                    return JsonConvert.SerializeObject(result);
+                }
+
+                return JsonConvert.SerializeObject(new
+                {
+                    success = true,
+                    found = true,
+                    count = matches.Count,
+                    components = matches
+                });
+            });
+        }
+
+        [McpServerTool, Description("Move multiple components at once efficiently")]
+        public string BulkMoveComponents(
+            [Description("JSON array of move operations: [{id, x, y}, ...]")] string moves)
+        {
+            _server?.RecordCommand("bulk_move_components");
+            return _context.ExecuteOnUiThread(() =>
+            {
+                var doc = _context.GetActiveDocument();
+                if (doc == null)
+                {
+                    return JsonConvert.SerializeObject(new { success = false, error = "No active Grasshopper document" });
+                }
+
+                List<dynamic> moveList;
+                try
+                {
+                    moveList = JsonConvert.DeserializeObject<List<dynamic>>(moves);
+                }
+                catch (Exception ex)
+                {
+                    return JsonConvert.SerializeObject(new { success = false, error = $"Failed to parse moves JSON: {ex.Message}" });
+                }
+
+                if (moveList == null || moveList.Count == 0)
+                {
+                    return JsonConvert.SerializeObject(new { success = false, error = "No moves provided" });
+                }
+
+                var results = new List<object>();
+                int successCount = 0;
+                int failCount = 0;
+
+                foreach (var move in moveList)
+                {
+                    try
+                    {
+                        string id = move.id?.ToString();
+                        if (string.IsNullOrEmpty(id))
+                        {
+                            results.Add(new { success = false, error = "Missing id in move" });
+                            failCount++;
+                            continue;
+                        }
+
+                        if (!Guid.TryParse(id, out Guid guid))
+                        {
+                            results.Add(new { success = false, id, error = "Invalid component ID" });
+                            failCount++;
+                            continue;
+                        }
+
+                        var component = doc.FindObject(guid, true);
+                        if (component == null)
+                        {
+                            results.Add(new { success = false, id, error = "Component not found" });
+                            failCount++;
+                            continue;
+                        }
+
+                        double x = (double)move.x;
+                        double y = (double)move.y;
+
+                        component.Attributes.Pivot = new PointF((float)x, (float)y);
+                        component.Attributes.ExpireLayout();
+
+                        var bounds = component.Attributes.Bounds;
+                        results.Add(new
+                        {
+                            success = true,
+                            id,
+                            nickname = component.NickName,
+                            x,
+                            y,
+                            bounds = new
+                            {
+                                width = bounds.Width,
+                                height = bounds.Height,
+                                right = bounds.Right,
+                                bottom = bounds.Bottom
+                            }
+                        });
+                        successCount++;
+                    }
+                    catch (Exception ex)
+                    {
+                        string id = move.id?.ToString() ?? "unknown";
+                        results.Add(new { success = false, id, error = ex.Message });
+                        failCount++;
+                    }
+                }
+
+                Instances.ActiveCanvas?.Invalidate();
+
+                return JsonConvert.SerializeObject(new
+                {
+                    success = failCount == 0,
+                    total = moveList.Count,
+                    succeeded = successCount,
+                    failed = failCount,
+                    results
+                });
             });
         }
     }

@@ -16,8 +16,13 @@ set_solver_enabled(enabled: true)  // Single recompute at the end
 
 ### 2. Name Your Components
 
-GUIDs are unreadable. Use `rename_component` to give meaningful names:
+GUIDs are unreadable. Set nicknames when creating components:
 
+```
+add_component(type: "Number Slider", x: 100, y: 200, nickname: "InputRadius")
+```
+
+Or rename existing components:
 ```
 rename_component(id: "abc-123...", nickname: "InputRadius")
 ```
@@ -25,6 +30,7 @@ rename_component(id: "abc-123...", nickname: "InputRadius")
 **Benefits:**
 - `get_all_components` returns readable names
 - `get_canvas_status` errors are understandable
+- `get_component_by_nickname` allows direct lookup by name
 - Connection logs make sense
 
 ### 3. Validate Before Connecting

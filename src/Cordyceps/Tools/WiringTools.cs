@@ -416,6 +416,7 @@ namespace Cordyceps.Tools
                 int successCount = 0;
                 int failCount = 0;
 
+                int connectionIndex = 0;
                 foreach (var conn in connectionList)
                 {
                     try
@@ -425,56 +426,93 @@ namespace Cordyceps.Tools
                         string targetId = conn.targetId?.ToString();
                         string targetParam = conn.targetParam?.ToString();
 
+                        // Build connection reference for error reporting
+                        var connRef = new
+                        {
+                            index = connectionIndex,
+                            sourceId,
+                            sourceParam,
+                            targetId,
+                            targetParam
+                        };
+
                         if (string.IsNullOrEmpty(sourceId) || string.IsNullOrEmpty(targetId))
                         {
-                            results.Add(new { success = false, error = "Missing sourceId or targetId" });
+                            results.Add(new { success = false, error = "Missing sourceId or targetId", connection = connRef });
                             failCount++;
+                            connectionIndex++;
                             continue;
                         }
 
                         if (!Guid.TryParse(sourceId, out Guid srcGuid))
                         {
-                            results.Add(new { success = false, error = $"Invalid source ID: {sourceId}" });
+                            results.Add(new { success = false, error = $"Invalid source ID: {sourceId}", connection = connRef });
                             failCount++;
+                            connectionIndex++;
                             continue;
                         }
 
                         if (!Guid.TryParse(targetId, out Guid tgtGuid))
                         {
-                            results.Add(new { success = false, error = $"Invalid target ID: {targetId}" });
+                            results.Add(new { success = false, error = $"Invalid target ID: {targetId}", connection = connRef });
                             failCount++;
+                            connectionIndex++;
                             continue;
                         }
 
                         var srcObj = doc.FindObject(srcGuid, true);
                         if (srcObj == null)
                         {
-                            results.Add(new { success = false, error = $"Source not found: {sourceId}" });
+                            results.Add(new { success = false, error = $"Source component not found", connection = connRef });
                             failCount++;
+                            connectionIndex++;
                             continue;
                         }
 
                         var tgtObj = doc.FindObject(tgtGuid, true);
                         if (tgtObj == null)
                         {
-                            results.Add(new { success = false, error = $"Target not found: {targetId}" });
+                            results.Add(new { success = false, error = $"Target component not found", connection = connRef });
                             failCount++;
+                            connectionIndex++;
                             continue;
                         }
+
+                        // Get available params for better error messages
+                        var availableOutputs = srcObj is IGH_Component srcComp
+                            ? srcComp.Params.Output.Select(p => p.Name).ToList()
+                            : new List<string> { "(parameter)" };
+                        var availableInputs = tgtObj is IGH_Component tgtComp
+                            ? tgtComp.Params.Input.Select(p => p.Name).ToList()
+                            : new List<string> { "(parameter)" };
 
                         IGH_Param sourceOutput = GetOutputParameter(srcObj, sourceParam ?? "0");
                         if (sourceOutput == null)
                         {
-                            results.Add(new { success = false, error = $"Source output not found: {sourceParam}" });
+                            results.Add(new
+                            {
+                                success = false,
+                                error = $"Source output '{sourceParam}' not found on '{srcObj.NickName ?? srcObj.Name}'",
+                                connection = connRef,
+                                availableOutputs
+                            });
                             failCount++;
+                            connectionIndex++;
                             continue;
                         }
 
                         IGH_Param targetInput = GetInputParameter(tgtObj, targetParam ?? "0");
                         if (targetInput == null)
                         {
-                            results.Add(new { success = false, error = $"Target input not found: {targetParam}" });
+                            results.Add(new
+                            {
+                                success = false,
+                                error = $"Target input '{targetParam}' not found on '{tgtObj.NickName ?? tgtObj.Name}'",
+                                connection = connRef,
+                                availableInputs
+                            });
                             failCount++;
+                            connectionIndex++;
                             continue;
                         }
 
@@ -482,16 +520,30 @@ namespace Cordyceps.Tools
                         results.Add(new
                         {
                             success = true,
-                            source = new { id = sourceId, param = sourceOutput.Name },
-                            target = new { id = targetId, param = targetInput.Name }
+                            index = connectionIndex,
+                            source = new { id = sourceId, name = srcObj.NickName ?? srcObj.Name, param = sourceOutput.Name },
+                            target = new { id = targetId, name = tgtObj.NickName ?? tgtObj.Name, param = targetInput.Name }
                         });
                         successCount++;
                     }
                     catch (Exception ex)
                     {
-                        results.Add(new { success = false, error = ex.Message });
+                        results.Add(new
+                        {
+                            success = false,
+                            index = connectionIndex,
+                            error = ex.Message,
+                            connection = new
+                            {
+                                sourceId = conn.sourceId?.ToString(),
+                                sourceParam = conn.sourceParam?.ToString(),
+                                targetId = conn.targetId?.ToString(),
+                                targetParam = conn.targetParam?.ToString()
+                            }
+                        });
                         failCount++;
                     }
+                    connectionIndex++;
                 }
 
                 // Trigger one solution after all connections

@@ -61,7 +61,8 @@ namespace Cordyceps.Tools
                     return JsonConvert.SerializeObject(new
                     {
                         success = true,
-                        name = snapshotName,
+                        snapshotId = snapshotName,
+                        name = snapshotName, // Alias for backwards compatibility
                         path = path,
                         snapshotCount = Snapshots.Count
                     });

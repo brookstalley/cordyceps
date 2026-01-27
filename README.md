@@ -122,12 +122,14 @@ Cordyceps exposes these tool categories:
 ### Canvas Operations
 | Tool | Description |
 |------|-------------|
-| `add_component` | Add any component by name or GUID |
+| `add_component` | Add any component by name/GUID, optionally set nickname |
 | `delete_component` | Remove a component |
 | `move_component` | Reposition on canvas |
-| `rename_component` | Set nickname |
+| `bulk_move_components` | Move multiple components at once |
+| `rename_component` | Change a component's nickname |
 | `search_components` | Find available component types |
 | `get_component_info` | Detailed component inspection |
+| `get_component_by_nickname` | Find component(s) by nickname |
 | `get_all_components` | List everything on canvas |
 
 ### Wiring
