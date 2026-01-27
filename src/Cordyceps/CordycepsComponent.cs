@@ -208,9 +208,17 @@ namespace Cordyceps
         public override Guid ComponentGuid => new Guid("c0d1c3e5-0001-0001-0001-000000000001");
 
         /// <summary>
-        /// Expose icon (null for now)
+        /// Component icon (red/white spiral)
         /// </summary>
-        protected override Bitmap Icon => null;
+        protected override Bitmap Icon
+        {
+            get
+            {
+                var assembly = Assembly.GetExecutingAssembly();
+                using var stream = assembly.GetManifestResourceStream("Cordyceps.Resources.CordycepsIcon.png");
+                return stream != null ? new Bitmap(stream) : null;
+            }
+        }
 
         /// <summary>
         /// Exposure level in toolbar

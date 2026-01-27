@@ -49,6 +49,11 @@
     <PackageReference Include="System.Drawing.Common" Version="8.0.0" ExcludeAssets="runtime" />
   </ItemGroup>
 
+  <!-- Component icon -->
+  <ItemGroup>
+    <EmbeddedResource Include="Resources\CordycepsIcon.png" />
+  </ItemGroup>
+
   <!-- Embedded documentation resources -->
   <ItemGroup>
     <EmbeddedResource Include="Knowledge\GettingStartedGuide.md" />
