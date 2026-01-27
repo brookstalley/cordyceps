@@ -172,12 +172,23 @@ namespace Cordyceps.Tools
                 component.Attributes.ExpireLayout();
                 Instances.ActiveCanvas?.Invalidate();
 
+                // Get bounds after move for layout planning
+                var bounds = component.Attributes.Bounds;
+
                 return JsonConvert.SerializeObject(new
                 {
                     success = true,
                     id = id,
-                    x = x,
-                    y = y
+                    pivot = new { x = x, y = y },
+                    bounds = new
+                    {
+                        x = bounds.X,
+                        y = bounds.Y,
+                        width = bounds.Width,
+                        height = bounds.Height,
+                        right = bounds.Right,
+                        bottom = bounds.Bottom
+                    }
                 });
             });
         }

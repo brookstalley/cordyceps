@@ -2,6 +2,49 @@
 
 This guide helps you create readable, well-organized Grasshopper definitions. Following these conventions ensures components don't overlap and the canvas remains navigable.
 
+## Understanding Pivot vs Bounds
+
+This is the most important concept for layout planning.
+
+### The Pivot Point
+When you place a component with `add_component(x=50, y=50)`, the coordinate (50, 50) is the **pivot point** - a reference point used for positioning. This is NOT the top-left corner of the component.
+
+### The Bounds Rectangle
+The component actually occupies a **bounds rectangle** that extends around the pivot:
+
+```
+Slider placed at pivot (50, 50):
+
+         pivot
+           ↓
+       ┌───●─────────────────────────┐
+       │   Number Slider             │  height=20
+       └─────────────────────────────┘
+       ←─────── width=200 ──────────→
+
+Bounds: x=50, y=40, width=200, height=20
+Right edge at x=250, not at x=50!
+```
+
+Different component types have different pivot locations:
+- **Sliders**: Pivot is on the left edge; bounds extend ~200px to the right
+- **Standard components**: Pivot is roughly centered
+- **Panels**: Pivot is near the top-left corner
+
+### Why This Matters
+If you place a slider at x=50, its right edge is at approximately x=250. To avoid overlap, the next column should start at x=250+gap, not x=50+gap.
+
+### Using Bounds in Responses
+Spatial operations (`add_component`, `move_component`, `add_to_group`, `remove_from_group`) return bounds with convenience fields:
+- `x`, `y`: Top-left corner of the bounding rectangle
+- `width`, `height`: Dimensions of the rectangle
+- `right`, `bottom`: Pre-computed edges (x+width, y+height)
+
+Use `right` to determine where the next column should start:
+```
+next_column_x = previous_component.bounds.right + 150
+```
+
 ## Component Dimensions
 
 Understanding component sizes is essential for proper spacing.

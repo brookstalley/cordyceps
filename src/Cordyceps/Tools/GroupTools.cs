@@ -354,13 +354,25 @@ namespace Cordyceps.Tools
                 group.ExpireCaches();
                 Instances.ActiveCanvas?.Invalidate();
 
+                // Get updated group bounds after removal
+                var bounds = group.Attributes?.Bounds ?? RectangleF.Empty;
+
                 return JsonConvert.SerializeObject(new
                 {
                     success = true,
                     groupId = group.InstanceGuid.ToString(),
                     groupName = group.NickName,
                     removedCount,
-                    removedIds
+                    removedIds,
+                    bounds = new
+                    {
+                        x = bounds.X,
+                        y = bounds.Y,
+                        width = bounds.Width,
+                        height = bounds.Height,
+                        right = bounds.Right,
+                        bottom = bounds.Bottom
+                    }
                 });
             });
         }
