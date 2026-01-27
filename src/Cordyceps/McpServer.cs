@@ -11,6 +11,8 @@ using System.Text.Json.Serialization;
 using System.Threading;
 using System.Threading.Tasks;
 using Cordyceps.Core;
+using Cordyceps.Prompts;
+using Cordyceps.Resources;
 using Rhino;
 
 namespace Cordyceps
@@ -446,6 +448,14 @@ namespace Cordyceps
                     return HandleToolsList();
                 case "tools/call":
                     return await HandleToolCallAsync(paramsEl);
+                case "resources/list":
+                    return HandleResourcesList();
+                case "resources/read":
+                    return HandleResourcesRead(paramsEl);
+                case "prompts/list":
+                    return HandlePromptsList();
+                case "prompts/get":
+                    return HandlePromptsGet(paramsEl);
                 case "ping":
                     return new { };
                 default:
@@ -459,7 +469,12 @@ namespace Cordyceps
             return new
             {
                 protocolVersion = "2025-06-18",
-                capabilities = new { tools = new { } },
+                capabilities = new
+                {
+                    tools = new { },
+                    resources = new { subscribe = false, listChanged = false },
+                    prompts = new { listChanged = false }
+                },
                 serverInfo = new { name = "Cordyceps", version },
                 instructions = GetServerInstructions()
             };
@@ -469,42 +484,55 @@ namespace Cordyceps
         {
             return @"# Cordyceps MCP Server - Grasshopper Control
 
-## Performance: Solver Management
+## IMPORTANT: Read Documentation First
 
-When adding multiple components or making bulk changes, disable the solver first to prevent expensive recomputes after each operation:
+Before working with Grasshopper, read these essential resources using `resources/read`:
 
-1. Call `set_solver_enabled` with `enabled: false` before bulk operations
-2. Add components, configure scripts, create connections
-3. Call `set_solver_enabled` with `enabled: true` when done
-4. Optionally call `recompute_solution` to force immediate recompute
+- **`gh://docs/data-trees`** - CRITICAL: Grasshopper's data tree system is unintuitive. Read this first to understand paths like `{0;0;1}`, Item/List/Tree access modes, and data matching behavior.
+- **`gh://docs/type-system`** - Type compatibility and coercion rules
+- **`gh://docs/best-practices`** - Common mistakes and how to avoid them
+- **`gh://docs/component-patterns`** - Frequently used component combinations
 
-Example workflow for building a pipeline:
-```
-set_solver_enabled(false)
-add_component(...) // No recompute
-add_component(...) // No recompute
-connect_components(...) // No recompute
-set_solver_enabled(true) // Triggers recompute
-```
+For any specific component, read `gh://component/{name}` (e.g., `gh://component/Circle`) to get full parameter details.
 
-## When to Keep Solver Enabled
+## Quick Reference
 
-Keep the solver enabled when:
-- Debugging a single component's behavior
-- Testing connections incrementally
-- Diagnosing errors (immediate feedback is valuable)
+### Standard Workflow
+1. Disable solver: `set_solver_enabled(enabled: false)`
+2. Add and configure components
+3. Create connections (use `validate_connection` first if unsure)
+4. Enable solver: `set_solver_enabled(enabled: true)`
+5. Check status: `get_canvas_status()`
 
-## Component Naming
+### Key Concepts
+- **Data Trees**: Hierarchical data with paths like `{0;0;1}`. Components auto-match data - mismatched trees cause cross-products or errors.
+- **Access Modes**: Item (single value), List (flat list), Tree (full hierarchy). These MUST match or data flow will fail.
+- **Type Coercion**: Grasshopper converts types automatically (e.g., Integer→Number) but some conversions fail silently.
 
-Use `rename_component` to give components meaningful nicknames. This helps with:
-- Finding components later with `get_all_components`
-- Debugging via `get_canvas_status`
-- Creating readable connection logs
+### Avoiding Mistakes
+1. **Always validate connections**: Use `validate_connection` before `connect_components` to catch type/access mismatches
+2. **Check deprecation**: Use `check_deprecation` before using unfamiliar components to avoid obsolete ones
+3. **Name your components**: Use `rename_component` for debugging - component IDs are GUIDs
+4. **Debug systematically**: After errors, use `get_disconnected_inputs` and `trace_data_flow` to diagnose
 
-## Error Checking
+### Performance
+- Disable solver during bulk operations (prevents recompute after each change)
+- Keep solver enabled when debugging single components (immediate feedback)
 
-After bulk operations, use `get_canvas_status` to check for errors across all components.
-Use `get_debug_reports` to retrieve diagnostic output from script components.
+### Error Recovery
+- `get_canvas_status()` - See all component states (OK, ERROR, WARNING, DISCONNECTED)
+- `get_debug_reports()` - Get output from script component Report parameters
+- `trace_data_flow(id, direction)` - Trace upstream/downstream dependencies
+- `get_disconnected_inputs()` - Find missing required connections
+
+## Available Resources
+
+Use `resources/list` to see all documentation, then `resources/read` with the URI:
+- `gh://docs/data-trees` - Data tree fundamentals (READ THIS FIRST)
+- `gh://docs/type-system` - Type compatibility matrix
+- `gh://docs/best-practices` - Patterns and anti-patterns
+- `gh://docs/component-patterns` - Common workflows
+- `gh://component/{name}` - Dynamic docs for any component
 ";
         }
 
@@ -582,6 +610,104 @@ Use `get_debug_reports` to retrieve diagnostic output from script components.
             {
                 content = new[] { new { type = "text", text = result?.ToString() ?? "" } },
                 isError = false
+            };
+        }
+
+        /// <summary>
+        /// Handle resources/list request
+        /// </summary>
+        private object HandleResourcesList()
+        {
+            var resources = ResourceRegistry.Instance.ListResources();
+            return new { resources };
+        }
+
+        /// <summary>
+        /// Handle resources/read request
+        /// </summary>
+        private object HandleResourcesRead(JsonElement paramsEl)
+        {
+            var uri = paramsEl.TryGetProperty("uri", out var u) ? u.GetString() : null;
+
+            if (string.IsNullOrEmpty(uri))
+            {
+                throw new Exception("Resource URI is required");
+            }
+
+            var content = ResourceRegistry.Instance.ReadResource(uri);
+
+            if (content == null)
+            {
+                throw new Exception($"Resource not found: {uri}");
+            }
+
+            return new
+            {
+                contents = new[]
+                {
+                    new
+                    {
+                        uri = content.Uri,
+                        mimeType = content.MimeType,
+                        text = content.Text
+                    }
+                }
+            };
+        }
+
+        /// <summary>
+        /// Handle prompts/list request
+        /// </summary>
+        private object HandlePromptsList()
+        {
+            var prompts = PromptRegistry.Instance.ListPrompts();
+            return new { prompts };
+        }
+
+        /// <summary>
+        /// Handle prompts/get request
+        /// </summary>
+        private object HandlePromptsGet(JsonElement paramsEl)
+        {
+            var name = paramsEl.TryGetProperty("name", out var n) ? n.GetString() : null;
+
+            if (string.IsNullOrEmpty(name))
+            {
+                throw new Exception("Prompt name is required");
+            }
+
+            // Extract arguments if provided
+            var arguments = new Dictionary<string, string>();
+            if (paramsEl.TryGetProperty("arguments", out var argsEl) && argsEl.ValueKind == JsonValueKind.Object)
+            {
+                foreach (var prop in argsEl.EnumerateObject())
+                {
+                    arguments[prop.Name] = prop.Value.GetString() ?? "";
+                }
+            }
+
+            var prompt = PromptRegistry.Instance.GetPrompt(name, arguments);
+
+            if (prompt == null)
+            {
+                throw new Exception($"Prompt not found: {name}");
+            }
+
+            return new
+            {
+                description = prompt.Description,
+                messages = new[]
+                {
+                    new
+                    {
+                        role = "user",
+                        content = new
+                        {
+                            type = "text",
+                            text = prompt.Content
+                        }
+                    }
+                }
             };
         }
 

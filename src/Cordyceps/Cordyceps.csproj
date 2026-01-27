@@ -49,6 +49,14 @@
     <PackageReference Include="System.Drawing.Common" Version="8.0.0" ExcludeAssets="runtime" />
   </ItemGroup>
 
+  <!-- Embedded documentation resources -->
+  <ItemGroup>
+    <EmbeddedResource Include="Knowledge\DataTreesGuide.md" />
+    <EmbeddedResource Include="Knowledge\TypeSystemGuide.md" />
+    <EmbeddedResource Include="Knowledge\BestPracticesGuide.md" />
+    <EmbeddedResource Include="Knowledge\ComponentPatternsGuide.md" />
+  </ItemGroup>
+
   <!-- Post-build: Copy .gha to releases folder for Grasshopper to load -->
   <Target Name="CopyToReleases" AfterTargets="Build">
     <PropertyGroup>

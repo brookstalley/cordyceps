@@ -574,7 +574,363 @@ namespace Cordyceps.Tools
             return JsonConvert.SerializeObject(new { success = true, message = "Debug log cleared" });
         }
 
+        [McpServerTool, Description("Check if a component type is deprecated and get upgrade information")]
+        public string CheckDeprecation(
+            [Description("Component name or GUID to check")] string component)
+        {
+            _server?.RecordCommand("check_deprecation");
+            return _context.ExecuteOnUiThread(() =>
+            {
+                if (string.IsNullOrEmpty(component))
+                {
+                    return JsonConvert.SerializeObject(new { success = false, error = "Component name or GUID is required" });
+                }
+
+                // Check if it's a GUID
+                Guid? componentGuid = null;
+                if (Guid.TryParse(component, out Guid parsed))
+                {
+                    componentGuid = parsed;
+                }
+                else
+                {
+                    // Look up by name
+                    var proxy = Instances.ComponentServer.ObjectProxies
+                        .FirstOrDefault(p => p.Desc.Name.Equals(component, StringComparison.OrdinalIgnoreCase));
+                    if (proxy != null)
+                    {
+                        componentGuid = proxy.Guid;
+                    }
+                }
+
+                if (!componentGuid.HasValue)
+                {
+                    return JsonConvert.SerializeObject(new
+                    {
+                        success = true,
+                        found = false,
+                        message = $"Component '{component}' not found"
+                    });
+                }
+
+                var isDeprecated = DeprecationRegistry.Instance.IsDeprecated(componentGuid.Value);
+                var upgradeInfo = DeprecationRegistry.Instance.GetUpgradeInfo(componentGuid.Value);
+
+                // Also check if hidden
+                var proxy2 = Instances.ComponentServer.ObjectProxies
+                    .FirstOrDefault(p => p.Guid == componentGuid.Value);
+                var isHidden = proxy2?.Exposure == GH_Exposure.hidden;
+
+                return JsonConvert.SerializeObject(new
+                {
+                    success = true,
+                    found = true,
+                    componentName = proxy2?.Desc?.Name ?? component,
+                    componentGuid = componentGuid.Value.ToString(),
+                    deprecated = isDeprecated,
+                    hidden = isHidden,
+                    upgrade = upgradeInfo != null ? new
+                    {
+                        toName = upgradeInfo.ToName,
+                        toGuid = upgradeInfo.ToGuid.ToString(),
+                        version = upgradeInfo.Version.ToString("yyyy-MM-dd")
+                    } : null,
+                    message = isDeprecated
+                        ? (upgradeInfo != null
+                            ? $"Component is deprecated. Use '{upgradeInfo.ToName}' instead."
+                            : "Component is deprecated/hidden. Check for alternatives.")
+                        : "Component is current and supported."
+                });
+            });
+        }
+
+        [McpServerTool, Description("Suggest compatible connections for a component output")]
+        public string SuggestConnections(
+            [Description("Source component GUID")] string sourceId,
+            [Description("Source output parameter name or index")] string sourceParam = "0")
+        {
+            _server?.RecordCommand("suggest_connections");
+            return _context.ExecuteOnUiThread(() =>
+            {
+                var doc = _context.GetActiveDocument();
+                if (doc == null)
+                {
+                    return JsonConvert.SerializeObject(new { success = false, error = "No active Grasshopper document" });
+                }
+
+                if (!Guid.TryParse(sourceId, out Guid sourceGuid))
+                {
+                    return JsonConvert.SerializeObject(new { success = false, error = "Invalid source component ID" });
+                }
+
+                var sourceObj = doc.FindObject(sourceGuid, true);
+                if (sourceObj == null)
+                {
+                    return JsonConvert.SerializeObject(new { success = false, error = $"Source component not found: {sourceId}" });
+                }
+
+                // Get the output parameter
+                IGH_Param outputParam = null;
+                if (sourceObj is IGH_Component sourceComp)
+                {
+                    if (int.TryParse(sourceParam, out int idx) && idx >= 0 && idx < sourceComp.Params.Output.Count)
+                    {
+                        outputParam = sourceComp.Params.Output[idx];
+                    }
+                    else
+                    {
+                        outputParam = sourceComp.Params.Output.FirstOrDefault(p =>
+                            p.Name.Equals(sourceParam, StringComparison.OrdinalIgnoreCase) ||
+                            p.NickName.Equals(sourceParam, StringComparison.OrdinalIgnoreCase));
+                    }
+
+                    if (outputParam == null)
+                    {
+                        return JsonConvert.SerializeObject(new { success = false, error = $"Output parameter not found: {sourceParam}" });
+                    }
+                }
+                else if (sourceObj is IGH_Param param)
+                {
+                    outputParam = param;
+                }
+                else
+                {
+                    return JsonConvert.SerializeObject(new { success = false, error = "Source is not a component or parameter" });
+                }
+
+                var outputType = outputParam.TypeName;
+                var suggestions = new List<object>();
+
+                // Find components on canvas with compatible inputs
+                foreach (var obj in doc.Objects)
+                {
+                    if (obj == sourceObj) continue;
+                    if (!(obj is IGH_Component targetComp)) continue;
+
+                    foreach (var input in targetComp.Params.Input)
+                    {
+                        // Check type compatibility
+                        var compatibility = GetTypeCompatibility(outputType, input.TypeName);
+                        if (compatibility > 0)
+                        {
+                            suggestions.Add(new
+                            {
+                                targetId = targetComp.InstanceGuid.ToString(),
+                                targetName = targetComp.Name,
+                                targetNickname = targetComp.NickName,
+                                inputName = input.Name,
+                                inputNickname = input.NickName,
+                                inputIndex = targetComp.Params.Input.IndexOf(input),
+                                inputType = input.TypeName,
+                                inputAccess = input.Access.ToString(),
+                                compatibility = compatibility >= 100 ? "exact" : compatibility >= 50 ? "compatible" : "convertible",
+                                isConnected = input.SourceCount > 0
+                            });
+                        }
+                    }
+                }
+
+                // Sort by compatibility (descending) and whether already connected
+                var sorted = suggestions
+                    .OrderByDescending(s => ((dynamic)s).compatibility == "exact" ? 3 : ((dynamic)s).compatibility == "compatible" ? 2 : 1)
+                    .ThenBy(s => ((dynamic)s).isConnected)
+                    .Take(20)
+                    .ToList();
+
+                return JsonConvert.SerializeObject(new
+                {
+                    success = true,
+                    sourceComponent = sourceObj.Name,
+                    outputParameter = outputParam.Name,
+                    outputType = outputType,
+                    suggestionCount = sorted.Count,
+                    suggestions = sorted
+                });
+            });
+        }
+
+        [McpServerTool, Description("Get detailed documentation for a component type")]
+        public string GetComponentDocumentation(
+            [Description("Component name or GUID")] string component)
+        {
+            _server?.RecordCommand("get_component_documentation");
+            return _context.ExecuteOnUiThread(() =>
+            {
+                if (string.IsNullOrEmpty(component))
+                {
+                    return JsonConvert.SerializeObject(new { success = false, error = "Component name or GUID is required" });
+                }
+
+                // Find the component proxy
+                IGH_ObjectProxy proxy = null;
+
+                if (Guid.TryParse(component, out Guid guid))
+                {
+                    proxy = Instances.ComponentServer.ObjectProxies.FirstOrDefault(p => p.Guid == guid);
+                }
+                else
+                {
+                    proxy = Instances.ComponentServer.ObjectProxies
+                        .FirstOrDefault(p => p.Desc.Name.Equals(component, StringComparison.OrdinalIgnoreCase));
+
+                    if (proxy == null)
+                    {
+                        // Fuzzy match
+                        proxy = Instances.ComponentServer.ObjectProxies
+                            .FirstOrDefault(p => p.Desc.Name.IndexOf(component, StringComparison.OrdinalIgnoreCase) >= 0);
+                    }
+                }
+
+                if (proxy == null)
+                {
+                    return JsonConvert.SerializeObject(new
+                    {
+                        success = false,
+                        error = $"Component not found: {component}"
+                    });
+                }
+
+                // Get plugin info if available
+                var pluginInfo = PluginRegistry.Instance.GetPluginForComponent(proxy);
+
+                // Get deprecation info
+                var isDeprecated = DeprecationRegistry.Instance.IsDeprecated(proxy.Guid);
+                var upgradeInfo = DeprecationRegistry.Instance.GetUpgradeInfo(proxy.Guid);
+
+                // Try to create an instance to get parameter details
+                var inputs = new List<object>();
+                var outputs = new List<object>();
+
+                try
+                {
+                    var instance = proxy.CreateInstance();
+                    if (instance is IGH_Component comp)
+                    {
+                        foreach (var input in comp.Params.Input)
+                        {
+                            inputs.Add(new
+                            {
+                                name = input.Name,
+                                nickname = input.NickName,
+                                description = input.Description,
+                                type = input.TypeName,
+                                access = input.Access.ToString(),
+                                optional = input.Optional
+                            });
+                        }
+
+                        foreach (var output in comp.Params.Output)
+                        {
+                            outputs.Add(new
+                            {
+                                name = output.Name,
+                                nickname = output.NickName,
+                                description = output.Description,
+                                type = output.TypeName
+                            });
+                        }
+                    }
+                }
+                catch (Exception ex)
+                {
+                    DebugLog.Warn($"Could not instantiate {proxy.Desc.Name} for docs: {ex.Message}");
+                }
+
+                return JsonConvert.SerializeObject(new
+                {
+                    success = true,
+                    name = proxy.Desc.Name,
+                    description = proxy.Desc.Description,
+                    category = proxy.Desc.Category,
+                    subCategory = proxy.Desc.SubCategory,
+                    guid = proxy.Guid.ToString(),
+                    deprecated = isDeprecated,
+                    hidden = proxy.Exposure == GH_Exposure.hidden,
+                    upgrade = upgradeInfo != null ? new
+                    {
+                        toName = upgradeInfo.ToName,
+                        toGuid = upgradeInfo.ToGuid.ToString()
+                    } : null,
+                    plugin = pluginInfo != null ? new
+                    {
+                        name = pluginInfo.Name,
+                        author = pluginInfo.Author,
+                        documentationUrl = pluginInfo.DocumentationUrl
+                    } : null,
+                    inputs,
+                    outputs
+                });
+            });
+        }
+
         #region Helper Methods
+
+        /// <summary>
+        /// Get type compatibility score (0 = incompatible, 50 = convertible, 100 = exact match)
+        /// </summary>
+        private int GetTypeCompatibility(string outputType, string inputType)
+        {
+            if (string.IsNullOrEmpty(outputType) || string.IsNullOrEmpty(inputType))
+                return 0;
+
+            // Normalize type names
+            outputType = outputType.ToLowerInvariant();
+            inputType = inputType.ToLowerInvariant();
+
+            // Exact match
+            if (outputType == inputType) return 100;
+
+            // Generic types accept anything
+            if (inputType == "generic" || inputType == "goo" || inputType == "object")
+                return 75;
+
+            // Number conversions
+            if ((outputType == "integer" || outputType == "int") && (inputType == "number" || inputType == "double"))
+                return 90;
+            if ((outputType == "number" || outputType == "double") && (inputType == "integer" || inputType == "int"))
+                return 50; // Lossy conversion
+
+            // Geometry hierarchy
+            if (inputType == "geometry" || inputType == "geometrybase")
+            {
+                if (IsGeometryType(outputType)) return 80;
+            }
+
+            // Curve hierarchy
+            if (inputType == "curve")
+            {
+                if (outputType == "line" || outputType == "circle" || outputType == "arc" ||
+                    outputType == "polyline" || outputType == "nurbs curve")
+                    return 90;
+            }
+
+            // Surface/Brep
+            if (inputType == "brep" && outputType == "surface")
+                return 90;
+            if (inputType == "surface" && outputType == "brep")
+                return 50; // May fail
+
+            // Point/Vector interchangeable
+            if ((outputType == "point" || outputType == "point3d") &&
+                (inputType == "vector" || inputType == "vector3d"))
+                return 70;
+            if ((outputType == "vector" || outputType == "vector3d") &&
+                (inputType == "point" || inputType == "point3d"))
+                return 70;
+
+            return 0;
+        }
+
+        private bool IsGeometryType(string typeName)
+        {
+            var geometryTypes = new HashSet<string>
+            {
+                "point", "point3d", "vector", "vector3d", "plane",
+                "line", "curve", "circle", "arc", "polyline",
+                "surface", "brep", "mesh", "box", "sphere"
+            };
+            return geometryTypes.Contains(typeName.ToLowerInvariant());
+        }
 
         private void TraceUpstream(IGH_DocumentObject obj, List<object> traced, HashSet<Guid> visited, int depth)
         {

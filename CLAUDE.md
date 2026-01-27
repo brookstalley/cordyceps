@@ -1,0 +1,80 @@
+# CLAUDE.md
+
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+
+## Project Overview
+
+Cordyceps is a Grasshopper plugin that exposes Grasshopper's functionality to Claude via the Model Context Protocol (MCP). It allows Claude to programmatically control Grasshopper - adding components, creating connections, configuring scripts, and manipulating the canvas.
+
+## Build Commands
+
+```bash
+# Build the plugin (only Release configuration is supported)
+dotnet build src/Cordyceps/Cordyceps.csproj
+
+# The built .gha file is automatically copied to releases/
+```
+
+The project targets .NET 8.0 and outputs a Grasshopper plugin (`.gha` file). Debug builds are intentionally blocked.
+
+## Architecture
+
+### Core Components
+
+**McpServer.cs** - HTTP/SSE server implementing the MCP protocol. Listens on a configurable port (default 8080), handles JSON-RPC requests, and manages SSE sessions for streaming responses. Discovers tools via reflection using `[McpServerToolType]` and `[McpServerTool]` attributes.
+
+**CordycepsComponent.cs** - The Grasshopper component that users drop on the canvas. Manages the MCP server lifecycle - starts the server when placed, stops when removed. Outputs server status and last command received.
+
+**Core/GrasshopperContext.cs** - Thread-safe wrapper for Grasshopper document access. All Grasshopper operations must run on the UI thread; this class provides `ExecuteOnUiThread()` methods that marshal calls correctly.
+
+**Core/ComponentRegistry.cs** - Resolves component type names to actual Grasshopper components. Handles aliases (e.g., "python" -> "Python 3 Script") and supports creation by name or GUID.
+
+### Tool Classes (in Tools/)
+
+Each tool class is marked with `[McpServerToolType]` and contains methods marked with `[McpServerTool]`. Methods are automatically converted to snake_case MCP tool names (e.g., `AddComponent` -> `add_component`).
+
+- **CanvasTools** - Add, delete, move, rename components; search available component types
+- **WiringTools** - Connect/disconnect components, bulk wiring, validate connections
+- **ScriptTools** - Configure C#/Python script components with inputs, outputs, and source code
+- **ValueTools** - Set slider values, panel text, configure value lists
+- **GroupTools** - Create/manage visual groups on the canvas
+- **DocumentTools** - Save, load, clear documents; manage snapshots
+- **StateTools** - Enable/disable solver, trigger recompute
+- **InspectionTools** - Get component status, trace data flow, retrieve debug output
+- **ExecutionTools** - Run Rhino commands, Python scripts, macros
+
+### Adding New Tools
+
+1. Create a method in an existing tool class (or create a new class with `[McpServerToolType]`)
+2. Add `[McpServerTool]` attribute to the method
+3. Add `[Description("...")]` attributes to the method and each parameter
+4. All parameters should be primitive types (string, int, double, bool)
+5. Return a JSON-serialized string with `success` field
+
+Example:
+```csharp
+[McpServerTool, Description("Brief description of what this tool does")]
+public string MyNewTool(
+    [Description("Parameter description")] string param1,
+    [Description("Optional param description")] int param2 = 0)
+{
+    return _context.ExecuteOnUiThread(() =>
+    {
+        // Implementation
+        return JsonConvert.SerializeObject(new { success = true, ... });
+    });
+}
+```
+
+## Key Patterns
+
+- All Grasshopper document access must go through `_context.ExecuteOnUiThread()`
+- Tool methods return JSON strings (use Newtonsoft.Json for serialization)
+- Component parameters can be referenced by name or index (0-based)
+- Use `Core.DebugLog` for logging (Info, Warn, Error, Debug levels)
+
+## Dependencies
+
+- Grasshopper 8.0+ (Rhino 8)
+- Newtonsoft.Json for JSON serialization
+- .NET 8.0

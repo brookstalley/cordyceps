@@ -298,13 +298,90 @@ namespace Cordyceps.Tools
             _server?.RecordCommand("search_components");
             return _context.ExecuteOnUiThread(() =>
             {
-                var results = ComponentRegistry.SearchComponents(query);
+                var basicResults = ComponentRegistry.SearchComponents(query);
+                var enhancedResults = new List<object>();
+
+                foreach (var result in basicResults)
+                {
+                    // Get enhanced information
+                    var isDeprecated = DeprecationRegistry.Instance.IsDeprecated(result.Name);
+                    var upgradeInfo = DeprecationRegistry.Instance.GetUpgradeInfo(result.Name);
+
+                    // Try to get plugin info based on category
+                    var pluginInfo = PluginRegistry.Instance.GetPluginForCategory(result.Category);
+
+                    // Try to create instance for parameter info
+                    var inputs = new List<object>();
+                    var outputs = new List<object>();
+
+                    try
+                    {
+                        if (Guid.TryParse(result.Guid, out Guid guid))
+                        {
+                            var proxy = Instances.ComponentServer.ObjectProxies.FirstOrDefault(p => p.Guid == guid);
+                            if (proxy != null)
+                            {
+                                var instance = proxy.CreateInstance();
+                                if (instance is IGH_Component comp)
+                                {
+                                    foreach (var input in comp.Params.Input)
+                                    {
+                                        inputs.Add(new
+                                        {
+                                            name = input.Name,
+                                            nickname = input.NickName,
+                                            type = input.TypeName,
+                                            access = input.Access.ToString(),
+                                            optional = input.Optional
+                                        });
+                                    }
+
+                                    foreach (var output in comp.Params.Output)
+                                    {
+                                        outputs.Add(new
+                                        {
+                                            name = output.Name,
+                                            nickname = output.NickName,
+                                            type = output.TypeName
+                                        });
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    catch
+                    {
+                        // Ignore errors creating instances
+                    }
+
+                    enhancedResults.Add(new
+                    {
+                        name = result.Name,
+                        description = result.Description,
+                        category = result.Category,
+                        subCategory = result.SubCategory,
+                        guid = result.Guid,
+                        deprecated = isDeprecated,
+                        upgrade = upgradeInfo != null ? new
+                        {
+                            toName = upgradeInfo.ToName,
+                            toGuid = upgradeInfo.ToGuid.ToString()
+                        } : null,
+                        plugin = pluginInfo != null ? new
+                        {
+                            name = pluginInfo.Name,
+                            documentationUrl = pluginInfo.DocumentationUrl
+                        } : null,
+                        inputs = inputs.Count > 0 ? inputs : null,
+                        outputs = outputs.Count > 0 ? outputs : null
+                    });
+                }
 
                 return JsonConvert.SerializeObject(new
                 {
                     success = true,
-                    count = results.Count,
-                    components = results
+                    count = enhancedResults.Count,
+                    components = enhancedResults
                 });
             });
         }

@@ -508,6 +508,102 @@ namespace Cordyceps.Tools
             });
         }
 
+        #region Connection Validation Helpers
+
+        private (string Level, string Message) AnalyzeTypeCompatibility(string sourceType, string targetType)
+        {
+            if (string.IsNullOrEmpty(sourceType) || string.IsNullOrEmpty(targetType))
+                return ("unknown", "Unable to determine types");
+
+            // Exact match
+            if (sourceType == targetType)
+                return ("exact", "Types match exactly");
+
+            // Generic types accept anything
+            if (targetType.Contains("generic") || targetType == "goo" || targetType == "object")
+                return ("compatible", "Target accepts any type");
+
+            // Number conversions
+            if ((sourceType == "integer" || sourceType == "int") && (targetType == "number" || targetType == "double"))
+                return ("compatible", "Integer converts to Number");
+            if ((sourceType == "number" || sourceType == "double") && (targetType == "integer" || targetType == "int"))
+                return ("convertible", "Number to Integer may lose precision");
+
+            // Geometry hierarchy
+            if (targetType == "geometry" || targetType == "geometrybase")
+            {
+                var geometryTypes = new[] { "point", "curve", "surface", "brep", "mesh", "line", "circle", "arc" };
+                if (geometryTypes.Any(g => sourceType.Contains(g)))
+                    return ("compatible", "Geometry type is compatible");
+            }
+
+            // Curve hierarchy
+            if (targetType == "curve")
+            {
+                var curveTypes = new[] { "line", "circle", "arc", "polyline", "nurbs" };
+                if (curveTypes.Any(c => sourceType.Contains(c)))
+                    return ("compatible", "Curve subtype is compatible");
+            }
+
+            // Surface/Brep
+            if (targetType == "brep" && sourceType.Contains("surface"))
+                return ("compatible", "Surface wraps as Brep");
+            if (targetType == "surface" && sourceType.Contains("brep"))
+                return ("convertible", "Brep to Surface may fail if multiple faces");
+
+            // Point/Vector
+            if ((sourceType.Contains("point") && targetType.Contains("vector")) ||
+                (sourceType.Contains("vector") && targetType.Contains("point")))
+                return ("convertible", "Point/Vector conversion uses coordinates");
+
+            // Check for obvious mismatches
+            var geometricTypes = new[] { "point", "curve", "surface", "brep", "mesh", "line", "plane", "vector", "circle" };
+            var dataTypes = new[] { "text", "string", "number", "integer", "boolean", "bool" };
+
+            bool sourceIsGeometric = geometricTypes.Any(g => sourceType.Contains(g));
+            bool targetIsGeometric = geometricTypes.Any(g => targetType.Contains(g));
+            bool sourceIsData = dataTypes.Any(d => sourceType.Contains(d));
+            bool targetIsData = dataTypes.Any(d => targetType.Contains(d));
+
+            if ((sourceIsGeometric && targetIsData) || (sourceIsData && targetIsGeometric))
+                return ("incompatible", "Geometric and data types are not compatible");
+
+            // Default: unknown compatibility, let Grasshopper try
+            return ("unknown", "Compatibility unknown, Grasshopper will attempt conversion");
+        }
+
+        private (string Level, string Warning, string Suggestion) AnalyzeAccessCompatibility(IGH_Param source, IGH_Param target)
+        {
+            var sourceAccess = source.Access;
+            var targetAccess = target.Access;
+
+            // Same access mode is ideal
+            if (sourceAccess == targetAccess)
+                return ("exact", null, null);
+
+            // Item to List/Tree - generally works but may not be what user expects
+            if (sourceAccess == GH_ParamAccess.item && targetAccess == GH_ParamAccess.list)
+                return ("compatible", "Source outputs items, target expects lists. Items will be wrapped as single-item lists.", null);
+
+            if (sourceAccess == GH_ParamAccess.item && targetAccess == GH_ParamAccess.tree)
+                return ("compatible", "Source outputs items, target expects tree. Items will be wrapped in simple tree structure.", null);
+
+            // List to Item - each item processed separately
+            if (sourceAccess == GH_ParamAccess.list && targetAccess == GH_ParamAccess.item)
+                return ("compatible", "Source outputs lists, target expects items. Each list item will be processed separately.", null);
+
+            // Tree to Item/List - flattening may occur
+            if (sourceAccess == GH_ParamAccess.tree && targetAccess == GH_ParamAccess.item)
+                return ("warning", "Source outputs tree, target expects items. Tree will be processed item-by-item, preserving branch structure.", "Consider if this data matching behavior is intended");
+
+            if (sourceAccess == GH_ParamAccess.tree && targetAccess == GH_ParamAccess.list)
+                return ("warning", "Source outputs tree, target expects lists. Each branch becomes a list.", "Check that branch structure matches expectations");
+
+            return ("compatible", null, null);
+        }
+
+        #endregion
+
         [McpServerTool, Description("Validate if a connection between two components is possible before creating it")]
         public string ValidateConnection(
             [Description("Source component GUID")] string sourceId,
@@ -602,30 +698,68 @@ namespace Cordyceps.Tools
                     return JsonConvert.SerializeObject(new { valid = false, error = "Could not find target input parameter" });
                 }
 
-                // Check basic compatibility - Grasshopper is usually flexible about type conversion
-                bool isCompatible = true;
-                string warning = null;
+                // Analyze type compatibility
+                var sourceTypeName = sourceOutput.TypeName?.ToLowerInvariant() ?? "";
+                var targetTypeName = targetInput.TypeName?.ToLowerInvariant() ?? "";
 
-                // Check if types are obviously incompatible
-                var sourceType = sourceOutput.Type;
-                var targetType = targetInput.Type;
+                var typeCompatibility = AnalyzeTypeCompatibility(sourceTypeName, targetTypeName);
+                var accessCompatibility = AnalyzeAccessCompatibility(sourceOutput, targetInput);
 
-                if (sourceType != targetType && sourceType != typeof(object) && targetType != typeof(object))
+                var warnings = new List<string>();
+                var suggestions = new List<string>();
+
+                // Type warnings
+                if (typeCompatibility.Level == "incompatible")
                 {
-                    // Types differ but Grasshopper often handles conversions, just warn
-                    warning = $"Parameter types differ: {sourceOutput.TypeName} → {targetInput.TypeName}. Grasshopper may attempt conversion.";
+                    warnings.Add($"Types may be incompatible: {sourceOutput.TypeName} → {targetInput.TypeName}");
+                    suggestions.Add("Consider adding a conversion component between them");
                 }
+                else if (typeCompatibility.Level == "convertible")
+                {
+                    warnings.Add($"Types differ: {sourceOutput.TypeName} → {targetInput.TypeName}. Grasshopper will attempt conversion.");
+                }
+
+                // Access mode analysis
+                if (accessCompatibility.Warning != null)
+                {
+                    warnings.Add(accessCompatibility.Warning);
+                    if (accessCompatibility.Suggestion != null)
+                    {
+                        suggestions.Add(accessCompatibility.Suggestion);
+                    }
+                }
+
+                // Check data tree structure if both have data
+                string treeWarning = null;
+                if (sourceOutput.VolatileDataCount > 0)
+                {
+                    var sourceBranches = sourceOutput.VolatileData.PathCount;
+                    if (sourceBranches > 1 && targetInput.Access == GH_ParamAccess.item)
+                    {
+                        treeWarning = $"Source has {sourceBranches} branches but target expects single items. Data will be processed per-item across all branches.";
+                    }
+                }
+
+                bool isValid = typeCompatibility.Level != "incompatible";
 
                 return JsonConvert.SerializeObject(new
                 {
-                    valid = isCompatible,
+                    valid = isValid,
                     sourceComponent = srcObj.NickName ?? srcObj.Name,
                     sourceParam = sourceOutput.Name,
                     sourceType = sourceOutput.TypeName,
+                    sourceAccess = sourceOutput.Access.ToString(),
+                    sourceBranchCount = sourceOutput.VolatileData?.PathCount ?? 0,
                     targetComponent = tgtObj.NickName ?? tgtObj.Name,
                     targetParam = targetInput.Name,
                     targetType = targetInput.TypeName,
-                    warning = warning
+                    targetAccess = targetInput.Access.ToString(),
+                    targetOptional = targetInput.Optional,
+                    typeCompatibility = typeCompatibility.Level,
+                    accessCompatibility = accessCompatibility.Level,
+                    warnings = warnings.Count > 0 ? warnings : null,
+                    suggestions = suggestions.Count > 0 ? suggestions : null,
+                    treeWarning
                 });
             });
         }
