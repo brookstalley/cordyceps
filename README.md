@@ -2,8 +2,6 @@
 
 **MCP server for Grasshopper.** Give AI agents or scripts direct control over your parametric design canvas.
 
-**[Download Cordyceps.gha](https://github.com/brookstalley/cordyceps/raw/main/releases/Cordyceps.gha)**
-
 ## Requirements
 
 - **Rhino 8.21+** (requires .NET 8)
@@ -11,7 +9,9 @@
 
 ## Quick Start
 
-**Install**: Copy `releases/Cordyceps.gha` to your Grasshopper components folder. In Grasshopper: *File → Special Folders → Components Folder*.
+**[Download Cordyceps.gha](https://github.com/brookstalley/cordyceps/raw/main/releases/Cordyceps.gha)**
+
+**Install**: Copy `Cordyceps.gha` to your Grasshopper components folder. In Grasshopper: *File → Special Folders → Components Folder*.
 
 **Start**: Drop the Cordyceps component on your canvas (*Params → Util → Cordyceps*). The server starts on port 26929 by default—change it via the Port input if needed.
 
