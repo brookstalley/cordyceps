@@ -170,13 +170,46 @@ namespace Cordyceps.Tools
                 group.ExpireCaches();
                 Instances.ActiveCanvas?.Invalidate();
 
+                // Get group bounds and check for layout warnings
+                var groupBounds = group.Attributes?.Bounds ?? RectangleF.Empty;
+                var warnings = new List<string>();
+
+                // Check if this group overlaps with other groups
+                foreach (var otherObj in doc.Objects)
+                {
+                    if (otherObj is GH_Group otherGroup && otherGroup.InstanceGuid != group.InstanceGuid)
+                    {
+                        var otherBounds = otherGroup.Attributes?.Bounds ?? RectangleF.Empty;
+                        if (!groupBounds.IsEmpty && !otherBounds.IsEmpty && groupBounds.IntersectsWith(otherBounds))
+                        {
+                            warnings.Add($"Group '{group.NickName}' overlaps with group '{otherGroup.NickName}' - consider moving components");
+                        }
+                    }
+                }
+
+                // Check if group is very wide (might indicate horizontal spacing issues)
+                if (groupBounds.Width > 1000)
+                {
+                    warnings.Add($"Group is very wide ({groupBounds.Width:F0}px) - consider splitting into multiple groups or spacing components closer");
+                }
+
                 return JsonConvert.SerializeObject(new
                 {
                     success = true,
                     groupId = group.InstanceGuid.ToString(),
                     groupName = group.NickName,
                     addedCount = objects.Count,
-                    addedIds = objects.Select(o => o.InstanceGuid.ToString()).ToList()
+                    addedIds = objects.Select(o => o.InstanceGuid.ToString()).ToList(),
+                    bounds = new
+                    {
+                        x = groupBounds.X,
+                        y = groupBounds.Y,
+                        width = groupBounds.Width,
+                        height = groupBounds.Height,
+                        right = groupBounds.Right,
+                        bottom = groupBounds.Bottom
+                    },
+                    warnings = warnings.Count > 0 ? warnings : null
                 });
             });
         }

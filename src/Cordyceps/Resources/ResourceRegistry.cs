@@ -65,6 +65,23 @@ namespace Cordyceps.Resources
                 "Common Component Patterns",
                 "Frequently used component combinations and workflows");
 
+            RegisterEmbeddedResource("gh://docs/canvas-layout", "Knowledge.CanvasLayoutGuide.md",
+                "Canvas Layout Best Practices",
+                "Component dimensions, spacing conventions, and layout patterns for readable Grasshopper definitions");
+
+            // Pattern resources
+            RegisterEmbeddedResource("gh://patterns/radial-array", "Knowledge.Patterns.RadialArray.md",
+                "Radial Array Pattern",
+                "Create N copies of geometry arranged in a circle around a center point");
+
+            RegisterEmbeddedResource("gh://patterns/linear-array", "Knowledge.Patterns.LinearArray.md",
+                "Linear Array Pattern",
+                "Create N copies of geometry arranged in a straight line along a direction");
+
+            RegisterEmbeddedResource("gh://patterns/grid-array", "Knowledge.Patterns.GridArray.md",
+                "Grid Array Pattern",
+                "Create a 2D or 3D grid of geometry with controllable spacing");
+
             // Register dynamic providers
             _dynamicProviders.Add(new ComponentResourceProvider());
         }

@@ -55,6 +55,10 @@
     <EmbeddedResource Include="Knowledge\TypeSystemGuide.md" />
     <EmbeddedResource Include="Knowledge\BestPracticesGuide.md" />
     <EmbeddedResource Include="Knowledge\ComponentPatternsGuide.md" />
+    <EmbeddedResource Include="Knowledge\CanvasLayoutGuide.md" />
+    <EmbeddedResource Include="Knowledge\Patterns\RadialArray.md" />
+    <EmbeddedResource Include="Knowledge\Patterns\LinearArray.md" />
+    <EmbeddedResource Include="Knowledge\Patterns\GridArray.md" />
   </ItemGroup>
 
   <!-- Post-build: Copy .gha to releases folder for Grasshopper to load -->

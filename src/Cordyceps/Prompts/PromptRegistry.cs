@@ -305,6 +305,130 @@ get_canvas_status()
 
 Compare component status before and after changes."
             });
+
+            RegisterPrompt(new PromptDefinition
+            {
+                Name = "plan_definition",
+                Description = "Step-by-step planning workflow for building a Grasshopper definition",
+                Arguments = new List<PromptArgument>
+                {
+                    new PromptArgument { Name = "goal", Description = "What the definition should accomplish", Required = true }
+                },
+                Template = @"# Planning a Grasshopper Definition
+
+**Goal:** {goal}
+
+Before building, analyze what you need following this structured approach:
+
+## Step 1: Read Layout Guide
+First, read the layout best practices:
+```
+Read resource: gh://docs/canvas-layout
+```
+
+## Step 2: Check for Patterns
+Search for a matching pattern:
+```
+suggest_pattern(description: ""{goal}"")
+```
+If a pattern is found, read the pattern resource for detailed guidance.
+
+## Step 3: Identify Inputs
+What parameters should be adjustable?
+
+| Input Type | Component | Typical Position |
+|------------|-----------|------------------|
+| Numeric value | Number Slider | x=50, y=50/120/190... |
+| Point | Point parameter | x=50 |
+| Text | Panel | x=50 |
+| Boolean | Toggle | x=50 |
+| Selection | Value List | x=50 |
+
+**Layout Rule:** Stack sliders vertically with 70px gaps. Sliders need ~200px width.
+
+## Step 4: Identify Transformations
+What operations are needed?
+
+| Operation Type | Components | Position |
+|----------------|------------|----------|
+| Mathematical | Add, Multiply, Division, Pi | x=250 |
+| Sequences | Series, Range, Repeat | x=400 |
+| Geometric | Move, Rotate, Scale, Mirror | x=550 |
+| Data | Merge, Graft, Flatten, Cross Reference | x=550 |
+
+**Layout Rule:** 150px horizontal gaps between columns.
+
+## Step 5: Identify Outputs
+What geometry is created?
+
+| Output Type | Components |
+|-------------|------------|
+| Curves | Circle, Arc, Line, Polyline, Interpolate |
+| Surfaces | Extrude, Loft, Revolve, Pipe |
+| Solids | Box, Cylinder, Sphere, Boolean |
+| Points | Construct Point, Divide Curve |
+
+**Layout Rule:** Output components at rightmost position (x=700+).
+
+## Step 6: Sketch Layout
+
+```
+x=50          x=250        x=400         x=550         x=700
+INPUTS        MATH         SEQUENCES     TRANSFORM     OUTPUT
+├─[Slider1]   ├─[Pi]       ├─[Series]    ├─[Rotate]    ├─[Geometry]
+├─[Slider2]   ├─[Divide]   │             ├─[Move]      │
+├─[Slider3]   │            │             │             │
+│             │            │             │             │
+├─[Const 0]   │            │             │             │
+├─[Const 1]   │            │             │             │
+└─[Const 2]   │            │             │             │
+```
+
+## Step 7: Build with Solver Disabled
+
+```
+set_solver_enabled(false)
+```
+
+Add components in left-to-right order:
+1. Add all input sliders at x=50
+2. Add constants below inputs
+3. Add processing components in middle columns
+4. Add output geometry on right
+5. Wire all connections using bulk_connect
+6. Enable solver and verify
+
+```
+set_solver_enabled(true)
+get_canvas_status()
+```
+
+## Step 8: Validate and Organize
+
+```
+validate_layout()
+```
+
+If there are overlaps, use:
+```
+auto_space_components(mode: ""horizontal"", spacing: 100)
+```
+
+Then organize with groups:
+```
+add_to_group(componentIds: [...], groupName: ""Inputs"", color: ""#4CAF50"")
+add_to_group(componentIds: [...], groupName: ""Processing"", color: ""#2196F3"")
+add_to_group(componentIds: [...], groupName: ""Output"", color: ""#FF9800"")
+```
+
+## Common Mistakes to Avoid
+
+1. **Sliders too close:** Leave 200px for slider width
+2. **Vertical cramping:** Use 70px vertical gaps
+3. **Forgetting constants:** 0, 1, 2, Pi often needed
+4. **Wrong component:** Check deprecation with search_components
+5. **Layout not validated:** Always run validate_layout() after building"
+            });
         }
 
         /// <summary>

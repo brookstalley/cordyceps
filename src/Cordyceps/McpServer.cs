@@ -488,51 +488,86 @@ namespace Cordyceps
 
 Before working with Grasshopper, read these essential resources using `resources/read`:
 
-- **`gh://docs/data-trees`** - CRITICAL: Grasshopper's data tree system is unintuitive. Read this first to understand paths like `{0;0;1}`, Item/List/Tree access modes, and data matching behavior.
+- **`gh://docs/data-trees`** - CRITICAL: Grasshopper's data tree system is unintuitive. Read this first.
+- **`gh://docs/canvas-layout`** - CRITICAL: Layout conventions for readable definitions.
 - **`gh://docs/type-system`** - Type compatibility and coercion rules
 - **`gh://docs/best-practices`** - Common mistakes and how to avoid them
-- **`gh://docs/component-patterns`** - Frequently used component combinations
 
 For any specific component, read `gh://component/{name}` (e.g., `gh://component/Circle`) to get full parameter details.
 
-## Quick Reference
+## Canvas Layout Guidelines (IMPORTANT)
 
-### Standard Workflow
-1. Disable solver: `set_solver_enabled(enabled: false)`
-2. Add and configure components
-3. Create connections (use `validate_connection` first if unsure)
-4. Enable solver: `set_solver_enabled(enabled: true)`
-5. Check status: `get_canvas_status()`
+Proper spacing prevents overlapping components and unreadable definitions:
 
-### Key Concepts
-- **Data Trees**: Hierarchical data with paths like `{0;0;1}`. Components auto-match data - mismatched trees cause cross-products or errors.
-- **Access Modes**: Item (single value), List (flat list), Tree (full hierarchy). These MUST match or data flow will fail.
-- **Type Coercion**: Grasshopper converts types automatically (e.g., Integer→Number) but some conversions fail silently.
+### Component Dimensions
+- **Number Sliders**: ~200px wide, 20px tall - need horizontal space!
+- **Panels**: ~100px wide, expand with content
+- **Standard components**: ~100px wide, 40-60px tall
 
-### Avoiding Mistakes
-1. **Always validate connections**: Use `validate_connection` before `connect_components` to catch type/access mismatches
-2. **Check deprecation**: Use `check_deprecation` before using unfamiliar components to avoid obsolete ones
-3. **Name your components**: Use `rename_component` for debugging - component IDs are GUIDs
-4. **Debug systematically**: After errors, use `get_disconnected_inputs` and `trace_data_flow` to diagnose
+### Spacing Conventions
+- **Horizontal gaps**: 150px between columns
+- **Vertical gaps**: 70px between stacked components
+- **Groups**: Add 40px padding around contents
 
-### Performance
-- Disable solver during bulk operations (prevents recompute after each change)
-- Keep solver enabled when debugging single components (immediate feedback)
+### Layout Pattern
+```
+x=50 (Inputs)  x=250 (Math)  x=400 (Transform)  x=700 (Output)
+[Slider]        [Pi]          [Rotate]           [Geometry]
+[Slider]        [Division]    [Move]
+[Panel: 0]
+[Panel: 1]
+```
 
-### Error Recovery
-- `get_canvas_status()` - See all component states (OK, ERROR, WARNING, DISCONNECTED)
-- `get_debug_reports()` - Get output from script component Report parameters
-- `trace_data_flow(id, direction)` - Trace upstream/downstream dependencies
-- `get_disconnected_inputs()` - Find missing required connections
+### Layout Tools
+- `get_component_bounds(id)` - Get actual component dimensions
+- `validate_layout()` - Check for overlaps and spacing issues
+- `auto_space_components(mode)` - Auto-fix overlapping components
+- `add_constant(value, x, y)` - Quick way to add constant panels
+
+## Standard Workflow
+
+1. **Plan first**: Use `suggest_pattern(description)` to find relevant patterns
+2. **Read pattern**: If found, read the pattern resource (e.g., `gh://patterns/radial-array`)
+3. **Disable solver**: `set_solver_enabled(enabled: false)`
+4. **Add inputs** at x=50, stacked vertically with 70px gaps
+5. **Add constants** below inputs if needed (0, 1, 2, Pi are common)
+6. **Add processing** at x=250, 400, 550... (150px increments)
+7. **Add outputs** at rightmost position
+8. **Connect**: Use `bulk_connect` for efficiency
+9. **Enable solver**: `set_solver_enabled(enabled: true)`
+10. **Validate**: `get_canvas_status()` then `validate_layout()`
+11. **Organize**: `add_to_group` for visual clarity
+
+## Key Concepts
+
+- **Data Trees**: Hierarchical data with paths like `{0;0;1}`. Mismatched trees cause cross-products.
+- **Access Modes**: Item (single value), List (flat list), Tree (full hierarchy).
+- **Type Coercion**: Grasshopper converts types automatically but some fail silently.
 
 ## Available Resources
 
-Use `resources/list` to see all documentation, then `resources/read` with the URI:
+### Documentation
 - `gh://docs/data-trees` - Data tree fundamentals (READ THIS FIRST)
+- `gh://docs/canvas-layout` - Layout best practices (READ THIS FIRST)
 - `gh://docs/type-system` - Type compatibility matrix
 - `gh://docs/best-practices` - Patterns and anti-patterns
 - `gh://docs/component-patterns` - Common workflows
-- `gh://component/{name}` - Dynamic docs for any component
+
+### Patterns (pre-built component workflows)
+- `gh://patterns/radial-array` - Arrange objects in a circle
+- `gh://patterns/linear-array` - Arrange objects in a line
+- `gh://patterns/grid-array` - Create 2D grids
+
+### Dynamic
+- `gh://component/{name}` - Documentation for any component
+
+## Avoiding Mistakes
+
+1. **Layout first**: Plan positions before adding. Sliders need 200px width.
+2. **Validate connections**: Use `validate_connection` before `connect_components`
+3. **Check deprecation**: Use `search_components` to see if components are deprecated
+4. **Name components**: Use `rename_component` for debugging
+5. **Validate layout**: Always run `validate_layout()` after building
 ";
         }
 

@@ -73,13 +73,33 @@ namespace Cordyceps.Tools
 
                     Core.DebugLog.Info($"Component added: {component.Name} ({component.InstanceGuid})");
 
+                    // Get component bounds for layout planning
+                    var bounds = component.Attributes.Bounds;
+                    int inputCount = 0;
+                    int outputCount = 0;
+
+                    if (component is IGH_Component ghComp)
+                    {
+                        inputCount = ghComp.Params.Input.Count;
+                        outputCount = ghComp.Params.Output.Count;
+                    }
+                    else if (component is IGH_Param ghParam)
+                    {
+                        inputCount = ghParam.SourceCount > 0 ? 1 : 0;
+                        outputCount = 1;
+                    }
+
                     return JsonConvert.SerializeObject(new
                     {
                         success = true,
                         id = component.InstanceGuid.ToString(),
                         type = component.Name,
                         x = component.Attributes.Pivot.X,
-                        y = component.Attributes.Pivot.Y
+                        y = component.Attributes.Pivot.Y,
+                        width = bounds.Width,
+                        height = bounds.Height,
+                        inputCount = inputCount,
+                        outputCount = outputCount
                     });
                 }
                 catch (Exception ex)
@@ -565,6 +585,423 @@ namespace Cordyceps.Tools
                     added = addedCount,
                     removed = removedCount
                 });
+            });
+        }
+
+        [McpServerTool, Description("Get the bounding box and dimensions of a component on the canvas")]
+        public string GetComponentBounds(
+            [Description("Component GUID")] string id)
+        {
+            _server?.RecordCommand("get_component_bounds");
+            return _context.ExecuteOnUiThread(() =>
+            {
+                var doc = _context.GetActiveDocument();
+                if (doc == null)
+                {
+                    return JsonConvert.SerializeObject(new { success = false, error = "No active Grasshopper document" });
+                }
+
+                if (!Guid.TryParse(id, out Guid guid))
+                {
+                    return JsonConvert.SerializeObject(new { success = false, error = "Invalid component ID" });
+                }
+
+                var component = doc.FindObject(guid, true);
+                if (component == null)
+                {
+                    return JsonConvert.SerializeObject(new { success = false, error = $"Component not found: {id}" });
+                }
+
+                var bounds = component.Attributes.Bounds;
+                var pivot = component.Attributes.Pivot;
+
+                return JsonConvert.SerializeObject(new
+                {
+                    success = true,
+                    id = id,
+                    name = component.Name,
+                    nickname = component.NickName,
+                    bounds = new
+                    {
+                        x = bounds.X,
+                        y = bounds.Y,
+                        width = bounds.Width,
+                        height = bounds.Height,
+                        right = bounds.Right,
+                        bottom = bounds.Bottom
+                    },
+                    pivot = new
+                    {
+                        x = pivot.X,
+                        y = pivot.Y
+                    }
+                });
+            });
+        }
+
+        [McpServerTool, Description("Validate canvas layout for overlaps and spacing issues")]
+        public string ValidateLayout()
+        {
+            _server?.RecordCommand("validate_layout");
+            return _context.ExecuteOnUiThread(() =>
+            {
+                var doc = _context.GetActiveDocument();
+                if (doc == null)
+                {
+                    return JsonConvert.SerializeObject(new { success = false, error = "No active Grasshopper document" });
+                }
+
+                var overlaps = new List<object>();
+                var suggestions = new List<string>();
+                var components = doc.Objects.ToList();
+
+                // Check for overlaps between all pairs of components
+                for (int i = 0; i < components.Count; i++)
+                {
+                    for (int j = i + 1; j < components.Count; j++)
+                    {
+                        var comp1 = components[i];
+                        var comp2 = components[j];
+
+                        // Skip groups - they're meant to contain other components
+                        if (comp1 is GH_Group || comp2 is GH_Group) continue;
+
+                        var bounds1 = comp1.Attributes.Bounds;
+                        var bounds2 = comp2.Attributes.Bounds;
+
+                        if (bounds1.IntersectsWith(bounds2))
+                        {
+                            var intersection = RectangleF.Intersect(bounds1, bounds2);
+                            var overlapArea = intersection.Width * intersection.Height;
+
+                            overlaps.Add(new
+                            {
+                                component1 = new { id = comp1.InstanceGuid.ToString(), name = comp1.Name, nickname = comp1.NickName },
+                                component2 = new { id = comp2.InstanceGuid.ToString(), name = comp2.Name, nickname = comp2.NickName },
+                                overlapArea = overlapArea
+                            });
+
+                            suggestions.Add($"'{comp1.NickName ?? comp1.Name}' overlaps with '{comp2.NickName ?? comp2.Name}' - move one component");
+                        }
+                    }
+                }
+
+                // Check for tight spacing (components too close together horizontally)
+                var sortedByX = components.Where(c => !(c is GH_Group))
+                    .OrderBy(c => c.Attributes.Bounds.X).ToList();
+
+                for (int i = 0; i < sortedByX.Count - 1; i++)
+                {
+                    var comp1 = sortedByX[i];
+                    var comp2 = sortedByX[i + 1];
+
+                    var gap = comp2.Attributes.Bounds.X - comp1.Attributes.Bounds.Right;
+                    if (gap > 0 && gap < 50) // Less than 50 units is tight
+                    {
+                        suggestions.Add($"Tight horizontal spacing ({gap:F0}px) between '{comp1.NickName ?? comp1.Name}' and '{comp2.NickName ?? comp2.Name}' - consider 100-150px gaps");
+                    }
+                }
+
+                // Check for tight spacing vertically
+                var sortedByY = components.Where(c => !(c is GH_Group))
+                    .OrderBy(c => c.Attributes.Bounds.Y).ToList();
+
+                for (int i = 0; i < sortedByY.Count - 1; i++)
+                {
+                    var comp1 = sortedByY[i];
+                    var comp2 = sortedByY[i + 1];
+
+                    // Only check if they're in similar X positions (same column)
+                    if (Math.Abs(comp1.Attributes.Pivot.X - comp2.Attributes.Pivot.X) < 100)
+                    {
+                        var gap = comp2.Attributes.Bounds.Y - comp1.Attributes.Bounds.Bottom;
+                        if (gap > 0 && gap < 30) // Less than 30 units is tight
+                        {
+                            suggestions.Add($"Tight vertical spacing ({gap:F0}px) between '{comp1.NickName ?? comp1.Name}' and '{comp2.NickName ?? comp2.Name}' - consider 70px gaps");
+                        }
+                    }
+                }
+
+                return JsonConvert.SerializeObject(new
+                {
+                    success = true,
+                    componentCount = components.Count,
+                    overlapCount = overlaps.Count,
+                    overlaps = overlaps,
+                    suggestions = suggestions,
+                    isClean = overlaps.Count == 0 && suggestions.Count == 0
+                });
+            });
+        }
+
+        [McpServerTool, Description("Automatically space components to eliminate overlaps")]
+        public string AutoSpaceComponents(
+            [Description("Spacing mode: 'horizontal', 'vertical', or 'grid'")] string mode = "horizontal",
+            [Description("JSON array of component IDs to arrange (optional, defaults to all)")] string componentIds = null,
+            [Description("Spacing between components in pixels")] int spacing = 100,
+            [Description("Component ID to keep fixed as anchor (optional)")] string anchor = null)
+        {
+            _server?.RecordCommand("auto_space_components");
+            return _context.ExecuteOnUiThread(() =>
+            {
+                var doc = _context.GetActiveDocument();
+                if (doc == null)
+                {
+                    return JsonConvert.SerializeObject(new { success = false, error = "No active Grasshopper document" });
+                }
+
+                // Parse component IDs if provided
+                List<Guid> targetIds = null;
+                if (!string.IsNullOrEmpty(componentIds))
+                {
+                    try
+                    {
+                        var idList = JsonConvert.DeserializeObject<List<string>>(componentIds);
+                        targetIds = idList.Select(id => Guid.Parse(id)).ToList();
+                    }
+                    catch
+                    {
+                        return JsonConvert.SerializeObject(new { success = false, error = "Invalid componentIds JSON array" });
+                    }
+                }
+
+                // Get components to arrange
+                var components = doc.Objects
+                    .Where(c => !(c is GH_Group))
+                    .Where(c => targetIds == null || targetIds.Contains(c.InstanceGuid))
+                    .ToList();
+
+                if (components.Count == 0)
+                {
+                    return JsonConvert.SerializeObject(new { success = false, error = "No components to arrange" });
+                }
+
+                // Parse anchor ID
+                Guid? anchorId = null;
+                if (!string.IsNullOrEmpty(anchor) && Guid.TryParse(anchor, out Guid anchorGuid))
+                {
+                    anchorId = anchorGuid;
+                }
+
+                // Find starting position
+                float startX, startY;
+                if (anchorId.HasValue)
+                {
+                    var anchorComp = components.FirstOrDefault(c => c.InstanceGuid == anchorId.Value);
+                    if (anchorComp != null)
+                    {
+                        startX = anchorComp.Attributes.Pivot.X;
+                        startY = anchorComp.Attributes.Pivot.Y;
+                        // Remove anchor from list so it doesn't move
+                        components.Remove(anchorComp);
+                    }
+                    else
+                    {
+                        startX = components.Min(c => c.Attributes.Pivot.X);
+                        startY = components.Min(c => c.Attributes.Pivot.Y);
+                    }
+                }
+                else
+                {
+                    startX = components.Min(c => c.Attributes.Pivot.X);
+                    startY = components.Min(c => c.Attributes.Pivot.Y);
+                }
+
+                var movedCount = 0;
+
+                switch (mode.ToLowerInvariant())
+                {
+                    case "horizontal":
+                        // Sort by current X position and space horizontally
+                        var sortedH = components.OrderBy(c => c.Attributes.Pivot.X).ToList();
+                        float currentX = startX;
+                        foreach (var comp in sortedH)
+                        {
+                            comp.Attributes.Pivot = new PointF(currentX, comp.Attributes.Pivot.Y);
+                            comp.Attributes.ExpireLayout();
+                            currentX += comp.Attributes.Bounds.Width + spacing;
+                            movedCount++;
+                        }
+                        break;
+
+                    case "vertical":
+                        // Sort by current Y position and space vertically
+                        var sortedV = components.OrderBy(c => c.Attributes.Pivot.Y).ToList();
+                        float currentY = startY;
+                        foreach (var comp in sortedV)
+                        {
+                            comp.Attributes.Pivot = new PointF(comp.Attributes.Pivot.X, currentY);
+                            comp.Attributes.ExpireLayout();
+                            currentY += comp.Attributes.Bounds.Height + spacing;
+                            movedCount++;
+                        }
+                        break;
+
+                    case "grid":
+                        // Arrange in a grid pattern
+                        int cols = (int)Math.Ceiling(Math.Sqrt(components.Count));
+                        var sortedG = components.OrderBy(c => c.Attributes.Pivot.Y)
+                            .ThenBy(c => c.Attributes.Pivot.X).ToList();
+                        float gridX = startX;
+                        float gridY = startY;
+                        int col = 0;
+                        float maxHeightInRow = 0;
+
+                        foreach (var comp in sortedG)
+                        {
+                            comp.Attributes.Pivot = new PointF(gridX, gridY);
+                            comp.Attributes.ExpireLayout();
+                            maxHeightInRow = Math.Max(maxHeightInRow, comp.Attributes.Bounds.Height);
+
+                            col++;
+                            if (col >= cols)
+                            {
+                                col = 0;
+                                gridX = startX;
+                                gridY += maxHeightInRow + spacing;
+                                maxHeightInRow = 0;
+                            }
+                            else
+                            {
+                                gridX += comp.Attributes.Bounds.Width + spacing;
+                            }
+                            movedCount++;
+                        }
+                        break;
+
+                    default:
+                        return JsonConvert.SerializeObject(new { success = false, error = $"Unknown mode: {mode}" });
+                }
+
+                Instances.ActiveCanvas?.Invalidate();
+
+                return JsonConvert.SerializeObject(new
+                {
+                    success = true,
+                    mode = mode,
+                    movedCount = movedCount,
+                    spacing = spacing
+                });
+            });
+        }
+
+        [McpServerTool, Description("Add a constant value panel to the canvas (convenience for creating pre-configured panels)")]
+        public string AddConstant(
+            [Description("Constant value (e.g., '0', '1', '2', 'Pi')")] string value,
+            [Description("X position on canvas")] double x,
+            [Description("Y position on canvas")] double y,
+            [Description("Optional nickname for the panel")] string nickname = null)
+        {
+            _server?.RecordCommand("add_constant");
+            return _context.ExecuteOnUiThread(() =>
+            {
+                var doc = _context.GetActiveDocument();
+                if (doc == null)
+                {
+                    return JsonConvert.SerializeObject(new { success = false, error = "No active Grasshopper document" });
+                }
+
+                // Create a panel
+                var panel = new GH_Panel();
+                panel.CreateAttributes();
+                panel.Attributes.Pivot = new PointF((float)x, (float)y);
+
+                // Set the value
+                panel.SetUserText(value);
+
+                // Set nickname if provided, otherwise use the value
+                panel.NickName = nickname ?? value;
+
+                // Add to document
+                doc.AddObject(panel, false);
+                doc.NewSolution(true);
+
+                var bounds = panel.Attributes.Bounds;
+
+                return JsonConvert.SerializeObject(new
+                {
+                    success = true,
+                    id = panel.InstanceGuid.ToString(),
+                    type = "Panel",
+                    value = value,
+                    nickname = panel.NickName,
+                    x = panel.Attributes.Pivot.X,
+                    y = panel.Attributes.Pivot.Y,
+                    width = bounds.Width,
+                    height = bounds.Height
+                });
+            });
+        }
+
+        [McpServerTool, Description("Suggest a pattern for a given task description")]
+        public string SuggestPattern(
+            [Description("Description of what you want to create (e.g., 'arrange objects in a circle')")] string description)
+        {
+            _server?.RecordCommand("suggest_pattern");
+            // Pattern matching is done locally without UI thread access
+            var desc = description.ToLowerInvariant();
+
+            var suggestions = new List<object>();
+
+            // Radial/circular patterns
+            if (desc.Contains("circle") || desc.Contains("radial") || desc.Contains("rotate") ||
+                desc.Contains("around") || desc.Contains("polar") || desc.Contains("spoke"))
+            {
+                suggestions.Add(new
+                {
+                    pattern = "radial-array",
+                    resource = "gh://patterns/radial-array",
+                    description = "Create N copies arranged in a circle around a center point",
+                    components = new[] { "Number Slider", "Pi", "Division", "Series", "Construct Point", "Rotate 3D", "Unit Z" },
+                    estimatedComponentCount = 10
+                });
+            }
+
+            // Linear patterns
+            if (desc.Contains("line") || desc.Contains("linear") || desc.Contains("row") ||
+                desc.Contains("repeat") || desc.Contains("copy") || desc.Contains("array") ||
+                desc.Contains("space") || desc.Contains("distribute"))
+            {
+                suggestions.Add(new
+                {
+                    pattern = "linear-array",
+                    resource = "gh://patterns/linear-array",
+                    description = "Create N copies arranged in a straight line",
+                    components = new[] { "Number Slider", "Series", "Unit X", "Move" },
+                    estimatedComponentCount = 6
+                });
+            }
+
+            // Grid patterns
+            if (desc.Contains("grid") || desc.Contains("matrix") || desc.Contains("2d array") ||
+                desc.Contains("rows and columns") || desc.Contains("panel") || desc.Contains("facade"))
+            {
+                suggestions.Add(new
+                {
+                    pattern = "grid-array",
+                    resource = "gh://patterns/grid-array",
+                    description = "Create a 2D grid of copies with X and Y spacing",
+                    components = new[] { "Number Slider", "Series", "Cross Reference", "Construct Point", "Rectangular Grid" },
+                    estimatedComponentCount = 8
+                });
+            }
+
+            if (suggestions.Count == 0)
+            {
+                return JsonConvert.SerializeObject(new
+                {
+                    success = true,
+                    found = false,
+                    message = "No specific pattern recognized. Try describing your goal using keywords like: circle, radial, line, array, grid, copy, repeat, distribute"
+                });
+            }
+
+            return JsonConvert.SerializeObject(new
+            {
+                success = true,
+                found = true,
+                count = suggestions.Count,
+                suggestions = suggestions
             });
         }
     }
