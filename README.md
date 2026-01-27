@@ -2,6 +2,8 @@
 
 **MCP server for Grasshopper.** Give AI agents or scripts direct control over your parametric design canvas.
 
+**[Download Cordyceps.gha](https://github.com/brookstalley/cordyceps/raw/main/releases/Cordyceps.gha)**
+
 ## Requirements
 
 - **Rhino 8.21+** (requires .NET 8)
