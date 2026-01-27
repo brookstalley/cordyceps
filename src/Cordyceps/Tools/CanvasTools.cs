@@ -249,9 +249,16 @@ namespace Cordyceps.Tools
                 if (!ToolHelpers.TryGetActiveDocument(_context, out var doc, out var error))
                     return ToolHelpers.ErrorResponse(error);
 
+                // Get infrastructure component IDs to filter
+                var infraIds = ToolHelpers.GetCordycepsInfrastructureIds(doc);
+
                 var components = new List<object>();
                 foreach (var obj in doc.Objects)
                 {
+                    // Skip Cordyceps infrastructure
+                    if (ToolHelpers.IsCordycepsInfrastructure(obj, infraIds))
+                        continue;
+
                     var compInfo = new Dictionary<string, object>
                     {
                         ["id"] = obj.InstanceGuid.ToString(),
@@ -611,7 +618,7 @@ namespace Cordyceps.Tools
                                 overlapArea = overlapArea
                             });
 
-                            suggestions.Add($"'{comp1.NickName ?? comp1.Name}' overlaps with '{comp2.NickName ?? comp2.Name}' - move one component");
+                            suggestions.Add($"'{ToolHelpers.GetDisplayName(comp1)}' overlaps with '{ToolHelpers.GetDisplayName(comp2)}' - move one component");
                         }
                     }
                 }
@@ -628,11 +635,12 @@ namespace Cordyceps.Tools
                     var gap = comp2.Attributes.Bounds.X - comp1.Attributes.Bounds.Right;
                     if (gap > 0 && gap < 50) // Less than 50 units is tight
                     {
-                        suggestions.Add($"Tight horizontal spacing ({gap:F0}px) between '{comp1.NickName ?? comp1.Name}' and '{comp2.NickName ?? comp2.Name}' - consider 100-150px gaps");
+                        suggestions.Add($"Tight horizontal spacing ({gap:F0}px) between '{ToolHelpers.GetDisplayName(comp1)}' and '{ToolHelpers.GetDisplayName(comp2)}' - consider 100-150px gaps");
                     }
                 }
 
                 // Check for tight spacing vertically
+                // Skip compact components (sliders, value lists) which are intentionally close together
                 var sortedByY = components.Where(c => !(c is GH_Group))
                     .OrderBy(c => c.Attributes.Bounds.Y).ToList();
 
@@ -641,13 +649,17 @@ namespace Cordyceps.Tools
                     var comp1 = sortedByY[i];
                     var comp2 = sortedByY[i + 1];
 
+                    // Skip if either component is a compact type (sliders, value lists)
+                    if (ToolHelpers.IsCompactComponent(comp1) || ToolHelpers.IsCompactComponent(comp2))
+                        continue;
+
                     // Only check if they're in similar X positions (same column)
                     if (Math.Abs(comp1.Attributes.Pivot.X - comp2.Attributes.Pivot.X) < 100)
                     {
                         var gap = comp2.Attributes.Bounds.Y - comp1.Attributes.Bounds.Bottom;
                         if (gap > 0 && gap < 30) // Less than 30 units is tight
                         {
-                            suggestions.Add($"Tight vertical spacing ({gap:F0}px) between '{comp1.NickName ?? comp1.Name}' and '{comp2.NickName ?? comp2.Name}' - consider 70px gaps");
+                            suggestions.Add($"Tight vertical spacing ({gap:F0}px) between '{ToolHelpers.GetDisplayName(comp1)}' and '{ToolHelpers.GetDisplayName(comp2)}' - consider 70px gaps");
                         }
                     }
                 }

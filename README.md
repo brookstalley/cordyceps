@@ -10,7 +10,7 @@ Cordyceps is a Grasshopper plugin that gives AI agents (like Claude) direct cont
 
 Imagine telling Claude: *"Create a parametric facade pattern with hexagonal cells that vary in size based on attractor points"*—and watching it build the Grasshopper definition in real-time. That's Cordyceps.
 
-It exposes **74 MCP tools** that let AI agents:
+It exposes **76 MCP tools** that let AI agents:
 - Add and configure any Grasshopper component
 - Create and manage wiring between components
 - Set slider values, configure value lists, write script components

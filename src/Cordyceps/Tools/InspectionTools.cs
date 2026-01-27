@@ -35,6 +35,9 @@ namespace Cordyceps.Tools
                 if (!ToolHelpers.TryGetActiveDocument(_context, out var doc, out var error))
                     return ToolHelpers.ErrorResponse(error);
 
+                // Get infrastructure component IDs to filter (Cordyceps + connected components)
+                var infraIds = ToolHelpers.GetCordycepsInfrastructureIds(doc);
+
                 var components = new List<object>();
                 int okCount = 0, errorCount = 0, warningCount = 0, disconnectedCount = 0;
 
@@ -42,6 +45,10 @@ namespace Cordyceps.Tools
                 {
                     if (obj is IGH_Component comp)
                     {
+                        // Skip Cordyceps infrastructure (the component and anything connected to it)
+                        if (ToolHelpers.IsCordycepsInfrastructure(comp, infraIds))
+                            continue;
+
                         string status = "OK";
                         string statusMessage = "";
 
@@ -130,12 +137,19 @@ namespace Cordyceps.Tools
                 if (!ToolHelpers.TryGetActiveDocument(_context, out var doc, out var error))
                     return ToolHelpers.ErrorResponse(error);
 
+                // Get infrastructure component IDs to filter
+                var infraIds = ToolHelpers.GetCordycepsInfrastructureIds(doc);
+
                 var disconnected = new List<object>();
 
                 foreach (var obj in doc.Objects)
                 {
                     if (obj is IGH_Component comp)
                     {
+                        // Skip Cordyceps infrastructure
+                        if (ToolHelpers.IsCordycepsInfrastructure(comp, infraIds))
+                            continue;
+
                         // Filter by type
                         bool include = type == "all"
                             || (type == "script" && (comp.Name.Contains("Script") || comp.GetType().Name.Contains("Script")))
@@ -167,6 +181,186 @@ namespace Cordyceps.Tools
                     success = true,
                     count = disconnected.Count,
                     disconnected
+                });
+            });
+        }
+
+        [McpServerTool, Description("Get components filtered by type name")]
+        public string GetComponentsByType(
+            [Description("Component type to filter by (e.g., 'C# Script', 'Number Slider', 'Circle')")] string type)
+        {
+            _server?.RecordCommand("get_components_by_type");
+            return _context.ExecuteOnUiThread(() =>
+            {
+                if (!ToolHelpers.TryGetActiveDocument(_context, out var doc, out var error))
+                    return ToolHelpers.ErrorResponse(error);
+
+                if (string.IsNullOrEmpty(type))
+                    return ToolHelpers.ErrorResponse("Type parameter is required");
+
+                // Get infrastructure component IDs to filter
+                var infraIds = ToolHelpers.GetCordycepsInfrastructureIds(doc);
+
+                var matchingComponents = new List<object>();
+                var searchLower = type.ToLowerInvariant();
+
+                foreach (var obj in doc.Objects)
+                {
+                    if (obj is IGH_Component comp)
+                    {
+                        // Skip Cordyceps infrastructure
+                        if (ToolHelpers.IsCordycepsInfrastructure(comp, infraIds))
+                            continue;
+
+                        // Match against name, type name, or category
+                        var compName = comp.Name?.ToLowerInvariant() ?? "";
+                        var typeName = comp.GetType().Name.ToLowerInvariant();
+                        var category = comp.Category?.ToLowerInvariant() ?? "";
+
+                        if (compName.Contains(searchLower) ||
+                            typeName.Contains(searchLower) ||
+                            compName == searchLower ||
+                            typeName == searchLower)
+                        {
+                            matchingComponents.Add(new
+                            {
+                                id = comp.InstanceGuid.ToString(),
+                                name = comp.Name,
+                                nickname = comp.NickName,
+                                displayName = ToolHelpers.GetDisplayName(comp),
+                                typeName = comp.GetType().Name,
+                                category = comp.Category,
+                                subCategory = comp.SubCategory,
+                                inputCount = comp.Params.Input.Count,
+                                outputCount = comp.Params.Output.Count,
+                                position = new { x = comp.Attributes.Pivot.X, y = comp.Attributes.Pivot.Y }
+                            });
+                        }
+                    }
+                    else if (obj is IGH_Param param)
+                    {
+                        // Also check standalone parameters
+                        var paramName = param.Name?.ToLowerInvariant() ?? "";
+                        var typeName = param.GetType().Name.ToLowerInvariant();
+
+                        if (paramName.Contains(searchLower) ||
+                            typeName.Contains(searchLower) ||
+                            paramName == searchLower ||
+                            typeName == searchLower)
+                        {
+                            matchingComponents.Add(new
+                            {
+                                id = param.InstanceGuid.ToString(),
+                                name = param.Name,
+                                nickname = param.NickName,
+                                displayName = ToolHelpers.GetDisplayName(param),
+                                typeName = param.GetType().Name,
+                                isParameter = true,
+                                position = new { x = param.Attributes.Pivot.X, y = param.Attributes.Pivot.Y }
+                            });
+                        }
+                    }
+                }
+
+                return JsonConvert.SerializeObject(new
+                {
+                    success = true,
+                    searchType = type,
+                    count = matchingComponents.Count,
+                    components = matchingComponents
+                });
+            });
+        }
+
+        [McpServerTool, Description("Get all components belonging to a specific group")]
+        public string GetComponentsInGroup(
+            [Description("Group name or GUID to get components from")] string group)
+        {
+            _server?.RecordCommand("get_components_in_group");
+            return _context.ExecuteOnUiThread(() =>
+            {
+                if (!ToolHelpers.TryGetActiveDocument(_context, out var doc, out var error))
+                    return ToolHelpers.ErrorResponse(error);
+
+                if (string.IsNullOrEmpty(group))
+                    return ToolHelpers.ErrorResponse("Group name or ID is required");
+
+                // Find the group by GUID or name
+                Grasshopper.Kernel.Special.GH_Group targetGroup = null;
+
+                if (Guid.TryParse(group, out Guid groupGuid))
+                {
+                    // Search by GUID
+                    targetGroup = doc.FindObject(groupGuid, true) as Grasshopper.Kernel.Special.GH_Group;
+                }
+
+                if (targetGroup == null)
+                {
+                    // Search by name (case-insensitive)
+                    var searchLower = group.ToLowerInvariant();
+                    foreach (var obj in doc.Objects)
+                    {
+                        if (obj is Grasshopper.Kernel.Special.GH_Group g)
+                        {
+                            var groupName = g.NickName?.ToLowerInvariant() ?? g.Name?.ToLowerInvariant() ?? "";
+                            if (groupName == searchLower || groupName.Contains(searchLower))
+                            {
+                                targetGroup = g;
+                                break;
+                            }
+                        }
+                    }
+                }
+
+                if (targetGroup == null)
+                    return ToolHelpers.ErrorResponse($"Group not found: {group}");
+
+                // Get all component GUIDs in the group
+                var memberIds = targetGroup.ObjectIDs ?? new List<Guid>();
+                var components = new List<object>();
+
+                foreach (var memberId in memberIds)
+                {
+                    var obj = doc.FindObject(memberId, true);
+                    if (obj == null) continue;
+
+                    if (obj is IGH_Component comp)
+                    {
+                        components.Add(new
+                        {
+                            id = comp.InstanceGuid.ToString(),
+                            name = comp.Name,
+                            nickname = comp.NickName,
+                            displayName = ToolHelpers.GetDisplayName(comp),
+                            typeName = comp.GetType().Name,
+                            category = comp.Category,
+                            inputCount = comp.Params.Input.Count,
+                            outputCount = comp.Params.Output.Count,
+                            position = new { x = comp.Attributes.Pivot.X, y = comp.Attributes.Pivot.Y }
+                        });
+                    }
+                    else if (obj is IGH_Param param)
+                    {
+                        components.Add(new
+                        {
+                            id = param.InstanceGuid.ToString(),
+                            name = param.Name,
+                            nickname = param.NickName,
+                            displayName = ToolHelpers.GetDisplayName(param),
+                            typeName = param.GetType().Name,
+                            isParameter = true,
+                            position = new { x = param.Attributes.Pivot.X, y = param.Attributes.Pivot.Y }
+                        });
+                    }
+                }
+
+                return JsonConvert.SerializeObject(new
+                {
+                    success = true,
+                    groupId = targetGroup.InstanceGuid.ToString(),
+                    groupName = ToolHelpers.GetDisplayName(targetGroup),
+                    count = components.Count,
+                    components
                 });
             });
         }

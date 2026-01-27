@@ -171,7 +171,7 @@ namespace Cordyceps.Tools
                         var otherBounds = otherGroup.Attributes?.Bounds ?? RectangleF.Empty;
                         if (!groupBounds.IsEmpty && !otherBounds.IsEmpty && groupBounds.IntersectsWith(otherBounds))
                         {
-                            warnings.Add($"Group '{group.NickName}' overlaps with group '{otherGroup.NickName}' - consider moving components");
+                            warnings.Add($"Group '{ToolHelpers.GetDisplayName(group)}' overlaps with group '{ToolHelpers.GetDisplayName(otherGroup)}' - consider moving components");
                         }
                     }
                 }

@@ -134,6 +134,160 @@ namespace Cordyceps.Core
 
         #endregion
 
+        #region Display Name Helpers
+
+        /// <summary>
+        /// Get a display name for a component, with proper fallback chain:
+        /// NickName (if not empty) -> Name (if not empty) -> Type name -> GUID
+        /// </summary>
+        /// <param name="obj">The document object</param>
+        /// <returns>A non-empty display name</returns>
+        public static string GetDisplayName(IGH_DocumentObject obj)
+        {
+            if (obj == null) return "null";
+
+            // Try nickname first
+            if (!string.IsNullOrEmpty(obj.NickName))
+                return obj.NickName;
+
+            // Then name
+            if (!string.IsNullOrEmpty(obj.Name))
+                return obj.Name;
+
+            // Then type name
+            var typeName = obj.GetType().Name;
+            if (!string.IsNullOrEmpty(typeName))
+                return typeName;
+
+            // Last resort: GUID
+            return obj.InstanceGuid.ToString();
+        }
+
+        /// <summary>
+        /// Check if a component is the Cordyceps MCP server component (internal, should be filtered from results)
+        /// </summary>
+        /// <param name="obj">The document object to check</param>
+        /// <returns>True if this is the Cordyceps component</returns>
+        public static bool IsCordycepsComponent(IGH_DocumentObject obj)
+        {
+            if (obj == null) return false;
+
+            var typeName = obj.GetType().Name;
+            return typeName == "CordycepsComponent" || obj.Name == "Cordyceps" || obj.Name == "MCP";
+        }
+
+        /// <summary>
+        /// Get the set of GUIDs for the Cordyceps component, all components directly connected to it,
+        /// and any groups containing those components.
+        /// These are internal infrastructure components that should be filtered from user-facing results.
+        /// </summary>
+        /// <param name="doc">The Grasshopper document</param>
+        /// <returns>HashSet of GUIDs to filter out</returns>
+        public static HashSet<Guid> GetCordycepsInfrastructureIds(GH_Document doc)
+        {
+            var infraIds = new HashSet<Guid>();
+            if (doc == null) return infraIds;
+
+            // Find the Cordyceps component
+            IGH_Component cordycepsComp = null;
+            foreach (var obj in doc.Objects)
+            {
+                if (obj is IGH_Component comp && IsCordycepsComponent(comp))
+                {
+                    cordycepsComp = comp;
+                    infraIds.Add(comp.InstanceGuid);
+                    break;
+                }
+            }
+
+            if (cordycepsComp == null) return infraIds;
+
+            // Find all components connected TO the Cordyceps component (sources of its inputs)
+            foreach (var input in cordycepsComp.Params.Input)
+            {
+                foreach (var source in input.Sources)
+                {
+                    var sourceObj = source.Attributes?.GetTopLevel?.DocObject;
+                    if (sourceObj != null)
+                    {
+                        infraIds.Add(sourceObj.InstanceGuid);
+                    }
+                }
+            }
+
+            // Find all components connected FROM the Cordyceps component (recipients of its outputs)
+            foreach (var output in cordycepsComp.Params.Output)
+            {
+                foreach (var recipient in output.Recipients)
+                {
+                    var recipientObj = recipient.Attributes?.GetTopLevel?.DocObject;
+                    if (recipientObj != null)
+                    {
+                        infraIds.Add(recipientObj.InstanceGuid);
+                    }
+                }
+            }
+
+            // Find any groups that contain infrastructure components
+            foreach (var obj in doc.Objects)
+            {
+                if (obj is Grasshopper.Kernel.Special.GH_Group group)
+                {
+                    var memberIds = group.ObjectIDs;
+                    if (memberIds != null)
+                    {
+                        // If any member of this group is infrastructure, the whole group is infrastructure
+                        foreach (var memberId in memberIds)
+                        {
+                            if (infraIds.Contains(memberId))
+                            {
+                                infraIds.Add(group.InstanceGuid);
+                                break;
+                            }
+                        }
+                    }
+                }
+            }
+
+            return infraIds;
+        }
+
+        /// <summary>
+        /// Check if a component is part of the Cordyceps infrastructure (the component itself or connected to it)
+        /// </summary>
+        /// <param name="obj">The document object to check</param>
+        /// <param name="infraIds">Pre-computed set of infrastructure IDs from GetCordycepsInfrastructureIds</param>
+        /// <returns>True if this component should be filtered</returns>
+        public static bool IsCordycepsInfrastructure(IGH_DocumentObject obj, HashSet<Guid> infraIds)
+        {
+            if (obj == null) return false;
+            return infraIds.Contains(obj.InstanceGuid);
+        }
+
+        /// <summary>
+        /// Check if a component is a compact type that should have relaxed vertical spacing checks
+        /// (e.g., Number Slider, Value List)
+        /// </summary>
+        /// <param name="obj">The document object to check</param>
+        /// <returns>True if this is a compact component type</returns>
+        public static bool IsCompactComponent(IGH_DocumentObject obj)
+        {
+            if (obj == null) return false;
+
+            var typeName = obj.GetType().Name;
+            var name = obj.Name ?? "";
+
+            // Number sliders and value lists are intentionally compact
+            return typeName.Contains("NumberSlider") ||
+                   typeName.Contains("ValueList") ||
+                   name == "Number Slider" ||
+                   name == "Value List" ||
+                   typeName == "GH_NumberSlider" ||
+                   typeName == "GH_ValueList";
+        }
+
+        #endregion
+
         #region JSON Response Helpers
 
         /// <summary>
