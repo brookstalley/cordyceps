@@ -68,6 +68,8 @@ The AI interprets the request and builds the complete Grasshopper definition ste
 
 **Inspection**: `get_canvas_status`, `get_disconnected_inputs`, `trace_data_flow`, `get_component_outputs`
 
+**Capture**: `capture_canvas`, `capture_viewport`, `capture_canvas_region`
+
 **Documents**: `new_document`, `save_document`, `load_document`, `snapshot`, `revert_snapshot`
 
 **Execution**: `set_solver_enabled`, `recompute_solution`, `bake_geometry`, `execute_script`
