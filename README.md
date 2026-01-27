@@ -48,13 +48,9 @@ Here's what happens when you give Claude this natural language prompt:
 
 > Create an array of cylinders radiating out from the origin on the XY plane, with settings for number of cylinders, length and diameter of the cylinders, and distance from origin. Then make copies of the whole array in Z, with additional settings for number of copies and distance between copies.
 
-![Radial Cylinder Array Animation](docs/images/radial_cylinders_animation.gif)
+![Radial Cylinder Array Animation](images/cylinder_array_build.gif)
 
-The AI interprets the request and builds the complete Grasshopper definition step by step—adding sliders for parameters, creating the angle domain, rotating vectors radially, constructing planes for cylinder orientation, and setting up the Z-axis linear array.
-
-**Final result:**
-
-![Radial Cylinders Viewport](docs/images/radial_cylinders_viewport.png)
+The AI interprets the request and builds the complete Grasshopper definition step by step—adding sliders for parameters, dividing a circle to get radial positions, creating direction vectors, generating line axes for each cylinder, piping those lines into solid cylinders, and copying the array in Z.
 
 ## Tools
 
@@ -76,11 +72,23 @@ The AI interprets the request and builds the complete Grasshopper definition ste
 
 ## Resources
 
-MCP resources provide documentation to clients:
+MCP resources provide documentation to clients. Source files are in [`src/Cordyceps/Knowledge/`](src/Cordyceps/Knowledge/).
 
-- `gh://docs/getting-started` — Workflow and key concepts
-- `gh://docs/data-trees` — Grasshopper's data tree system
-- `gh://component/{name}` — Documentation for any component
+**Guides:**
+- `gh://docs/getting-started` — [GettingStartedGuide.md](src/Cordyceps/Knowledge/GettingStartedGuide.md) — Workflow and key concepts
+- `gh://docs/data-trees` — [DataTreesGuide.md](src/Cordyceps/Knowledge/DataTreesGuide.md) — Grasshopper's data tree system
+- `gh://docs/type-system` — [TypeSystemGuide.md](src/Cordyceps/Knowledge/TypeSystemGuide.md) — Type compatibility and coercion
+- `gh://docs/best-practices` — [BestPracticesGuide.md](src/Cordyceps/Knowledge/BestPracticesGuide.md) — Patterns and recommendations
+- `gh://docs/component-patterns` — [ComponentPatternsGuide.md](src/Cordyceps/Knowledge/ComponentPatternsGuide.md) — Common component combinations
+- `gh://docs/canvas-layout` — [CanvasLayoutGuide.md](src/Cordyceps/Knowledge/CanvasLayoutGuide.md) — Spacing and layout conventions
+- `gh://docs/geometry-orientation` — [GeometryOrientationGuide.md](src/Cordyceps/Knowledge/GeometryOrientationGuide.md) — Planes and orientation
+
+**Patterns:**
+- `gh://patterns/linear-array` — [LinearArray.md](src/Cordyceps/Knowledge/Patterns/LinearArray.md) — Copies along a line
+- `gh://patterns/grid-array` — [GridArray.md](src/Cordyceps/Knowledge/Patterns/GridArray.md) — 2D/3D grid of copies
+
+**Dynamic:**
+- `gh://component/{name}` — Documentation for any Grasshopper component
 
 ## Troubleshooting
 

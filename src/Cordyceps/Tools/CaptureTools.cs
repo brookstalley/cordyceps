@@ -371,8 +371,8 @@ namespace Cordyceps.Tools
 
         /// <summary>
         /// Capture a specific region of the canvas to a bitmap.
-        /// Creates an output bitmap with the correct aspect ratio for the requested region,
-        /// regardless of the canvas control's window size.
+        /// Uses Grasshopper's built-in high-resolution export functionality
+        /// which renders properly regardless of window visibility.
         /// </summary>
         private Bitmap CaptureCanvasRegion(GH_Canvas canvas, RectangleF canvasBounds)
         {
@@ -385,13 +385,11 @@ namespace Cordyceps.Tools
 
             if (aspectRatio >= 1.0f)
             {
-                // Wide region
                 outputWidth = Math.Min(MaxDimension, Math.Max(MinDimension, (int)canvasBounds.Width));
                 outputHeight = Math.Max(MinDimension, (int)(outputWidth / aspectRatio));
             }
             else
             {
-                // Tall region
                 outputHeight = Math.Min(MaxDimension, Math.Max(MinDimension, (int)canvasBounds.Height));
                 outputWidth = Math.Max(MinDimension, (int)(outputHeight * aspectRatio));
             }
@@ -402,88 +400,91 @@ namespace Cordyceps.Tools
 
             try
             {
-                // Strategy: Set the viewport so that the requested canvas region maps exactly
-                // to the control's visible area, then capture and resize to output dimensions.
-
                 // Center viewport on requested region
                 var center = new PointF(
                     canvasBounds.X + canvasBounds.Width / 2,
                     canvasBounds.Y + canvasBounds.Height / 2
                 );
 
-                int controlWidth = canvas.Width > 0 ? canvas.Width : 1920;
-                int controlHeight = canvas.Height > 0 ? canvas.Height : 1080;
-
-                // Calculate zoom to fit region within control (use smaller ratio so all content fits)
-                float zoomX = (float)controlWidth / canvasBounds.Width;
-                float zoomY = (float)controlHeight / canvasBounds.Height;
+                // Calculate zoom to fit region within output (1:1 pixel mapping)
+                float zoomX = (float)outputWidth / canvasBounds.Width;
+                float zoomY = (float)outputHeight / canvasBounds.Height;
                 float zoom = Math.Min(zoomX, zoomY);
 
                 canvas.Viewport.MidPoint = center;
                 canvas.Viewport.Zoom = zoom;
 
-                // Force synchronous redraw - this is critical for the capture to work
-                canvas.Invalidate();
+                // Force synchronous layout and paint
+                canvas.Invalidate(true);
                 canvas.Update();
-                System.Windows.Forms.Application.DoEvents();
-                System.Threading.Thread.Sleep(100);
-                System.Windows.Forms.Application.DoEvents();
+                Application.DoEvents();
+                System.Threading.Thread.Sleep(50);
+                Application.DoEvents();
 
-                // Use Control mode to capture what's actually visible on screen
-                // Export mode may use different rendering settings that ignore our viewport
-                using (var controlBitmap = canvas.GetCanvasScreenBuffer(GH_CanvasMode.Control))
+                // Bring the Grasshopper window to front to ensure it renders
+                var ghWindow = canvas.FindForm();
+                if (ghWindow != null)
                 {
-                    if (controlBitmap == null)
+                    ghWindow.BringToFront();
+                    ghWindow.Activate();
+                    Application.DoEvents();
+                    System.Threading.Thread.Sleep(100);
+                    Application.DoEvents();
+                }
+
+                // Try GetCanvasScreenBuffer first - works if canvas is visible
+                using (var screenBuffer = canvas.GetCanvasScreenBuffer(GH_CanvasMode.Control))
+                {
+                    if (screenBuffer != null)
                     {
-                        DebugLog.Error("CaptureCanvasRegion: GetCanvasScreenBuffer returned null");
+                        DebugLog.Info($"CaptureCanvasRegion: GetCanvasScreenBuffer succeeded, {screenBuffer.Width}x{screenBuffer.Height}");
+
+                        // Copy the buffer to our output bitmap, scaling/cropping as needed
+                        var result = new Bitmap(outputWidth, outputHeight, System.Drawing.Imaging.PixelFormat.Format32bppArgb);
+                        using (var g = Graphics.FromImage(result))
+                        {
+                            g.InterpolationMode = System.Drawing.Drawing2D.InterpolationMode.HighQualityBicubic;
+                            g.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.HighQuality;
+
+                            // Calculate source rectangle - the viewport should now show our region
+                            // The screen buffer is the full canvas control, centered on our region
+                            float srcWidth = canvasBounds.Width * zoom;
+                            float srcHeight = canvasBounds.Height * zoom;
+                            float srcX = (screenBuffer.Width - srcWidth) / 2f;
+                            float srcY = (screenBuffer.Height - srcHeight) / 2f;
+
+                            // Clamp to valid range
+                            srcX = Math.Max(0, srcX);
+                            srcY = Math.Max(0, srcY);
+                            srcWidth = Math.Min(srcWidth, screenBuffer.Width - srcX);
+                            srcHeight = Math.Min(srcHeight, screenBuffer.Height - srcY);
+
+                            var srcRect = new RectangleF(srcX, srcY, srcWidth, srcHeight);
+                            var destRect = new RectangleF(0, 0, outputWidth, outputHeight);
+
+                            g.DrawImage(screenBuffer, destRect, srcRect, GraphicsUnit.Pixel);
+                        }
+                        return result;
+                    }
+                }
+
+                // Fallback: try Export mode
+                DebugLog.Warn("Control mode screen buffer failed, trying Export mode");
+                using (var screenBuffer = canvas.GetCanvasScreenBuffer(GH_CanvasMode.Export))
+                {
+                    if (screenBuffer == null)
+                    {
+                        DebugLog.Error("Both Control and Export screen buffers returned null");
                         return null;
                     }
 
-                    DebugLog.Info($"CaptureCanvasRegion: Buffer={controlBitmap.Width}x{controlBitmap.Height}, " +
-                                  $"Output={outputWidth}x{outputHeight}, Zoom={zoom:F3}");
-
-                    // The content should now fill the control bitmap (minus any letterboxing)
-                    // Calculate the actual content area within the bitmap
-                    float contentWidthPx = canvasBounds.Width * zoom;
-                    float contentHeightPx = canvasBounds.Height * zoom;
-
-                    // Content is centered in the control
-                    float contentLeft = (controlBitmap.Width - contentWidthPx) / 2f;
-                    float contentTop = (controlBitmap.Height - contentHeightPx) / 2f;
-
-                    // Clamp to valid bitmap coordinates
-                    contentLeft = Math.Max(0, contentLeft);
-                    contentTop = Math.Max(0, contentTop);
-                    contentWidthPx = Math.Min(contentWidthPx, controlBitmap.Width - contentLeft);
-                    contentHeightPx = Math.Min(contentHeightPx, controlBitmap.Height - contentTop);
-
-                    DebugLog.Info($"CaptureCanvasRegion: SrcRect=({contentLeft:F1}, {contentTop:F1}, " +
-                                  $"{contentWidthPx:F1}, {contentHeightPx:F1})");
-
-                    // Create output bitmap with correct aspect ratio
-                    var outputBitmap = new Bitmap(outputWidth, outputHeight, System.Drawing.Imaging.PixelFormat.Format32bppArgb);
-
-                    using (var graphics = Graphics.FromImage(outputBitmap))
+                    var result = new Bitmap(outputWidth, outputHeight, System.Drawing.Imaging.PixelFormat.Format32bppArgb);
+                    using (var g = Graphics.FromImage(result))
                     {
-                        // Fill with canvas background color first
-                        graphics.Clear(Color.FromArgb(212, 208, 200));
-
-                        graphics.InterpolationMode = System.Drawing.Drawing2D.InterpolationMode.HighQualityBicubic;
-                        graphics.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.HighQuality;
-                        graphics.CompositingQuality = System.Drawing.Drawing2D.CompositingQuality.HighQuality;
-                        graphics.PixelOffsetMode = System.Drawing.Drawing2D.PixelOffsetMode.HighQuality;
-
-                        // Source: the content portion of the control bitmap
-                        var srcRect = new RectangleF(contentLeft, contentTop, contentWidthPx, contentHeightPx);
-
-                        // Destination: the full output bitmap
-                        var destRect = new RectangleF(0, 0, outputWidth, outputHeight);
-
-                        // Draw cropped/scaled content to output
-                        graphics.DrawImage(controlBitmap, destRect, srcRect, GraphicsUnit.Pixel);
+                        g.InterpolationMode = System.Drawing.Drawing2D.InterpolationMode.HighQualityBicubic;
+                        g.DrawImage(screenBuffer, 0, 0, outputWidth, outputHeight);
                     }
-
-                    return outputBitmap;
+                    return result;
                 }
             }
             finally
