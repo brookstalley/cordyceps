@@ -38,7 +38,8 @@ namespace Cordyceps.Tools
             _server?.RecordCommand("set_component_value");
             return _context.ExecuteOnUiThread(() =>
             {
-                if (!ToolHelpers.TryGetComponentWithDoc(_context, id, out var doc, out var component, out var error))
+                // Use protected method - infrastructure components appear as "not found"
+                if (!ToolHelpers.TryGetUnprotectedComponentWithDoc(_context, id, out var doc, out var component, out var error))
                     return ToolHelpers.ErrorResponse(error);
 
                 // Handle different component types
@@ -253,7 +254,8 @@ namespace Cordyceps.Tools
             _server?.RecordCommand("toggle_preview");
             return _context.ExecuteOnUiThread(() =>
             {
-                if (!ToolHelpers.TryGetComponentWithDoc(_context, id, out var doc, out var component, out var error))
+                // Use protected method - infrastructure components appear as "not found"
+                if (!ToolHelpers.TryGetUnprotectedComponentWithDoc(_context, id, out var doc, out var component, out var error))
                     return ToolHelpers.ErrorResponse(error);
 
                 if (component is IGH_PreviewObject previewObj)
@@ -285,7 +287,8 @@ namespace Cordyceps.Tools
             _server?.RecordCommand("toggle_enabled");
             return _context.ExecuteOnUiThread(() =>
             {
-                if (!ToolHelpers.TryGetComponentWithDoc(_context, id, out var doc, out var component, out var error))
+                // Use protected method - infrastructure components appear as "not found"
+                if (!ToolHelpers.TryGetUnprotectedComponentWithDoc(_context, id, out var doc, out var component, out var error))
                     return ToolHelpers.ErrorResponse(error);
 
                 if (component is IGH_ActiveObject activeObj)
@@ -318,7 +321,8 @@ namespace Cordyceps.Tools
             _server?.RecordCommand("bake_geometry");
             return _context.ExecuteOnUiThread(() =>
             {
-                if (!ToolHelpers.TryGetComponent(_context, id, out var component, out var error))
+                // Use protected method - infrastructure components appear as "not found"
+                if (!ToolHelpers.TryGetUnprotectedComponent(_context, id, out var component, out var error))
                     return ToolHelpers.ErrorResponse(error);
 
                 var rhinoDoc = RhinoDoc.ActiveDoc;
@@ -399,7 +403,8 @@ namespace Cordyceps.Tools
             _server?.RecordCommand("configure_value_list");
             return _context.ExecuteOnUiThread(() =>
             {
-                if (!ToolHelpers.TryGetComponentWithDoc(_context, id, out var doc, out var component, out var error))
+                // Use protected method - infrastructure components appear as "not found"
+                if (!ToolHelpers.TryGetUnprotectedComponentWithDoc(_context, id, out var doc, out var component, out var error))
                     return ToolHelpers.ErrorResponse(error);
 
                 // Check if it's a Value List

@@ -265,6 +265,73 @@ namespace Cordyceps.Core
         }
 
         /// <summary>
+        /// Check if a GUID refers to Cordyceps infrastructure.
+        /// </summary>
+        public static bool IsProtectedId(GH_Document doc, Guid guid)
+        {
+            if (doc == null) return false;
+            var infraIds = GetCordycepsInfrastructureIds(doc);
+            return infraIds.Contains(guid);
+        }
+
+        /// <summary>
+        /// Try to get a component, but fail silently (as "not found") if it's protected infrastructure.
+        /// This makes infrastructure completely invisible - the LLM gets the same error whether the
+        /// component doesn't exist or is protected.
+        /// </summary>
+        public static bool TryGetUnprotectedComponent(GrasshopperContext context, string id,
+            out IGH_DocumentObject obj, out string error)
+        {
+            obj = null;
+
+            if (!TryGetActiveDocument(context, out var doc, out error))
+                return false;
+
+            if (!TryParseGuid(id, out var guid, out error))
+                return false;
+
+            // Check if protected BEFORE checking if it exists
+            if (IsProtectedId(doc, guid))
+            {
+                error = $"Component not found: {guid}";
+                return false;
+            }
+
+            if (!TryFindComponent(doc, guid, out obj, out error))
+                return false;
+
+            return true;
+        }
+
+        /// <summary>
+        /// Try to get a component with document reference, but fail silently if protected.
+        /// </summary>
+        public static bool TryGetUnprotectedComponentWithDoc(GrasshopperContext context, string id,
+            out GH_Document doc, out IGH_DocumentObject obj, out string error)
+        {
+            doc = null;
+            obj = null;
+
+            if (!TryGetActiveDocument(context, out doc, out error))
+                return false;
+
+            if (!TryParseGuid(id, out var guid, out error))
+                return false;
+
+            // Check if protected BEFORE checking if it exists
+            if (IsProtectedId(doc, guid))
+            {
+                error = $"Component not found: {guid}";
+                return false;
+            }
+
+            if (!TryFindComponent(doc, guid, out obj, out error))
+                return false;
+
+            return true;
+        }
+
+        /// <summary>
         /// Check if a component is a compact type that should have relaxed vertical spacing checks
         /// (e.g., Number Slider, Value List)
         /// </summary>

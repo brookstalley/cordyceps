@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.ComponentModel;
 using System.IO;
 using Cordyceps.Core;
@@ -66,7 +67,7 @@ namespace Cordyceps.Tools
             });
         }
 
-        [McpServerTool, Description("Clear all objects from the Grasshopper canvas")]
+        [McpServerTool, Description("Clear all objects from the Grasshopper canvas except the Cordyceps MCP infrastructure (the server component, its connected inputs/outputs, and containing group)")]
         public string ClearDocument()
         {
             _server?.RecordCommand("clear_document");
@@ -75,16 +76,32 @@ namespace Cordyceps.Tools
                 if (!ToolHelpers.TryGetActiveDocument(_context, out var doc, out var error))
                     return ToolHelpers.ErrorResponse(error);
 
-                int removedCount = doc.ObjectCount;
+                // Get the set of Cordyceps infrastructure IDs to preserve
+                var infraIds = ToolHelpers.GetCordycepsInfrastructureIds(doc);
 
-                // Remove all objects
-                doc.RemoveObjects(doc.Objects, true);
+                // Collect objects to remove (everything except infrastructure)
+                var objectsToRemove = new List<IGH_DocumentObject>();
+                foreach (var obj in doc.Objects)
+                {
+                    if (!infraIds.Contains(obj.InstanceGuid))
+                    {
+                        objectsToRemove.Add(obj);
+                    }
+                }
+
+                int removedCount = objectsToRemove.Count;
+                int preservedCount = doc.ObjectCount - removedCount;
+
+                // Remove non-infrastructure objects
+                doc.RemoveObjects(objectsToRemove, true);
 
                 return JsonConvert.SerializeObject(new
                 {
                     success = true,
                     cleared = true,
-                    removedCount
+                    removedCount,
+                    preservedCount,
+                    note = "Cordyceps MCP infrastructure was preserved"
                 });
             });
         }
@@ -146,86 +163,12 @@ namespace Cordyceps.Tools
             });
         }
 
-        [McpServerTool, Description("Load a Grasshopper document from a .gh or .ghx file")]
-        public string LoadDocument(
-            [Description("File path to load")] string filePath)
-        {
-            _server?.RecordCommand("load_document");
-            return _context.ExecuteOnUiThread(() =>
-            {
-                if (string.IsNullOrEmpty(filePath))
-                {
-                    return JsonConvert.SerializeObject(new { success = false, error = "File path is required" });
-                }
+        // LoadDocument was removed - loading a document would replace the canvas and destroy
+        // the MCP server component, breaking connectivity. Use clear_document + add components
+        // to build definitions programmatically while preserving the MCP connection.
 
-                if (!File.Exists(filePath))
-                {
-                    return JsonConvert.SerializeObject(new { success = false, error = $"File not found: {filePath}" });
-                }
-
-                try
-                {
-                    // Create document IO
-                    GH_DocumentIO docIO = new GH_DocumentIO();
-                    bool opened = docIO.Open(filePath);
-
-                    if (!opened || docIO.Document == null)
-                    {
-                        return JsonConvert.SerializeObject(new { success = false, error = "Failed to open document" });
-                    }
-
-                    // Replace current document
-                    var doc = docIO.Document;
-
-                    // Assign to canvas
-                    if (Instances.ActiveCanvas != null)
-                    {
-                        Instances.ActiveCanvas.Document = doc;
-                        Instances.ActiveCanvas.Invalidate();
-                    }
-
-                    return JsonConvert.SerializeObject(new
-                    {
-                        success = true,
-                        filePath,
-                        objectCount = doc.ObjectCount
-                    });
-                }
-                catch (Exception ex)
-                {
-                    return JsonConvert.SerializeObject(new { success = false, error = $"Load failed: {ex.Message}" });
-                }
-            });
-        }
-
-        [McpServerTool, Description("Create a new empty Grasshopper document")]
-        public string NewDocument()
-        {
-            _server?.RecordCommand("new_document");
-            return _context.ExecuteOnUiThread(() =>
-            {
-                try
-                {
-                    var newDoc = new GH_Document();
-
-                    if (Instances.ActiveCanvas != null)
-                    {
-                        Instances.ActiveCanvas.Document = newDoc;
-                        Instances.ActiveCanvas.Invalidate();
-                    }
-
-                    return JsonConvert.SerializeObject(new
-                    {
-                        success = true,
-                        created = true
-                    });
-                }
-                catch (Exception ex)
-                {
-                    return JsonConvert.SerializeObject(new { success = false, error = $"Failed to create document: {ex.Message}" });
-                }
-            });
-        }
+        // NewDocument was removed - it would destroy the MCP server component, breaking connectivity.
+        // Use ClearDocument instead, which preserves the Cordyceps infrastructure.
 
         [McpServerTool, Description("Enable or disable the Grasshopper solver")]
         public string SetSolverEnabled(

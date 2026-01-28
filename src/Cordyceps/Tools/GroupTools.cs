@@ -210,7 +210,8 @@ namespace Cordyceps.Tools
             _server?.RecordCommand("delete_group");
             return _context.ExecuteOnUiThread(() =>
             {
-                if (!ToolHelpers.TryGetComponentWithDoc(_context, id, out var doc, out var obj, out var error))
+                // Use protected method - infrastructure groups appear as "not found"
+                if (!ToolHelpers.TryGetUnprotectedComponentWithDoc(_context, id, out var doc, out var obj, out var error))
                     return ToolHelpers.ErrorResponse(error);
 
                 if (!(obj is GH_Group group))
@@ -367,10 +368,17 @@ namespace Cordyceps.Tools
                 if (!ToolHelpers.TryGetActiveDocument(_context, out var doc, out var error))
                     return ToolHelpers.ErrorResponse(error);
 
+                // Get infrastructure IDs to protect
+                var infraIds = ToolHelpers.GetCordycepsInfrastructureIds(doc);
+
                 // Find group by GUID or name
                 GH_Group targetGroup = null;
                 if (Guid.TryParse(group, out Guid groupGuid))
                 {
+                    // Check if protected - report as "not found"
+                    if (infraIds.Contains(groupGuid))
+                        return ToolHelpers.ErrorResponse($"Group not found: {group}");
+
                     targetGroup = doc.FindObject(groupGuid, true) as GH_Group;
                 }
 
@@ -383,6 +391,10 @@ namespace Cordyceps.Tools
                             (g.NickName.Equals(group, StringComparison.OrdinalIgnoreCase) ||
                              g.Name.Equals(group, StringComparison.OrdinalIgnoreCase)))
                         {
+                            // Check if protected - report as "not found"
+                            if (infraIds.Contains(g.InstanceGuid))
+                                continue;
+
                             targetGroup = g;
                             break;
                         }
@@ -455,13 +467,25 @@ namespace Cordyceps.Tools
                 if (!ToolHelpers.TryGetActiveDocument(_context, out var doc, out var error))
                     return ToolHelpers.ErrorResponse(error);
 
+                // Get infrastructure IDs to filter (includes infrastructure groups)
+                var infraIds = ToolHelpers.GetCordycepsInfrastructureIds(doc);
+
                 var groups = new List<object>();
 
                 foreach (var obj in doc.Objects)
                 {
                     if (obj is GH_Group group)
                     {
-                        var memberIds = group.ObjectIDs?.Select(g => g.ToString()).ToList() ?? new List<string>();
+                        // Skip infrastructure groups
+                        if (infraIds.Contains(group.InstanceGuid))
+                            continue;
+
+                        // Filter infrastructure components from member list
+                        var memberIds = group.ObjectIDs?
+                            .Where(g => !infraIds.Contains(g))
+                            .Select(g => g.ToString())
+                            .ToList() ?? new List<string>();
+
                         var groupBounds = group.Attributes?.Bounds ?? RectangleF.Empty;
 
                         groups.Add(new

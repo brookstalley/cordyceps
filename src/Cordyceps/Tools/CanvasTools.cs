@@ -174,7 +174,8 @@ namespace Cordyceps.Tools
             _server?.RecordCommand("delete_component");
             return _context.ExecuteOnUiThread(() =>
             {
-                if (!ToolHelpers.TryGetComponentWithDoc(_context, id, out var doc, out var component, out var error))
+                // Use protected method - infrastructure components appear as "not found"
+                if (!ToolHelpers.TryGetUnprotectedComponentWithDoc(_context, id, out var doc, out var component, out var error))
                     return ToolHelpers.ErrorResponse(error);
 
                 doc.RemoveObject(component, true);
@@ -193,7 +194,8 @@ namespace Cordyceps.Tools
             _server?.RecordCommand("move_component");
             return _context.ExecuteOnUiThread(() =>
             {
-                if (!ToolHelpers.TryGetComponent(_context, id, out var component, out var error))
+                // Use protected method - infrastructure components appear as "not found"
+                if (!ToolHelpers.TryGetUnprotectedComponent(_context, id, out var component, out var error))
                     return ToolHelpers.ErrorResponse(error);
 
                 component.Attributes.Pivot = new PointF((float)x, (float)y);
@@ -228,7 +230,8 @@ namespace Cordyceps.Tools
             _server?.RecordCommand("get_component_info");
             return _context.ExecuteOnUiThread(() =>
             {
-                if (!ToolHelpers.TryGetComponent(_context, id, out var obj, out var error))
+                // Use protected method - infrastructure components appear as "not found"
+                if (!ToolHelpers.TryGetUnprotectedComponent(_context, id, out var obj, out var error))
                     return ToolHelpers.ErrorResponse(error);
 
                 var info = new Dictionary<string, object>
@@ -500,7 +503,8 @@ namespace Cordyceps.Tools
             _server?.RecordCommand("rename_component");
             return _context.ExecuteOnUiThread(() =>
             {
-                if (!ToolHelpers.TryGetComponent(_context, id, out var component, out var error))
+                // Use protected method - infrastructure components appear as "not found"
+                if (!ToolHelpers.TryGetUnprotectedComponent(_context, id, out var component, out var error))
                     return ToolHelpers.ErrorResponse(error);
 
                 // Use nickname if provided, otherwise use name
@@ -656,7 +660,8 @@ namespace Cordyceps.Tools
             _server?.RecordCommand("get_component_bounds");
             return _context.ExecuteOnUiThread(() =>
             {
-                if (!ToolHelpers.TryGetComponent(_context, id, out var component, out var error))
+                // Use protected method - infrastructure components appear as "not found"
+                if (!ToolHelpers.TryGetUnprotectedComponent(_context, id, out var component, out var error))
                     return ToolHelpers.ErrorResponse(error);
 
                 var bounds = component.Attributes.Bounds;
@@ -1173,10 +1178,16 @@ namespace Cordyceps.Tools
                 if (string.IsNullOrEmpty(nickname))
                     return ToolHelpers.ErrorResponse("Nickname is required");
 
+                // Get infrastructure IDs to filter
+                var infraIds = ToolHelpers.GetCordycepsInfrastructureIds(doc);
+
                 var matches = new List<object>();
 
                 foreach (var obj in doc.Objects)
                 {
+                    // Skip infrastructure components
+                    if (ToolHelpers.IsCordycepsInfrastructure(obj, infraIds))
+                        continue;
                     bool isMatch = false;
 
                     if (exact)
@@ -1288,6 +1299,9 @@ namespace Cordyceps.Tools
                     return JsonConvert.SerializeObject(new { success = false, error = "No moves provided" });
                 }
 
+                // Get infrastructure IDs to filter
+                var infraIds = ToolHelpers.GetCordycepsInfrastructureIds(doc);
+
                 var results = new List<object>();
                 int successCount = 0;
                 int failCount = 0;
@@ -1307,6 +1321,14 @@ namespace Cordyceps.Tools
                         if (!Guid.TryParse(id, out Guid guid))
                         {
                             results.Add(new { success = false, id, error = "Invalid component ID" });
+                            failCount++;
+                            continue;
+                        }
+
+                        // Check if protected - report as "not found" to maintain invisibility
+                        if (infraIds.Contains(guid))
+                        {
+                            results.Add(new { success = false, id, error = "Component not found" });
                             failCount++;
                             continue;
                         }

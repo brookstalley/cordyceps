@@ -34,10 +34,11 @@ namespace Cordyceps.Tools
             _server?.RecordCommand("connect_components");
             return _context.ExecuteOnUiThread(() =>
             {
-                if (!ToolHelpers.TryGetComponentWithDoc(_context, sourceId, out var doc, out var srcObj, out var error))
+                // Use protected methods - infrastructure components appear as "not found"
+                if (!ToolHelpers.TryGetUnprotectedComponentWithDoc(_context, sourceId, out var doc, out var srcObj, out var error))
                     return ToolHelpers.ErrorResponse($"Source: {error}");
 
-                if (!ToolHelpers.TryGetComponent(_context, targetId, out var tgtObj, out error))
+                if (!ToolHelpers.TryGetUnprotectedComponent(_context, targetId, out var tgtObj, out error))
                     return ToolHelpers.ErrorResponse($"Target: {error}");
 
                 IGH_Param sourceOutput = GetOutputParameter(srcObj, sourceParam);
@@ -90,10 +91,11 @@ namespace Cordyceps.Tools
             _server?.RecordCommand("disconnect_components");
             return _context.ExecuteOnUiThread(() =>
             {
-                if (!ToolHelpers.TryGetComponentWithDoc(_context, sourceId, out var doc, out var srcObj, out var error))
+                // Use protected methods - infrastructure components appear as "not found"
+                if (!ToolHelpers.TryGetUnprotectedComponentWithDoc(_context, sourceId, out var doc, out var srcObj, out var error))
                     return ToolHelpers.ErrorResponse($"Source: {error}");
 
-                if (!ToolHelpers.TryGetComponent(_context, targetId, out var tgtObj, out error))
+                if (!ToolHelpers.TryGetUnprotectedComponent(_context, targetId, out var tgtObj, out error))
                     return ToolHelpers.ErrorResponse($"Target: {error}");
 
                 IGH_Param sourceOutput = GetOutputParameter(srcObj, sourceParam);
@@ -128,7 +130,8 @@ namespace Cordyceps.Tools
             _server?.RecordCommand("clear_component_inputs");
             return _context.ExecuteOnUiThread(() =>
             {
-                if (!ToolHelpers.TryGetComponentWithDoc(_context, id, out var doc, out var component, out var error))
+                // Use protected method - infrastructure components appear as "not found"
+                if (!ToolHelpers.TryGetUnprotectedComponentWithDoc(_context, id, out var doc, out var component, out var error))
                     return ToolHelpers.ErrorResponse(error);
 
                 IEnumerable<IGH_Param> inputs = null;
@@ -185,10 +188,17 @@ namespace Cordyceps.Tools
                 if (!ToolHelpers.TryGetActiveDocument(_context, out var doc, out var error))
                     return ToolHelpers.ErrorResponse(error);
 
+                // Get infrastructure IDs to filter
+                var infraIds = ToolHelpers.GetCordycepsInfrastructureIds(doc);
+
                 var connections = new List<object>();
 
                 foreach (var obj in doc.Objects)
                 {
+                    // Skip infrastructure components
+                    if (ToolHelpers.IsCordycepsInfrastructure(obj, infraIds))
+                        continue;
+
                     IEnumerable<IGH_Param> inputs = null;
 
                     if (obj is IGH_Component comp)
@@ -206,12 +216,18 @@ namespace Cordyceps.Tools
                     {
                         foreach (var source in input.Sources)
                         {
+                            var sourceObj = source.Attributes.GetTopLevel.DocObject;
+
+                            // Skip connections from infrastructure components
+                            if (ToolHelpers.IsCordycepsInfrastructure(sourceObj, infraIds))
+                                continue;
+
                             connections.Add(new
                             {
                                 source = new
                                 {
-                                    componentId = source.Attributes.GetTopLevel.DocObject.InstanceGuid.ToString(),
-                                    componentName = source.Attributes.GetTopLevel.DocObject.Name,
+                                    componentId = sourceObj.InstanceGuid.ToString(),
+                                    componentName = sourceObj.Name,
                                     param = source.Name,
                                     paramIndex = GetParamIndex(source, false)
                                 },
@@ -333,6 +349,9 @@ namespace Cordyceps.Tools
                 if (!ToolHelpers.TryGetActiveDocument(_context, out var doc, out var error))
                     return ToolHelpers.ErrorResponse(error);
 
+                // Get infrastructure IDs to filter
+                var infraIds = ToolHelpers.GetCordycepsInfrastructureIds(doc);
+
                 List<dynamic> connectionList;
                 try
                 {
@@ -391,6 +410,23 @@ namespace Cordyceps.Tools
                         if (!Guid.TryParse(targetId, out Guid tgtGuid))
                         {
                             results.Add(new { success = false, error = $"Invalid target ID: {targetId}", connection = connRef });
+                            failCount++;
+                            connectionIndex++;
+                            continue;
+                        }
+
+                        // Check if protected - report as "not found" to maintain invisibility
+                        if (infraIds.Contains(srcGuid))
+                        {
+                            results.Add(new { success = false, error = $"Source component not found", connection = connRef });
+                            failCount++;
+                            connectionIndex++;
+                            continue;
+                        }
+
+                        if (infraIds.Contains(tgtGuid))
+                        {
+                            results.Add(new { success = false, error = $"Target component not found", connection = connRef });
                             failCount++;
                             connectionIndex++;
                             continue;
@@ -611,14 +647,25 @@ namespace Cordyceps.Tools
                 if (string.IsNullOrEmpty(targetId))
                     return ToolHelpers.ErrorResponse("Missing targetId");
 
+                // Get infrastructure IDs to protect
+                var infraIds = ToolHelpers.GetCordycepsInfrastructureIds(doc);
+
                 if (!ToolHelpers.TryParseGuid(sourceId, out var srcGuid, out error))
                     return ToolHelpers.ErrorResponse($"Source: {error}");
+
+                // Check if protected - report as "not found"
+                if (infraIds.Contains(srcGuid))
+                    return ToolHelpers.ErrorResponse($"Source: Component not found: {srcGuid}");
 
                 if (!ToolHelpers.TryFindComponent(doc, srcGuid, out var srcObj, out error))
                     return ToolHelpers.ErrorResponse($"Source: {error}");
 
                 if (!ToolHelpers.TryParseGuid(targetId, out var tgtGuid, out error))
                     return ToolHelpers.ErrorResponse($"Target: {error}");
+
+                // Check if protected - report as "not found"
+                if (infraIds.Contains(tgtGuid))
+                    return ToolHelpers.ErrorResponse($"Target: Component not found: {tgtGuid}");
 
                 if (!ToolHelpers.TryFindComponent(doc, tgtGuid, out var tgtObj, out error))
                     return ToolHelpers.ErrorResponse($"Target: {error}");

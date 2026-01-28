@@ -300,11 +300,18 @@ namespace Cordyceps.Tools
                 if (string.IsNullOrEmpty(group))
                     return ToolHelpers.ErrorResponse("Group name or ID is required");
 
+                // Get infrastructure IDs to filter
+                var infraIds = ToolHelpers.GetCordycepsInfrastructureIds(doc);
+
                 // Find the group by GUID or name
                 Grasshopper.Kernel.Special.GH_Group targetGroup = null;
 
                 if (Guid.TryParse(group, out Guid groupGuid))
                 {
+                    // Check if protected - report as "not found"
+                    if (infraIds.Contains(groupGuid))
+                        return ToolHelpers.ErrorResponse($"Group not found: {group}");
+
                     // Search by GUID
                     targetGroup = doc.FindObject(groupGuid, true) as Grasshopper.Kernel.Special.GH_Group;
                 }
@@ -317,6 +324,10 @@ namespace Cordyceps.Tools
                     {
                         if (obj is Grasshopper.Kernel.Special.GH_Group g)
                         {
+                            // Skip infrastructure groups
+                            if (infraIds.Contains(g.InstanceGuid))
+                                continue;
+
                             var groupName = g.NickName?.ToLowerInvariant() ?? g.Name?.ToLowerInvariant() ?? "";
                             if (groupName == searchLower || groupName.Contains(searchLower))
                             {
@@ -404,7 +415,8 @@ namespace Cordyceps.Tools
             _server?.RecordCommand("trace_data_flow");
             return _context.ExecuteOnUiThread(() =>
             {
-                if (!ToolHelpers.TryGetComponent(_context, id, out var component, out var error))
+                // Use protected method - infrastructure components appear as "not found"
+                if (!ToolHelpers.TryGetUnprotectedComponent(_context, id, out var component, out var error))
                     return ToolHelpers.ErrorResponse(error);
 
                 var traced = new List<object>();
@@ -441,7 +453,8 @@ namespace Cordyceps.Tools
             _server?.RecordCommand("get_component_outputs");
             return _context.ExecuteOnUiThread(() =>
             {
-                if (!ToolHelpers.TryGetComponent(_context, id, out var obj, out var error))
+                // Use protected method - infrastructure components appear as "not found"
+                if (!ToolHelpers.TryGetUnprotectedComponent(_context, id, out var obj, out var error))
                     return ToolHelpers.ErrorResponse(error);
 
                 var outputs = new List<object>();
@@ -565,7 +578,8 @@ namespace Cordyceps.Tools
             _server?.RecordCommand("get_geometry");
             return _context.ExecuteOnUiThread(() =>
             {
-                if (!ToolHelpers.TryGetComponent(_context, id, out var obj, out var error))
+                // Use protected method - infrastructure components appear as "not found"
+                if (!ToolHelpers.TryGetUnprotectedComponent(_context, id, out var obj, out var error))
                     return ToolHelpers.ErrorResponse(error);
 
                 var outputs = new List<object>();
@@ -834,8 +848,12 @@ namespace Cordyceps.Tools
             _server?.RecordCommand("suggest_connections");
             return _context.ExecuteOnUiThread(() =>
             {
-                if (!ToolHelpers.TryGetComponentWithDoc(_context, sourceId, out var doc, out var sourceObj, out var error))
+                // Use protected method - infrastructure components appear as "not found"
+                if (!ToolHelpers.TryGetUnprotectedComponentWithDoc(_context, sourceId, out var doc, out var sourceObj, out var error))
                     return ToolHelpers.ErrorResponse(error);
+
+                // Get infrastructure IDs to filter from suggestions
+                var infraIds = ToolHelpers.GetCordycepsInfrastructureIds(doc);
 
                 // Get the output parameter
                 IGH_Param outputParam = null;
@@ -874,6 +892,10 @@ namespace Cordyceps.Tools
                 {
                     if (obj == sourceObj) continue;
                     if (!(obj is IGH_Component targetComp)) continue;
+
+                    // Skip infrastructure components
+                    if (ToolHelpers.IsCordycepsInfrastructure(targetComp, infraIds))
+                        continue;
 
                     foreach (var input in targetComp.Params.Input)
                     {
