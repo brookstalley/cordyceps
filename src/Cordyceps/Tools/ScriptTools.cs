@@ -39,6 +39,17 @@ namespace Cordyceps.Tools
                 if (!ToolHelpers.TryGetUnprotectedComponentWithDoc(_context, id, out var doc, out var component, out var error))
                     return ToolHelpers.ErrorResponse(error);
 
+                // Check if this is a script component
+                if (!IsScriptComponent(component))
+                {
+                    return JsonConvert.SerializeObject(new
+                    {
+                        success = false,
+                        error = $"Component '{component.NickName}' is not a script component. Expected C# Script, Python 3 Script, or IronPython 2 Script.",
+                        componentType = component.GetType().Name
+                    });
+                }
+
                 try
                 {
                     dynamic scriptComp = component;
@@ -63,7 +74,14 @@ namespace Cordyceps.Tools
                 }
                 catch (Exception ex)
                 {
-                    return JsonConvert.SerializeObject(new { success = false, error = $"Failed to set code: {ex.Message}" });
+                    DebugLog.Error($"SetScriptCode failed: {ex.Message}");
+                    return JsonConvert.SerializeObject(new
+                    {
+                        success = false,
+                        error = "Failed to set script code. The component may not support code modification.",
+                        componentType = component.GetType().Name,
+                        hint = "Use this tool only with C# Script, Python 3 Script, or IronPython 2 Script components."
+                    });
                 }
 
                 // Get parameter info
@@ -528,6 +546,28 @@ namespace Cordyceps.Tools
         }
 
         #region Helper Methods
+
+        /// <summary>
+        /// Check if a component is a script component (C#, Python 3, IronPython 2)
+        /// </summary>
+        private bool IsScriptComponent(IGH_DocumentObject component)
+        {
+            if (component == null) return false;
+
+            var typeName = component.GetType().Name;
+
+            // Check for common script component type names
+            if (typeName.Contains("Script") ||
+                typeName.Contains("Python") ||
+                typeName.Contains("CSharp"))
+            {
+                return true;
+            }
+
+            // Check if component has a SetSource method
+            var setSourceMethod = component.GetType().GetMethod("SetSource");
+            return setSourceMethod != null;
+        }
 
         private List<ParamDef> ParseParamDefs(string json)
         {

@@ -64,11 +64,11 @@ The AI interprets the request and builds the complete Grasshopper definition ste
 
 ## Tools
 
-**Canvas**: `add_component`, `delete_component`, `move_component`, `search_components`, `get_all_components`
+**Canvas**: `add_component`, `delete_component`, `bulk_delete_components`, `move_component`, `search_components`, `get_all_components`
 
 **Wiring**: `connect_components`, `disconnect_components`, `bulk_connect`, `validate_connection`
 
-**Values**: `set_component_value`, `configure_value_list`, `add_constant`
+**Values**: `set_component_value`, `configure_value_list`, `add_constant`, `set_preview`, `set_enabled`, `bulk_set_preview`, `bulk_set_enabled`
 
 **Scripts**: `set_script_code`, `get_script_code`, `get_script_info`, `configure_script_component`
 

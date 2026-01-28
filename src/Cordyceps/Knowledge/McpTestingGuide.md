@@ -176,6 +176,13 @@ Track friction for:
    - Create 3 components and move them all at once
    - Verify all moves succeeded
 
+10. **Bulk Delete Components**
+    - Create 3 test components
+    - Use `bulk_delete_components` to delete all at once
+    - Verify all were removed
+    - Test partial failure: include one invalid ID in the array
+    - Verify valid components are still deleted, invalid ID returns error in results
+
 ### Expected Behaviors
 - Components should appear at specified positions
 - Component IDs should be valid GUIDs
@@ -251,17 +258,28 @@ Track friction for:
    - Set a Panel's text to "Hello Grasshopper"
    - Verify the text appears
 
-4. **Toggle Component Preview**
-   - Toggle preview off for a component
-   - Toggle it back on
+4. **Set Component Preview**
+   - Set preview to false (hidden) for a component
+   - Set preview to true (visible)
    - Verify the state changes
 
-5. **Toggle Component Enabled**
-   - Disable a component (lock it)
-   - Re-enable it
+5. **Set Component Enabled**
+   - Set enabled to false (disable/lock a component)
+   - Set enabled to true (re-enable it)
    - Verify the state changes
 
-6. **Configure Value List**
+6. **Bulk Set Preview**
+   - Create 3+ components
+   - Use `bulk_set_preview` to hide all at once
+   - Verify all components have preview disabled
+   - Use `bulk_set_preview` to show all at once
+
+7. **Bulk Set Enabled**
+   - Use `bulk_set_enabled` to disable multiple components
+   - Verify all are locked
+   - Re-enable them in bulk
+
+8. **Configure Value List**
    - Add a Value List component
    - Configure it with named options: [{name: "Option A", value: "0"}, {name: "Option B", value: "1"}]
    - Select a specific option
@@ -271,6 +289,8 @@ Track friction for:
 - Slider values should clamp to min/max range
 - Invalid value formats should return clear errors
 - State changes should take effect immediately
+- Bulk operations should report per-component success/failure
+- Bulk operations with partial failures should still process valid items
 
 ---
 

@@ -202,8 +202,8 @@ namespace Cordyceps.Tools
                 if (!ToolHelpers.TryGetActiveDocument(_context, out var doc, out var error))
                     return ToolHelpers.ErrorResponse(error);
 
-                if (string.IsNullOrEmpty(type))
-                    return ToolHelpers.ErrorResponse("Type parameter is required");
+                if (!RequestValidator.ValidateRequired(type, "type", out var typeError))
+                    return ToolHelpers.ErrorResponse(typeError);
 
                 // Get infrastructure component IDs to filter
                 var infraIds = ToolHelpers.GetCordycepsInfrastructureIds(doc);
@@ -304,8 +304,8 @@ namespace Cordyceps.Tools
                 if (!ToolHelpers.TryGetActiveDocument(_context, out var doc, out var error))
                     return ToolHelpers.ErrorResponse(error);
 
-                if (string.IsNullOrEmpty(group))
-                    return ToolHelpers.ErrorResponse("Group name or ID is required");
+                if (!RequestValidator.ValidateRequired(group, "group", out var groupError))
+                    return ToolHelpers.ErrorResponse(groupError);
 
                 // Get infrastructure IDs to filter
                 var infraIds = ToolHelpers.GetCordycepsInfrastructureIds(doc);
@@ -784,9 +784,9 @@ namespace Cordyceps.Tools
             _server?.RecordCommand("check_deprecation");
             return _context.ExecuteOnUiThread(() =>
             {
-                if (string.IsNullOrEmpty(component))
+                if (!RequestValidator.ValidateRequired(component, "component", out var compError))
                 {
-                    return JsonConvert.SerializeObject(new { success = false, error = "Component name or GUID is required" });
+                    return ToolHelpers.ErrorResponse(compError);
                 }
 
                 // Check if it's a GUID
@@ -953,9 +953,9 @@ namespace Cordyceps.Tools
             _server?.RecordCommand("get_component_documentation");
             return _context.ExecuteOnUiThread(() =>
             {
-                if (string.IsNullOrEmpty(component))
+                if (!RequestValidator.ValidateRequired(component, "component", out var compError))
                 {
-                    return JsonConvert.SerializeObject(new { success = false, error = "Component name or GUID is required" });
+                    return ToolHelpers.ErrorResponse(compError);
                 }
 
                 // Find the component proxy

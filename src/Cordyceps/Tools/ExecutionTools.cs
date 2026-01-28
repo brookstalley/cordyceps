@@ -18,6 +18,7 @@ namespace Cordyceps.Tools
         private readonly GrasshopperContext _context;
         private readonly McpServer _server;
         private static readonly Dictionary<string, string> MacroStore = new Dictionary<string, string>();
+        private static readonly object MacroStoreLock = new object();
 
         public ExecutionTools(GrasshopperContext context, McpServer server)
         {
@@ -50,10 +51,8 @@ namespace Cordyceps.Tools
         {
             _server?.RecordCommand("execute_script");
 
-            if (string.IsNullOrEmpty(script))
-            {
-                return JsonConvert.SerializeObject(new { success = false, error = "Script is required" });
-            }
+            if (!RequestValidator.ValidateRequired(script, "script", out var error))
+                return ToolHelpers.ErrorResponse(error);
 
             bool result = RhinoApp.RunScript(script, false);
 
@@ -71,24 +70,24 @@ namespace Cordyceps.Tools
         {
             _server?.RecordCommand("create_macro");
 
-            if (string.IsNullOrEmpty(name))
-            {
-                return JsonConvert.SerializeObject(new { success = false, error = "Macro name is required" });
-            }
+            if (!RequestValidator.ValidateRequired(name, "name", out var error))
+                return ToolHelpers.ErrorResponse(error);
+            if (!RequestValidator.ValidateRequired(macro, "macro", out error))
+                return ToolHelpers.ErrorResponse(error);
 
-            if (string.IsNullOrEmpty(macro))
+            int macroCount;
+            lock (MacroStoreLock)
             {
-                return JsonConvert.SerializeObject(new { success = false, error = "Macro content is required" });
+                MacroStore[name] = macro;
+                macroCount = MacroStore.Count;
             }
-
-            MacroStore[name] = macro;
 
             return JsonConvert.SerializeObject(new
             {
                 success = true,
                 name = name,
                 stored = true,
-                macroCount = MacroStore.Count
+                macroCount
             });
         }
 
@@ -104,9 +103,12 @@ namespace Cordyceps.Tools
             // If name provided, look up stored macro
             if (!string.IsNullOrEmpty(name))
             {
-                if (!MacroStore.TryGetValue(name, out macroToRun))
+                lock (MacroStoreLock)
                 {
-                    return JsonConvert.SerializeObject(new { success = false, error = $"Macro not found: {name}" });
+                    if (!MacroStore.TryGetValue(name, out macroToRun))
+                    {
+                        return JsonConvert.SerializeObject(new { success = false, error = $"Macro not found: {name}" });
+                    }
                 }
             }
 
@@ -131,13 +133,16 @@ namespace Cordyceps.Tools
             _server?.RecordCommand("list_macros");
 
             var macros = new List<object>();
-            foreach (var kvp in MacroStore)
+            lock (MacroStoreLock)
             {
-                macros.Add(new
+                foreach (var kvp in MacroStore)
                 {
-                    name = kvp.Key,
-                    macro = kvp.Value
-                });
+                    macros.Add(new
+                    {
+                        name = kvp.Key,
+                        macro = kvp.Value
+                    });
+                }
             }
 
             return JsonConvert.SerializeObject(new
@@ -154,17 +159,18 @@ namespace Cordyceps.Tools
         {
             _server?.RecordCommand("delete_macro");
 
-            if (string.IsNullOrEmpty(name))
-            {
-                return JsonConvert.SerializeObject(new { success = false, error = "Macro name is required" });
-            }
+            if (!RequestValidator.ValidateRequired(name, "name", out var error))
+                return ToolHelpers.ErrorResponse(error);
 
-            if (!MacroStore.ContainsKey(name))
+            lock (MacroStoreLock)
             {
-                return JsonConvert.SerializeObject(new { success = false, error = $"Macro not found: {name}" });
-            }
+                if (!MacroStore.ContainsKey(name))
+                {
+                    return JsonConvert.SerializeObject(new { success = false, error = $"Macro not found: {name}" });
+                }
 
-            MacroStore.Remove(name);
+                MacroStore.Remove(name);
+            }
 
             return JsonConvert.SerializeObject(new
             {
@@ -180,10 +186,8 @@ namespace Cordyceps.Tools
         {
             _server?.RecordCommand("run_gh_python");
 
-            if (string.IsNullOrEmpty(script))
-            {
-                return JsonConvert.SerializeObject(new { success = false, error = "Python script is required" });
-            }
+            if (!RequestValidator.ValidateRequired(script, "script", out var error))
+                return ToolHelpers.ErrorResponse(error);
 
             try
             {

@@ -18,6 +18,7 @@ namespace Cordyceps.Tools
         private readonly GrasshopperContext _context;
         private readonly McpServer _server;
         private static readonly Dictionary<string, string> Snapshots = new Dictionary<string, string>();
+        private static readonly object SnapshotsLock = new object();
 
         public StateTools(GrasshopperContext context, McpServer server)
         {
@@ -53,7 +54,13 @@ namespace Cordyceps.Tools
                     }
 
                     doc.FilePath = originalPath;
-                    Snapshots[snapshotName] = path;
+
+                    int snapshotCount;
+                    lock (SnapshotsLock)
+                    {
+                        Snapshots[snapshotName] = path;
+                        snapshotCount = Snapshots.Count;
+                    }
 
                     return JsonConvert.SerializeObject(new
                     {
@@ -61,7 +68,7 @@ namespace Cordyceps.Tools
                         snapshotId = snapshotName,
                         name = snapshotName, // Alias for backwards compatibility
                         path = path,
-                        snapshotCount = Snapshots.Count
+                        snapshotCount
                     });
                 }
                 catch (Exception ex)
@@ -78,19 +85,24 @@ namespace Cordyceps.Tools
             _server?.RecordCommand("revert_snapshot");
             return _context.ExecuteOnUiThread(() =>
             {
-                if (string.IsNullOrEmpty(name))
-                {
-                    return JsonConvert.SerializeObject(new { success = false, error = "Snapshot name is required" });
-                }
+                if (!RequestValidator.ValidateRequired(name, "name", out var error))
+                    return ToolHelpers.ErrorResponse(error);
 
-                if (!Snapshots.TryGetValue(name, out var path))
+                string path;
+                lock (SnapshotsLock)
                 {
-                    return JsonConvert.SerializeObject(new { success = false, error = $"Snapshot not found: {name}" });
+                    if (!Snapshots.TryGetValue(name, out path))
+                    {
+                        return JsonConvert.SerializeObject(new { success = false, error = $"Snapshot not found: {name}" });
+                    }
                 }
 
                 if (!File.Exists(path))
                 {
-                    Snapshots.Remove(name);
+                    lock (SnapshotsLock)
+                    {
+                        Snapshots.Remove(name);
+                    }
                     return JsonConvert.SerializeObject(new { success = false, error = $"Snapshot file no longer exists: {path}" });
                 }
 
@@ -131,15 +143,18 @@ namespace Cordyceps.Tools
             _server?.RecordCommand("list_snapshots");
 
             var snapshots = new List<object>();
-            foreach (var kvp in Snapshots)
+            lock (SnapshotsLock)
             {
-                bool exists = File.Exists(kvp.Value);
-                snapshots.Add(new
+                foreach (var kvp in Snapshots)
                 {
-                    name = kvp.Key,
-                    path = kvp.Value,
-                    exists
-                });
+                    bool exists = File.Exists(kvp.Value);
+                    snapshots.Add(new
+                    {
+                        name = kvp.Key,
+                        path = kvp.Value,
+                        exists
+                    });
+                }
             }
 
             return JsonConvert.SerializeObject(new
@@ -156,14 +171,16 @@ namespace Cordyceps.Tools
         {
             _server?.RecordCommand("delete_snapshot");
 
-            if (string.IsNullOrEmpty(name))
-            {
-                return JsonConvert.SerializeObject(new { success = false, error = "Snapshot name is required" });
-            }
+            if (!RequestValidator.ValidateRequired(name, "name", out var error))
+                return ToolHelpers.ErrorResponse(error);
 
-            if (!Snapshots.TryGetValue(name, out var path))
+            string path;
+            lock (SnapshotsLock)
             {
-                return JsonConvert.SerializeObject(new { success = false, error = $"Snapshot not found: {name}" });
+                if (!Snapshots.TryGetValue(name, out path))
+                {
+                    return JsonConvert.SerializeObject(new { success = false, error = $"Snapshot not found: {name}" });
+                }
             }
 
             // Try to delete the file
@@ -179,7 +196,10 @@ namespace Cordyceps.Tools
                 DebugLog.Warn($"Failed to delete snapshot file '{path}': {ex.Message}");
             }
 
-            Snapshots.Remove(name);
+            lock (SnapshotsLock)
+            {
+                Snapshots.Remove(name);
+            }
 
             return JsonConvert.SerializeObject(new
             {

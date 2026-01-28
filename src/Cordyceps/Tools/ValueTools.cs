@@ -187,7 +187,7 @@ namespace Cordyceps.Tools
             [Description("Minimum value for the slider range")] double min,
             [Description("Maximum value for the slider range")] double max,
             [Description("Current/default value (must be between min and max)")] double value,
-            [Description("Optional: force integer type (true) or floating-point (false). If not specified, auto-detects from values.")] bool? integer = null)
+            [Description("Optional: force integer type (true) or floating-point (false). If not specified, auto-detects from values.")] string integer = null)
         {
             _server?.RecordCommand("set_slider_properties");
             return _context.ExecuteOnUiThread(() =>
@@ -212,9 +212,10 @@ namespace Cordyceps.Tools
                 }
 
                 // Determine if this is an integer slider
-                bool isInteger = integer ?? ((min == Math.Floor(min)) &&
-                                             (max == Math.Floor(max)) &&
-                                             (value == Math.Floor(value)));
+                bool? integerParsed = ParseOptionalBool(integer);
+                bool isInteger = integerParsed ?? ((min == Math.Floor(min)) &&
+                                                   (max == Math.Floor(max)) &&
+                                                   (value == Math.Floor(value)));
 
                 // Set slider properties
                 slider.Slider.Minimum = (decimal)min;
@@ -260,12 +261,12 @@ namespace Cordyceps.Tools
             });
         }
 
-        [McpServerTool, Description("Toggle component preview visibility on/off")]
-        public string TogglePreview(
+        [McpServerTool, Description("Set component preview visibility (whether geometry is shown in Rhino viewport)")]
+        public string SetPreview(
             [Description("Component GUID")] string id,
-            [Description("Optional: explicitly set preview state (true=visible, false=hidden). If not provided, toggles current state.")] bool? enabled = null)
+            [Description("Preview state: true=visible, false=hidden")] bool enabled)
         {
-            _server?.RecordCommand("toggle_preview");
+            _server?.RecordCommand("set_preview");
             return _context.ExecuteOnUiThread(() =>
             {
                 // Use protected method - infrastructure components appear as "not found"
@@ -274,8 +275,7 @@ namespace Cordyceps.Tools
 
                 if (component is IGH_PreviewObject previewObj)
                 {
-                    bool newState = enabled ?? !previewObj.Hidden;
-                    previewObj.Hidden = !newState; // Hidden is opposite of preview enabled
+                    previewObj.Hidden = !enabled; // Hidden is opposite of preview enabled
 
                     doc.NewSolution(false);
 
@@ -283,22 +283,22 @@ namespace Cordyceps.Tools
                     {
                         success = true,
                         id = component.InstanceGuid.ToString(),
-                        previewEnabled = !previewObj.Hidden
+                        previewEnabled = enabled
                     });
                 }
                 else
                 {
-                    return JsonConvert.SerializeObject(new { success = false, error = "Component does not support preview toggle" });
+                    return JsonConvert.SerializeObject(new { success = false, error = "Component does not support preview" });
                 }
             });
         }
 
-        [McpServerTool, Description("Toggle component enabled/disabled state (disabled components don't compute)")]
-        public string ToggleEnabled(
+        [McpServerTool, Description("Set component enabled/disabled state (disabled components don't compute)")]
+        public string SetEnabled(
             [Description("Component GUID")] string id,
-            [Description("Optional: explicitly set enabled state. If not provided, toggles current state.")] bool? enabled = null)
+            [Description("Enabled state: true=enabled (computes), false=disabled (locked)")] bool enabled)
         {
-            _server?.RecordCommand("toggle_enabled");
+            _server?.RecordCommand("set_enabled");
             return _context.ExecuteOnUiThread(() =>
             {
                 // Use protected method - infrastructure components appear as "not found"
@@ -307,8 +307,7 @@ namespace Cordyceps.Tools
 
                 if (component is IGH_ActiveObject activeObj)
                 {
-                    bool newState = enabled ?? activeObj.Locked;
-                    activeObj.Locked = !newState; // Locked is opposite of enabled
+                    activeObj.Locked = !enabled; // Locked is opposite of enabled
 
                     activeObj.ExpireSolution(true);
                     doc.NewSolution(false);
@@ -317,13 +316,142 @@ namespace Cordyceps.Tools
                     {
                         success = true,
                         id = component.InstanceGuid.ToString(),
-                        enabled = !activeObj.Locked
+                        enabled = enabled
                     });
                 }
                 else
                 {
                     return JsonConvert.SerializeObject(new { success = false, error = "Component does not support enable/disable" });
                 }
+            });
+        }
+
+        [McpServerTool, Description("Set preview visibility for multiple components at once")]
+        public string BulkSetPreview(
+            [Description("JSON array of component GUIDs")] string ids,
+            [Description("Preview state to set for all: true=visible, false=hidden")] bool enabled)
+        {
+            _server?.RecordCommand("bulk_set_preview");
+            return _context.ExecuteOnUiThread(() =>
+            {
+                if (!ToolHelpers.TryGetActiveDocument(_context, out var doc, out var error))
+                    return ToolHelpers.ErrorResponse(error);
+
+                List<string> idList;
+                try
+                {
+                    idList = JsonConvert.DeserializeObject<List<string>>(ids);
+                }
+                catch (Exception ex)
+                {
+                    return ToolHelpers.ErrorResponse($"Invalid ids format: {ex.Message}");
+                }
+
+                if (idList == null || idList.Count == 0)
+                    return ToolHelpers.ErrorResponse("ids array is empty");
+
+                var results = new List<object>();
+                int succeeded = 0;
+                int failed = 0;
+
+                foreach (var id in idList)
+                {
+                    if (!ToolHelpers.TryGetUnprotectedComponent(_context, id, out var component, out var compError))
+                    {
+                        results.Add(new { id, success = false, error = compError });
+                        failed++;
+                        continue;
+                    }
+
+                    if (component is IGH_PreviewObject previewObj)
+                    {
+                        previewObj.Hidden = !enabled;
+                        results.Add(new { id, success = true, previewEnabled = enabled });
+                        succeeded++;
+                    }
+                    else
+                    {
+                        results.Add(new { id, success = false, error = "Component does not support preview" });
+                        failed++;
+                    }
+                }
+
+                doc.NewSolution(false);
+
+                return JsonConvert.SerializeObject(new
+                {
+                    success = failed == 0,
+                    total = idList.Count,
+                    succeeded,
+                    failed,
+                    previewEnabled = enabled,
+                    results
+                });
+            });
+        }
+
+        [McpServerTool, Description("Set enabled/disabled state for multiple components at once")]
+        public string BulkSetEnabled(
+            [Description("JSON array of component GUIDs")] string ids,
+            [Description("Enabled state to set for all: true=enabled, false=disabled")] bool enabled)
+        {
+            _server?.RecordCommand("bulk_set_enabled");
+            return _context.ExecuteOnUiThread(() =>
+            {
+                if (!ToolHelpers.TryGetActiveDocument(_context, out var doc, out var error))
+                    return ToolHelpers.ErrorResponse(error);
+
+                List<string> idList;
+                try
+                {
+                    idList = JsonConvert.DeserializeObject<List<string>>(ids);
+                }
+                catch (Exception ex)
+                {
+                    return ToolHelpers.ErrorResponse($"Invalid ids format: {ex.Message}");
+                }
+
+                if (idList == null || idList.Count == 0)
+                    return ToolHelpers.ErrorResponse("ids array is empty");
+
+                var results = new List<object>();
+                int succeeded = 0;
+                int failed = 0;
+
+                foreach (var id in idList)
+                {
+                    if (!ToolHelpers.TryGetUnprotectedComponent(_context, id, out var component, out var compError))
+                    {
+                        results.Add(new { id, success = false, error = compError });
+                        failed++;
+                        continue;
+                    }
+
+                    if (component is IGH_ActiveObject activeObj)
+                    {
+                        activeObj.Locked = !enabled;
+                        activeObj.ExpireSolution(true);
+                        results.Add(new { id, success = true, enabled });
+                        succeeded++;
+                    }
+                    else
+                    {
+                        results.Add(new { id, success = false, error = "Component does not support enable/disable" });
+                        failed++;
+                    }
+                }
+
+                doc.NewSolution(false);
+
+                return JsonConvert.SerializeObject(new
+                {
+                    success = failed == 0,
+                    total = idList.Count,
+                    succeeded,
+                    failed,
+                    enabled,
+                    results
+                });
             });
         }
 
@@ -477,6 +605,32 @@ namespace Cordyceps.Tools
         {
             public string Name { get; set; }
             public string Value { get; set; }
+        }
+
+        /// <summary>
+        /// Parse a string parameter to nullable bool.
+        /// Accepts "true"/"false" (case-insensitive) or null/empty for null.
+        /// </summary>
+        private static bool? ParseOptionalBool(string value)
+        {
+            if (string.IsNullOrEmpty(value))
+                return null;
+
+            if (bool.TryParse(value, out bool result))
+                return result;
+
+            // Also accept common variations
+            if (value.Equals("1", StringComparison.OrdinalIgnoreCase) ||
+                value.Equals("yes", StringComparison.OrdinalIgnoreCase) ||
+                value.Equals("on", StringComparison.OrdinalIgnoreCase))
+                return true;
+
+            if (value.Equals("0", StringComparison.OrdinalIgnoreCase) ||
+                value.Equals("no", StringComparison.OrdinalIgnoreCase) ||
+                value.Equals("off", StringComparison.OrdinalIgnoreCase))
+                return false;
+
+            return null;
         }
     }
 }

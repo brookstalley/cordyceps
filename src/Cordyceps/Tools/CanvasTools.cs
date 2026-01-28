@@ -185,6 +185,74 @@ namespace Cordyceps.Tools
             });
         }
 
+        [McpServerTool, Description("Delete multiple components from the canvas. Best-effort: deletes what it can and reports failures.")]
+        public string BulkDeleteComponents(
+            [Description("JSON array of component GUIDs to delete")] string ids)
+        {
+            _server?.RecordCommand("bulk_delete_components");
+            return _context.ExecuteOnUiThread(() =>
+            {
+                if (!ToolHelpers.TryGetActiveDocument(_context, out var doc, out var error))
+                    return ToolHelpers.ErrorResponse(error);
+
+                List<string> idList;
+                try
+                {
+                    idList = JsonConvert.DeserializeObject<List<string>>(ids);
+                }
+                catch (Exception ex)
+                {
+                    return ToolHelpers.ErrorResponse($"Invalid ids format: {ex.Message}");
+                }
+
+                if (idList == null || idList.Count == 0)
+                    return ToolHelpers.ErrorResponse("ids array is empty");
+
+                var results = new List<object>();
+                var deletedIds = new List<string>();
+                int succeeded = 0;
+                int failed = 0;
+
+                foreach (var id in idList)
+                {
+                    if (!ToolHelpers.TryGetUnprotectedComponent(_context, id, out var component, out var compError))
+                    {
+                        results.Add(new { id, success = false, error = compError });
+                        failed++;
+                        continue;
+                    }
+
+                    try
+                    {
+                        doc.RemoveObject(component, true);
+                        deletedIds.Add(id);
+                        results.Add(new { id, success = true });
+                        succeeded++;
+                    }
+                    catch (Exception ex)
+                    {
+                        results.Add(new { id, success = false, error = ex.Message });
+                        failed++;
+                    }
+                }
+
+                if (succeeded > 0)
+                {
+                    doc.NewSolution(true);
+                }
+
+                return JsonConvert.SerializeObject(new
+                {
+                    success = failed == 0,
+                    total = idList.Count,
+                    succeeded,
+                    failed,
+                    deletedIds,
+                    results
+                });
+            });
+        }
+
         [McpServerTool, Description("Move a component to a new position on the canvas")]
         public string MoveComponent(
             [Description("Component GUID")] string id,
@@ -202,23 +270,12 @@ namespace Cordyceps.Tools
                 component.Attributes.ExpireLayout();
                 Instances.ActiveCanvas?.Invalidate();
 
-                // Get bounds after move for layout planning
-                var bounds = component.Attributes.Bounds;
-
                 return JsonConvert.SerializeObject(new
                 {
                     success = true,
                     id = id,
                     pivot = new { x = x, y = y },
-                    bounds = new
-                    {
-                        x = bounds.X,
-                        y = bounds.Y,
-                        width = bounds.Width,
-                        height = bounds.Height,
-                        right = bounds.Right,
-                        bottom = bounds.Bottom
-                    }
+                    bounds = ToolHelpers.BuildBoundsObject(component.Attributes.Bounds)
                 });
             });
         }
@@ -234,62 +291,7 @@ namespace Cordyceps.Tools
                 if (!ToolHelpers.TryGetUnprotectedComponent(_context, id, out var obj, out var error))
                     return ToolHelpers.ErrorResponse(error);
 
-                var info = new Dictionary<string, object>
-                {
-                    ["success"] = true,
-                    ["id"] = obj.InstanceGuid.ToString(),
-                    ["name"] = obj.Name,
-                    ["nickname"] = obj.NickName,
-                    ["type"] = obj.GetType().Name,
-                    ["x"] = obj.Attributes.Pivot.X,
-                    ["y"] = obj.Attributes.Pivot.Y
-                };
-
-                // If it's a component with parameters, include input/output info
-                if (obj is IGH_Component comp)
-                {
-                    info["category"] = comp.Category;
-                    info["subcategory"] = comp.SubCategory;
-
-                    var inputs = new List<object>();
-                    foreach (var param in comp.Params.Input)
-                    {
-                        inputs.Add(new
-                        {
-                            name = param.Name,
-                            nickname = param.NickName,
-                            type = param.TypeName,
-                            sourceCount = param.SourceCount,
-                            optional = param.Optional
-                        });
-                    }
-                    info["inputs"] = inputs;
-
-                    var outputs = new List<object>();
-                    foreach (var param in comp.Params.Output)
-                    {
-                        outputs.Add(new
-                        {
-                            name = param.Name,
-                            nickname = param.NickName,
-                            type = param.TypeName,
-                            recipientCount = param.Recipients.Count
-                        });
-                    }
-                    info["outputs"] = outputs;
-
-                    // Runtime status
-                    info["runtimeMessageLevel"] = comp.RuntimeMessageLevel.ToString();
-                }
-
-                // If it's a parameter, include value info
-                if (obj is IGH_Param param2)
-                {
-                    info["dataCount"] = param2.VolatileDataCount;
-                    info["sourceCount"] = param2.SourceCount;
-                    info["recipientCount"] = param2.Recipients.Count;
-                }
-
+                var info = ToolHelpers.BuildFullComponentInfo(obj, includeSuccess: true);
                 return JsonConvert.SerializeObject(info);
             });
         }
@@ -313,55 +315,7 @@ namespace Cordyceps.Tools
                     if (ToolHelpers.IsCordycepsInfrastructure(obj, infraIds))
                         continue;
 
-                    var compInfo = new Dictionary<string, object>
-                    {
-                        ["id"] = obj.InstanceGuid.ToString(),
-                        ["name"] = obj.Name,
-                        ["nickname"] = obj.NickName,
-                        ["type"] = obj.GetType().Name,
-                        ["x"] = obj.Attributes.Pivot.X,
-                        ["y"] = obj.Attributes.Pivot.Y
-                    };
-
-                    // Look up category info from proxy using ComponentGuid for accuracy
-                    string category = null;
-                    string subcategory = null;
-                    if (obj is IGH_ActiveObject activeObj)
-                    {
-                        var proxy = Instances.ComponentServer.ObjectProxies
-                            .FirstOrDefault(p => p.Guid == activeObj.ComponentGuid);
-                        if (proxy != null)
-                        {
-                            category = proxy.Desc.Category;
-                            subcategory = proxy.Desc.SubCategory;
-                        }
-                    }
-
-                    if (obj is IGH_Component comp)
-                    {
-                        // Fallback to component's own category if proxy not found
-                        category = category ?? comp.Category;
-                        subcategory = subcategory ?? comp.SubCategory;
-                        compInfo["category"] = category;
-                        compInfo["subcategory"] = subcategory;
-                        compInfo["role"] = ComponentRegistry.GetRole(category, subcategory);
-                        compInfo["inputCount"] = comp.Params.Input.Count;
-                        compInfo["outputCount"] = comp.Params.Output.Count;
-                        compInfo["runtimeMessageLevel"] = comp.RuntimeMessageLevel.ToString();
-                    }
-                    else if (obj is IGH_Param param)
-                    {
-                        // Fallback for parameters not found in server
-                        category = category ?? "Params";
-                        subcategory = subcategory ?? "Unknown";
-                        compInfo["category"] = category;
-                        compInfo["subcategory"] = subcategory;
-                        compInfo["role"] = ComponentRegistry.GetRole(category, subcategory);
-                        compInfo["sourceCount"] = param.SourceCount;
-                        compInfo["recipientCount"] = param.Recipients.Count;
-                    }
-
-                    components.Add(compInfo);
+                    components.Add(ToolHelpers.BuildListComponentInfo(obj));
                 }
 
                 return JsonConvert.SerializeObject(new
@@ -420,27 +374,8 @@ namespace Cordyceps.Tools
 
                                 if (instance is IGH_Component comp)
                                 {
-                                    foreach (var input in comp.Params.Input)
-                                    {
-                                        inputs.Add(new
-                                        {
-                                            name = input.Name,
-                                            nickname = input.NickName,
-                                            type = input.TypeName,
-                                            access = input.Access.ToString(),
-                                            optional = input.Optional
-                                        });
-                                    }
-
-                                    foreach (var output in comp.Params.Output)
-                                    {
-                                        outputs.Add(new
-                                        {
-                                            name = output.Name,
-                                            nickname = output.NickName,
-                                            type = output.TypeName
-                                        });
-                                    }
+                                    inputs.AddRange(ToolHelpers.BuildDetailedParameterList(comp.Params.Input, true));
+                                    outputs.AddRange(ToolHelpers.BuildDetailedParameterList(comp.Params.Output, false));
                                 }
                             }
                         }
@@ -664,29 +599,14 @@ namespace Cordyceps.Tools
                 if (!ToolHelpers.TryGetUnprotectedComponent(_context, id, out var component, out var error))
                     return ToolHelpers.ErrorResponse(error);
 
-                var bounds = component.Attributes.Bounds;
-                var pivot = component.Attributes.Pivot;
-
                 return JsonConvert.SerializeObject(new
                 {
                     success = true,
                     id = id,
                     name = component.Name,
                     nickname = component.NickName,
-                    bounds = new
-                    {
-                        x = bounds.X,
-                        y = bounds.Y,
-                        width = bounds.Width,
-                        height = bounds.Height,
-                        right = bounds.Right,
-                        bottom = bounds.Bottom
-                    },
-                    pivot = new
-                    {
-                        x = pivot.X,
-                        y = pivot.Y
-                    }
+                    bounds = ToolHelpers.BuildBoundsObject(component.Attributes.Bounds),
+                    pivot = ToolHelpers.BuildPivotObject(component.Attributes.Pivot)
                 });
             });
         }
@@ -1177,80 +1097,28 @@ namespace Cordyceps.Tools
                 if (!ToolHelpers.TryGetActiveDocument(_context, out var doc, out var error))
                     return ToolHelpers.ErrorResponse(error);
 
-                if (string.IsNullOrEmpty(nickname))
-                    return ToolHelpers.ErrorResponse("Nickname is required");
+                if (!RequestValidator.ValidateRequired(nickname, "nickname", out var nickError))
+                    return ToolHelpers.ErrorResponse(nickError);
 
                 // Get infrastructure IDs to filter
                 var infraIds = ToolHelpers.GetCordycepsInfrastructureIds(doc);
 
-                var matches = new List<object>();
+                var matches = new List<Dictionary<string, object>>();
 
                 foreach (var obj in doc.Objects)
                 {
                     // Skip infrastructure components
                     if (ToolHelpers.IsCordycepsInfrastructure(obj, infraIds))
                         continue;
-                    bool isMatch = false;
 
-                    if (exact)
-                    {
-                        isMatch = obj.NickName == nickname;
-                    }
-                    else
-                    {
-                        isMatch = obj.NickName != null &&
-                            obj.NickName.IndexOf(nickname, StringComparison.OrdinalIgnoreCase) >= 0;
-                    }
+                    bool isMatch = exact
+                        ? obj.NickName == nickname
+                        : obj.NickName != null &&
+                          obj.NickName.IndexOf(nickname, StringComparison.OrdinalIgnoreCase) >= 0;
 
                     if (isMatch)
                     {
-                        var info = new Dictionary<string, object>
-                        {
-                            ["id"] = obj.InstanceGuid.ToString(),
-                            ["name"] = obj.Name,
-                            ["nickname"] = obj.NickName,
-                            ["type"] = obj.GetType().Name,
-                            ["x"] = obj.Attributes.Pivot.X,
-                            ["y"] = obj.Attributes.Pivot.Y
-                        };
-
-                        // Look up category from proxy using ComponentGuid for accuracy
-                        string category = null;
-                        string subcategory = null;
-                        if (obj is IGH_ActiveObject activeObj)
-                        {
-                            var proxy = Instances.ComponentServer.ObjectProxies
-                                .FirstOrDefault(p => p.Guid == activeObj.ComponentGuid);
-                            if (proxy != null)
-                            {
-                                category = proxy.Desc.Category;
-                                subcategory = proxy.Desc.SubCategory;
-                            }
-                        }
-
-                        if (obj is IGH_Component comp)
-                        {
-                            category = category ?? comp.Category;
-                            subcategory = subcategory ?? comp.SubCategory;
-                            info["category"] = category;
-                            info["subcategory"] = subcategory;
-                            info["role"] = ComponentRegistry.GetRole(category, subcategory);
-                            info["inputCount"] = comp.Params.Input.Count;
-                            info["outputCount"] = comp.Params.Output.Count;
-                            info["runtimeMessageLevel"] = comp.RuntimeMessageLevel.ToString();
-                        }
-                        else if (obj is IGH_Param param)
-                        {
-                            category = category ?? "Params";
-                            subcategory = subcategory ?? "Unknown";
-                            info["category"] = category;
-                            info["subcategory"] = subcategory;
-                            info["role"] = ComponentRegistry.GetRole(category, subcategory);
-                            info["sourceCount"] = param.SourceCount;
-                            info["recipientCount"] = param.Recipients.Count;
-                        }
-
-                        matches.Add(info);
+                        matches.Add(ToolHelpers.BuildListComponentInfo(obj));
                     }
                 }
 
@@ -1267,7 +1135,7 @@ namespace Cordyceps.Tools
                 // If single match, return it directly; otherwise return list
                 if (matches.Count == 1)
                 {
-                    var result = (Dictionary<string, object>)matches[0];
+                    var result = matches[0];
                     result["success"] = true;
                     result["found"] = true;
                     return JsonConvert.SerializeObject(result);

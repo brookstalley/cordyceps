@@ -104,17 +104,12 @@ namespace Cordyceps.Tools
                 if (!ToolHelpers.TryGetActiveDocument(_context, out var doc, out var error))
                     return ToolHelpers.ErrorResponse(error);
 
-                if (string.IsNullOrEmpty(filePath))
-                {
-                    return JsonConvert.SerializeObject(new { success = false, error = "File path is required" });
-                }
+                if (!RequestValidator.ValidateRequired(filePath, "filePath", out var pathError))
+                    return ToolHelpers.ErrorResponse(pathError);
 
                 // Validate extension
-                string ext = Path.GetExtension(filePath).ToLowerInvariant();
-                if (ext != ".gh" && ext != ".ghx")
-                {
-                    return JsonConvert.SerializeObject(new { success = false, error = "File must have .gh or .ghx extension" });
-                }
+                if (!RequestValidator.ValidateFileExtension(filePath, new[] { ".gh", ".ghx" }, out var extError))
+                    return ToolHelpers.ErrorResponse(extError);
 
                 try
                 {
