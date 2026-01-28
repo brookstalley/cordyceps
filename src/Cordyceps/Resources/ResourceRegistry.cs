@@ -77,6 +77,10 @@ namespace Cordyceps.Resources
                 "Geometry and Orientation Guide",
                 "How planes work in Grasshopper, which axis components use for direction, and how to create correctly oriented geometry");
 
+            RegisterEmbeddedResource("gh://docs/mcp-testing", "Knowledge.McpTestingGuide.md",
+                "MCP Server Testing Instructions",
+                "Comprehensive test instructions for validating Cordyceps MCP server functionality. Use when asked to test, validate, or debug the MCP connection.");
+
             // Pattern resources
             RegisterEmbeddedResource("gh://patterns/linear-array", "Knowledge.Patterns.LinearArray.md",
                 "Linear Array Pattern",

@@ -78,7 +78,7 @@ The AI interprets the request and builds the complete Grasshopper definition ste
 
 **Capture**: `capture_canvas`, `capture_viewport`, `capture_canvas_region`
 
-**Documents**: `new_document`, `save_document`, `load_document`, `snapshot`, `revert_snapshot`
+**Documents**: `save_document`, `clear_document`, `snapshot`, `revert_snapshot`
 
 **Execution**: `set_solver_enabled`, `recompute_solution`, `bake_geometry`, `execute_script`
 
@@ -94,6 +94,7 @@ MCP resources provide documentation to clients. Source files are in [`src/Cordyc
 - `gh://docs/component-patterns` — [ComponentPatternsGuide.md](src/Cordyceps/Knowledge/ComponentPatternsGuide.md) — Common component combinations
 - `gh://docs/canvas-layout` — [CanvasLayoutGuide.md](src/Cordyceps/Knowledge/CanvasLayoutGuide.md) — Spacing and layout conventions
 - `gh://docs/geometry-orientation` — [GeometryOrientationGuide.md](src/Cordyceps/Knowledge/GeometryOrientationGuide.md) — Planes and orientation
+- `gh://docs/mcp-testing` — [McpTestingGuide.md](src/Cordyceps/Knowledge/McpTestingGuide.md) — Test and validate MCP server functionality
 
 **Patterns:**
 - `gh://patterns/linear-array` — [LinearArray.md](src/Cordyceps/Knowledge/Patterns/LinearArray.md) — Copies along a line
@@ -101,6 +102,12 @@ MCP resources provide documentation to clients. Source files are in [`src/Cordyc
 
 **Dynamic:**
 - `gh://component/{name}` — Documentation for any Grasshopper component
+
+## Testing
+
+To validate Cordyceps is working correctly, ask your AI assistant to "test the MCP server" or "help me test Grasshopper". It will read the comprehensive test instructions at `gh://docs/mcp-testing` and run through all functionality areas, reporting any issues found.
+
+Test coverage includes: component management, wiring, values, groups, scripts, inspection, document operations, and infrastructure protection.
 
 ## Troubleshooting
 

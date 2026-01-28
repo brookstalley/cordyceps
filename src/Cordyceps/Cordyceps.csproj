@@ -63,6 +63,7 @@
     <EmbeddedResource Include="Knowledge\ComponentPatternsGuide.md" />
     <EmbeddedResource Include="Knowledge\CanvasLayoutGuide.md" />
     <EmbeddedResource Include="Knowledge\GeometryOrientationGuide.md" />
+    <EmbeddedResource Include="Knowledge\McpTestingGuide.md" />
     <EmbeddedResource Include="Knowledge\Patterns\LinearArray.md" />
     <EmbeddedResource Include="Knowledge\Patterns\GridArray.md" />
   </ItemGroup>

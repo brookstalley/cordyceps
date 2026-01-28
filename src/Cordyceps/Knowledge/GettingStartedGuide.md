@@ -80,11 +80,17 @@ Use capture tools to see what you've built:
 
 All capture functions return `base64` image data when `includeBase64=true`, useful for inline display.
 
+## Testing & Validation
+
+If asked to test the MCP server, validate Cordyceps, or help debug connection issues, read `gh://docs/mcp-testing` for comprehensive test instructions covering all features.
+
 ## Resources
 
+- `gh://docs/getting-started` — this guide
 - `gh://docs/data-trees` — essential for list/tree operations
 - `gh://docs/canvas-layout` — spacing details
 - `gh://docs/geometry-orientation` — how planes work, which axis is "direction" for oriented geometry
 - `gh://docs/type-system` — type compatibility
+- `gh://docs/mcp-testing` — test instructions for validating MCP server functionality
 - `gh://component/{name}` — any component's inputs/outputs (includes orientation hints)
 - `gh://patterns/*` — linear-array, grid-array
