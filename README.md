@@ -19,6 +19,12 @@
 
 **Connect**: Configure your MCP client:
 
+*Claude Code (command line):*
+```cmd
+claude mcp add --transport http http://127.0.0.1/mcp
+```
+
+*Most others (config file):*
 ```json
 {
   "mcpServers": {
