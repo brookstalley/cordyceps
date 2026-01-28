@@ -13,6 +13,8 @@
 
 **Install**: Copy `Cordyceps.gha` to your Grasshopper components folder. In Grasshopper: *File → Special Folders → Components Folder*.
 
+* You may need to unblock the file before running. Windows: right click Cordyceps.gha -> properties -> Unblock. 
+
 **Start**: Drop the Cordyceps component on your canvas (*Params → Util → Cordyceps*). The server starts on port 26929 by default—change it via the Port input if needed.
 
 **Connect**: Configure your MCP client:
@@ -62,7 +64,7 @@ The AI interprets the request and builds the complete Grasshopper definition ste
 
 **Values**: `set_component_value`, `configure_value_list`, `add_constant`
 
-**Scripts**: `set_script_code`, `configure_script_component`
+**Scripts**: `set_script_code`, `get_script_code`, `get_script_info`, `configure_script_component`
 
 **Groups**: `create_group`, `add_to_group`, `move_group`, `get_all_groups`
 

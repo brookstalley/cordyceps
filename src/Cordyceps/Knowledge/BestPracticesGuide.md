@@ -82,6 +82,8 @@ Cache these with Data Dam:
 2. Set access modes: Item for singles, List for collections
 3. Handle null inputs
 4. Use Report output for debugging
+5. Use `get_script_info(id)` to inspect existing scripts (source code, parameters, type hints)
+6. Use `get_script_code(id)` for quick source code retrieval
 
 ## Error Recovery
 

@@ -227,6 +227,8 @@ Evaluate Curve → Point, Tangent, etc.
 
 ## Script Patterns
 
+Use `get_script_info(id)` to inspect existing scripts—returns source code, parameters with type hints, and runtime messages. Use `get_script_code(id)` for quick source retrieval.
+
 ### Basic C# Script
 ```csharp
 // Input: List<Point3d> points, double radius

@@ -260,6 +260,269 @@ namespace Cordyceps.Tools
             });
         }
 
+        [McpServerTool, Description("Get the source code from a C# or Python script component")]
+        public string GetScriptCode(
+            [Description("Script component GUID")] string id)
+        {
+            _server?.RecordCommand("get_script_code");
+            return _context.ExecuteOnUiThread(() =>
+            {
+                if (!ToolHelpers.TryGetComponentWithDoc(_context, id, out var doc, out var component, out var error))
+                    return ToolHelpers.ErrorResponse(error);
+
+                try
+                {
+                    string source = TryGetScriptSource(component);
+
+                    if (source == null)
+                    {
+                        return JsonConvert.SerializeObject(new
+                        {
+                            success = false,
+                            error = "Could not retrieve source code. Component may not be a script component.",
+                            componentType = component.GetType().Name
+                        });
+                    }
+
+                    return JsonConvert.SerializeObject(new
+                    {
+                        success = true,
+                        id = component.InstanceGuid.ToString(),
+                        name = component.Name,
+                        nickname = component.NickName,
+                        source = source,
+                        sourceLength = source.Length
+                    });
+                }
+                catch (Exception ex)
+                {
+                    return JsonConvert.SerializeObject(new
+                    {
+                        success = false,
+                        error = $"Failed to get script code: {ex.Message}",
+                        componentType = component.GetType().Name
+                    });
+                }
+            });
+        }
+
+        /// <summary>
+        /// Try to get source code from a script component using various methods
+        /// </summary>
+        private string TryGetScriptSource(IGH_DocumentObject component)
+        {
+            // Method 1: Try TryGetSource method (Rhino 8 script components)
+            var tryGetSourceMethod = component.GetType().GetMethod("TryGetSource");
+            if (tryGetSourceMethod != null)
+            {
+                try
+                {
+                    var parameters = new object[] { null };
+                    var result = tryGetSourceMethod.Invoke(component, parameters);
+                    if (result is bool success && success)
+                    {
+                        return parameters[0] as string;
+                    }
+                }
+                catch (Exception ex)
+                {
+                    DebugLog.Debug($"TryGetSource failed: {ex.Message}");
+                }
+            }
+
+            // Method 2: Try Source property via dynamic
+            try
+            {
+                dynamic scriptComp = component;
+                return scriptComp.Source;
+            }
+            catch { }
+
+            // Method 3: Try ScriptSource property
+            try
+            {
+                dynamic scriptComp = component;
+                return scriptComp.ScriptSource;
+            }
+            catch { }
+
+            // Method 4: Try Code property
+            try
+            {
+                dynamic scriptComp = component;
+                return scriptComp.Code;
+            }
+            catch { }
+
+            // Method 5: Try via reflection
+            var sourceProperty = component.GetType().GetProperty("Source")
+                ?? component.GetType().GetProperty("ScriptSource")
+                ?? component.GetType().GetProperty("Code");
+
+            if (sourceProperty != null)
+            {
+                try
+                {
+                    return sourceProperty.GetValue(component) as string;
+                }
+                catch { }
+            }
+
+            return null;
+        }
+
+        [McpServerTool, Description("Get detailed information about a script component including source code, parameters, and type hints")]
+        public string GetScriptInfo(
+            [Description("Script component GUID")] string id)
+        {
+            _server?.RecordCommand("get_script_info");
+            return _context.ExecuteOnUiThread(() =>
+            {
+                if (!ToolHelpers.TryGetComponentWithDoc(_context, id, out var doc, out var component, out var error))
+                    return ToolHelpers.ErrorResponse(error);
+
+                if (!(component is IGH_Component ghComponent))
+                    return ToolHelpers.ErrorResponse("Not a component");
+
+                // Get source code
+                string source = TryGetScriptSource(component);
+
+                // Get input parameters with type hints
+                var inputs = new List<object>();
+                foreach (var param in ghComponent.Params.Input)
+                {
+                    var inputInfo = new Dictionary<string, object>
+                    {
+                        ["name"] = param.Name,
+                        ["nickname"] = param.NickName,
+                        ["description"] = param.Description,
+                        ["type"] = param.TypeName,
+                        ["access"] = param.Access.ToString(),
+                        ["optional"] = param.Optional,
+                        ["sourceCount"] = param.SourceCount
+                    };
+
+                    // Try to get type hint
+                    var typeHint = GetParameterTypeHint(param);
+                    if (typeHint != null)
+                    {
+                        inputInfo["typeHint"] = typeHint;
+                    }
+
+                    inputs.Add(inputInfo);
+                }
+
+                // Get output parameters with type hints
+                var outputs = new List<object>();
+                foreach (var param in ghComponent.Params.Output)
+                {
+                    var outputInfo = new Dictionary<string, object>
+                    {
+                        ["name"] = param.Name,
+                        ["nickname"] = param.NickName,
+                        ["description"] = param.Description,
+                        ["type"] = param.TypeName,
+                        ["recipientCount"] = param.Recipients.Count
+                    };
+
+                    // Try to get type hint
+                    var typeHint = GetParameterTypeHint(param);
+                    if (typeHint != null)
+                    {
+                        outputInfo["typeHint"] = typeHint;
+                    }
+
+                    outputs.Add(outputInfo);
+                }
+
+                // Get runtime messages
+                var messages = new List<object>();
+                if (ghComponent.RuntimeMessageLevel != GH_RuntimeMessageLevel.Blank)
+                {
+                    foreach (var msg in ghComponent.RuntimeMessages(GH_RuntimeMessageLevel.Error))
+                        messages.Add(new { level = "error", message = msg });
+                    foreach (var msg in ghComponent.RuntimeMessages(GH_RuntimeMessageLevel.Warning))
+                        messages.Add(new { level = "warning", message = msg });
+                    foreach (var msg in ghComponent.RuntimeMessages(GH_RuntimeMessageLevel.Remark))
+                        messages.Add(new { level = "remark", message = msg });
+                }
+
+                return JsonConvert.SerializeObject(new
+                {
+                    success = true,
+                    id = component.InstanceGuid.ToString(),
+                    name = component.Name,
+                    nickname = component.NickName,
+                    componentType = component.GetType().Name,
+                    hasSource = source != null,
+                    source = source,
+                    sourceLength = source?.Length ?? 0,
+                    inputs,
+                    outputs,
+                    runtimeMessageLevel = ghComponent.RuntimeMessageLevel.ToString(),
+                    messages
+                });
+            });
+        }
+
+        /// <summary>
+        /// Get the type hint from a script parameter (if available)
+        /// </summary>
+        private string GetParameterTypeHint(IGH_Param param)
+        {
+            if (param == null) return null;
+
+            try
+            {
+                // Try to get IScriptParameter.Converter
+                var scriptParamInterface = param.GetType().GetInterfaces()
+                    .FirstOrDefault(i => i.Name == "IScriptParameter" || i.FullName?.Contains("IScriptParameter") == true);
+
+                if (scriptParamInterface != null)
+                {
+                    var converterProp = scriptParamInterface.GetProperty("Converter");
+                    if (converterProp != null)
+                    {
+                        var converter = converterProp.GetValue(param);
+                        if (converter != null)
+                        {
+                            // Get the target type from the converter
+                            var targetTypeProp = converter.GetType().GetProperty("TargetType")
+                                ?? converter.GetType().GetProperty("Type");
+                            if (targetTypeProp != null)
+                            {
+                                var targetType = targetTypeProp.GetValue(converter) as Type;
+                                if (targetType != null)
+                                {
+                                    return targetType.Name;
+                                }
+                            }
+
+                            // Fallback: use converter's ToString or type name
+                            return converter.GetType().Name;
+                        }
+                    }
+                }
+
+                // Try TypeHint property directly
+                var typeHintProp = param.GetType().GetProperty("TypeHint");
+                if (typeHintProp != null)
+                {
+                    var typeHint = typeHintProp.GetValue(param);
+                    if (typeHint != null)
+                    {
+                        return typeHint.ToString();
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                DebugLog.Debug($"GetParameterTypeHint failed for '{param.Name}': {ex.Message}");
+            }
+
+            return null;
+        }
+
         #region Helper Methods
 
         private List<ParamDef> ParseParamDefs(string json)

@@ -53,6 +53,8 @@ Validation: `get_canvas_status`, `validate_connection`, `validate_layout`, `get_
 
 Debugging: `get_component_outputs(id)`, `trace_data_flow(id, direction)`
 
+Scripts: `get_script_code(id)`, `get_script_info(id)`, `set_script_code(id, code)`, `configure_script_component(id, inputs, outputs, fullSource)`
+
 Visualization: `capture_canvas(outputPath)`, `capture_viewport(outputPath)`, `get_available_views()`
 
 ## Common Errors
