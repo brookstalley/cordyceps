@@ -22,7 +22,7 @@ namespace Cordyceps.Core
             T result = default;
             Exception exception = null;
 
-            RhinoApp.InvokeOnUiThread(new Action(() =>
+            RhinoApp.InvokeAndWait(new Action(() =>
             {
                 try
                 {
@@ -49,7 +49,7 @@ namespace Cordyceps.Core
         {
             Exception exception = null;
 
-            RhinoApp.InvokeOnUiThread(new Action(() =>
+            RhinoApp.InvokeAndWait(new Action(() =>
             {
                 try
                 {
