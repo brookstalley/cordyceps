@@ -3,6 +3,7 @@
 [Oo]bj/
 [Dd]ebug/
 [Rr]elease/
+dist/
 
 # Visual Studio
 .vs/
@@ -17,6 +18,9 @@ packages/
 project.lock.json
 project.fragment.lock.json
 artifacts/
+
+# Yak packages
+*.yak
 
 # JetBrains Rider
 .idea/
