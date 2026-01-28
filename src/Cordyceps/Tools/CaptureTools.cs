@@ -13,6 +13,9 @@ using Newtonsoft.Json;
 using Rhino;
 using Rhino.Display;
 
+// CA1416: System.Drawing APIs work cross-platform in Rhino/Grasshopper context (Mono on macOS)
+#pragma warning disable CA1416
+
 namespace Cordyceps.Tools
 {
     /// <summary>

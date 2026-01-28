@@ -6,6 +6,9 @@ using Cordyceps.Core;
 using Grasshopper.Kernel;
 using Rhino;
 
+// CA1416: System.Drawing.Bitmap works cross-platform in Rhino/Grasshopper context
+#pragma warning disable CA1416
+
 namespace Cordyceps
 {
     /// <summary>
