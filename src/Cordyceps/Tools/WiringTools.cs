@@ -253,90 +253,43 @@ namespace Cordyceps.Tools
         }
 
         private IGH_Param GetOutputParameter(IGH_DocumentObject obj, string paramSpec)
-        {
-            List<IGH_Param> outputs = null;
-
-            if (obj is IGH_Component comp)
-            {
-                outputs = comp.Params.Output.ToList();
-            }
-            else if (obj is IGH_Param param)
-            {
-                return param;
-            }
-
-            if (outputs == null || outputs.Count == 0) return null;
-
-            if (int.TryParse(paramSpec, out int index))
-            {
-                if (index >= 0 && index < outputs.Count)
-                {
-                    return outputs[index];
-                }
-            }
-
-            var byName = outputs.FirstOrDefault(p =>
-                p.Name.Equals(paramSpec, StringComparison.OrdinalIgnoreCase) ||
-                p.NickName.Equals(paramSpec, StringComparison.OrdinalIgnoreCase));
-
-            if (byName != null) return byName;
-
-            byName = outputs.FirstOrDefault(p =>
-                p.Name.IndexOf(paramSpec, StringComparison.OrdinalIgnoreCase) >= 0 ||
-                p.NickName.IndexOf(paramSpec, StringComparison.OrdinalIgnoreCase) >= 0);
-
-            return byName;
-        }
+            => GetParameter(obj, paramSpec, isInput: false);
 
         private IGH_Param GetInputParameter(IGH_DocumentObject obj, string paramSpec)
+            => GetParameter(obj, paramSpec, isInput: true);
+
+        private IGH_Param GetParameter(IGH_DocumentObject obj, string paramSpec, bool isInput)
         {
-            List<IGH_Param> inputs = null;
-
-            if (obj is IGH_Component comp)
-            {
-                inputs = comp.Params.Input.ToList();
-            }
-            else if (obj is IGH_Param param)
-            {
+            if (obj is IGH_Param param)
                 return param;
-            }
 
-            if (inputs == null || inputs.Count == 0) return null;
+            if (!(obj is IGH_Component comp))
+                return null;
 
-            if (int.TryParse(paramSpec, out int index))
-            {
-                if (index >= 0 && index < inputs.Count)
-                {
-                    return inputs[index];
-                }
-            }
+            var list = isInput ? comp.Params.Input : comp.Params.Output;
+            if (list.Count == 0) return null;
 
-            var byName = inputs.FirstOrDefault(p =>
-                p.Name.Equals(paramSpec, StringComparison.OrdinalIgnoreCase) ||
-                p.NickName.Equals(paramSpec, StringComparison.OrdinalIgnoreCase));
+            // Try index
+            if (int.TryParse(paramSpec, out int index) && index >= 0 && index < list.Count)
+                return list[index];
 
-            if (byName != null) return byName;
-
-            byName = inputs.FirstOrDefault(p =>
-                p.Name.IndexOf(paramSpec, StringComparison.OrdinalIgnoreCase) >= 0 ||
-                p.NickName.IndexOf(paramSpec, StringComparison.OrdinalIgnoreCase) >= 0);
-
-            return byName;
+            // Try exact name match, then partial match
+            return list.FirstOrDefault(p =>
+                    p.Name.Equals(paramSpec, StringComparison.OrdinalIgnoreCase) ||
+                    p.NickName.Equals(paramSpec, StringComparison.OrdinalIgnoreCase))
+                ?? list.FirstOrDefault(p =>
+                    p.Name.IndexOf(paramSpec, StringComparison.OrdinalIgnoreCase) >= 0 ||
+                    p.NickName.IndexOf(paramSpec, StringComparison.OrdinalIgnoreCase) >= 0);
         }
 
         private int GetParamIndex(IGH_Param param, bool isInput)
         {
-            var parent = param.Attributes.GetTopLevel.DocObject;
-            if (parent is IGH_Component comp)
-            {
-                var list = isInput ? comp.Params.Input : comp.Params.Output;
-                for (int i = 0; i < list.Count; i++)
-                {
-                    if (list[i].InstanceGuid == param.InstanceGuid)
-                        return i;
-                }
-            }
-            return 0;
+            if (!(param.Attributes.GetTopLevel.DocObject is IGH_Component comp))
+                return 0;
+
+            var list = isInput ? comp.Params.Input : comp.Params.Output;
+            var index = list.ToList().FindIndex(p => p.InstanceGuid == param.InstanceGuid);
+            return index >= 0 ? index : 0;
         }
 
         [McpServerTool, Description("Create multiple connections at once efficiently. Each connection needs sourceId, sourceParam, targetId, targetParam.")]

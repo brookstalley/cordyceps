@@ -17,6 +17,13 @@ namespace Cordyceps.Tools
     {
         private const int MAX_TRACE_DEPTH = 50;
 
+        private static readonly HashSet<string> GeometryTypes = new(StringComparer.OrdinalIgnoreCase)
+        {
+            "point", "point3d", "vector", "vector3d", "plane",
+            "line", "curve", "circle", "arc", "polyline",
+            "surface", "brep", "mesh", "box", "sphere"
+        };
+
         private readonly GrasshopperContext _context;
         private readonly McpServer _server;
 
@@ -1111,16 +1118,7 @@ namespace Cordyceps.Tools
             return 0;
         }
 
-        private bool IsGeometryType(string typeName)
-        {
-            var geometryTypes = new HashSet<string>
-            {
-                "point", "point3d", "vector", "vector3d", "plane",
-                "line", "curve", "circle", "arc", "polyline",
-                "surface", "brep", "mesh", "box", "sphere"
-            };
-            return geometryTypes.Contains(typeName.ToLowerInvariant());
-        }
+        private bool IsGeometryType(string typeName) => GeometryTypes.Contains(typeName);
 
         private void TraceUpstream(IGH_DocumentObject obj, List<object> traced, HashSet<Guid> visited, int depth)
         {

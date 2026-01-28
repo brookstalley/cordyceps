@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.ComponentModel;
 using System.IO;
+using System.Linq;
 using Cordyceps.Core;
 using Grasshopper;
 using Grasshopper.Kernel;
@@ -33,23 +34,16 @@ namespace Cordyceps.Tools
                 if (!ToolHelpers.TryGetActiveDocument(_context, out var doc, out var error))
                     return ToolHelpers.ErrorResponse(error);
 
-                // Count different object types
-                int componentCount = 0;
-                int paramCount = 0;
-                int groupCount = 0;
-                int otherCount = 0;
+                // Get infrastructure IDs to exclude from counts
+                var infraIds = ToolHelpers.GetCordycepsInfrastructureIds(doc);
 
-                foreach (var obj in doc.Objects)
-                {
-                    if (obj is IGH_Component)
-                        componentCount++;
-                    else if (obj is Grasshopper.Kernel.Special.GH_Group)
-                        groupCount++;
-                    else if (obj is IGH_Param)
-                        paramCount++;
-                    else
-                        otherCount++;
-                }
+                // Count different object types (excluding infrastructure)
+                var visibleObjects = doc.Objects.Where(obj => !infraIds.Contains(obj.InstanceGuid)).ToList();
+                int componentCount = visibleObjects.OfType<IGH_Component>().Count();
+                int groupCount = visibleObjects.OfType<Grasshopper.Kernel.Special.GH_Group>().Count();
+                int paramCount = visibleObjects.OfType<IGH_Param>().Count();
+                int otherCount = visibleObjects.Count - componentCount - groupCount - paramCount;
+                int visibleObjectCount = visibleObjects.Count;
 
                 return JsonConvert.SerializeObject(new
                 {
@@ -57,7 +51,7 @@ namespace Cordyceps.Tools
                     filePath = doc.FilePath ?? "(unsaved)",
                     displayName = doc.DisplayName,
                     isModified = doc.IsModified,
-                    objectCount = doc.ObjectCount,
+                    objectCount = visibleObjectCount,
                     components = componentCount,
                     parameters = paramCount,
                     groups = groupCount,
@@ -80,17 +74,11 @@ namespace Cordyceps.Tools
                 var infraIds = ToolHelpers.GetCordycepsInfrastructureIds(doc);
 
                 // Collect objects to remove (everything except infrastructure)
-                var objectsToRemove = new List<IGH_DocumentObject>();
-                foreach (var obj in doc.Objects)
-                {
-                    if (!infraIds.Contains(obj.InstanceGuid))
-                    {
-                        objectsToRemove.Add(obj);
-                    }
-                }
+                var objectsToRemove = doc.Objects
+                    .Where(obj => !infraIds.Contains(obj.InstanceGuid))
+                    .ToList();
 
-                int removedCount = objectsToRemove.Count;
-                int preservedCount = doc.ObjectCount - removedCount;
+                int preservedCount = doc.ObjectCount - objectsToRemove.Count;
 
                 // Remove non-infrastructure objects
                 doc.RemoveObjects(objectsToRemove, true);
@@ -99,7 +87,7 @@ namespace Cordyceps.Tools
                 {
                     success = true,
                     cleared = true,
-                    removedCount,
+                    removedCount = objectsToRemove.Count,
                     preservedCount,
                     note = "Cordyceps MCP infrastructure was preserved"
                 });
@@ -210,6 +198,86 @@ namespace Cordyceps.Tools
                 {
                     success = true,
                     recomputed = true
+                });
+            });
+        }
+
+        [McpServerTool, Description("Undo the last action on the Grasshopper canvas. Only available after at least one MCP operation has been performed.")]
+        public string Undo()
+        {
+            _server?.RecordCommand("undo");
+            return _context.ExecuteOnUiThread(() =>
+            {
+                // Protect against undoing before any MCP operations (would undo adding Cordyceps itself)
+                // CommandCount includes this undo call plus the call from HandleToolCallAsync (2 total),
+                // so we need at least 3+ commands to have had a real operation before this undo
+                if (_server == null || _server.CommandCount <= 2)
+                    return JsonConvert.SerializeObject(new
+                    {
+                        success = false,
+                        error = "Undo is not available until after MCP operations have been performed",
+                        undoCount = 0,
+                        redoCount = 0
+                    });
+
+                if (!ToolHelpers.TryGetActiveDocument(_context, out var doc, out var error))
+                    return ToolHelpers.ErrorResponse(error);
+
+                var undoServer = doc.UndoServer;
+                if (undoServer == null)
+                    return ToolHelpers.ErrorResponse("Undo server not available");
+
+                if (undoServer.UndoCount == 0)
+                    return JsonConvert.SerializeObject(new
+                    {
+                        success = false,
+                        error = "Nothing to undo",
+                        undoCount = 0,
+                        redoCount = undoServer.RedoCount
+                    });
+
+                undoServer.PerformUndo();
+
+                return JsonConvert.SerializeObject(new
+                {
+                    success = true,
+                    undone = true,
+                    undoCount = undoServer.UndoCount,
+                    redoCount = undoServer.RedoCount
+                });
+            });
+        }
+
+        [McpServerTool, Description("Redo a previously undone action on the Grasshopper canvas")]
+        public string Redo()
+        {
+            _server?.RecordCommand("redo");
+            return _context.ExecuteOnUiThread(() =>
+            {
+                if (!ToolHelpers.TryGetActiveDocument(_context, out var doc, out var error))
+                    return ToolHelpers.ErrorResponse(error);
+
+                var undoServer = doc.UndoServer;
+                if (undoServer == null)
+                    return ToolHelpers.ErrorResponse("Undo server not available");
+
+                if (undoServer.RedoCount == 0)
+                    return JsonConvert.SerializeObject(new
+                    {
+                        success = false,
+                        error = "Nothing to redo",
+                        undoCount = undoServer.UndoCount,
+                        redoCount = 0
+                    });
+
+                undoServer.PerformRedo();
+
+                return JsonConvert.SerializeObject(new
+                {
+                    success = true,
+                    redone = true,
+                    undoCount = undoServer.UndoCount,
+                    redoCount = undoServer.RedoCount
                 });
             });
         }

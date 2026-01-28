@@ -30,10 +30,10 @@ namespace Cordyceps.Tools
             _server = server;
         }
 
-        [McpServerTool, Description("Set a component's value (slider, panel, or parameter). For sliders, use 'min<default<max' format to set range, or just a number to set current value.")]
+        [McpServerTool, Description("Set a component's value (slider, panel, or parameter). For sliders, sets the current value only. Use set_slider_properties to configure slider range and type.")]
         public string SetComponentValue(
             [Description("Component GUID")] string id,
-            [Description("Value to set. For sliders: number or 'min<default<max' format")] string value)
+            [Description("Value to set (number for sliders, text for panels)")] string value)
         {
             _server?.RecordCommand("set_component_value");
             return _context.ExecuteOnUiThread(() =>
@@ -49,83 +49,18 @@ namespace Cordyceps.Tools
                 }
                 else if (component is GH_NumberSlider slider)
                 {
-                    // Support both single value and range format
-                    // Range format: "min<default<max" e.g., "0<2<4" or "0.0<0.5<1.0"
-                    if (value.Contains("<"))
+                    // Try to parse value as number
+                    if (double.TryParse(value, out double numValue))
                     {
-                        // Parse range format: min<default<max
-                        var parts = value.Split('<').Select(s => s.Trim()).ToArray();
-                        if (parts.Length == 3 &&
-                            double.TryParse(parts[0], out double minVal) &&
-                            double.TryParse(parts[1], out double defaultVal) &&
-                            double.TryParse(parts[2], out double maxVal))
-                        {
-                            // Validate slider range: min <= default <= max
-                            if (minVal > defaultVal || defaultVal > maxVal)
-                            {
-                                return JsonConvert.SerializeObject(new { success = false, error = $"Invalid slider range: min ({minVal}) must be <= default ({defaultVal}) must be <= max ({maxVal})" });
-                            }
-
-                            // Determine if this is an integer slider based on the values
-                            bool isInteger = (minVal == Math.Floor(minVal)) &&
-                                           (defaultVal == Math.Floor(defaultVal)) &&
-                                           (maxVal == Math.Floor(maxVal)) &&
-                                           !parts[0].Contains(".") &&
-                                           !parts[1].Contains(".") &&
-                                           !parts[2].Contains(".");
-
-                            // Set slider properties directly
-                            slider.Slider.Minimum = (decimal)minVal;
-                            slider.Slider.Maximum = (decimal)maxVal;
-                            slider.Slider.Value = (decimal)defaultVal;
-
-                            // Set slider type
-                            if (isInteger)
-                            {
-                                slider.Slider.Type = Grasshopper.GUI.Base.GH_SliderAccuracy.Integer;
-                                slider.Slider.DecimalPlaces = 0;
-                            }
-                            else
-                            {
-                                slider.Slider.Type = Grasshopper.GUI.Base.GH_SliderAccuracy.Float;
-                                // Determine decimal places from the format
-                                int maxDecimals = 0;
-                                foreach (var part in parts)
-                                {
-                                    int dotIndex = part.IndexOf('.');
-                                    if (dotIndex >= 0)
-                                    {
-                                        int decimals = part.Length - dotIndex - 1;
-                                        maxDecimals = Math.Max(maxDecimals, decimals);
-                                    }
-                                }
-                                slider.Slider.DecimalPlaces = maxDecimals > 0 ? maxDecimals : 1;
-                            }
-
-                            // Update slider display
-                            if (slider.Attributes != null)
-                                slider.Attributes.ExpireLayout();
-                        }
-                        else
-                        {
-                            return JsonConvert.SerializeObject(new { success = false, error = $"Invalid slider range format: '{value}'. Expected 'min<default<max'" });
-                        }
+                        // Clamp to slider range
+                        decimal sliderMin = slider.Slider.Minimum;
+                        decimal sliderMax = slider.Slider.Maximum;
+                        decimal clampedValue = Math.Max(sliderMin, Math.Min(sliderMax, (decimal)numValue));
+                        slider.SetSliderValue(clampedValue);
                     }
                     else
                     {
-                        // Try to parse as number
-                        if (double.TryParse(value, out double numValue))
-                        {
-                            // Clamp to slider range
-                            decimal min = slider.Slider.Minimum;
-                            decimal max = slider.Slider.Maximum;
-                            decimal clampedValue = Math.Max(min, Math.Min(max, (decimal)numValue));
-                            slider.SetSliderValue(clampedValue);
-                        }
-                        else
-                        {
-                            return JsonConvert.SerializeObject(new { success = false, error = $"Cannot parse '{value}' as a number for slider" });
-                        }
+                        return JsonConvert.SerializeObject(new { success = false, error = $"Cannot parse '{value}' as a number for slider. Use set_slider_properties to configure slider range and type." });
                     }
                 }
                 else if (component is IGH_Param param)
@@ -243,6 +178,85 @@ namespace Cordyceps.Tools
                 }
 
                 return JsonConvert.SerializeObject(parameterInfo);
+            });
+        }
+
+        [McpServerTool, Description("Configure a Number Slider's range, value, and type (integer vs floating-point)")]
+        public string SetSliderProperties(
+            [Description("Slider component GUID")] string id,
+            [Description("Minimum value for the slider range")] double min,
+            [Description("Maximum value for the slider range")] double max,
+            [Description("Current/default value (must be between min and max)")] double value,
+            [Description("Optional: force integer type (true) or floating-point (false). If not specified, auto-detects from values.")] bool? integer = null)
+        {
+            _server?.RecordCommand("set_slider_properties");
+            return _context.ExecuteOnUiThread(() =>
+            {
+                // Use protected method - infrastructure components appear as "not found"
+                if (!ToolHelpers.TryGetUnprotectedComponentWithDoc(_context, id, out var doc, out var component, out var error))
+                    return ToolHelpers.ErrorResponse(error);
+
+                if (!(component is GH_NumberSlider slider))
+                {
+                    return JsonConvert.SerializeObject(new { success = false, error = $"Component is not a Number Slider: {component.GetType().Name}" });
+                }
+
+                // Validate slider range: min <= value <= max
+                if (min > max)
+                {
+                    return JsonConvert.SerializeObject(new { success = false, error = $"Invalid slider range: min ({min}) must be <= max ({max})" });
+                }
+                if (value < min || value > max)
+                {
+                    return JsonConvert.SerializeObject(new { success = false, error = $"Invalid slider value: value ({value}) must be between min ({min}) and max ({max})" });
+                }
+
+                // Determine if this is an integer slider
+                bool isInteger = integer ?? ((min == Math.Floor(min)) &&
+                                             (max == Math.Floor(max)) &&
+                                             (value == Math.Floor(value)));
+
+                // Set slider properties
+                slider.Slider.Minimum = (decimal)min;
+                slider.Slider.Maximum = (decimal)max;
+                slider.Slider.Value = (decimal)value;
+
+                // Set slider type
+                if (isInteger)
+                {
+                    slider.Slider.Type = Grasshopper.GUI.Base.GH_SliderAccuracy.Integer;
+                    slider.Slider.DecimalPlaces = 0;
+                }
+                else
+                {
+                    slider.Slider.Type = Grasshopper.GUI.Base.GH_SliderAccuracy.Float;
+                    // Determine decimal places from the values
+                    int maxDecimals = new[] { min, max, value }
+                        .Select(v => v.ToString())
+                        .Where(s => s.Contains('.'))
+                        .Select(s => s.TrimEnd('0').Length - s.IndexOf('.') - 1)
+                        .DefaultIfEmpty(0)
+                        .Max();
+                    slider.Slider.DecimalPlaces = Math.Max(maxDecimals, 1);
+                }
+
+                // Update slider display
+                slider.Attributes?.ExpireLayout();
+
+                // Expire and recompute
+                slider.ExpireSolution(true);
+                doc.NewSolution(false);
+
+                return JsonConvert.SerializeObject(new
+                {
+                    success = true,
+                    id = component.InstanceGuid.ToString(),
+                    min,
+                    max,
+                    value,
+                    integer = isInteger,
+                    decimalPlaces = slider.Slider.DecimalPlaces
+                });
             });
         }
 

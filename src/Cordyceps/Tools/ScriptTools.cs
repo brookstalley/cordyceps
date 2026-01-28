@@ -531,28 +531,24 @@ namespace Cordyceps.Tools
 
         private List<ParamDef> ParseParamDefs(string json)
         {
-            var defs = new List<ParamDef>();
-            if (string.IsNullOrEmpty(json)) return defs;
+            if (string.IsNullOrEmpty(json)) return new List<ParamDef>();
 
             try
             {
-                var array = JArray.Parse(json);
-                foreach (var item in array)
-                {
-                    defs.Add(new ParamDef
+                return JArray.Parse(json)
+                    .Select(item => new ParamDef
                     {
                         Name = item["name"]?.ToString() ?? "param",
                         Type = item["type"]?.ToString() ?? "object",
                         Access = item["access"]?.ToString() ?? ""
-                    });
-                }
+                    })
+                    .ToList();
             }
             catch (Exception ex)
             {
                 DebugLog.Error($"Error parsing param defs: {ex.Message}");
+                return new List<ParamDef>();
             }
-
-            return defs;
         }
 
         private void ApplyAccessModes(IGH_Component ghComponent, List<ParamDef> inputDefs)

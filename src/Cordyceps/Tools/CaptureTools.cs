@@ -135,11 +135,9 @@ namespace Cordyceps.Tools
                     return ToolHelpers.ErrorResponse("No active Rhino document");
 
                 // Auto-generate temp path if not provided
-                var actualPath = outputPath;
-                if (string.IsNullOrEmpty(actualPath))
-                {
-                    actualPath = GetTempImagePath("viewport", transparent ? ".png" : ".png");
-                }
+                var actualPath = string.IsNullOrEmpty(outputPath)
+                    ? GetTempImagePath("viewport", ".png")
+                    : outputPath;
 
                 try
                 {
@@ -499,22 +497,14 @@ namespace Cordyceps.Tools
         /// <summary>
         /// Get the appropriate ImageFormat from file extension.
         /// </summary>
-        private ImageFormat GetImageFormat(string filePath)
-        {
-            var ext = Path.GetExtension(filePath)?.ToLowerInvariant();
-            switch (ext)
+        private ImageFormat GetImageFormat(string filePath) =>
+            Path.GetExtension(filePath)?.ToLowerInvariant() switch
             {
-                case ".png":
-                    return ImageFormat.Png;
-                case ".jpg":
-                case ".jpeg":
-                    return ImageFormat.Jpeg;
-                case ".bmp":
-                    return ImageFormat.Bmp;
-                default:
-                    return null;
-            }
-        }
+                ".png" => ImageFormat.Png,
+                ".jpg" or ".jpeg" => ImageFormat.Jpeg,
+                ".bmp" => ImageFormat.Bmp,
+                _ => null
+            };
 
         /// <summary>
         /// Generate a temp file path for captured images.
@@ -522,12 +512,8 @@ namespace Cordyceps.Tools
         private string GetTempImagePath(string prefix, string extension)
         {
             var tempDir = Path.Combine(Path.GetTempPath(), "Cordyceps");
-            if (!Directory.Exists(tempDir))
-                Directory.CreateDirectory(tempDir);
-
-            var timestamp = DateTime.Now.ToString("yyyyMMdd_HHmmss");
-            var filename = $"{prefix}_{timestamp}{extension}";
-            return Path.Combine(tempDir, filename);
+            Directory.CreateDirectory(tempDir); // No-op if exists
+            return Path.Combine(tempDir, $"{prefix}_{DateTime.Now:yyyyMMdd_HHmmss}{extension}");
         }
 
         #endregion

@@ -1068,26 +1068,28 @@ namespace Cordyceps.Tools
                 // Set the value
                 panel.SetUserText(value);
 
-                // Set nickname if provided, otherwise use the value
-                panel.NickName = nickname ?? value;
+                // Set nickname if provided, otherwise leave blank for constant panels
+                panel.NickName = nickname ?? "";
+
+                // Set compact height for constant panels (30px)
+                var initialBounds = panel.Attributes.Bounds;
+                panel.Attributes.Bounds = new RectangleF(initialBounds.X, initialBounds.Y, initialBounds.Width, 30);
 
                 // Add to document
                 doc.AddObject(panel, false);
                 doc.NewSolution(true);
-
-                var bounds = panel.Attributes.Bounds;
 
                 return JsonConvert.SerializeObject(new
                 {
                     success = true,
                     id = panel.InstanceGuid.ToString(),
                     type = "Panel",
-                    value = value,
+                    value,
                     nickname = panel.NickName,
                     x = panel.Attributes.Pivot.X,
                     y = panel.Attributes.Pivot.Y,
-                    width = bounds.Width,
-                    height = bounds.Height
+                    width = panel.Attributes.Bounds.Width,
+                    height = panel.Attributes.Bounds.Height
                 });
             });
         }

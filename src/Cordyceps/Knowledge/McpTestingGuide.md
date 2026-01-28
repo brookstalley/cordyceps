@@ -234,12 +234,18 @@ Track friction for:
 ### Tests to Perform
 
 1. **Set Slider Value**
-   - Set a Number Slider to value 5.0
+   - Set a Number Slider to value 5.0 using: `set_component_value(id, value="5")`
    - Verify the value was set (check component outputs if possible)
+   - Note: This only sets the current value within the existing range
 
-2. **Set Slider Range**
-   - Set a slider's range using format "0<5<10" (min<default<max)
+2. **Configure Slider Range and Type**
+   - Configure a slider's full properties using `set_slider_properties`:
+     `set_slider_properties(id, min=0, max=10, value=5)`
    - Verify minimum, maximum, and current value all changed
+   - Test integer detection: use whole numbers (min=0, max=100, value=50)
+     and verify the slider becomes an integer slider
+   - Test explicit integer flag: `set_slider_properties(id, min=0.0, max=1.0, value=0.5, integer=false)`
+     to force floating-point even with whole-number-looking values
 
 3. **Set Panel Value**
    - Set a Panel's text to "Hello Grasshopper"
@@ -432,10 +438,31 @@ Track friction for:
    - Revert to the snapshot
    - Verify the state was restored
 
+5. **Undo Protection (Fresh Session)**
+   - If testing on a fresh session with no prior MCP operations, call `undo()`
+   - Verify it returns an error: "Undo is not available until after MCP operations have been performed"
+   - This prevents undoing the creation of the Cordyceps component itself
+
+6. **Undo/Redo Basic Operations**
+   - Add a component (note: this creates an undoable action)
+   - Call `undo()` - verify it succeeds and returns undo/redo counts
+   - Verify the component is no longer on the canvas
+   - Call `redo()` - verify the component reappears
+   - Call `redo()` again - verify it returns "Nothing to redo"
+
+7. **Undo After Multiple Operations**
+   - Add a slider, add a circle, connect them
+   - Undo once - connection should be removed
+   - Undo again - circle should be removed
+   - Redo twice - both should be restored
+   - Verify final state matches original
+
 ### Expected Behaviors
 - Clear should NEVER remove Cordyceps infrastructure
 - Save should work with .gh and .ghx extensions
 - Solver disable should prevent computation
+- Undo is blocked until at least one MCP operation has been performed
+- Undo/redo counts should reflect available actions
 
 ---
 
@@ -552,10 +579,95 @@ Track friction for:
 6. Save the document
 7. Capture both canvas and viewport
 
+### Scenario D: Radial Sine Wave Cylinder Array (Advanced)
+
+**Goal:** Build a complex parametric model that tests multiple features working together.
+
+**Description:** Create an array of cylinders arranged in a circle around the origin on the XY plane. The heights of the cylinders vary according to a sine wave pattern, creating a wave-like effect around the circle.
+
+**Parameters to expose as sliders:**
+- Cylinder Count (integer, 6 to 36, default 12)
+- Array Radius (distance from origin, 5 to 50, default 20)
+- Cylinder Diameter (0.5 to 5, default 1)
+- Min Height (1 to 10, default 2)
+- Max Height (5 to 30, default 10)
+- Wave Frequency (number of complete waves around circle, 1 to 6, default 2)
+
+**Construction Steps:**
+
+1. **Setup**
+   - Clear the document
+   - Disable the solver
+   - Read `gh://docs/geometry-orientation` (cylinders extend along plane Z-axis)
+
+2. **Create Parameter Sliders** (stack vertically at x=50)
+   - "Count" slider: integer, min=6, max=36, default=12
+   - "ArrayRadius" slider: min=5, max=50, default=20
+   - "CylDiameter" slider: min=0.5, max=5, default=1
+   - "MinHeight" slider: min=1, max=10, default=2
+   - "MaxHeight" slider: min=5, max=30, default=10
+   - "WaveFreq" slider: integer, min=1, max=6, default=2
+
+3. **Build Radial Positions**
+   - Add Range component: 0 to 2*Pi, divided by Count
+   - Add Circle component at origin with ArrayRadius
+   - Use Divide Curve or evaluate circle at parameter values to get points
+   - These points define where cylinders will be placed
+
+4. **Calculate Sine Wave Heights**
+   - Multiply the range values (angles) by WaveFreq
+   - Apply Sin function to get values between -1 and 1
+   - Remap from [-1,1] to [MinHeight, MaxHeight]
+   - This gives varying heights around the circle
+
+5. **Create Cylinder Axes**
+   - At each point, create a vertical line (direction = Z-axis)
+   - Line length = calculated height for that position
+   - Use Plane Normal or similar to ensure cylinders point up (Z direction)
+
+6. **Generate Cylinders**
+   - Use Pipe or Cylinder component
+   - Connect the lines as axes
+   - Connect CylDiameter/2 as radius
+   - Cap the cylinders if using Pipe
+
+7. **Organize and Validate**
+   - Create groups: "Parameters", "Position Logic", "Height Logic", "Geometry"
+   - Enable solver
+   - Check canvas status - all should be OK
+   - Validate layout for overlaps
+
+8. **Capture Results**
+   - Capture the canvas to see the definition structure
+   - Capture the Perspective viewport to see the geometry
+   - Try adjusting sliders and re-capturing to verify parametric control
+
+**Validation Checklist:**
+- [ ] Changing Count updates number of cylinders
+- [ ] Changing ArrayRadius moves cylinders closer/further from origin
+- [ ] Changing CylDiameter affects cylinder thickness
+- [ ] Changing MinHeight/MaxHeight affects the height range
+- [ ] Changing WaveFreq changes the number of "peaks" around the circle
+- [ ] All cylinders point upward (not sideways)
+- [ ] Canvas has no errors or warnings
+- [ ] Definition is organized with logical groups
+
+**What This Tests:**
+- Multiple slider types (integer and float)
+- Configure slider range with `set_slider_properties` tool
+- Mathematical operations (Range, Sin, Remap)
+- Geometric operations (Circle, Points, Lines, Cylinders)
+- Data tree matching (multiple cylinders from lists)
+- Plane orientation (cylinders pointing correct direction)
+- Groups for organization
+- Capture tools for visualization
+- Complex wiring with bulk_connect
+
 ### Expected Behaviors
 - Complex definitions should build without issues
 - Groups help organize large definitions
 - Debugging should identify root causes
+- Parametric models should respond to slider changes
 
 ---
 
@@ -578,8 +690,10 @@ Track friction for:
    - Verify validation catches this before attempting
 
 4. **Invalid Slider Range**
-   - Set slider range with min > max (e.g., "10<5<0")
-   - Verify error explains the issue
+   - Use `set_slider_properties` with min > max (e.g., min=10, max=5, value=7)
+   - Verify error explains that min must be <= max
+   - Try setting value outside range (e.g., min=0, max=10, value=20)
+   - Verify error explains the constraint
 
 5. **Invalid JSON**
    - For bulk operations, send malformed JSON
@@ -594,43 +708,38 @@ Track friction for:
 
 ## End of Testing: Summary Instructions
 
-**IMPORTANT:** After completing all test sections, you MUST compile a comprehensive summary. Do not skip this step.
+**IMPORTANT:** After completing all test sections, provide a BRIEF summary. Keep it concise - no more than 20 lines.
 
-### Step 1: Compile Section Results
+### Required Summary Format
 
-For each of the 13 test sections, record:
-- Section name and number
-- Status: PASS (all tests worked) / PARTIAL (some issues) / FAIL (major problems)
-- Count of individual tests run
-- Brief notes on any issues
+```
+## Test Summary
 
-### Step 2: Compile Friction Log
+**Results:** X tests run, Y passed (Z%)
 
-Review all the "successful but difficult" operations you noted and:
-- Group similar friction points together
-- Prioritize by frequency (how often did this come up?)
-- Prioritize by severity (how much did it slow you down?)
-- Convert each into a concrete feature request
+**Failures:** (if any)
+- [Brief description of what failed and why]
 
-### Step 3: Categorize Issues
+**Recommendations:** (if any)
+- [Concrete suggestions to make the MCP server easier for LLMs to use]
+- [Focus on friction points, confusing APIs, missing conveniences]
 
-Sort all issues into:
-1. **Critical (Blocks Usage):** Things that prevent basic functionality
-2. **Major (Significant Pain):** Things that work but cause significant difficulty
-3. **Minor (Annoyances):** Small issues that don't block anything
-4. **Enhancement (Nice to Have):** Ideas for new features or improvements
+**Verdict:** READY / NEEDS WORK / NOT USABLE
+```
 
-### Step 4: Write Executive Summary
+### What to Include in Recommendations
 
-In 3-5 sentences, summarize:
-- Overall impression of Cordyceps quality
-- Most significant issues found
-- Most valuable improvement opportunities
-- Recommendation (ready for production / needs work / not usable)
+Focus on things that would make the MCP server easier for an LLM to use:
+- Confusing parameter names or formats
+- Operations that required too many steps
+- Missing convenience methods (e.g., "add a connect_slider_to_radius shortcut")
+- Unclear error messages
+- Documentation gaps
+- Common patterns that should be built-in
 
-### Step 5: Generate Final Report
+### Optional: Detailed Report
 
-Use the template below to create your final report.
+If requested, or if significant issues were found, you may also generate the detailed report template below.
 
 ---
 

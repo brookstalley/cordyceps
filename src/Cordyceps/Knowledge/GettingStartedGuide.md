@@ -47,7 +47,7 @@ Use `validate_layout()` to check overlaps. Fix overlapping components manually w
 
 Discovery: `search_components(query)`, `get_component_info(id)`, `get_component_parameters(type)`
 
-Building: `add_component`, `connect_components`, `bulk_connect`, `set_component_value`
+Building: `add_component`, `connect_components`, `bulk_connect`, `set_component_value`, `set_slider_properties`
 
 Validation: `get_canvas_status`, `validate_connection`, `validate_layout`, `get_disconnected_inputs`
 

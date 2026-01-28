@@ -26,6 +26,18 @@ namespace Cordyceps.Tools
             _server = server;
         }
 
+        private static bool TryParseColor(string color, out Color result)
+        {
+            result = Color.Empty;
+            if (string.IsNullOrEmpty(color)) return false;
+            try
+            {
+                result = color.StartsWith("#") ? ColorTranslator.FromHtml(color) : Color.FromName(color);
+                return true;
+            }
+            catch { return false; }
+        }
+
         [McpServerTool, Description("Create a visual group on the Grasshopper canvas")]
         public string CreateGroup(
             [Description("Name/label for the group")] string name,
@@ -42,26 +54,8 @@ namespace Cordyceps.Tools
                 group.Name = name;
 
                 // Set color if specified
-                if (!string.IsNullOrEmpty(color))
-                {
-                    try
-                    {
-                        Color groupColor;
-                        if (color.StartsWith("#"))
-                        {
-                            groupColor = ColorTranslator.FromHtml(color);
-                        }
-                        else
-                        {
-                            groupColor = Color.FromName(color);
-                        }
-                        group.Colour = groupColor;
-                    }
-                    catch (Exception ex)
-                    {
-                        DebugLog.Warn($"Failed to parse color '{color}': {ex.Message}");
-                    }
-                }
+                if (TryParseColor(color, out var groupColor))
+                    group.Colour = groupColor;
 
                 doc.AddObject(group, false);
 
@@ -129,26 +123,8 @@ namespace Cordyceps.Tools
                 }
 
                 // Set color if provided
-                if (!string.IsNullOrEmpty(color))
-                {
-                    try
-                    {
-                        Color parsedColor;
-                        if (color.StartsWith("#"))
-                        {
-                            parsedColor = ColorTranslator.FromHtml(color);
-                        }
-                        else
-                        {
-                            parsedColor = Color.FromName(color);
-                        }
-                        group.Colour = parsedColor;
-                    }
-                    catch (Exception ex)
-                    {
-                        DebugLog.Warn($"Failed to parse color '{color}': {ex.Message}");
-                    }
-                }
+                if (TryParseColor(color, out var parsedColor))
+                    group.Colour = parsedColor;
 
                 // Add objects to group
                 foreach (var obj in objects)
@@ -241,24 +217,11 @@ namespace Cordyceps.Tools
                 if (!(obj is GH_Group group))
                     return ToolHelpers.ErrorResponse($"Object is not a group: {id}");
 
-                try
-                {
-                    Color groupColor;
-                    if (color.StartsWith("#"))
-                    {
-                        groupColor = ColorTranslator.FromHtml(color);
-                    }
-                    else
-                    {
-                        groupColor = Color.FromName(color);
-                    }
-                    group.Colour = groupColor;
-                    Instances.ActiveCanvas?.Invalidate();
-                }
-                catch (Exception ex)
-                {
-                    return JsonConvert.SerializeObject(new { success = false, error = $"Invalid color: {ex.Message}" });
-                }
+                if (!TryParseColor(color, out var groupColor))
+                    return ToolHelpers.ErrorResponse($"Invalid color: {color}");
+
+                group.Colour = groupColor;
+                Instances.ActiveCanvas?.Invalidate();
 
                 return JsonConvert.SerializeObject(new
                 {

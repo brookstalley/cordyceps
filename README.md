@@ -78,7 +78,7 @@ The AI interprets the request and builds the complete Grasshopper definition ste
 
 **Capture**: `capture_canvas`, `capture_viewport`, `capture_canvas_region`
 
-**Documents**: `save_document`, `clear_document`, `snapshot`, `revert_snapshot`
+**Documents**: `save_document`, `clear_document`, `snapshot`, `revert_snapshot`, `undo`, `redo`
 
 **Execution**: `set_solver_enabled`, `recompute_solution`, `bake_geometry`, `execute_script`
 
