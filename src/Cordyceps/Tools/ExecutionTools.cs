@@ -26,25 +26,6 @@ namespace Cordyceps.Tools
             _server = server;
         }
 
-        [McpServerTool, Description("Trigger a recompute of the Grasshopper document")]
-        public string ExecutePreview()
-        {
-            _server?.RecordCommand("execute_preview");
-            return _context.ExecuteOnUiThread(() =>
-            {
-                if (!ToolHelpers.TryGetActiveDocument(_context, out var doc, out var error))
-                    return ToolHelpers.ErrorResponse(error);
-
-                doc.NewSolution(false);
-
-                return JsonConvert.SerializeObject(new
-                {
-                    success = true,
-                    message = "Solution recomputed"
-                });
-            });
-        }
-
         [McpServerTool, Description("Execute a Rhino command script")]
         public string ExecuteScript(
             [Description("Rhino command script to execute")] string script)

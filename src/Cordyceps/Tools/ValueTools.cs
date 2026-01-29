@@ -458,7 +458,8 @@ namespace Cordyceps.Tools
         [McpServerTool, Description("Bake geometry from a component's output to the Rhino document")]
         public string BakeGeometry(
             [Description("Component GUID")] string id,
-            [Description("Optional layer name to bake to (creates if doesn't exist)")] string layer = null)
+            [Description("Optional layer name to bake to (creates if doesn't exist)")] string layer = null,
+            [Description("Optional name to assign to baked objects")] string name = null)
         {
             _server?.RecordCommand("bake_geometry");
             return _context.ExecuteOnUiThread(() =>
@@ -473,6 +474,7 @@ namespace Cordyceps.Tools
 
                 // Get or create the target layer
                 int layerIndex = -1;
+                bool layerCreated = false;
                 if (!string.IsNullOrEmpty(layer))
                 {
                     layerIndex = rhinoDoc.Layers.FindByFullPath(layer, -1);
@@ -481,6 +483,7 @@ namespace Cordyceps.Tools
                         // Create the layer
                         var newLayer = new Layer { Name = layer };
                         layerIndex = rhinoDoc.Layers.Add(newLayer);
+                        layerCreated = true;
                     }
                 }
 
@@ -488,6 +491,8 @@ namespace Cordyceps.Tools
                 var attributes = new ObjectAttributes();
                 if (layerIndex >= 0)
                     attributes.LayerIndex = layerIndex;
+                if (!string.IsNullOrEmpty(name))
+                    attributes.Name = name;
 
                 // Helper function to bake geometry from a param
                 Action<IGH_Param> bakeFromParam = (param) =>
@@ -498,8 +503,42 @@ namespace Cordyceps.Tools
                     {
                         if (data is IGH_GeometricGoo goo)
                         {
-                            // Try to get the geometry and add it directly
-                            var geom = goo.ScriptVariable() as GeometryBase;
+                            GeometryBase geom = null;
+                            var scriptVar = goo.ScriptVariable();
+
+                            // Handle different geometry types
+                            if (scriptVar is GeometryBase gb)
+                            {
+                                geom = gb;
+                            }
+                            else if (scriptVar is Box box)
+                            {
+                                // Convert Box to Brep for baking
+                                geom = box.ToBrep();
+                            }
+                            else if (scriptVar is Rectangle3d rect)
+                            {
+                                // Convert Rectangle to PolylineCurve
+                                geom = rect.ToPolyline().ToPolylineCurve();
+                            }
+                            else if (scriptVar is Circle circle)
+                            {
+                                // Convert Circle to ArcCurve
+                                geom = new ArcCurve(circle);
+                            }
+                            else if (scriptVar is Arc arc)
+                            {
+                                geom = new ArcCurve(arc);
+                            }
+                            else if (scriptVar is Line line)
+                            {
+                                geom = new LineCurve(line);
+                            }
+                            else if (scriptVar is Polyline polyline)
+                            {
+                                geom = polyline.ToPolylineCurve();
+                            }
+
                             if (geom != null)
                             {
                                 var bakedGuid = rhinoDoc.Objects.Add(geom, attributes);
@@ -532,6 +571,9 @@ namespace Cordyceps.Tools
                     bakedCount = bakedIds.Count,
                     bakedIds,
                     layer,
+                    layerIndex,
+                    layerCreated,
+                    name
                 });
             });
         }

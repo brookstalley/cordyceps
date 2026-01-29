@@ -180,13 +180,23 @@ namespace Cordyceps.Tools
         }
 
         [McpServerTool, Description("Get all connections (wires) between components on the canvas")]
-        public string GetConnections()
+        public string GetConnections(
+            [Description("Filter to connections involving this component ID (as source or target)")] string componentId = null)
         {
             _server?.RecordCommand("get_connections");
             return _context.ExecuteOnUiThread(() =>
             {
                 if (!ToolHelpers.TryGetActiveDocument(_context, out var doc, out var error))
                     return ToolHelpers.ErrorResponse(error);
+
+                // Validate componentId if provided
+                Guid? filterGuid = null;
+                if (!string.IsNullOrEmpty(componentId))
+                {
+                    if (!RequestValidator.ValidateGuid(componentId, "componentId", out Guid parsedGuid, out var guidError))
+                        return ToolHelpers.ErrorResponse(guidError);
+                    filterGuid = parsedGuid;
+                }
 
                 // Get infrastructure IDs to filter
                 var infraIds = ToolHelpers.GetCordycepsInfrastructureIds(doc);
@@ -222,6 +232,15 @@ namespace Cordyceps.Tools
                             if (ToolHelpers.IsCordycepsInfrastructure(sourceObj, infraIds))
                                 continue;
 
+                            // Apply component filter if specified
+                            if (filterGuid.HasValue)
+                            {
+                                var sourceGuid = sourceObj.InstanceGuid;
+                                var targetGuid = obj.InstanceGuid;
+                                if (sourceGuid != filterGuid.Value && targetGuid != filterGuid.Value)
+                                    continue;
+                            }
+
                             connections.Add(new
                             {
                                 source = new
@@ -243,12 +262,16 @@ namespace Cordyceps.Tools
                     }
                 }
 
-                return JsonConvert.SerializeObject(new
+                var result = new Dictionary<string, object>
                 {
-                    success = true,
-                    count = connections.Count,
-                    connections = connections
-                });
+                    ["success"] = true,
+                    ["count"] = connections.Count,
+                    ["connections"] = connections
+                };
+                if (filterGuid.HasValue)
+                    result["filteredBy"] = componentId;
+
+                return JsonConvert.SerializeObject(result);
             });
         }
 

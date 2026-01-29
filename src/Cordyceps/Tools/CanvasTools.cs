@@ -66,6 +66,7 @@ namespace Cordyceps.Tools
                                 subcategory = m.SubCategory,
                                 role = m.Role,
                                 description = m.Description,
+                                deprecated = m.Deprecated,
                                 inputs = m.Inputs?.Select(i => $"{i.Name} ({i.Type})").ToList(),
                                 outputs = m.Outputs?.Select(o => $"{o.Name} ({o.Type})").ToList()
                             })
@@ -296,8 +297,11 @@ namespace Cordyceps.Tools
             });
         }
 
-        [McpServerTool, Description("Get all components currently on the Grasshopper canvas")]
-        public string GetAllComponents()
+        [McpServerTool, Description("Get all components currently on the Grasshopper canvas, with optional filters")]
+        public string GetAllComponents(
+            [Description("Filter by category (e.g., 'Curve', 'Kangaroo'). Use get_categories to see valid values.")] string category = null,
+            [Description("Filter by component type name (e.g., 'Circle', 'Number Slider')")] string type = null,
+            [Description("Filter by group name or GUID")] string group = null)
         {
             _server?.RecordCommand("get_all_components");
             return _context.ExecuteOnUiThread(() =>
@@ -308,6 +312,16 @@ namespace Cordyceps.Tools
                 // Get infrastructure component IDs to filter
                 var infraIds = ToolHelpers.GetCordycepsInfrastructureIds(doc);
 
+                // If group filter specified, get member IDs
+                HashSet<Guid> groupMemberIds = null;
+                if (!string.IsNullOrEmpty(group))
+                {
+                    var targetGroup = FindGroup(doc, group, infraIds);
+                    if (targetGroup == null)
+                        return ToolHelpers.ErrorResponse($"Group not found: {group}");
+                    groupMemberIds = new HashSet<Guid>(targetGroup.ObjectIDs ?? new List<Guid>());
+                }
+
                 var components = new List<object>();
                 foreach (var obj in doc.Objects)
                 {
@@ -315,26 +329,111 @@ namespace Cordyceps.Tools
                     if (ToolHelpers.IsCordycepsInfrastructure(obj, infraIds))
                         continue;
 
+                    // Apply group filter
+                    if (groupMemberIds != null && !groupMemberIds.Contains(obj.InstanceGuid))
+                        continue;
+
+                    // Get category info for filtering
+                    string objCategory = null;
+                    string objName = null;
+
+                    if (obj is IGH_Component comp)
+                    {
+                        var proxy = Instances.ComponentServer.ObjectProxies
+                            .FirstOrDefault(p => p.Guid == comp.ComponentGuid);
+                        objCategory = proxy?.Desc.Category ?? comp.Category;
+                        objName = comp.Name;
+                    }
+                    else if (obj is IGH_Param param)
+                    {
+                        var proxy = Instances.ComponentServer.ObjectProxies
+                            .FirstOrDefault(p => p.Guid == param.ComponentGuid);
+                        objCategory = proxy?.Desc.Category ?? "Params";
+                        objName = param.Name;
+                    }
+
+                    // Apply category filter
+                    if (!string.IsNullOrEmpty(category) &&
+                        !string.Equals(objCategory, category, StringComparison.OrdinalIgnoreCase))
+                        continue;
+
+                    // Apply type filter (matches name or type name)
+                    if (!string.IsNullOrEmpty(type))
+                    {
+                        var typeLower = type.ToLowerInvariant();
+                        var nameLower = objName?.ToLowerInvariant() ?? "";
+                        var typeNameLower = obj.GetType().Name.ToLowerInvariant();
+
+                        if (!nameLower.Contains(typeLower) && !typeNameLower.Contains(typeLower) &&
+                            nameLower != typeLower && typeNameLower != typeLower)
+                            continue;
+                    }
+
                     components.Add(ToolHelpers.BuildListComponentInfo(obj));
                 }
+
+                // Build response with filter info
+                var filters = new Dictionary<string, string>();
+                if (!string.IsNullOrEmpty(category)) filters["category"] = category;
+                if (!string.IsNullOrEmpty(type)) filters["type"] = type;
+                if (!string.IsNullOrEmpty(group)) filters["group"] = group;
 
                 return JsonConvert.SerializeObject(new
                 {
                     success = true,
                     count = components.Count,
+                    filters = filters.Count > 0 ? filters : null,
                     components = components
                 });
             });
         }
 
+        private static Grasshopper.Kernel.Special.GH_Group FindGroup(GH_Document doc, string group, HashSet<Guid> infraIds)
+        {
+            // Try GUID first
+            if (Guid.TryParse(group, out Guid groupGuid))
+            {
+                if (infraIds.Contains(groupGuid))
+                    return null;
+                return doc.FindObject(groupGuid, true) as Grasshopper.Kernel.Special.GH_Group;
+            }
+
+            // Search by name
+            var searchLower = group.ToLowerInvariant();
+            foreach (var obj in doc.Objects)
+            {
+                if (obj is Grasshopper.Kernel.Special.GH_Group g)
+                {
+                    if (infraIds.Contains(g.InstanceGuid))
+                        continue;
+
+                    var groupName = g.NickName?.ToLowerInvariant() ?? g.Name?.ToLowerInvariant() ?? "";
+                    if (groupName == searchLower || groupName.Contains(searchLower))
+                        return g;
+                }
+            }
+            return null;
+        }
+
         [McpServerTool, Description("Search for available Grasshopper component types by name")]
         public string SearchComponents(
-            [Description("Search query (e.g., 'circle', 'script')")] string query)
+            [Description("Search query (e.g., 'circle', 'script')")] string query,
+            [Description("Filter by category (e.g., 'Curve', 'Kangaroo'). Use get_categories to see valid values.")] string category = null,
+            [Description("Maximum number of results to return (default: 50)")] int limit = 50)
         {
             _server?.RecordCommand("search_components");
             return _context.ExecuteOnUiThread(() =>
             {
                 var basicResults = ComponentRegistry.SearchComponents(query);
+
+                // Apply category filter if specified
+                if (!string.IsNullOrEmpty(category))
+                {
+                    basicResults = basicResults
+                        .Where(r => string.Equals(r.Category, category, StringComparison.OrdinalIgnoreCase))
+                        .ToList();
+                }
+
                 var enhancedResults = new List<object>();
 
                 foreach (var result in basicResults)
@@ -418,12 +517,20 @@ namespace Cordyceps.Tools
                 var sortedResults = enhancedResults
                     .OrderBy(r => ((dynamic)r).deprecated ? 1 : 0)
                     .ThenBy(r => ((dynamic)r).name.Length)
+                    .Take(limit > 0 ? limit : 50)
                     .ToList();
+
+                // Build filter info for response
+                var filters = new Dictionary<string, object>();
+                if (!string.IsNullOrEmpty(category)) filters["category"] = category;
+                filters["limit"] = limit > 0 ? limit : 50;
 
                 return JsonConvert.SerializeObject(new
                 {
                     success = true,
                     count = sortedResults.Count,
+                    totalMatches = enhancedResults.Count,
+                    filters,
                     components = sortedResults
                 });
             });
@@ -599,14 +706,37 @@ namespace Cordyceps.Tools
                 if (!ToolHelpers.TryGetUnprotectedComponent(_context, id, out var component, out var error))
                     return ToolHelpers.ErrorResponse(error);
 
+                // Get the bounds - Grasshopper's Bounds property should be in canvas coordinates
+                var bounds = component.Attributes.Bounds;
+                var pivot = component.Attributes.Pivot;
+
+                // If bounds appear to be relative (x=0, y=0), compute absolute bounds from pivot
+                float absX = bounds.X;
+                float absY = bounds.Y;
+                if (Math.Abs(bounds.X) < 0.001 && Math.Abs(bounds.Y) < 0.001 && bounds.Width > 0)
+                {
+                    // Bounds are relative to component origin - convert to absolute
+                    // The pivot is the component's position, bounds are relative to it
+                    absX = pivot.X;
+                    absY = pivot.Y;
+                }
+
                 return JsonConvert.SerializeObject(new
                 {
                     success = true,
                     id = id,
                     name = component.Name,
                     nickname = component.NickName,
-                    bounds = ToolHelpers.BuildBoundsObject(component.Attributes.Bounds),
-                    pivot = ToolHelpers.BuildPivotObject(component.Attributes.Pivot)
+                    bounds = new
+                    {
+                        x = absX,
+                        y = absY,
+                        width = bounds.Width,
+                        height = bounds.Height,
+                        right = absX + bounds.Width,
+                        bottom = absY + bounds.Height
+                    },
+                    pivot = ToolHelpers.BuildPivotObject(pivot)
                 });
             });
         }

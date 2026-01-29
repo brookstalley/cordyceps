@@ -34,7 +34,8 @@ namespace Cordyceps.Tools
         }
 
         [McpServerTool, Description("Get the status of all components on the canvas (OK, ERROR, WARNING, DISCONNECTED)")]
-        public string GetCanvasStatus()
+        public string GetCanvasStatus(
+            [Description("Filter by category (e.g., 'Curve', 'Kangaroo'). Use get_categories to see valid values.")] string category = null)
         {
             _server?.RecordCommand("get_canvas_status");
             return _context.ExecuteOnUiThread(() =>
@@ -55,6 +56,16 @@ namespace Cordyceps.Tools
                         // Skip Cordyceps infrastructure (the component and anything connected to it)
                         if (ToolHelpers.IsCordycepsInfrastructure(comp, infraIds))
                             continue;
+
+                        // Apply category filter if specified
+                        if (!string.IsNullOrEmpty(category))
+                        {
+                            var proxy = Instances.ComponentServer.ObjectProxies
+                                .FirstOrDefault(p => p.Guid == comp.ComponentGuid);
+                            var compCategory = proxy?.Desc.Category ?? comp.Category;
+                            if (!string.Equals(compCategory, category, StringComparison.OrdinalIgnoreCase))
+                                continue;
+                        }
 
                         string status = "OK";
                         string statusMessage = "";
@@ -118,10 +129,10 @@ namespace Cordyceps.Tools
                     }
                 }
 
-                return JsonConvert.SerializeObject(new
+                var result = new Dictionary<string, object>
                 {
-                    success = true,
-                    summary = new
+                    ["success"] = true,
+                    ["summary"] = new
                     {
                         total = components.Count,
                         ok = okCount,
@@ -129,9 +140,84 @@ namespace Cordyceps.Tools
                         warning = warningCount,
                         disconnected = disconnectedCount
                     },
-                    components
+                    ["components"] = components
+                };
+                if (!string.IsNullOrEmpty(category))
+                    result["filteredBy"] = category;
+
+                return JsonConvert.SerializeObject(result);
+            });
+        }
+
+        [McpServerTool, Description("List all component categories with counts and plugin info. Use to discover valid category values for filtering.")]
+        public string GetCategories()
+        {
+            _server?.RecordCommand("get_categories");
+            return _context.ExecuteOnUiThread(() =>
+            {
+                // Collect all categories from loaded component proxies
+                var categoryStats = new Dictionary<string, CategoryInfo>(StringComparer.OrdinalIgnoreCase);
+
+                foreach (var proxy in Instances.ComponentServer.ObjectProxies)
+                {
+                    if (proxy?.Desc?.Category == null) continue;
+
+                    var category = proxy.Desc.Category;
+                    if (!categoryStats.TryGetValue(category, out var info))
+                    {
+                        info = new CategoryInfo { Name = category };
+                        categoryStats[category] = info;
+                    }
+                    info.ComponentCount++;
+                }
+
+                // Build result with plugin info
+                var categories = categoryStats.Values
+                    .OrderBy(c => c.Name)
+                    .Select(c =>
+                    {
+                        var pluginInfo = PluginRegistry.Instance.GetPluginForCategory(c.Name);
+                        var isBuiltIn = IsBuiltInCategory(c.Name);
+
+                        return new
+                        {
+                            name = c.Name,
+                            componentCount = c.ComponentCount,
+                            isBuiltIn,
+                            plugin = pluginInfo != null ? new
+                            {
+                                name = pluginInfo.Name,
+                                author = pluginInfo.Author,
+                                documentationUrl = pluginInfo.DocumentationUrl
+                            } : null
+                        };
+                    })
+                    .ToList();
+
+                return JsonConvert.SerializeObject(new
+                {
+                    success = true,
+                    count = categories.Count,
+                    categories
                 });
             });
+        }
+
+        private static bool IsBuiltInCategory(string category)
+        {
+            // Built-in Grasshopper categories
+            var builtIn = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+            {
+                "Params", "Maths", "Sets", "Vector", "Curve", "Surface", "Mesh",
+                "Intersect", "Transform", "Display", "Kangaroo2", "Galapagos"
+            };
+            return builtIn.Contains(category);
+        }
+
+        private class CategoryInfo
+        {
+            public string Name { get; set; }
+            public int ComponentCount { get; set; }
         }
 
         [McpServerTool, Description("Get all disconnected (unconnected required) inputs across components")]
@@ -188,228 +274,6 @@ namespace Cordyceps.Tools
                     success = true,
                     count = disconnected.Count,
                     disconnected
-                });
-            });
-        }
-
-        [McpServerTool, Description("Get components filtered by type name")]
-        public string GetComponentsByType(
-            [Description("Component type to filter by (e.g., 'C# Script', 'Number Slider', 'Circle')")] string type)
-        {
-            _server?.RecordCommand("get_components_by_type");
-            return _context.ExecuteOnUiThread(() =>
-            {
-                if (!ToolHelpers.TryGetActiveDocument(_context, out var doc, out var error))
-                    return ToolHelpers.ErrorResponse(error);
-
-                if (!RequestValidator.ValidateRequired(type, "type", out var typeError))
-                    return ToolHelpers.ErrorResponse(typeError);
-
-                // Get infrastructure component IDs to filter
-                var infraIds = ToolHelpers.GetCordycepsInfrastructureIds(doc);
-
-                var matchingComponents = new List<object>();
-                var searchLower = type.ToLowerInvariant();
-
-                foreach (var obj in doc.Objects)
-                {
-                    if (obj is IGH_Component comp)
-                    {
-                        // Skip Cordyceps infrastructure
-                        if (ToolHelpers.IsCordycepsInfrastructure(comp, infraIds))
-                            continue;
-
-                        // Match against name, type name, or category
-                        var compName = comp.Name?.ToLowerInvariant() ?? "";
-                        var typeName = comp.GetType().Name.ToLowerInvariant();
-                        var category = comp.Category?.ToLowerInvariant() ?? "";
-
-                        if (compName.Contains(searchLower) ||
-                            typeName.Contains(searchLower) ||
-                            compName == searchLower ||
-                            typeName == searchLower)
-                        {
-                            // Look up category from proxy using ComponentGuid for accuracy
-                            var proxy = Instances.ComponentServer.ObjectProxies
-                                .FirstOrDefault(p => p.Guid == comp.ComponentGuid);
-                            var proxyCategory = proxy?.Desc.Category ?? comp.Category;
-                            var proxySubCategory = proxy?.Desc.SubCategory ?? comp.SubCategory;
-
-                            matchingComponents.Add(new
-                            {
-                                id = comp.InstanceGuid.ToString(),
-                                name = comp.Name,
-                                nickname = comp.NickName,
-                                displayName = ToolHelpers.GetDisplayName(comp),
-                                typeName = comp.GetType().Name,
-                                category = proxyCategory,
-                                subCategory = proxySubCategory,
-                                role = ComponentRegistry.GetRole(proxyCategory, proxySubCategory),
-                                inputCount = comp.Params.Input.Count,
-                                outputCount = comp.Params.Output.Count,
-                                position = new { x = comp.Attributes.Pivot.X, y = comp.Attributes.Pivot.Y }
-                            });
-                        }
-                    }
-                    else if (obj is IGH_Param param)
-                    {
-                        // Also check standalone parameters
-                        var paramName = param.Name?.ToLowerInvariant() ?? "";
-                        var typeName = param.GetType().Name.ToLowerInvariant();
-
-                        if (paramName.Contains(searchLower) ||
-                            typeName.Contains(searchLower) ||
-                            paramName == searchLower ||
-                            typeName == searchLower)
-                        {
-                            // Look up category from proxy using ComponentGuid for accuracy
-                            var proxy = Instances.ComponentServer.ObjectProxies
-                                .FirstOrDefault(p => p.Guid == param.ComponentGuid);
-                            var category = proxy?.Desc.Category ?? "Params";
-                            var subCategory = proxy?.Desc.SubCategory ?? "Unknown";
-
-                            matchingComponents.Add(new
-                            {
-                                id = param.InstanceGuid.ToString(),
-                                name = param.Name,
-                                nickname = param.NickName,
-                                displayName = ToolHelpers.GetDisplayName(param),
-                                typeName = param.GetType().Name,
-                                category = category,
-                                subCategory = subCategory,
-                                role = ComponentRegistry.GetRole(category, subCategory),
-                                position = new { x = param.Attributes.Pivot.X, y = param.Attributes.Pivot.Y }
-                            });
-                        }
-                    }
-                }
-
-                return JsonConvert.SerializeObject(new
-                {
-                    success = true,
-                    searchType = type,
-                    count = matchingComponents.Count,
-                    components = matchingComponents
-                });
-            });
-        }
-
-        [McpServerTool, Description("Get all components belonging to a specific group")]
-        public string GetComponentsInGroup(
-            [Description("Group name or GUID to get components from")] string group)
-        {
-            _server?.RecordCommand("get_components_in_group");
-            return _context.ExecuteOnUiThread(() =>
-            {
-                if (!ToolHelpers.TryGetActiveDocument(_context, out var doc, out var error))
-                    return ToolHelpers.ErrorResponse(error);
-
-                if (!RequestValidator.ValidateRequired(group, "group", out var groupError))
-                    return ToolHelpers.ErrorResponse(groupError);
-
-                // Get infrastructure IDs to filter
-                var infraIds = ToolHelpers.GetCordycepsInfrastructureIds(doc);
-
-                // Find the group by GUID or name
-                Grasshopper.Kernel.Special.GH_Group targetGroup = null;
-
-                if (Guid.TryParse(group, out Guid groupGuid))
-                {
-                    // Check if protected - report as "not found"
-                    if (infraIds.Contains(groupGuid))
-                        return ToolHelpers.ErrorResponse($"Group not found: {group}");
-
-                    // Search by GUID
-                    targetGroup = doc.FindObject(groupGuid, true) as Grasshopper.Kernel.Special.GH_Group;
-                }
-
-                if (targetGroup == null)
-                {
-                    // Search by name (case-insensitive)
-                    var searchLower = group.ToLowerInvariant();
-                    foreach (var obj in doc.Objects)
-                    {
-                        if (obj is Grasshopper.Kernel.Special.GH_Group g)
-                        {
-                            // Skip infrastructure groups
-                            if (infraIds.Contains(g.InstanceGuid))
-                                continue;
-
-                            var groupName = g.NickName?.ToLowerInvariant() ?? g.Name?.ToLowerInvariant() ?? "";
-                            if (groupName == searchLower || groupName.Contains(searchLower))
-                            {
-                                targetGroup = g;
-                                break;
-                            }
-                        }
-                    }
-                }
-
-                if (targetGroup == null)
-                    return ToolHelpers.ErrorResponse($"Group not found: {group}");
-
-                // Get all component GUIDs in the group
-                var memberIds = targetGroup.ObjectIDs ?? new List<Guid>();
-                var components = new List<object>();
-
-                foreach (var memberId in memberIds)
-                {
-                    var obj = doc.FindObject(memberId, true);
-                    if (obj == null) continue;
-
-                    if (obj is IGH_Component comp)
-                    {
-                        // Look up category from proxy using ComponentGuid for accuracy
-                        var proxy = Instances.ComponentServer.ObjectProxies
-                            .FirstOrDefault(p => p.Guid == comp.ComponentGuid);
-                        var category = proxy?.Desc.Category ?? comp.Category;
-                        var subCategory = proxy?.Desc.SubCategory ?? comp.SubCategory;
-
-                        components.Add(new
-                        {
-                            id = comp.InstanceGuid.ToString(),
-                            name = comp.Name,
-                            nickname = comp.NickName,
-                            displayName = ToolHelpers.GetDisplayName(comp),
-                            typeName = comp.GetType().Name,
-                            category = category,
-                            subCategory = subCategory,
-                            role = ComponentRegistry.GetRole(category, subCategory),
-                            inputCount = comp.Params.Input.Count,
-                            outputCount = comp.Params.Output.Count,
-                            position = new { x = comp.Attributes.Pivot.X, y = comp.Attributes.Pivot.Y }
-                        });
-                    }
-                    else if (obj is IGH_Param param)
-                    {
-                        // Look up category from proxy using ComponentGuid for accuracy
-                        var proxy = Instances.ComponentServer.ObjectProxies
-                            .FirstOrDefault(p => p.Guid == param.ComponentGuid);
-                        var category = proxy?.Desc.Category ?? "Params";
-                        var subCategory = proxy?.Desc.SubCategory ?? "Unknown";
-
-                        components.Add(new
-                        {
-                            id = param.InstanceGuid.ToString(),
-                            name = param.Name,
-                            nickname = param.NickName,
-                            displayName = ToolHelpers.GetDisplayName(param),
-                            typeName = param.GetType().Name,
-                            category = category,
-                            subCategory = subCategory,
-                            role = ComponentRegistry.GetRole(category, subCategory),
-                            position = new { x = param.Attributes.Pivot.X, y = param.Attributes.Pivot.Y }
-                        });
-                    }
-                }
-
-                return JsonConvert.SerializeObject(new
-                {
-                    success = true,
-                    groupId = targetGroup.InstanceGuid.ToString(),
-                    groupName = ToolHelpers.GetDisplayName(targetGroup),
-                    count = components.Count,
-                    components
                 });
             });
         }

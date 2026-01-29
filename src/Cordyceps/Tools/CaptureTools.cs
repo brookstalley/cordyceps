@@ -4,6 +4,7 @@ using System.Drawing;
 using System.Drawing.Imaging;
 using System.IO;
 using System.Linq;
+using System.Threading;
 using System.Windows.Forms;
 using Cordyceps.Core;
 using Grasshopper;
@@ -127,9 +128,22 @@ namespace Cordyceps.Tools
             [Description("View name to capture (e.g., 'Perspective', 'Top', 'Front', 'Right'). Defaults to active view.")] string view = null,
             [Description("Output image width in pixels (default: current viewport width)")] int width = 0,
             [Description("Output image height in pixels (default: current viewport height)")] int height = 0,
-            [Description("If true, use transparent background (PNG only)")] bool transparent = false)
+            [Description("If true, use transparent background (PNG only)")] bool transparent = false,
+            [Description("For Raytraced views: minimum render passes to wait for before capture (0 = no wait)")] int waitForRender = 0,
+            [Description("For Raytraced views: timeout in seconds when waiting for render (default: 30)")] int renderTimeout = 30)
         {
             _server?.RecordCommand("capture_viewport");
+
+            // If waitForRender is requested, wait for raytraced rendering first
+            if (waitForRender > 0)
+            {
+                var waitResult = WaitForRaytracedRender(view, waitForRender, renderTimeout);
+                if (waitResult != null && !waitResult.StartsWith("{\"success\":true"))
+                {
+                    // Wait failed - return the error
+                    return waitResult;
+                }
+            }
 
             return _context.ExecuteOnUiThread(() =>
             {
@@ -179,10 +193,21 @@ namespace Cordyceps.Tools
                     if (targetView == null)
                         return ToolHelpers.ErrorResponse("No active view available");
 
+                    // Get render status info if raytraced
+                    int? renderPasses = null;
+                    var displayMode = targetView.ActiveViewport.DisplayMode;
+                    bool isRaytraced = displayMode?.EnglishName?.Equals("Raytraced", StringComparison.OrdinalIgnoreCase) ?? false;
+                    if (isRaytraced)
+                    {
+                        var realtimeMode = targetView.RealtimeDisplayMode;
+                        renderPasses = realtimeMode?.LastRenderedPass();
+                    }
+
                     Bitmap bitmap;
 
-                    // Use ViewCapture for custom dimensions or transparency
-                    if (width > 0 || height > 0 || transparent)
+                    // Use ViewCapture for custom dimensions, transparency, or Raytraced mode
+                    // Note: CaptureToBitmap() doesn't capture Raytraced content properly
+                    if (width > 0 || height > 0 || transparent || isRaytraced)
                     {
                         var viewCapture = new ViewCapture
                         {
@@ -214,6 +239,8 @@ namespace Cordyceps.Tools
                         height = bitmap.Height,
                         format = format.ToString(),
                         transparent,
+                        isRaytraced,
+                        renderPasses,
                         hint = "Use the Read tool to view this image file"
                     };
 
@@ -227,6 +254,74 @@ namespace Cordyceps.Tools
                     return ToolHelpers.ErrorResponse($"Failed to capture viewport: {ex.Message}");
                 }
             });
+        }
+
+        /// <summary>
+        /// Wait for raytraced rendering to reach minimum passes or timeout.
+        /// </summary>
+        private string WaitForRaytracedRender(string view, int minPasses, int timeoutSeconds)
+        {
+            var startTime = DateTime.Now;
+            var timeoutMs = timeoutSeconds * 1000;
+            var pollIntervalMs = 100;
+
+            while (true)
+            {
+                var elapsed = (DateTime.Now - startTime).TotalMilliseconds;
+                if (elapsed >= timeoutMs)
+                {
+                    // Timeout reached - return success anyway (capture with current state)
+                    return null;
+                }
+
+                // Check current status
+                var status = _context.ExecuteOnUiThread<(int passes, bool ready, string error)>(() =>
+                {
+                    var rhinoDoc = RhinoDoc.ActiveDoc;
+                    if (rhinoDoc == null)
+                        return (0, false, "No active Rhino document");
+
+                    RhinoView targetView;
+                    if (string.IsNullOrEmpty(view))
+                    {
+                        targetView = rhinoDoc.Views.ActiveView;
+                    }
+                    else
+                    {
+                        targetView = rhinoDoc.Views.Find(view, false);
+                    }
+
+                    if (targetView == null)
+                        return (0, false, $"View '{view ?? "active"}' not found");
+
+                    var displayMode = targetView.ActiveViewport.DisplayMode;
+                    bool isRaytraced = displayMode?.EnglishName?.Equals("Raytraced", StringComparison.OrdinalIgnoreCase) ?? false;
+
+                    if (!isRaytraced)
+                        return (0, true, null); // Not raytraced, don't wait
+
+                    var realtimeMode = targetView.RealtimeDisplayMode;
+                    if (realtimeMode == null)
+                        return (0, false, null);
+
+                    int currentPass = realtimeMode.LastRenderedPass();
+                    bool isComplete = realtimeMode.IsCompleted();
+
+                    if (currentPass >= minPasses || isComplete)
+                        return (currentPass, true, null);
+
+                    return (currentPass, false, null);
+                });
+
+                if (status.error != null)
+                    return ToolHelpers.ErrorResponse(status.error);
+
+                if (status.ready) // Ready to capture
+                    return null;
+
+                // Wait before next poll
+                Thread.Sleep(pollIntervalMs);
+            }
         }
 
         [McpServerTool, Description("Capture a specific region of the Grasshopper canvas by coordinates.")]
