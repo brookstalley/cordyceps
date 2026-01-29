@@ -564,8 +564,10 @@ UNIFIED TOOLS (use action='help' for details):
 - gh_script: get, set, configure, info
 - gh_inspect: status, outputs, trace, disconnected, geometry, log, reports, categories, docs
 - gh_capture: canvas, viewport, region, views
-- rhino_scene: objects, select, layers, hide, show, delete, script
-- rhino_render: display, camera, zoom, modes, render
+- rhino_scene: objects, select, deselect, set_layer, set_name, layers, layer_create, layer_set, layer_delete, hide, show, delete, script
+- rhino_render: display, camera, zoom, modes, render, settings, ground, sun, skylight
+- rhino_material: list, create, apply, delete
+- rhino_environment: list, current, set, create, delete
 
 Key points:
 - Disable solver: gh_document(action='solver', enabled=false)

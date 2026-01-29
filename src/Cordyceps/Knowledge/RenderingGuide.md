@@ -17,10 +17,16 @@ Complete workflow from Grasshopper geometry → Rhino baking → materials → v
 ### Object Management (rhino_scene)
 - `rhino_scene(action='objects')` - list Rhino objects, filter by layer/type
 - `rhino_scene(action='select', ids='[...]')` - select by GUID
+- `rhino_scene(action='deselect')` - clear selection
+- `rhino_scene(action='set_layer', ids='[...]', layer='...')` - move objects to layer
+- `rhino_scene(action='set_name', ids='[...]', name='...')` - rename objects
 - `rhino_scene(action='hide', ids='[...]')` - hide objects
 - `rhino_scene(action='show', ids='[...]')` or `rhino_scene(action='show', all=true)` - show objects
 - `rhino_scene(action='delete', ids='[...]')` - permanent deletion
 - `rhino_scene(action='layers')` - list all layers
+- `rhino_scene(action='layer_create', name='...', color='#FF0000')` - create layer
+- `rhino_scene(action='layer_set', name='...', visible='false')` - modify layer
+- `rhino_scene(action='layer_delete', name='...')` - delete layer
 
 ### Viewport Control (rhino_render)
 - `rhino_render(action='modes')` - list available display modes
@@ -33,6 +39,25 @@ Complete workflow from Grasshopper geometry → Rhino baking → materials → v
 ### Render Status (Raytraced mode)
 - `rhino_render(action='render')` - returns currentPass, maxPasses, isComplete, progress%
 - `rhino_render(action='render', wait=200, timeout=30)` - block until passes reached
+
+### Render Settings (rhino_render)
+- `rhino_render(action='settings')` - get background style, colors
+- `rhino_render(action='settings', style='gradient', colorTop='#87CEEB', colorBottom='#FFFFFF')` - set background
+- `rhino_render(action='ground', enabled='true', shadowOnly='true')` - ground plane
+- `rhino_render(action='sun', enabled='true', azimuth='180', altitude='45')` - sun position
+- `rhino_render(action='skylight', enabled='true')` - ambient lighting
+
+### Materials (rhino_material)
+- `rhino_material(action='list')` - list all materials
+- `rhino_material(action='create', name='Red Metal', color='#FF0000', metallic=1, roughness=0.3)` - create PBR material
+- `rhino_material(action='apply', ids='[...]', material='Red Metal')` - apply to objects
+- `rhino_material(action='delete', name='Red Metal')` - delete material
+
+### Environments (rhino_environment)
+- `rhino_environment(action='list')` - list render environments
+- `rhino_environment(action='current')` - get current environment for each usage
+- `rhino_environment(action='set', environment='Studio', usage='all')` - set environment
+- `rhino_environment(action='create', name='Blue Sky', color='#87CEEB')` - create solid color environment
 
 ### Capture (gh_capture)
 - `gh_capture(action='viewport')` - capture to temp file

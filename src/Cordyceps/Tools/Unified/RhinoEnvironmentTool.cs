@@ -9,25 +9,104 @@ using Rhino;
 using Rhino.Display;
 using Rhino.Render;
 
-namespace Cordyceps.Tools
+namespace Cordyceps.Tools.Unified
 {
     /// <summary>
-    /// Rhino render environment operations (enumerate, select, create, delete)
+    /// Unified Rhino environment tool - create, list, set, delete render environments
     /// </summary>
     [McpServerToolType]
-    public class EnvironmentTools
+    public class RhinoEnvironmentTool
     {
         private readonly GrasshopperContext _context;
-        private readonly McpServer _server;
 
-        public EnvironmentTools(GrasshopperContext context, McpServer server)
+        private static readonly UnifiedToolInfo ToolInfo = new UnifiedToolInfo
+        {
+            ToolName = "rhino_environment",
+            Description = "Rhino render environment operations - create, list, set current, delete",
+            Actions = new Dictionary<string, ActionInfo>
+            {
+                ["list"] = new ActionInfo
+                {
+                    Name = "list",
+                    Description = "List all render environments",
+                    Example = "action='list'"
+                },
+                ["current"] = new ActionInfo
+                {
+                    Name = "current",
+                    Description = "Get current environment for each usage type",
+                    Example = "action='current'"
+                },
+                ["set"] = new ActionInfo
+                {
+                    Name = "set",
+                    Description = "Set the current render environment",
+                    Required = new[] { "environment" },
+                    Optional = new[] { "usage" },
+                    Example = "action='set', environment='Studio', usage='all'",
+                    Tips = new[] { "usage: 'background', 'lighting', 'reflection', or 'all'" }
+                },
+                ["create"] = new ActionInfo
+                {
+                    Name = "create",
+                    Description = "Create a solid-color environment",
+                    Required = new[] { "name", "color" },
+                    Example = "action='create', name='Blue Sky', color='#87CEEB'"
+                },
+                ["delete"] = new ActionInfo
+                {
+                    Name = "delete",
+                    Description = "Delete an environment",
+                    Required = new[] { "name" },
+                    Example = "action='delete', name='Blue Sky'"
+                },
+                ["help"] = new ActionInfo
+                {
+                    Name = "help",
+                    Description = "Show this help information"
+                }
+            }
+        };
+
+        public RhinoEnvironmentTool(GrasshopperContext context)
         {
             _context = context;
-            _server = server;
         }
 
-        [McpServerTool, Description("List all render environments in the Rhino document.")]
-        public string RhinoGetEnvironments()
+        [McpServerTool, Description("Environment operations. Actions: list|current|set|create|delete|help")]
+        public string RhinoEnvironment(
+            [Description("Action to perform")] string action,
+            [Description("Environment name or GUID")] string environment = null,
+            [Description("Usage: 'background', 'lighting', 'reflection', 'all'")] string usage = "all",
+            [Description("Environment name for create")] string name = null,
+            [Description("Background color as hex '#RRGGBB' or RGB")] string color = null)
+        {
+            if (string.Equals(action, "help", StringComparison.OrdinalIgnoreCase))
+                return UnifiedToolHelpers.GenerateHelp(ToolInfo);
+
+            var providedParams = UnifiedToolHelpers.BuildParams(
+                ("environment", environment),
+                ("usage", usage),
+                ("name", name),
+                ("color", color)
+            );
+
+            var validationError = UnifiedToolHelpers.ValidateAction(ToolInfo, action, providedParams);
+            if (validationError != null)
+                return validationError;
+
+            return action.ToLowerInvariant() switch
+            {
+                "list" => ActionList(),
+                "current" => ActionCurrent(),
+                "set" => ActionSet(environment, usage),
+                "create" => ActionCreate(name, color),
+                "delete" => ActionDelete(name),
+                _ => ToolHelpers.ErrorResponse($"Unknown action: {action}")
+            };
+        }
+
+        private string ActionList()
         {
             return _context.ExecuteOnUiThread(() =>
             {
@@ -40,7 +119,6 @@ namespace Cordyceps.Tools
                 foreach (var env in rhinoDoc.RenderEnvironments)
                 {
                     var simEnv = env.SimulateEnvironment(true);
-
                     var envInfo = new Dictionary<string, object>
                     {
                         ["id"] = env.Id.ToString(),
@@ -49,9 +127,7 @@ namespace Cordyceps.Tools
                     };
 
                     if (simEnv != null)
-                    {
                         envInfo["backgroundColor"] = ToolHelpers.ColorToHex(simEnv.BackgroundColor);
-                    }
 
                     environments.Add(envInfo);
                 }
@@ -65,8 +141,7 @@ namespace Cordyceps.Tools
             });
         }
 
-        [McpServerTool, Description("Get the current render environment for each usage type (background, lighting, reflection).")]
-        public string RhinoGetCurrentEnvironment()
+        private string ActionCurrent()
         {
             return _context.ExecuteOnUiThread(() =>
             {
@@ -93,10 +168,7 @@ namespace Cordyceps.Tools
             });
         }
 
-        [McpServerTool, Description("Set the current render environment for a usage type.")]
-        public string RhinoSetCurrentEnvironment(
-            [Description("Environment name or GUID")] string environment,
-            [Description("Usage type: 'background', 'lighting', 'reflection', or 'all' (default)")] string usage = "all")
+        private string ActionSet(string environment, string usage)
         {
             return _context.ExecuteOnUiThread(() =>
             {
@@ -104,24 +176,14 @@ namespace Cordyceps.Tools
                 if (rhinoDoc == null)
                     return ToolHelpers.ErrorResponse("No active Rhino document");
 
-                if (string.IsNullOrEmpty(environment))
-                    return ToolHelpers.ErrorResponse("Environment name or GUID is required");
-
-                // Find the environment by name or GUID
                 RenderEnvironment targetEnv = null;
 
-                // Try by GUID first
                 if (Guid.TryParse(environment, out var guid))
-                {
                     targetEnv = rhinoDoc.RenderEnvironments.FirstOrDefault(e => e.Id == guid);
-                }
 
-                // Try by name
                 if (targetEnv == null)
-                {
                     targetEnv = rhinoDoc.RenderEnvironments.FirstOrDefault(e =>
                         e.Name.Equals(environment, StringComparison.OrdinalIgnoreCase));
-                }
 
                 if (targetEnv == null)
                 {
@@ -159,7 +221,7 @@ namespace Cordyceps.Tools
                         modified.AddRange(new[] { "background", "lighting", "reflection" });
                         break;
                     default:
-                        return ToolHelpers.ErrorResponse($"Invalid usage type: {usage}. Use 'background', 'lighting', 'reflection', or 'all'");
+                        return ToolHelpers.ErrorResponse($"Invalid usage: {usage}. Use 'background', 'lighting', 'reflection', or 'all'");
                 }
 
                 rhinoDoc.Views.Redraw();
@@ -174,10 +236,7 @@ namespace Cordyceps.Tools
             });
         }
 
-        [McpServerTool, Description("Create a basic solid-color render environment.")]
-        public string RhinoCreateEnvironment(
-            [Description("Environment name (must be unique)")] string name,
-            [Description("Background color as hex '#RRGGBB' or RGB '255,128,0'")] string color)
+        private string ActionCreate(string name, string color)
         {
             return _context.ExecuteOnUiThread(() =>
             {
@@ -185,17 +244,9 @@ namespace Cordyceps.Tools
                 if (rhinoDoc == null)
                     return ToolHelpers.ErrorResponse("No active Rhino document");
 
-                if (string.IsNullOrEmpty(name))
-                    return ToolHelpers.ErrorResponse("Environment name is required");
-
-                if (string.IsNullOrEmpty(color))
-                    return ToolHelpers.ErrorResponse("Color is required");
-
-                // Parse color
                 if (!ToolHelpers.TryParseColor(color, out var bgColor))
                     return ToolHelpers.ErrorResponse($"Invalid color format: {color}. Use hex '#RRGGBB' or RGB '255,128,0'");
 
-                // Check if environment already exists
                 var existing = rhinoDoc.RenderEnvironments.FirstOrDefault(e =>
                     e.Name.Equals(name, StringComparison.OrdinalIgnoreCase));
                 if (existing != null)
@@ -210,19 +261,14 @@ namespace Cordyceps.Tools
                     });
                 }
 
-                // Create a simulated environment
                 var simEnv = new SimulatedEnvironment();
                 simEnv.BackgroundColor = bgColor;
 
-                // Create render environment from simulation
                 var renderEnv = RenderEnvironment.NewBasicEnvironment(simEnv, rhinoDoc);
                 if (renderEnv == null)
                     return ToolHelpers.ErrorResponse("Failed to create environment");
 
-                // Set the name
                 renderEnv.Name = name;
-
-                // Add to document - CRITICAL: must add before setting as current
                 rhinoDoc.RenderEnvironments.Add(renderEnv);
 
                 return JsonConvert.SerializeObject(new
@@ -236,9 +282,7 @@ namespace Cordyceps.Tools
             });
         }
 
-        [McpServerTool, Description("Delete a render environment from the document.")]
-        public string RhinoDeleteEnvironment(
-            [Description("Environment name")] string name)
+        private string ActionDelete(string name)
         {
             return _context.ExecuteOnUiThread(() =>
             {
@@ -246,10 +290,6 @@ namespace Cordyceps.Tools
                 if (rhinoDoc == null)
                     return ToolHelpers.ErrorResponse("No active Rhino document");
 
-                if (string.IsNullOrEmpty(name))
-                    return ToolHelpers.ErrorResponse("Environment name is required");
-
-                // Find environment by name
                 var env = rhinoDoc.RenderEnvironments.FirstOrDefault(e =>
                     e.Name.Equals(name, StringComparison.OrdinalIgnoreCase));
 
@@ -259,15 +299,8 @@ namespace Cordyceps.Tools
                 var envId = env.Id.ToString();
                 var deleted = rhinoDoc.RenderEnvironments.Remove(env);
 
-                return JsonConvert.SerializeObject(new
-                {
-                    success = deleted,
-                    name,
-                    id = envId,
-                    deleted
-                });
+                return JsonConvert.SerializeObject(new { success = deleted, name, id = envId, deleted });
             });
         }
-
     }
 }

@@ -84,20 +84,10 @@ All tools use a unified action-based interface. Use `action='help'` on any tool 
 
 | Tool | Actions | Description |
 |------|---------|-------------|
-| `rhino_scene` | objects, select, layers, hide, show, delete, script | Scene object management |
-| `rhino_render` | display, camera, zoom, modes, render | Viewport and rendering |
-
-### Rhino Document Tools
-
-Individual tools for detailed Rhino document control:
-
-**Layers**: `rhino_get_layers`, `rhino_create_layer`, `rhino_set_layer_properties`, `rhino_delete_layer`
-
-**Materials**: `rhino_get_materials`, `rhino_create_material`, `rhino_apply_material`, `rhino_delete_material`
-
-**Environments**: `rhino_get_environments`, `rhino_get_current_environment`, `rhino_set_current_environment`, `rhino_create_environment`, `rhino_delete_environment`
-
-**Render Settings**: `rhino_get_render_settings`, `rhino_set_render_settings`, `rhino_get_ground_plane`, `rhino_set_ground_plane`, `rhino_get_sun`, `rhino_set_sun`, `rhino_get_skylight`, `rhino_set_skylight`
+| `rhino_scene` | objects, select, deselect, set_layer, set_name, layers, layer_create, layer_set, layer_delete, hide, show, delete, script | Scene and layer management |
+| `rhino_render` | display, camera, zoom, modes, render, settings, ground, sun, skylight | Viewport, camera, and render settings |
+| `rhino_material` | list, create, apply, delete | PBR materials |
+| `rhino_environment` | list, current, set, create, delete | Render environments |
 
 ## Resources
 

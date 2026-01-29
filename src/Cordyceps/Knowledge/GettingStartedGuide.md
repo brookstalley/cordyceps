@@ -17,8 +17,10 @@ Cordyceps provides 10 unified tools, each with an `action` parameter. Use `actio
 - `gh_capture` - Capture canvas, viewport, regions
 
 **Rhino Tools:**
-- `rhino_scene` - Objects, selection, layers, hide/show, delete, run scripts
-- `rhino_render` - Display modes, camera, zoom, render status
+- `rhino_scene` - Objects, selection, layers (full CRUD), hide/show, delete, run scripts
+- `rhino_render` - Display modes, camera, zoom, render status, settings, sun, skylight, ground plane
+- `rhino_material` - List, create, apply, delete PBR materials
+- `rhino_environment` - List, set, create, delete render environments
 
 ## Object Types
 
@@ -138,12 +140,18 @@ After building geometry in Grasshopper, you can bake to Rhino and create rendere
 **Objects:**
 - `rhino_scene(action='objects')` — list Rhino objects
 - `rhino_scene(action='select', ids='[...]')` — select objects
+- `rhino_scene(action='deselect')` — clear selection
+- `rhino_scene(action='set_layer', ids='[...]', layer='...')` — move objects to layer
+- `rhino_scene(action='set_name', ids='[...]', name='...')` — rename objects
 - `rhino_scene(action='hide', ids='[...]')` — hide objects
 - `rhino_scene(action='show', ids='[...]')` — show objects
 - `rhino_scene(action='delete', ids='[...]')` — delete objects
 
 **Layers:**
 - `rhino_scene(action='layers')` — list all layers
+- `rhino_scene(action='layer_create', name='...')` — create layer
+- `rhino_scene(action='layer_set', name='...', visible='false')` — modify layer
+- `rhino_scene(action='layer_delete', name='...')` — delete layer
 
 **Viewport:**
 - `rhino_render(action='modes')` — list display modes

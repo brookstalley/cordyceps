@@ -44,8 +44,10 @@ Each tool class is marked with `[McpServerToolType]` and contains a single metho
 - **GhCaptureTool** (`gh_capture`) - Capture canvas and viewport images
 
 **Rhino Tools:**
-- **RhinoSceneTool** (`rhino_scene`) - Object management, selection, visibility
-- **RhinoRenderTool** (`rhino_render`) - Display modes, camera, viewport capture
+- **RhinoSceneTool** (`rhino_scene`) - Object management, selection, layers (full CRUD), visibility
+- **RhinoRenderTool** (`rhino_render`) - Display modes, camera, render settings, sun, skylight, ground plane
+- **RhinoMaterialTool** (`rhino_material`) - Create/apply/delete PBR materials
+- **RhinoEnvironmentTool** (`rhino_environment`) - Manage render environments
 
 ### Adding New Tools
 
