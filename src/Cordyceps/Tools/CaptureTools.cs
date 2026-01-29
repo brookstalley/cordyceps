@@ -41,7 +41,6 @@ namespace Cordyceps.Tools
             [Description("If true, auto-zoom to fit all components before capture (default true)")] bool fitContent = true,
             [Description("Padding around content in pixels when fitContent is true (default 50)")] int padding = 50)
         {
-            _server?.RecordCommand("capture_canvas");
 
             return _context.ExecuteOnUiThread(() =>
             {
@@ -132,7 +131,6 @@ namespace Cordyceps.Tools
             [Description("For Raytraced views: minimum render passes to wait for before capture (0 = no wait)")] int waitForRender = 0,
             [Description("For Raytraced views: timeout in seconds when waiting for render (default: 30)")] int renderTimeout = 30)
         {
-            _server?.RecordCommand("capture_viewport");
 
             // If waitForRender is requested, wait for raytraced rendering first
             if (waitForRender > 0)
@@ -332,7 +330,6 @@ namespace Cordyceps.Tools
             [Description("Right coordinate (X maximum) in canvas units")] float xMax,
             [Description("Bottom coordinate (Y maximum) in canvas units")] float yMax)
         {
-            _server?.RecordCommand("capture_canvas_region");
 
             return _context.ExecuteOnUiThread(() =>
             {
@@ -396,7 +393,6 @@ namespace Cordyceps.Tools
         [McpServerTool, Description("Get list of available Rhino views/viewports that can be captured.")]
         public string GhGetAvailableViews()
         {
-            _server?.RecordCommand("get_available_views");
 
             return _context.ExecuteOnUiThread(() =>
             {

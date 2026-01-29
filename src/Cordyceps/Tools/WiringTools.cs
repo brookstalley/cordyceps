@@ -24,7 +24,7 @@ namespace Cordyceps.Tools
             _server = server;
         }
 
-        [McpServerTool, Description("Connect component outputs to inputs. Use single params or connections array. Example: gh_connect(sourceId='a', sourceParam='0', targetId='b', targetParam='R') or gh_connect(connections='[{...}]')")]
+        [McpServerTool, Description("Connect component outputs to inputs. Use single params or connections array. Example: gh_connect(sourceId='a', sourceParam='0', targetId='b', targetParam='R') or gh_connect(connections='[{...}]'). Returns: {success, sourceId, sourceParam, targetId, targetParam} for single, or {success, total, succeeded, failed, results[]} for bulk")]
         public string GhConnect(
             [Description("Source component GUID (for single connection)")] string sourceId = null,
             [Description("Source output parameter name or index (for single connection)")] string sourceParam = null,
@@ -32,7 +32,6 @@ namespace Cordyceps.Tools
             [Description("Target input parameter name or index (for single connection)")] string targetParam = null,
             [Description("JSON array of connections: [{sourceId, sourceParam, targetId, targetParam}, ...]")] string connections = null)
         {
-            _server?.RecordCommand("gh_connect");
             return _context.ExecuteOnUiThread(() =>
             {
                 if (!ToolHelpers.TryGetActiveDocument(_context, out var doc, out var error))
@@ -163,7 +162,6 @@ namespace Cordyceps.Tools
             [Description("Target component GUID")] string targetId,
             [Description("Target input parameter name or index")] string targetParam)
         {
-            _server?.RecordCommand("disconnect_components");
             return _context.ExecuteOnUiThread(() =>
             {
                 // Use protected methods - infrastructure components appear as "not found"
@@ -202,7 +200,6 @@ namespace Cordyceps.Tools
         public string GhClearInputs(
             [Description("Component GUID")] string id)
         {
-            _server?.RecordCommand("clear_component_inputs");
             return _context.ExecuteOnUiThread(() =>
             {
                 // Use protected method - infrastructure components appear as "not found"
@@ -258,7 +255,6 @@ namespace Cordyceps.Tools
         public string GhGetConnections(
             [Description("Filter to connections involving this component ID (as source or target)")] string componentId = null)
         {
-            _server?.RecordCommand("get_connections");
             return _context.ExecuteOnUiThread(() =>
             {
                 if (!ToolHelpers.TryGetActiveDocument(_context, out var doc, out var error))
@@ -493,7 +489,6 @@ namespace Cordyceps.Tools
             [Description("Target component GUID")] string targetId = null,
             [Description("Target input parameter name or index (optional)")] string targetParam = null)
         {
-            _server?.RecordCommand("validate_connection");
             return _context.ExecuteOnUiThread(() =>
             {
                 if (!ToolHelpers.TryGetActiveDocument(_context, out var doc, out var error))

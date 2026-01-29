@@ -31,7 +31,6 @@ namespace Cordyceps.Tools
             [Description("Filter by object name (substring match)")] string name = null,
             [Description("Include hidden objects (default: true)")] bool includeHidden = true)
         {
-            _server?.RecordCommand("rhino_get_objects");
             return _context.ExecuteOnUiThread(() =>
             {
                 var rhinoDoc = RhinoDoc.ActiveDoc;
@@ -134,7 +133,6 @@ namespace Cordyceps.Tools
         public string RhinoSelectObjects(
             [Description("JSON array of object GUIDs to select")] string objectIds)
         {
-            _server?.RecordCommand("rhino_select_objects");
             return _context.ExecuteOnUiThread(() =>
             {
                 var rhinoDoc = RhinoDoc.ActiveDoc;
@@ -196,7 +194,6 @@ namespace Cordyceps.Tools
         [McpServerTool, Description("Clear the current Rhino selection (deselect all objects).")]
         public string RhinoDeselectAll()
         {
-            _server?.RecordCommand("rhino_deselect_all");
             return _context.ExecuteOnUiThread(() =>
             {
                 var rhinoDoc = RhinoDoc.ActiveDoc;
@@ -219,7 +216,6 @@ namespace Cordyceps.Tools
             [Description("JSON array of object GUIDs")] string objectIds,
             [Description("Target layer name (created if doesn't exist)")] string layer)
         {
-            _server?.RecordCommand("rhino_set_object_layer");
             return _context.ExecuteOnUiThread(() =>
             {
                 var rhinoDoc = RhinoDoc.ActiveDoc;
@@ -301,7 +297,6 @@ namespace Cordyceps.Tools
             [Description("JSON array of object GUIDs")] string objectIds,
             [Description("Name to assign to objects")] string name)
         {
-            _server?.RecordCommand("rhino_set_object_name");
             return _context.ExecuteOnUiThread(() =>
             {
                 var rhinoDoc = RhinoDoc.ActiveDoc;
@@ -365,7 +360,6 @@ namespace Cordyceps.Tools
         public string RhinoHideObjects(
             [Description("JSON array of object GUIDs to hide")] string objectIds)
         {
-            _server?.RecordCommand("rhino_hide_objects");
             return _context.ExecuteOnUiThread(() =>
             {
                 var rhinoDoc = RhinoDoc.ActiveDoc;
@@ -428,7 +422,6 @@ namespace Cordyceps.Tools
         public string RhinoShowObjects(
             [Description("JSON array of object GUIDs to show")] string objectIds)
         {
-            _server?.RecordCommand("rhino_show_objects");
             return _context.ExecuteOnUiThread(() =>
             {
                 var rhinoDoc = RhinoDoc.ActiveDoc;
@@ -491,7 +484,6 @@ namespace Cordyceps.Tools
         public string RhinoDeleteObjects(
             [Description("JSON array of object GUIDs to delete")] string objectIds)
         {
-            _server?.RecordCommand("rhino_delete_objects");
             return _context.ExecuteOnUiThread(() =>
             {
                 var rhinoDoc = RhinoDoc.ActiveDoc;

@@ -30,12 +30,11 @@ namespace Cordyceps.Tools
             _server = server;
         }
 
-        [McpServerTool, Description("Set a component's value (slider, panel, or parameter). For sliders, sets the current value only. Use gh_set_slider_properties to configure slider range and type. Example: gh_set_value(id='abc', value='42')")]
+        [McpServerTool, Description("Set a component's value (slider, panel, or parameter). For sliders, sets the current value only. Use gh_set_slider to configure slider range and type. Example: gh_set_value(id='abc', value='42'). Returns: {success, id, type, value} or {success: false, error}")]
         public string GhSetValue(
             [Description("Component GUID")] string id,
             [Description("Value to set (number for sliders, text for panels)")] string value)
         {
-            _server?.RecordCommand("set_component_value");
             return _context.ExecuteOnUiThread(() =>
             {
                 // Use protected method - infrastructure components appear as "not found"
@@ -109,7 +108,6 @@ namespace Cordyceps.Tools
         public string GhGetParameters(
             [Description("Component type name (e.g., 'Circle', 'Addition')")] string componentType)
         {
-            _server?.RecordCommand("get_component_parameters");
             return _context.ExecuteOnUiThread(() =>
             {
                 // Find component proxy by name
@@ -189,7 +187,6 @@ namespace Cordyceps.Tools
             [Description("Current/default value (must be between min and max)")] double value,
             [Description("Optional: force integer type (true) or floating-point (false). If not specified, auto-detects from values.")] string integer = null)
         {
-            _server?.RecordCommand("set_slider_properties");
             return _context.ExecuteOnUiThread(() =>
             {
                 // Use protected method - infrastructure components appear as "not found"
@@ -267,7 +264,6 @@ namespace Cordyceps.Tools
             [Description("JSON array of component GUIDs")] string ids = null,
             [Description("Preview state: true=visible, false=hidden")] bool enabled = true)
         {
-            _server?.RecordCommand("gh_set_preview");
             return _context.ExecuteOnUiThread(() =>
             {
                 if (!ToolHelpers.TryGetActiveDocument(_context, out var doc, out var error))
@@ -341,7 +337,6 @@ namespace Cordyceps.Tools
             [Description("JSON array of component GUIDs")] string ids = null,
             [Description("Enabled state: true=enabled (computes), false=disabled (locked)")] bool enabled = true)
         {
-            _server?.RecordCommand("gh_set_enabled");
             return _context.ExecuteOnUiThread(() =>
             {
                 if (!ToolHelpers.TryGetActiveDocument(_context, out var doc, out var error))
@@ -416,7 +411,6 @@ namespace Cordyceps.Tools
             [Description("Optional layer name to bake to (creates if doesn't exist)")] string layer = null,
             [Description("Optional name to assign to baked objects")] string name = null)
         {
-            _server?.RecordCommand("bake_geometry");
             return _context.ExecuteOnUiThread(() =>
             {
                 // Use protected method - infrastructure components appear as "not found"
@@ -539,7 +533,6 @@ namespace Cordyceps.Tools
             [Description("JSON array of items [{name, value}] where value is the expression (usually same as index)")] string items,
             [Description("Index of initially selected item (0-based)")] int selectedIndex = 0)
         {
-            _server?.RecordCommand("configure_value_list");
             return _context.ExecuteOnUiThread(() =>
             {
                 // Use protected method - infrastructure components appear as "not found"

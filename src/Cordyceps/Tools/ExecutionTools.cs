@@ -30,7 +30,6 @@ namespace Cordyceps.Tools
         public string RhinoExecuteScript(
             [Description("Rhino command script to execute")] string script)
         {
-            _server?.RecordCommand("execute_script");
 
             if (!RequestValidator.ValidateRequired(script, "script", out var error))
                 return ToolHelpers.ErrorResponse(error);
@@ -49,7 +48,6 @@ namespace Cordyceps.Tools
             [Description("Name for the macro")] string name,
             [Description("Rhino command script to store")] string macro)
         {
-            _server?.RecordCommand("create_macro");
 
             if (!RequestValidator.ValidateRequired(name, "name", out var error))
                 return ToolHelpers.ErrorResponse(error);
@@ -77,7 +75,6 @@ namespace Cordyceps.Tools
             [Description("Name of stored macro to run")] string name = null,
             [Description("Direct macro to run (if not using stored macro)")] string macro = null)
         {
-            _server?.RecordCommand("run_macro");
 
             string macroToRun = macro;
 
@@ -111,7 +108,6 @@ namespace Cordyceps.Tools
         [McpServerTool, Description("List all stored macros")]
         public string RhinoListMacros()
         {
-            _server?.RecordCommand("list_macros");
 
             var macros = new List<object>();
             lock (MacroStoreLock)
@@ -138,7 +134,6 @@ namespace Cordyceps.Tools
         public string RhinoDeleteMacro(
             [Description("Name of macro to delete")] string name)
         {
-            _server?.RecordCommand("delete_macro");
 
             if (!RequestValidator.ValidateRequired(name, "name", out var error))
                 return ToolHelpers.ErrorResponse(error);
@@ -165,7 +160,6 @@ namespace Cordyceps.Tools
         public string RhinoRunPython(
             [Description("Python script to execute")] string script)
         {
-            _server?.RecordCommand("run_gh_python");
 
             if (!RequestValidator.ValidateRequired(script, "script", out var error))
                 return ToolHelpers.ErrorResponse(error);

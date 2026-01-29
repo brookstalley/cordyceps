@@ -28,7 +28,6 @@ namespace Cordyceps.Tools
         [McpServerTool, Description("List all layers in the Rhino document with their properties.")]
         public string RhinoGetLayers()
         {
-            _server?.RecordCommand("rhino_get_layers");
             return _context.ExecuteOnUiThread(() =>
             {
                 var rhinoDoc = RhinoDoc.ActiveDoc;
@@ -73,7 +72,6 @@ namespace Cordyceps.Tools
             [Description("Layer visibility (default: true)")] bool visible = true,
             [Description("Parent layer name for nesting (optional)")] string parent = null)
         {
-            _server?.RecordCommand("rhino_create_layer");
             return _context.ExecuteOnUiThread(() =>
             {
                 var rhinoDoc = RhinoDoc.ActiveDoc;
@@ -163,7 +161,6 @@ namespace Cordyceps.Tools
             [Description("Visibility state (optional)")] string visible = null,
             [Description("Locked state (optional)")] string locked = null)
         {
-            _server?.RecordCommand("rhino_set_layer_properties");
             return _context.ExecuteOnUiThread(() =>
             {
                 var rhinoDoc = RhinoDoc.ActiveDoc;
@@ -253,7 +250,6 @@ namespace Cordyceps.Tools
             [Description("Layer name or full path")] string name,
             [Description("Delete objects on the layer (default: false, moves to default layer)")] bool deleteObjects = false)
         {
-            _server?.RecordCommand("rhino_delete_layer");
             return _context.ExecuteOnUiThread(() =>
             {
                 var rhinoDoc = RhinoDoc.ActiveDoc;

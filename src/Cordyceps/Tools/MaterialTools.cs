@@ -30,7 +30,6 @@ namespace Cordyceps.Tools
         [McpServerTool, Description("List all materials in the Rhino document with their properties.")]
         public string RhinoGetMaterials()
         {
-            _server?.RecordCommand("rhino_get_materials");
             return _context.ExecuteOnUiThread(() =>
             {
                 var rhinoDoc = RhinoDoc.ActiveDoc;
@@ -99,7 +98,6 @@ namespace Cordyceps.Tools
             [Description("Emission color as hex or RGB (optional, for glowing materials)")] string emission = null,
             [Description("Index of refraction (glass ~1.5, water ~1.33). Default: 1.0")] double ior = 1.0)
         {
-            _server?.RecordCommand("rhino_create_material");
             return _context.ExecuteOnUiThread(() =>
             {
                 var rhinoDoc = RhinoDoc.ActiveDoc;
@@ -197,7 +195,6 @@ namespace Cordyceps.Tools
             [Description("JSON array of object GUIDs")] string objectIds,
             [Description("Material name or index")] string material)
         {
-            _server?.RecordCommand("rhino_apply_material");
             return _context.ExecuteOnUiThread(() =>
             {
                 var rhinoDoc = RhinoDoc.ActiveDoc;
@@ -306,7 +303,6 @@ namespace Cordyceps.Tools
         public string RhinoDeleteMaterial(
             [Description("Material name")] string name)
         {
-            _server?.RecordCommand("rhino_delete_material");
             return _context.ExecuteOnUiThread(() =>
             {
                 var rhinoDoc = RhinoDoc.ActiveDoc;

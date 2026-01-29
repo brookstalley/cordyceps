@@ -28,7 +28,6 @@ namespace Cordyceps.Tools
         [McpServerTool, Description("Get information about the current Grasshopper document")]
         public string GhGetDocumentInfo()
         {
-            _server?.RecordCommand("get_document_info");
             return _context.ExecuteOnUiThread(() =>
             {
                 if (!ToolHelpers.TryGetActiveDocument(_context, out var doc, out var error))
@@ -64,7 +63,6 @@ namespace Cordyceps.Tools
         [McpServerTool, Description("Clear all objects from the Grasshopper canvas except the Cordyceps MCP infrastructure (the server component, its connected inputs/outputs, and containing group)")]
         public string GhClearDocument()
         {
-            _server?.RecordCommand("clear_document");
             return _context.ExecuteOnUiThread(() =>
             {
                 if (!ToolHelpers.TryGetActiveDocument(_context, out var doc, out var error))
@@ -98,7 +96,6 @@ namespace Cordyceps.Tools
         public string GhSaveDocument(
             [Description("File path with .gh or .ghx extension")] string filePath)
         {
-            _server?.RecordCommand("save_document");
             return _context.ExecuteOnUiThread(() =>
             {
                 if (!ToolHelpers.TryGetActiveDocument(_context, out var doc, out var error))
@@ -157,7 +154,6 @@ namespace Cordyceps.Tools
         public string GhSetSolverEnabled(
             [Description("True to enable, false to disable")] bool enabled)
         {
-            _server?.RecordCommand("set_solver_enabled");
             return _context.ExecuteOnUiThread(() =>
             {
                 if (!ToolHelpers.TryGetActiveDocument(_context, out var doc, out var error))
@@ -181,7 +177,6 @@ namespace Cordyceps.Tools
         [McpServerTool, Description("Trigger a solution recompute on all components")]
         public string GhRecomputeSolution()
         {
-            _server?.RecordCommand("recompute_solution");
             return _context.ExecuteOnUiThread(() =>
             {
                 if (!ToolHelpers.TryGetActiveDocument(_context, out var doc, out var error))
@@ -200,7 +195,6 @@ namespace Cordyceps.Tools
         [McpServerTool, Description("Undo the last action on the Grasshopper canvas. Only available after at least one MCP operation has been performed.")]
         public string GhUndo()
         {
-            _server?.RecordCommand("undo");
             return _context.ExecuteOnUiThread(() =>
             {
                 // Protect against undoing before any MCP operations (would undo adding Cordyceps itself)
@@ -246,7 +240,6 @@ namespace Cordyceps.Tools
         [McpServerTool, Description("Redo a previously undone action on the Grasshopper canvas")]
         public string GhRedo()
         {
-            _server?.RecordCommand("redo");
             return _context.ExecuteOnUiThread(() =>
             {
                 if (!ToolHelpers.TryGetActiveDocument(_context, out var doc, out var error))

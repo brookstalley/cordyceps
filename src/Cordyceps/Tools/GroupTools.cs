@@ -31,7 +31,6 @@ namespace Cordyceps.Tools
             [Description("Name/label for the group")] string name,
             [Description("Color as hex (#FF0000) or name (Red)")] string color = null)
         {
-            _server?.RecordCommand("create_group");
             return _context.ExecuteOnUiThread(() =>
             {
                 if (!ToolHelpers.TryGetActiveDocument(_context, out var doc, out var error))
@@ -64,7 +63,6 @@ namespace Cordyceps.Tools
             [Description("Name for new group if groupId not provided")] string groupName = null,
             [Description("Color for the group (hex like '#FF0000' or name like 'Red')")] string color = null)
         {
-            _server?.RecordCommand("add_to_group");
             return _context.ExecuteOnUiThread(() =>
             {
                 if (!ToolHelpers.TryGetActiveDocument(_context, out var doc, out var error))
@@ -171,7 +169,6 @@ namespace Cordyceps.Tools
         public string GhDeleteGroup(
             [Description("Group GUID")] string id)
         {
-            _server?.RecordCommand("delete_group");
             return _context.ExecuteOnUiThread(() =>
             {
                 // Use protected method - infrastructure groups appear as "not found"
@@ -196,7 +193,6 @@ namespace Cordyceps.Tools
             [Description("Group GUID")] string id,
             [Description("Color as hex (#FF0000) or name (Red)")] string color)
         {
-            _server?.RecordCommand("set_group_color");
             return _context.ExecuteOnUiThread(() =>
             {
                 if (!ToolHelpers.TryGetComponent(_context, id, out var obj, out var error))
@@ -225,7 +221,6 @@ namespace Cordyceps.Tools
             [Description("Group GUID")] string groupId,
             [Description("JSON array of component GUIDs to remove")] string componentIds)
         {
-            _server?.RecordCommand("remove_from_group");
             return _context.ExecuteOnUiThread(() =>
             {
                 if (!ToolHelpers.TryGetComponent(_context, groupId, out var obj, out var error))
@@ -282,7 +277,6 @@ namespace Cordyceps.Tools
             [Description("Group GUID")] string id,
             [Description("New name for the group")] string newName)
         {
-            _server?.RecordCommand("rename_group");
             return _context.ExecuteOnUiThread(() =>
             {
                 if (!ToolHelpers.TryGetComponent(_context, id, out var obj, out var error))
@@ -313,7 +307,6 @@ namespace Cordyceps.Tools
             [Description("X offset to move")] double dx,
             [Description("Y offset to move")] double dy)
         {
-            _server?.RecordCommand("move_group");
             return _context.ExecuteOnUiThread(() =>
             {
                 if (!ToolHelpers.TryGetActiveDocument(_context, out var doc, out var error))
@@ -412,7 +405,6 @@ namespace Cordyceps.Tools
         [McpServerTool, Description("Get all visual groups on the canvas")]
         public string GhGetAllGroups()
         {
-            _server?.RecordCommand("get_all_groups");
             return _context.ExecuteOnUiThread(() =>
             {
                 if (!ToolHelpers.TryGetActiveDocument(_context, out var doc, out var error))

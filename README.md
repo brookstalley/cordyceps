@@ -44,9 +44,9 @@ claude mcp add --transport http http://127.0.0.1/mcp
 
 ```python
 async with ClientSession(transport) as session:
-    slider = await session.call_tool('add_component', {'type': 'Number Slider', 'x': 50, 'y': 50})
-    circle = await session.call_tool('add_component', {'type': 'Curve/Circle', 'x': 200, 'y': 50})
-    await session.call_tool('connect_components', {
+    slider = await session.call_tool('gh_add_component', {'type': 'Number Slider', 'x': 50, 'y': 50})
+    circle = await session.call_tool('gh_add_component', {'type': 'Curve/Circle', 'x': 200, 'y': 50})
+    await session.call_tool('gh_connect', {
         'sourceId': slider['id'], 'sourceParam': '0',
         'targetId': circle['id'], 'targetParam': 'R'
     })
@@ -66,27 +66,27 @@ The AI interprets the request and builds the complete Grasshopper definition ste
 
 ### Grasshopper Canvas
 
-**Discovery**: `get_categories`, `search_components`, `get_component_documentation`, `check_deprecation`, `suggest_connections`
+**Discovery**: `gh_get_categories`, `gh_search_components`, `gh_get_component_documentation`, `gh_check_deprecation`, `gh_suggest_connections`
 
-**Canvas**: `add_component`, `delete_component`, `bulk_delete_components`, `move_component`, `bulk_move_components`, `rename_component`, `get_all_components`, `get_component_info`, `get_component_by_nickname`, `get_component_bounds`, `validate_layout`
+**Canvas**: `gh_add_component`, `gh_delete` (single or bulk via `ids` array), `gh_move` (single or bulk via `moves` array), `gh_rename`, `gh_get_all_components`, `gh_get_component_info`, `gh_find_by_nickname`, `gh_get_bounds`, `gh_validate_layout`, `gh_manage_inputs`
 
-**Wiring**: `connect_components`, `disconnect_components`, `bulk_connect`, `clear_component_inputs`, `validate_connection`, `get_connections`
+**Wiring**: `gh_connect` (single or bulk via `connections` array), `gh_disconnect`, `gh_clear_inputs`, `gh_validate_connection`, `gh_get_connections`
 
-**Values**: `set_component_value`, `set_slider_properties`, `configure_value_list`, `add_constant`, `set_preview`, `set_enabled`, `bulk_set_preview`, `bulk_set_enabled`
+**Values**: `gh_set_value`, `gh_set_slider`, `gh_configure_value_list`, `gh_add_constant`, `gh_set_preview` (single or bulk via `ids` array), `gh_set_enabled` (single or bulk via `ids` array), `gh_bake`
 
-**Scripts**: `set_script_code`, `get_script_code`, `get_script_info`, `configure_script_component`
+**Scripts**: `gh_set_script_code`, `gh_get_script_code`, `gh_get_script_info`, `gh_configure_script`
 
-**Groups**: `create_group`, `add_to_group`, `remove_from_group`, `delete_group`, `rename_group`, `set_group_color`, `move_group`, `get_all_groups`
+**Groups**: `gh_create_group`, `gh_add_to_group`, `gh_remove_from_group`, `gh_delete_group`, `gh_rename_group`, `gh_set_group_color`, `gh_move_group`, `gh_get_all_groups`
 
-**Inspection**: `get_canvas_status`, `get_disconnected_inputs`, `trace_data_flow`, `get_component_outputs`, `get_geometry`, `get_debug_reports`, `get_debug_log`, `clear_debug_log`
+**Inspection**: `gh_get_canvas_status`, `gh_get_disconnected_inputs`, `gh_trace_data_flow`, `gh_get_component_outputs`, `gh_get_geometry`, `gh_get_debug_reports`, `gh_get_debug_log`, `gh_clear_debug_log`
 
-**Capture**: `capture_canvas`, `capture_canvas_region`, `get_available_views`
+**Capture**: `gh_capture_canvas`, `gh_capture_canvas_region`, `gh_get_available_views`
 
-**Documents**: `get_document_info`, `save_document`, `clear_document`, `set_solver_enabled`, `recompute_solution`, `undo`, `redo`
+**Documents**: `gh_get_document_info`, `gh_save_document`, `gh_clear_document`, `gh_set_solver_enabled`, `gh_recompute_solution`, `gh_undo`, `gh_redo`
 
-**Snapshots**: `snapshot`, `revert_snapshot`, `list_snapshots`, `delete_snapshot`
+**Snapshots**: `gh_snapshot`, `gh_revert_snapshot`, `gh_list_snapshots`, `gh_delete_snapshot`
 
-**Execution**: `bake_geometry`, `execute_script`, `run_gh_python`, `create_macro`, `run_macro`, `list_macros`, `delete_macro`
+**Execution**: `rhino_execute_script`, `rhino_run_python`, `rhino_create_macro`, `rhino_run_macro`, `rhino_list_macros`, `rhino_delete_macro`
 
 ### Rhino Document
 
@@ -136,7 +136,7 @@ Test coverage includes: component management, wiring, values, groups, scripts, i
 |---------|----------|
 | Plugin won't load | Verify Rhino 8.21+. Unblock the .gha file (Windows) or clear quarantine (macOS). |
 | Can't connect | Ensure Cordyceps component is on canvas. Check the port. |
-| Component not found | Use `search_components` to find exact names. |
+| Component not found | Use `gh_search_components` to find exact names. |
 
 ## Building
 

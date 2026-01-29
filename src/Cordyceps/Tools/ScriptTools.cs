@@ -32,7 +32,6 @@ namespace Cordyceps.Tools
             [Description("Script component GUID")] string id,
             [Description("Source code to set")] string code)
         {
-            _server?.RecordCommand("set_script_code");
             return _context.ExecuteOnUiThread(() =>
             {
                 // Use protected method - infrastructure components appear as "not found"
@@ -118,7 +117,6 @@ namespace Cordyceps.Tools
             [Description("JSON array of output definitions [{name, type}]")] string outputs,
             [Description("Full source code including RunScript method")] string fullSource)
         {
-            _server?.RecordCommand("configure_script_component");
             return _context.ExecuteOnUiThread(() =>
             {
                 // Use protected method - infrastructure components appear as "not found"
@@ -332,7 +330,6 @@ namespace Cordyceps.Tools
         public string GhGetScriptCode(
             [Description("Script component GUID")] string id)
         {
-            _server?.RecordCommand("get_script_code");
             return _context.ExecuteOnUiThread(() =>
             {
                 // Use protected method - infrastructure components appear as "not found"
@@ -444,7 +441,6 @@ namespace Cordyceps.Tools
         public string GhGetScriptInfo(
             [Description("Script component GUID")] string id)
         {
-            _server?.RecordCommand("get_script_info");
             return _context.ExecuteOnUiThread(() =>
             {
                 // Use protected method - infrastructure components appear as "not found"

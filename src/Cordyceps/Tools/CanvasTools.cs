@@ -26,14 +26,13 @@ namespace Cordyceps.Tools
             _server = server;
         }
 
-        [McpServerTool, Description("Add a component to the Grasshopper canvas by name or GUID. Use GUID or 'Category/Name' format to avoid ambiguity. Example: gh_add_component(type='Circle', x=200, y=100)")]
+        [McpServerTool, Description("Add a component to the Grasshopper canvas by name or GUID. Use GUID or 'Category/Name' format to avoid ambiguity. Example: gh_add_component(type='Circle', x=200, y=100). Returns: {success, id, type, nickname, category, subcategory, role, x, y, width, height, inputCount, outputCount} or {success: false, error} or {success: false, error: 'ambiguous_name', matches[]}")]
         public string GhAddComponent(
             [Description("Component type name (e.g., 'Circle', 'Addition'), GUID, or category-qualified name ('Curve/Circle')")] string type,
             [Description("X position on canvas")] double x,
             [Description("Y position on canvas")] double y,
             [Description("Optional nickname/display name for the component")] string nickname = null)
         {
-            _server?.RecordCommand("add_component");
             Core.DebugLog.Info($"AddComponent called: type='{type}', x={x}, y={y}, nickname='{nickname}'");
 
             return _context.ExecuteOnUiThread(() =>
@@ -168,12 +167,11 @@ namespace Cordyceps.Tools
             });
         }
 
-        [McpServerTool, Description("Delete one or more components from the canvas. Accepts single id or array of ids. Example: gh_delete(id='abc-123') or gh_delete(ids='[\"abc\", \"def\"]')")]
+        [McpServerTool, Description("Delete one or more components from the canvas. Accepts single id or array of ids. Example: gh_delete(id='abc-123') or gh_delete(ids='[\"abc\", \"def\"]'). Returns: {success, deleted} for single, or {success, total, succeeded, failed, deletedIds, results[]} for bulk")]
         public string GhDelete(
             [Description("Single component GUID to delete")] string id = null,
             [Description("JSON array of component GUIDs to delete")] string ids = null)
         {
-            _server?.RecordCommand("gh_delete");
             return _context.ExecuteOnUiThread(() =>
             {
                 if (!ToolHelpers.TryGetActiveDocument(_context, out var doc, out var error))
@@ -267,7 +265,6 @@ namespace Cordyceps.Tools
             [Description("New Y position (for single move)")] double y = double.NaN,
             [Description("JSON array of move operations: [{id, x, y}, ...]")] string moves = null)
         {
-            _server?.RecordCommand("gh_move");
             return _context.ExecuteOnUiThread(() =>
             {
                 if (!ToolHelpers.TryGetActiveDocument(_context, out var doc, out var error))
@@ -386,11 +383,10 @@ namespace Cordyceps.Tools
             });
         }
 
-        [McpServerTool, Description("Get detailed information about a component including its inputs, outputs, and position. Example: gh_get_component_info(id='abc-123')")]
+        [McpServerTool, Description("Get detailed information about a component including its inputs, outputs, and position. Example: gh_get_component_info(id='abc-123'). Returns: {success, id, name, nickname, category, subcategory, role, status, bounds, pivot, inputs[], outputs[]}")]
         public string GhGetComponentInfo(
             [Description("Component GUID")] string id)
         {
-            _server?.RecordCommand("get_component_info");
             return _context.ExecuteOnUiThread(() =>
             {
                 // Use protected method - infrastructure components appear as "not found"
@@ -408,7 +404,6 @@ namespace Cordyceps.Tools
             [Description("Filter by component type name (e.g., 'Circle', 'Number Slider')")] string type = null,
             [Description("Filter by group name or GUID")] string group = null)
         {
-            _server?.RecordCommand("get_all_components");
             return _context.ExecuteOnUiThread(() =>
             {
                 if (!ToolHelpers.TryGetActiveDocument(_context, out var doc, out var error))
@@ -520,13 +515,12 @@ namespace Cordyceps.Tools
             return null;
         }
 
-        [McpServerTool, Description("Search for available Grasshopper component types by name. Example: gh_search_components(query='circle', category='Curve')")]
+        [McpServerTool, Description("Search for available Grasshopper component types by name. Example: gh_search_components(query='circle', category='Curve'). Returns: {success, count, totalMatches, filters, components[{name, description, category, subCategory, role, guid, deprecated, inputs[], outputs[]}]}")]
         public string GhSearchComponents(
             [Description("Search query (e.g., 'circle', 'script')")] string query,
             [Description("Filter by category (e.g., 'Curve', 'Kangaroo'). Use get_categories to see valid values.")] string category = null,
             [Description("Maximum number of results to return (default: 50)")] int limit = 50)
         {
-            _server?.RecordCommand("search_components");
             return _context.ExecuteOnUiThread(() =>
             {
                 var basicResults = ComponentRegistry.SearchComponents(query);
@@ -647,7 +641,6 @@ namespace Cordyceps.Tools
             [Description("New nickname to display")] string nickname = null,
             [Description("Alias for nickname")] string name = null)
         {
-            _server?.RecordCommand("rename_component");
             return _context.ExecuteOnUiThread(() =>
             {
                 // Use protected method - infrastructure components appear as "not found"
@@ -681,7 +674,6 @@ namespace Cordyceps.Tools
             [Description("Parameter side: 'input' or 'output'")] string side,
             [Description("Number of parameters to add/remove or target count")] int count)
         {
-            _server?.RecordCommand("manage_zoomable_inputs");
             return _context.ExecuteOnUiThread(() =>
             {
                 if (!ToolHelpers.TryGetComponentWithDoc(_context, id, out var doc, out var obj, out var error))
@@ -804,7 +796,6 @@ namespace Cordyceps.Tools
         public string GhGetBounds(
             [Description("Component GUID")] string id)
         {
-            _server?.RecordCommand("get_component_bounds");
             return _context.ExecuteOnUiThread(() =>
             {
                 // Use protected method - infrastructure components appear as "not found"
@@ -849,7 +840,6 @@ namespace Cordyceps.Tools
         [McpServerTool, Description("Validate canvas layout for overlaps and spacing issues. Returns suggestions for fixing layout problems.")]
         public string GhValidateLayout()
         {
-            _server?.RecordCommand("validate_layout");
             return _context.ExecuteOnUiThread(() =>
             {
                 if (!ToolHelpers.TryGetActiveDocument(_context, out var doc, out var error))
@@ -951,7 +941,6 @@ namespace Cordyceps.Tools
             [Description("Spacing between components in pixels. Default 60 is about 1x component width.")] int spacing = 60,
             [Description("Component ID to keep fixed as anchor (optional)")] string anchor = null)
         {
-            _server?.RecordCommand("auto_space_components");
             return _context.ExecuteOnUiThread(() =>
             {
                 if (!ToolHelpers.TryGetActiveDocument(_context, out var doc, out var error))
@@ -1209,7 +1198,6 @@ namespace Cordyceps.Tools
             [Description("Y position on canvas")] double y,
             [Description("Optional nickname for the panel")] string nickname = null)
         {
-            _server?.RecordCommand("add_constant");
             return _context.ExecuteOnUiThread(() =>
             {
                 if (!ToolHelpers.TryGetActiveDocument(_context, out var doc, out var error))
@@ -1253,7 +1241,6 @@ namespace Cordyceps.Tools
         public string GhSuggestPattern(
             [Description("Description of what you want to create (e.g., 'arrange objects in a circle')")] string description)
         {
-            _server?.RecordCommand("suggest_pattern");
             // Pattern matching is done locally without UI thread access
             var desc = description.ToLowerInvariant();
 
@@ -1326,7 +1313,6 @@ namespace Cordyceps.Tools
             [Description("Nickname to search for (exact or partial match)")] string nickname,
             [Description("If true, require exact match; if false (default), allow partial/case-insensitive match")] bool exact = false)
         {
-            _server?.RecordCommand("get_component_by_nickname");
             return _context.ExecuteOnUiThread(() =>
             {
                 if (!ToolHelpers.TryGetActiveDocument(_context, out var doc, out var error))

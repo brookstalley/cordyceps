@@ -29,7 +29,6 @@ namespace Cordyceps.Tools
         [McpServerTool, Description("List all available Rhino display modes (Wireframe, Shaded, Rendered, Raytraced, etc.).")]
         public string RhinoGetDisplayModes()
         {
-            _server?.RecordCommand("rhino_get_display_modes");
             return _context.ExecuteOnUiThread(() =>
             {
                 var modes = new List<object>();
@@ -59,7 +58,6 @@ namespace Cordyceps.Tools
             [Description("Display mode name (e.g., 'Wireframe', 'Shaded', 'Rendered', 'Ghosted', 'Arctic', 'Raytraced')")] string mode,
             [Description("View name (e.g., 'Perspective', 'Top', 'Front'). Defaults to active view.")] string view = null)
         {
-            _server?.RecordCommand("rhino_set_display_mode");
             return _context.ExecuteOnUiThread(() =>
             {
                 var rhinoDoc = RhinoDoc.ActiveDoc;
@@ -118,7 +116,6 @@ namespace Cordyceps.Tools
         public string RhinoGetCamera(
             [Description("View name. Defaults to active view.")] string view = null)
         {
-            _server?.RecordCommand("rhino_get_camera");
             return _context.ExecuteOnUiThread(() =>
             {
                 var rhinoDoc = RhinoDoc.ActiveDoc;
@@ -163,7 +160,6 @@ namespace Cordyceps.Tools
             [Description("35mm equivalent lens length in mm (e.g., 50). Only for perspective views.")] string lens = null,
             [Description("View name. Defaults to active view.")] string view = null)
         {
-            _server?.RecordCommand("rhino_set_camera");
             return _context.ExecuteOnUiThread(() =>
             {
                 var rhinoDoc = RhinoDoc.ActiveDoc;
@@ -244,7 +240,6 @@ namespace Cordyceps.Tools
         public string RhinoZoomExtents(
             [Description("View name. Defaults to active view.")] string view = null)
         {
-            _server?.RecordCommand("rhino_zoom_extents");
             return _context.ExecuteOnUiThread(() =>
             {
                 var rhinoDoc = RhinoDoc.ActiveDoc;
@@ -282,7 +277,6 @@ namespace Cordyceps.Tools
             [Description("JSON array of object GUIDs to zoom to")] string objectIds,
             [Description("View name. Defaults to active view.")] string view = null)
         {
-            _server?.RecordCommand("rhino_zoom_objects");
             return _context.ExecuteOnUiThread(() =>
             {
                 var rhinoDoc = RhinoDoc.ActiveDoc;
@@ -357,7 +351,6 @@ namespace Cordyceps.Tools
         public string RhinoGetRenderStatus(
             [Description("View name. Defaults to active view.")] string view = null)
         {
-            _server?.RecordCommand("rhino_get_render_status");
             return _context.ExecuteOnUiThread(() =>
             {
                 var rhinoDoc = RhinoDoc.ActiveDoc;
@@ -435,7 +428,6 @@ namespace Cordyceps.Tools
             [Description("Timeout in seconds (default: 30)")] int timeout = 30,
             [Description("View name. Defaults to active view.")] string view = null)
         {
-            _server?.RecordCommand("rhino_wait_for_render");
 
             var startTime = DateTime.Now;
             var timeoutMs = timeout * 1000;

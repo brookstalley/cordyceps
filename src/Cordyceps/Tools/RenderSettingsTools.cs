@@ -32,7 +32,6 @@ namespace Cordyceps.Tools
         [McpServerTool, Description("Get render background settings (style, colors, transparency).")]
         public string RhinoGetRenderSettings()
         {
-            _server?.RecordCommand("rhino_get_render_settings");
             return _context.ExecuteOnUiThread(() =>
             {
                 var rhinoDoc = RhinoDoc.ActiveDoc;
@@ -59,7 +58,6 @@ namespace Cordyceps.Tools
             [Description("Bottom gradient color")] string colorBottom = null,
             [Description("Transparent background (true/false)")] string transparent = null)
         {
-            _server?.RecordCommand("rhino_set_render_settings");
             return _context.ExecuteOnUiThread(() =>
             {
                 var rhinoDoc = RhinoDoc.ActiveDoc;
@@ -140,7 +138,6 @@ namespace Cordyceps.Tools
         [McpServerTool, Description("Get ground plane settings.")]
         public string RhinoGetGroundPlane()
         {
-            _server?.RecordCommand("rhino_get_ground_plane");
             return _context.ExecuteOnUiThread(() =>
             {
                 var rhinoDoc = RhinoDoc.ActiveDoc;
@@ -181,7 +178,6 @@ namespace Cordyceps.Tools
             [Description("Show underside (true/false)")] string showUnderside = null,
             [Description("Material name to apply")] string material = null)
         {
-            _server?.RecordCommand("rhino_set_ground_plane");
             return _context.ExecuteOnUiThread(() =>
             {
                 var rhinoDoc = RhinoDoc.ActiveDoc;
@@ -269,7 +265,6 @@ namespace Cordyceps.Tools
         [McpServerTool, Description("Get sun settings.")]
         public string RhinoGetSun()
         {
-            _server?.RecordCommand("rhino_get_sun");
             return _context.ExecuteOnUiThread(() =>
             {
                 var rhinoDoc = RhinoDoc.ActiveDoc;
@@ -309,7 +304,6 @@ namespace Cordyceps.Tools
             [Description("Sun intensity multiplier")] string intensity = null,
             [Description("North direction angle in degrees on XY plane")] string north = null)
         {
-            _server?.RecordCommand("rhino_set_sun");
             return _context.ExecuteOnUiThread(() =>
             {
                 var rhinoDoc = RhinoDoc.ActiveDoc;
@@ -438,7 +432,6 @@ namespace Cordyceps.Tools
         [McpServerTool, Description("Get skylight settings.")]
         public string RhinoGetSkylight()
         {
-            _server?.RecordCommand("rhino_get_skylight");
             return _context.ExecuteOnUiThread(() =>
             {
                 var rhinoDoc = RhinoDoc.ActiveDoc;
@@ -477,7 +470,6 @@ namespace Cordyceps.Tools
             [Description("Use custom environment (true/false)")] string customEnvironmentOn = null,
             [Description("Custom environment name")] string customEnvironment = null)
         {
-            _server?.RecordCommand("rhino_set_skylight");
             return _context.ExecuteOnUiThread(() =>
             {
                 var rhinoDoc = RhinoDoc.ActiveDoc;

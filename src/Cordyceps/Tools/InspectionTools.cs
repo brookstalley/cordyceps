@@ -37,7 +37,6 @@ namespace Cordyceps.Tools
         public string GhGetCanvasStatus(
             [Description("Filter by category (e.g., 'Curve', 'Kangaroo'). Use get_categories to see valid values.")] string category = null)
         {
-            _server?.RecordCommand("get_canvas_status");
             return _context.ExecuteOnUiThread(() =>
             {
                 if (!ToolHelpers.TryGetActiveDocument(_context, out var doc, out var error))
@@ -152,7 +151,6 @@ namespace Cordyceps.Tools
         [McpServerTool, Description("List all component categories with counts and plugin info. Use to discover valid category values for filtering.")]
         public string GhGetCategories()
         {
-            _server?.RecordCommand("get_categories");
             return _context.ExecuteOnUiThread(() =>
             {
                 // Collect all categories from loaded component proxies
@@ -224,7 +222,6 @@ namespace Cordyceps.Tools
         public string GhGetDisconnectedInputs(
             [Description("Filter by component type: 'all', 'script', or component name")] string type = "all")
         {
-            _server?.RecordCommand("get_disconnected_inputs");
             return _context.ExecuteOnUiThread(() =>
             {
                 if (!ToolHelpers.TryGetActiveDocument(_context, out var doc, out var error))
@@ -283,7 +280,6 @@ namespace Cordyceps.Tools
             [Description("Component GUID to trace from")] string id,
             [Description("Direction: 'upstream' or 'downstream'")] string direction = "upstream")
         {
-            _server?.RecordCommand("trace_data_flow");
             return _context.ExecuteOnUiThread(() =>
             {
                 // Use protected method - infrastructure components appear as "not found"
@@ -321,7 +317,6 @@ namespace Cordyceps.Tools
         public string GhGetComponentOutputs(
             [Description("Component GUID")] string id)
         {
-            _server?.RecordCommand("get_component_outputs");
             return _context.ExecuteOnUiThread(() =>
             {
                 // Use protected method - infrastructure components appear as "not found"
@@ -388,7 +383,6 @@ namespace Cordyceps.Tools
 [McpServerTool, Description("Get all debug report outputs (dbg_Report, out, Report) from script components")]
         public string GhGetDebugReports()
         {
-            _server?.RecordCommand("get_debug_reports");
             return _context.ExecuteOnUiThread(() =>
             {
                 if (!ToolHelpers.TryGetActiveDocument(_context, out var doc, out var error))
@@ -446,7 +440,6 @@ namespace Cordyceps.Tools
         public string GhGetGeometry(
             [Description("Component GUID")] string id)
         {
-            _server?.RecordCommand("get_geometry");
             return _context.ExecuteOnUiThread(() =>
             {
                 // Use protected method - infrastructure components appear as "not found"
@@ -601,7 +594,6 @@ namespace Cordyceps.Tools
             [Description("Maximum number of entries to return (default 100)")] int limit = 100,
             [Description("Clear the log buffer after retrieval")] bool clear = false)
         {
-            _server?.RecordCommand("get_debug_log");
 
             if (limit <= 0) limit = 100;
 
@@ -636,7 +628,6 @@ namespace Cordyceps.Tools
         [McpServerTool, Description("Clear the debug log buffer")]
         public string GhClearDebugLog()
         {
-            _server?.RecordCommand("clear_debug_log");
             DebugLog.Clear();
             return JsonConvert.SerializeObject(new { success = true, message = "Debug log cleared" });
         }
@@ -645,7 +636,6 @@ namespace Cordyceps.Tools
         public string GhCheckDeprecation(
             [Description("Component name or GUID to check")] string component)
         {
-            _server?.RecordCommand("check_deprecation");
             return _context.ExecuteOnUiThread(() =>
             {
                 if (!RequestValidator.ValidateRequired(component, "component", out var compError))
@@ -716,7 +706,6 @@ namespace Cordyceps.Tools
             [Description("Source component GUID")] string sourceId,
             [Description("Source output parameter name or index")] string sourceParam = "0")
         {
-            _server?.RecordCommand("suggest_connections");
             return _context.ExecuteOnUiThread(() =>
             {
                 // Use protected method - infrastructure components appear as "not found"
@@ -814,7 +803,6 @@ namespace Cordyceps.Tools
         public string GhGetComponentDocumentation(
             [Description("Component name or GUID")] string component)
         {
-            _server?.RecordCommand("get_component_documentation");
             return _context.ExecuteOnUiThread(() =>
             {
                 if (!RequestValidator.ValidateRequired(component, "component", out var compError))

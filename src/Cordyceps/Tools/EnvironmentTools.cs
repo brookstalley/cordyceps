@@ -29,7 +29,6 @@ namespace Cordyceps.Tools
         [McpServerTool, Description("List all render environments in the Rhino document.")]
         public string RhinoGetEnvironments()
         {
-            _server?.RecordCommand("rhino_get_environments");
             return _context.ExecuteOnUiThread(() =>
             {
                 var rhinoDoc = RhinoDoc.ActiveDoc;
@@ -69,7 +68,6 @@ namespace Cordyceps.Tools
         [McpServerTool, Description("Get the current render environment for each usage type (background, lighting, reflection).")]
         public string RhinoGetCurrentEnvironment()
         {
-            _server?.RecordCommand("rhino_get_current_environment");
             return _context.ExecuteOnUiThread(() =>
             {
                 var rhinoDoc = RhinoDoc.ActiveDoc;
@@ -100,7 +98,6 @@ namespace Cordyceps.Tools
             [Description("Environment name or GUID")] string environment,
             [Description("Usage type: 'background', 'lighting', 'reflection', or 'all' (default)")] string usage = "all")
         {
-            _server?.RecordCommand("rhino_set_current_environment");
             return _context.ExecuteOnUiThread(() =>
             {
                 var rhinoDoc = RhinoDoc.ActiveDoc;
@@ -182,7 +179,6 @@ namespace Cordyceps.Tools
             [Description("Environment name (must be unique)")] string name,
             [Description("Background color as hex '#RRGGBB' or RGB '255,128,0'")] string color)
         {
-            _server?.RecordCommand("rhino_create_environment");
             return _context.ExecuteOnUiThread(() =>
             {
                 var rhinoDoc = RhinoDoc.ActiveDoc;
@@ -244,7 +240,6 @@ namespace Cordyceps.Tools
         public string RhinoDeleteEnvironment(
             [Description("Environment name")] string name)
         {
-            _server?.RecordCommand("rhino_delete_environment");
             return _context.ExecuteOnUiThread(() =>
             {
                 var rhinoDoc = RhinoDoc.ActiveDoc;

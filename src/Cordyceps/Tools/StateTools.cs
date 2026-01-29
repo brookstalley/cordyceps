@@ -30,7 +30,6 @@ namespace Cordyceps.Tools
         public string GhSnapshot(
             [Description("Name for the snapshot (auto-generated if not provided)")] string name = null)
         {
-            _server?.RecordCommand("snapshot");
             return _context.ExecuteOnUiThread(() =>
             {
                 if (!ToolHelpers.TryGetActiveDocument(_context, out var doc, out var error))
@@ -82,7 +81,6 @@ namespace Cordyceps.Tools
         public string GhRevertSnapshot(
             [Description("Name of the snapshot to revert to")] string name)
         {
-            _server?.RecordCommand("revert_snapshot");
             return _context.ExecuteOnUiThread(() =>
             {
                 if (!RequestValidator.ValidateRequired(name, "name", out var error))
@@ -140,7 +138,6 @@ namespace Cordyceps.Tools
         [McpServerTool, Description("List all available snapshots")]
         public string GhListSnapshots()
         {
-            _server?.RecordCommand("list_snapshots");
 
             var snapshots = new List<object>();
             lock (SnapshotsLock)
@@ -169,7 +166,6 @@ namespace Cordyceps.Tools
         public string GhDeleteSnapshot(
             [Description("Name of the snapshot to delete")] string name)
         {
-            _server?.RecordCommand("delete_snapshot");
 
             if (!RequestValidator.ValidateRequired(name, "name", out var error))
                 return ToolHelpers.ErrorResponse(error);
