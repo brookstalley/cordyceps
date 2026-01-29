@@ -308,6 +308,13 @@ namespace Cordyceps.Core
         {
             if (proxy == null) return null;
 
+            // Check deprecation status from multiple sources
+            bool isDeprecated = proxy.Obsolete;
+            if (!isDeprecated)
+            {
+                isDeprecated = DeprecationRegistry.Instance.IsDeprecated(proxy.Guid);
+            }
+
             var match = new ComponentMatch
             {
                 Name = proxy.Desc.Name,
@@ -316,6 +323,7 @@ namespace Cordyceps.Core
                 SubCategory = proxy.Desc.SubCategory,
                 Guid = proxy.Guid.ToString(),
                 Role = GetRole(proxy.Desc.Category, proxy.Desc.SubCategory),
+                Deprecated = isDeprecated,
                 Inputs = new List<ParameterInfo>(),
                 Outputs = new List<ParameterInfo>()
             };
@@ -326,6 +334,12 @@ namespace Cordyceps.Core
                 var instance = proxy.CreateInstance();
                 if (instance is IGH_Component comp)
                 {
+                    // Also check if type name contains OBSOLETE
+                    if (!match.Deprecated && instance.GetType().Name.Contains("OBSOLETE", StringComparison.OrdinalIgnoreCase))
+                    {
+                        match.Deprecated = true;
+                    }
+
                     foreach (var input in comp.Params.Input)
                     {
                         match.Inputs.Add(new ParameterInfo
@@ -460,6 +474,7 @@ namespace Cordyceps.Core
         public string SubCategory { get; set; }
         public string Guid { get; set; }
         public string Role { get; set; }  // "component", "parameter", or "input"
+        public bool Deprecated { get; set; }  // true if component is deprecated/obsolete
         public List<ParameterInfo> Inputs { get; set; }
         public List<ParameterInfo> Outputs { get; set; }
     }
