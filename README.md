@@ -64,23 +64,43 @@ The AI interprets the request and builds the complete Grasshopper definition ste
 
 ## Tools
 
-**Canvas**: `add_component`, `delete_component`, `bulk_delete_components`, `move_component`, `search_components`, `get_all_components`
+### Grasshopper Canvas
 
-**Wiring**: `connect_components`, `disconnect_components`, `bulk_connect`, `validate_connection`
+**Discovery**: `get_categories`, `search_components`, `get_component_documentation`, `check_deprecation`, `suggest_connections`
 
-**Values**: `set_component_value`, `configure_value_list`, `add_constant`, `set_preview`, `set_enabled`, `bulk_set_preview`, `bulk_set_enabled`
+**Canvas**: `add_component`, `delete_component`, `bulk_delete_components`, `move_component`, `bulk_move_components`, `rename_component`, `get_all_components`, `get_component_info`, `get_component_by_nickname`, `get_component_bounds`, `validate_layout`
+
+**Wiring**: `connect_components`, `disconnect_components`, `bulk_connect`, `clear_component_inputs`, `validate_connection`, `get_connections`
+
+**Values**: `set_component_value`, `set_slider_properties`, `configure_value_list`, `add_constant`, `set_preview`, `set_enabled`, `bulk_set_preview`, `bulk_set_enabled`
 
 **Scripts**: `set_script_code`, `get_script_code`, `get_script_info`, `configure_script_component`
 
-**Groups**: `create_group`, `add_to_group`, `move_group`, `get_all_groups`
+**Groups**: `create_group`, `add_to_group`, `remove_from_group`, `delete_group`, `rename_group`, `set_group_color`, `move_group`, `get_all_groups`
 
-**Inspection**: `get_canvas_status`, `get_disconnected_inputs`, `trace_data_flow`, `get_component_outputs`
+**Inspection**: `get_canvas_status`, `get_disconnected_inputs`, `trace_data_flow`, `get_component_outputs`, `get_geometry`, `get_debug_reports`, `get_debug_log`, `clear_debug_log`
 
-**Capture**: `capture_canvas`, `capture_viewport`, `capture_canvas_region`
+**Capture**: `capture_canvas`, `capture_canvas_region`, `get_available_views`
 
-**Documents**: `save_document`, `clear_document`, `snapshot`, `revert_snapshot`, `undo`, `redo`
+**Documents**: `get_document_info`, `save_document`, `clear_document`, `set_solver_enabled`, `recompute_solution`, `undo`, `redo`
 
-**Execution**: `set_solver_enabled`, `recompute_solution`, `bake_geometry`, `execute_script`
+**Snapshots**: `snapshot`, `revert_snapshot`, `list_snapshots`, `delete_snapshot`
+
+**Execution**: `bake_geometry`, `execute_script`, `run_gh_python`, `create_macro`, `run_macro`, `list_macros`, `delete_macro`
+
+### Rhino Document
+
+**Objects**: `rhino_get_objects`, `rhino_select_objects`, `rhino_deselect_all`, `rhino_set_object_layer`, `rhino_set_object_name`, `rhino_hide_objects`, `rhino_show_objects`, `rhino_delete_objects`
+
+**Layers**: `rhino_get_layers`, `rhino_create_layer`, `rhino_set_layer_properties`, `rhino_delete_layer`
+
+**Materials**: `rhino_get_materials`, `rhino_create_material`, `rhino_apply_material`, `rhino_delete_material`
+
+**Environments**: `rhino_get_environments`, `rhino_get_current_environment`, `rhino_set_current_environment`, `rhino_create_environment`, `rhino_delete_environment`
+
+**Render Settings**: `rhino_get_render_settings`, `rhino_set_render_settings`, `rhino_get_ground_plane`, `rhino_set_ground_plane`, `rhino_get_sun`, `rhino_set_sun`, `rhino_get_skylight`, `rhino_set_skylight`
+
+**Viewport**: `rhino_get_display_modes`, `rhino_set_display_mode`, `rhino_get_camera`, `rhino_set_camera`, `rhino_zoom_extents`, `rhino_zoom_objects`, `rhino_get_render_status`, `rhino_wait_for_render`, `capture_viewport`
 
 ## Resources
 
@@ -95,6 +115,7 @@ MCP resources provide documentation to clients. Source files are in [`src/Cordyc
 - `gh://docs/canvas-layout` — [CanvasLayoutGuide.md](src/Cordyceps/Knowledge/CanvasLayoutGuide.md) — Spacing and layout conventions
 - `gh://docs/geometry-orientation` — [GeometryOrientationGuide.md](src/Cordyceps/Knowledge/GeometryOrientationGuide.md) — Planes and orientation
 - `gh://docs/mcp-testing` — [McpTestingGuide.md](src/Cordyceps/Knowledge/McpTestingGuide.md) — Test and validate MCP server functionality
+- `gh://docs/rendering` — [RenderingGuide.md](src/Cordyceps/Knowledge/RenderingGuide.md) — Rhino rendering pipeline (bake, materials, viewport, capture)
 
 **Patterns:**
 - `gh://patterns/linear-array` — [LinearArray.md](src/Cordyceps/Knowledge/Patterns/LinearArray.md) — Copies along a line
@@ -107,7 +128,7 @@ MCP resources provide documentation to clients. Source files are in [`src/Cordyc
 
 To validate Cordyceps is working correctly, ask your AI assistant to "test the MCP server" or "help me test Grasshopper". It will read the comprehensive test instructions at `gh://docs/mcp-testing` and run through all functionality areas, reporting any issues found.
 
-Test coverage includes: component management, wiring, values, groups, scripts, inspection, document operations, and infrastructure protection.
+Test coverage includes: component management, wiring, values, groups, scripts, inspection, document operations, Rhino objects/layers/materials, render environments and settings, viewport control, and infrastructure protection.
 
 ## Troubleshooting
 

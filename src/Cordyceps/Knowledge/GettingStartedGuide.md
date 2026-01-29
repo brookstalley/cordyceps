@@ -45,11 +45,13 @@ Use `validate_layout()` to check overlaps. Fix overlapping components manually w
 
 ## Key Tools
 
-Discovery: `search_components(query)`, `get_component_info(id)`, `get_component_parameters(type)`
+Discovery: `get_categories()`, `search_components(query, category?, limit?)`, `get_component_info(id)`, `get_component_parameters(type)`
 
 Building: `add_component`, `connect_components`, `bulk_connect`, `set_component_value`, `set_slider_properties`
 
-Validation: `get_canvas_status`, `validate_connection`, `validate_layout`, `get_disconnected_inputs`
+Querying: `get_all_components(category?, type?, group?)`, `get_connections(componentId?)`, `get_canvas_status(category?)`
+
+Validation: `validate_connection`, `validate_layout`, `get_disconnected_inputs`
 
 Debugging: `get_component_outputs(id)`, `trace_data_flow(id, direction)`
 
@@ -80,6 +82,35 @@ Use capture tools to see what you've built:
 
 All capture functions return `base64` image data when `includeBase64=true`, useful for inline display.
 
+## Rhino Rendering Pipeline
+
+After building geometry in Grasshopper, you can bake to Rhino and create rendered images:
+
+**Workflow:** Create geometry → Bake → Organize layers → Apply materials → Set viewport → Capture
+
+### Rhino Tools (rhino_* prefix)
+
+**Objects:** `rhino_get_objects`, `rhino_select_objects`, `rhino_set_object_layer`, `rhino_hide_objects`, `rhino_show_objects`, `rhino_delete_objects`
+
+**Layers:** `rhino_get_layers`, `rhino_create_layer`, `rhino_set_layer_properties`, `rhino_delete_layer`
+
+**Materials:** `rhino_get_materials`, `rhino_create_material`, `rhino_apply_material`, `rhino_delete_material`
+
+**Viewport:** `rhino_get_display_modes`, `rhino_set_display_mode`, `rhino_get_camera`, `rhino_set_camera`, `rhino_zoom_extents`, `rhino_zoom_objects`
+
+**Render Status:** `rhino_get_render_status`, `rhino_wait_for_render` (for Raytraced mode)
+
+### Camera Orbit Pattern
+
+No orbit tool provided — calculate camera positions yourself:
+1. `rhino_get_camera()` → get location, target, distance
+2. Calculate new position: `newX = target.x + distance * cos(angle)`, `newY = target.y + distance * sin(angle)`
+3. `rhino_set_camera(location="newX,newY,z")` → move camera
+4. `rhino_wait_for_render(minPasses=200)` → wait for Raytraced
+5. `capture_viewport(path="frame_001.png")` → capture frame
+
+For complete rendering workflow details, read `gh://docs/rendering`.
+
 ## Testing & Validation
 
 If asked to test the MCP server, validate Cordyceps, or help debug connection issues, read `gh://docs/mcp-testing` for comprehensive test instructions covering all features.
@@ -91,6 +122,7 @@ If asked to test the MCP server, validate Cordyceps, or help debug connection is
 - `gh://docs/canvas-layout` — spacing details
 - `gh://docs/geometry-orientation` — how planes work, which axis is "direction" for oriented geometry
 - `gh://docs/type-system` — type compatibility
+- `gh://docs/rendering` — complete Rhino rendering pipeline (bake → materials → viewport → capture)
 - `gh://docs/mcp-testing` — test instructions for validating MCP server functionality
 - `gh://component/{name}` — any component's inputs/outputs (includes orientation hints)
 - `gh://patterns/*` — linear-array, grid-array

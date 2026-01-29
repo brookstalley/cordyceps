@@ -105,23 +105,38 @@ Track friction for:
 
 ### Tests to Perform
 
-1. **Search for Common Components**
+1. **Get Categories**
+   - Call `get_categories()` with no parameters
+   - Verify response includes: category names, component counts, isBuiltIn flags
+   - Check that plugin info is returned for known plugins (e.g., Kangaroo2)
+
+2. **Search for Common Components**
    - Search for "Circle" - should find multiple circle-related components
    - Search for "Panel" - should find the Panel component
    - Search for "Slider" - should find Number Slider
    - Search for "Addition" - should find the math addition component
 
-2. **Get Component Documentation**
+3. **Search with Category Filter**
+   - Search for "circle" with `category="Curve"`
+   - Verify only Curve category components are returned
+   - Verify response includes `filters` object with category value
+
+4. **Search with Limit**
+   - Search for "circle" with `limit=3`
+   - Verify at most 3 results returned
+   - Verify response includes `totalMatches` count (may be > 3)
+
+5. **Get Component Documentation**
    - Request documentation for "Circle" component
    - Verify you receive: inputs, outputs, descriptions, category
    - Request documentation for "C# Script" component
    - Verify script components show their special parameters
 
-3. **Get Component Parameters**
+6. **Get Component Parameters**
    - Request parameter info for a component type before adding it
    - Verify input/output names, types, and optionality are clear
 
-4. **Search for Non-Existent Component**
+7. **Search for Non-Existent Component**
    - Search for "XyzNotARealComponent123"
    - Verify you receive an appropriate "not found" response
 
@@ -129,6 +144,8 @@ Track friction for:
 - Search should be case-insensitive
 - Partial matches should work
 - Results should include category information for disambiguation
+- Category filters should be case-insensitive
+- Invalid category filters should return empty results, not errors
 
 ---
 
@@ -183,11 +200,26 @@ Track friction for:
     - Test partial failure: include one invalid ID in the array
     - Verify valid components are still deleted, invalid ID returns error in results
 
+11. **Get All Components with Filters**
+    - Add components from different categories (e.g., Params, Curve, Kangaroo2)
+    - Test `get_all_components(category="Curve")` - should only return Curve components
+    - Test `get_all_components(type="slider")` - should only return sliders
+    - Test `get_all_components(category="NonExistent")` - should return empty, not error
+    - Create a group and test `get_all_components(group="GroupName")`
+    - Test combined filters: `get_all_components(category="Params", type="slider")`
+
+12. **Get Canvas Status with Filter**
+    - Add components from multiple categories
+    - Test `get_canvas_status(category="Curve")` - should only show Curve component status
+    - Verify summary counts only reflect filtered components
+
 ### Expected Behaviors
 - Components should appear at specified positions
 - Component IDs should be valid GUIDs
 - Deleted components should disappear immediately
 - Layout validation should detect overlapping components
+- Filter parameters should be case-insensitive
+- Invalid filters should return empty results gracefully
 
 ---
 
@@ -205,6 +237,11 @@ Track friction for:
    - Request all connections on the canvas
    - Verify your new connection appears in the list
    - Verify NO connections to/from Cordyceps infrastructure appear
+
+3. **Get Connections with Filter**
+   - Test `get_connections(componentId="<circle-id>")`
+   - Verify only connections involving that component are returned
+   - Verify response includes `filteredBy` field
 
 3. **Validate Connection Before Making It**
    - Use validate_connection to check if Circle output can connect to a Panel
@@ -683,11 +720,203 @@ Track friction for:
 - Capture tools for visualization
 - Complex wiring with bulk_connect
 
+### Scenario E: Studio Product Shot (Rendering Pipeline)
+
+**Goal:** Create geometry, bake it, apply materials, set up studio lighting, and capture a high-quality render.
+
+**What This Tests:**
+- Grasshopper geometry creation
+- Baking to Rhino with layers
+- PBR material creation and application
+- Render settings (background, ground plane)
+- Sun and skylight configuration
+- Display mode control
+- Raytraced capture with wait
+
+**Steps:**
+
+1. **Create Geometry in Grasshopper**
+   - Add a Box component with sliders for dimensions (e.g., 10x10x5)
+   - Add a Sphere component offset above the box
+   - Verify geometry appears in Grasshopper preview
+
+2. **Bake to Rhino with Layers**
+   - `bake_geometry(boxId, layer="Objects", name="Pedestal")`
+   - `bake_geometry(sphereId, layer="Objects", name="Product")`
+   - Verify both objects appear in Rhino
+
+3. **Create and Apply Materials**
+   - `rhino_create_material(name="Concrete", color="#808080", roughness=0.9)`
+   - `rhino_create_material(name="Chrome", color="#E0E0E0", roughness=0.1, metallic=1.0)`
+   - `rhino_get_objects(layer="Objects")` to get object IDs
+   - `rhino_apply_material(objectIds=[pedestalId], material="Concrete")`
+   - `rhino_apply_material(objectIds=[productId], material="Chrome")`
+
+4. **Set Up Studio Background**
+   - `rhino_set_render_settings(style="gradient", colorTop="#E8E8E8", colorBottom="#A0A0A0")`
+   - Or create an environment: `rhino_create_environment(name="Studio", color="#D0D0D0")`
+   - `rhino_set_current_environment(environment="Studio", usage="all")`
+   - `rhino_set_render_settings(style="environment")`
+
+5. **Configure Ground Plane**
+   - `rhino_set_ground_plane(enabled="true", altitude="0", shadowOnly="true")`
+   - This creates invisible floor that catches shadows
+
+6. **Set Up Lighting**
+   - `rhino_set_sun(enabled="true", azimuth="135", altitude="35", intensity="1.2")`
+   - `rhino_set_skylight(enabled="true", shadowIntensity="0.5")`
+
+7. **Position Camera**
+   - `rhino_get_camera()` to see current position
+   - `rhino_set_camera(location="30,30,20", target="0,0,5", lens="50")`
+   - `rhino_zoom_extents()` if needed
+
+8. **Capture Final Render**
+   - `rhino_set_display_mode(mode="Raytraced")`
+   - `rhino_wait_for_render(minPasses=200, timeout=60)`
+   - `capture_viewport(outputPath="studio_shot.png", width=1920, height=1080)`
+
+9. **Cleanup**
+   - `rhino_delete_objects(objectIds)` to remove baked geometry
+   - `rhino_delete_material(name="Concrete")`
+   - `rhino_delete_material(name="Chrome")`
+
+**Validation Checklist:**
+- [ ] Both objects baked to correct layer
+- [ ] Materials visibly different (matte vs reflective)
+- [ ] Background is studio gradient or environment
+- [ ] Shadows visible on ground plane
+- [ ] Sun creates directional shadows
+- [ ] Skylight provides fill illumination
+- [ ] Final render is high quality (200+ passes)
+- [ ] Image file created at correct resolution
+
+---
+
+### Scenario F: Outdoor Scene with Sun Position (Time-Based Lighting)
+
+**Goal:** Create an outdoor scene with sun position calculated from geographic location and time.
+
+**What This Tests:**
+- Geometry creation and baking
+- Layer organization
+- Sun position calculation (latitude/longitude/dateTime)
+- Ground plane with material
+- Environment-based background
+- Camera orbit pattern
+
+**Steps:**
+
+1. **Create Simple Architecture**
+   - Create a box (building) with sliders
+   - Create cylinders (columns) arranged in front
+   - Bake all to layer "Building"
+
+2. **Create Ground**
+   - Create a large, flat box or surface for terrain
+   - Bake to layer "Terrain"
+
+3. **Apply Materials**
+   - `rhino_create_material(name="Stone", color="#C0B0A0", roughness=0.7)`
+   - `rhino_create_material(name="Grass", color="#3A5F0B", roughness=0.95)`
+   - Apply Stone to Building layer objects
+   - Apply Grass to Terrain layer objects
+
+4. **Set Geographic Sun Position**
+   - Morning light (dramatic shadows):
+     `rhino_set_sun(enabled="true", latitude="51.5074", longitude="-0.1278", dateTime="2024-06-21T08:00:00", intensity="1.0")`
+   - This sets sun position for London at 8am on summer solstice
+
+5. **Configure Environment**
+   - `rhino_set_render_settings(style="environment")`
+   - Enable skylight: `rhino_set_skylight(enabled="true")`
+
+6. **Set Ground Plane**
+   - `rhino_set_ground_plane(enabled="true", autoAltitude="true", material="Grass")`
+
+7. **Capture Time-Lapse Frames** (Optional Advanced)
+   - Loop through times of day:
+     - 6:00 (sunrise)
+     - 9:00 (morning)
+     - 12:00 (noon)
+     - 15:00 (afternoon)
+     - 18:00 (evening)
+   - For each time:
+     - `rhino_set_sun(dateTime="2024-06-21T{time}:00")`
+     - `rhino_wait_for_render(minPasses=100)`
+     - `capture_viewport(outputPath="frame_{time}.png")`
+
+**Validation Checklist:**
+- [ ] Sun position changes with dateTime
+- [ ] Shadows are long in morning, short at noon
+- [ ] Building casts shadows on grass
+- [ ] Geographic coordinates affect sun angle
+- [ ] Multiple captures show lighting progression
+
+---
+
+### Scenario G: Camera Orbit Animation
+
+**Goal:** Capture multiple frames orbiting around an object to create an animation.
+
+**What This Tests:**
+- Camera position calculation (LLM computes orbit positions)
+- Sequential capture workflow
+- Consistent render quality across frames
+
+**Steps:**
+
+1. **Create Subject Geometry**
+   - Create interesting geometry (e.g., twisted tower, sculptural form)
+   - Bake to Rhino
+
+2. **Apply Materials**
+   - Create and apply an interesting material
+
+3. **Set Up Scene**
+   - `rhino_set_render_settings(style="gradient", colorTop="#1a1a2e", colorBottom="#16213e")`
+   - `rhino_set_ground_plane(enabled="true", shadowOnly="true")`
+   - `rhino_set_skylight(enabled="true")`
+
+4. **Get Initial Camera Info**
+   - `rhino_get_camera()` to get target point and distance
+   - Note the distance from camera to target
+
+5. **Calculate Orbit Positions**
+   - Target: (0, 0, 5) - center of object
+   - Distance: 50 - from get_camera
+   - Height: 20 - constant Z
+   - For 36 frames (10° each):
+     - angle = frame_index * 10 * (π/180)
+     - x = target.x + distance * cos(angle)
+     - y = target.y + distance * sin(angle)
+     - z = height
+
+6. **Capture Orbit Frames**
+   - `rhino_set_display_mode(mode="Rendered")` (faster than Raytraced for many frames)
+   - For each frame:
+     - `rhino_set_camera(location="{x},{y},{z}", target="0,0,5")`
+     - `capture_viewport(outputPath="orbit_{frame:03d}.png")`
+
+7. **Optional: Assemble Animation**
+   - Note: Animation assembly (ffmpeg) is outside MCP scope
+   - Files can be combined externally: `ffmpeg -framerate 10 -i orbit_%03d.png -loop 0 orbit.gif`
+
+**Validation Checklist:**
+- [ ] Camera moves smoothly around object
+- [ ] Target remains constant (object stays centered)
+- [ ] All frames captured at consistent quality
+- [ ] Distance from object remains constant
+
+---
+
 ### Expected Behaviors
 - Complex definitions should build without issues
 - Groups help organize large definitions
 - Debugging should identify root causes
 - Parametric models should respond to slider changes
+- Rendering pipeline tools work together seamlessly
+- Camera orbit positions are calculated correctly by LLM
 
 ---
 
@@ -723,6 +952,300 @@ Track friction for:
 - Errors should never crash the MCP server
 - Error messages should explain what went wrong
 - Suggestions for fixing should be provided when possible
+
+---
+
+## Test Section 14: Rhino Objects, Layers, and Materials
+
+**Goal:** Verify Rhino object management, layers, and materials.
+
+### Prerequisites
+- Create geometry in Grasshopper first (e.g., simple box or sphere)
+- Have at least one preview-enabled component with valid geometry
+
+### Tests to Perform
+
+#### Object Management
+
+1. **Bake Geometry**
+   - Use `bake_geometry(id, layer="TestLayer", name="TestObject")`
+   - Verify object is baked to Rhino
+   - Verify returned `layerIndex` and `layerCreated` fields
+
+2. **Get Rhino Objects**
+   - Use `rhino_get_objects()` to list all objects
+   - Use `rhino_get_objects(layer="TestLayer")` to filter by layer
+   - Verify baked object appears with correct name
+
+3. **Select/Deselect Objects**
+   - Use `rhino_select_objects(objectIds)` to select baked object
+   - Use `rhino_deselect_all()` to clear selection
+   - Verify selection state changes
+
+4. **Set Object Layer**
+   - Create a new layer with `rhino_create_layer(name="NewLayer")`
+   - Move object with `rhino_set_object_layer(objectIds, layer="NewLayer")`
+   - Verify object moved to new layer
+
+5. **Hide/Show Objects**
+   - Use `rhino_hide_objects(objectIds)` to hide
+   - Use `rhino_show_objects(objectIds)` to show
+   - Verify visibility state changes
+
+#### Layer Management
+
+6. **Get Layers**
+   - Use `rhino_get_layers()` to list all layers
+   - Verify TestLayer and NewLayer appear
+
+7. **Create Layer**
+   - Use `rhino_create_layer(name="ColoredLayer", color="#FF5500", parent="NewLayer")`
+   - Verify layer created with correct properties
+
+8. **Set Layer Properties**
+   - Use `rhino_set_layer_properties(name="ColoredLayer", visible=false)`
+   - Verify layer visibility changed
+
+9. **Delete Layer**
+   - Use `rhino_delete_layer(name="ColoredLayer", deleteObjects=false)`
+   - Verify layer deleted but objects remain on default layer
+
+#### Material Management
+
+10. **Get Materials**
+    - Use `rhino_get_materials()` to list document materials
+    - Note current material count
+
+11. **Create PBR Material**
+    - Use `rhino_create_material(name="TestMetal", color="#808080", roughness=0.3, metallic=1.0)`
+    - Use `rhino_create_material(name="TestGlass", color="#AADDFF", transparency=0.8, ior=1.5)`
+    - Verify materials created
+
+12. **Apply Material**
+    - Use `rhino_apply_material(objectIds, material="TestMetal")`
+    - Verify material applied to object
+
+13. **Delete Material**
+    - Use `rhino_delete_material(name="TestGlass")`
+    - Verify material removed from document
+
+### Expected Behaviors
+- Object IDs are Rhino GUIDs (different from Grasshopper component IDs)
+- Layer creation happens automatically when baking with nonexistent layer
+- Materials are PBR-based with standard parameters
+- Colors accept hex "#RRGGBB" or RGB "255,128,0" format
+
+---
+
+## Test Section 15: Rhino Environments and Render Settings
+
+**Goal:** Verify render environment management and scene lighting configuration.
+
+### Tests to Perform
+
+#### Render Environments
+
+1. **Get Environments**
+   - Use `rhino_get_environments()` to list all environments in document
+   - Note the default environment(s) available
+   - Verify returned fields: id, name, typeName
+
+2. **Get Current Environment**
+   - Use `rhino_get_current_environment()`
+   - Verify returns environment for each usage type: background, lighting, reflection
+   - Note which environment is currently active
+
+3. **Create Environment**
+   - Use `rhino_create_environment(name="TestSky", color="#87CEEB")`
+   - Verify environment created with solid color
+   - Creating with same name again should return `alreadyExists: true`
+
+4. **Set Current Environment**
+   - Use `rhino_set_current_environment(environment="TestSky", usage="background")`
+   - Verify only background changed
+   - Use `rhino_set_current_environment(environment="TestSky", usage="all")`
+   - Verify all three usages updated
+
+5. **Delete Environment**
+   - Use `rhino_delete_environment(name="TestSky")`
+   - Verify environment removed from document
+
+#### Render Settings (Background)
+
+6. **Get Render Settings**
+   - Use `rhino_get_render_settings()`
+   - Verify returned: backgroundStyle, colorTop, colorBottom, transparentBackground
+
+7. **Set Background Style - Solid**
+   - Use `rhino_set_render_settings(style="solid", colorTop="#404040")`
+   - Verify background is solid gray
+
+8. **Set Background Style - Gradient**
+   - Use `rhino_set_render_settings(style="gradient", colorTop="#87CEEB", colorBottom="#2F4F4F")`
+   - Verify gradient from sky blue to dark slate
+
+9. **Set Background Style - Environment**
+   - Use `rhino_set_render_settings(style="environment")`
+   - Verify background uses the current environment
+
+10. **Set Transparent Background**
+    - Use `rhino_set_render_settings(transparent="true")`
+    - Verify transparentBackground is true (useful for compositing renders)
+
+#### Ground Plane
+
+11. **Get Ground Plane**
+    - Use `rhino_get_ground_plane()`
+    - Verify returned: enabled, altitude, showUnderside, shadowOnly, materialName
+
+12. **Enable Ground Plane**
+    - Use `rhino_set_ground_plane(enabled="true", altitude="0")`
+    - Verify ground plane visible at Z=0
+
+13. **Shadow-Only Ground Plane**
+    - Use `rhino_set_ground_plane(shadowOnly="true")`
+    - Verify ground plane catches shadows but is invisible
+
+14. **Ground Plane with Material**
+    - Create a material first: `rhino_create_material(name="GroundMat", color="#228B22")`
+    - Use `rhino_set_ground_plane(material="GroundMat")`
+    - Verify ground plane uses the material
+
+15. **Auto Altitude**
+    - Use `rhino_set_ground_plane(autoAltitude="true")`
+    - Verify altitude adjusts to geometry bounding box
+
+#### Sun
+
+16. **Get Sun**
+    - Use `rhino_get_sun()`
+    - Verify returned: enabled, manualControl, azimuth, altitude, intensity, location, dateTime
+
+17. **Enable Sun with Manual Position**
+    - Use `rhino_set_sun(enabled="true", azimuth="135", altitude="45")`
+    - Verify sun positioned at 135° azimuth (SE), 45° altitude
+    - Verify manualControl is true
+
+18. **Set Sun by Location and Time**
+    - Use `rhino_set_sun(latitude="40.7128", longitude="-74.0060", dateTime="2024-06-21T14:00:00")`
+    - Verify sun position calculated for New York at 2pm on summer solstice
+    - Note: This disables manual control
+
+19. **Set Sun Intensity**
+    - Use `rhino_set_sun(intensity="1.5")`
+    - Verify intensity increased (brighter shadows)
+
+20. **Set North Direction**
+    - Use `rhino_set_sun(north="45")`
+    - Verify north direction rotated 45° from Y-axis
+
+#### Skylight
+
+21. **Get Skylight**
+    - Use `rhino_get_skylight()`
+    - Verify returned: enabled, shadowIntensity, customEnvironmentOn, customEnvironment
+
+22. **Enable Skylight**
+    - Use `rhino_set_skylight(enabled="true")`
+    - Verify skylight provides ambient illumination
+
+23. **Set Shadow Intensity**
+    - Use `rhino_set_skylight(shadowIntensity="0.7")`
+    - Verify shadow darkness adjusted
+
+24. **Custom Skylight Environment**
+    - Create an environment: `rhino_create_environment(name="SkylightEnv", color="#E0E0E0")`
+    - Use `rhino_set_skylight(customEnvironmentOn="true", customEnvironment="SkylightEnv")`
+    - Verify skylight uses custom environment instead of default sky
+
+### Expected Behaviors
+- Environment changes affect viewport immediately (redraw)
+- Sun manual vs calculated modes are mutually exclusive
+- Ground plane altitude can be manual or auto-detected
+- Skylight provides soft ambient light separate from sun
+- All color parameters accept hex "#RRGGBB" or RGB "255,128,0" format
+
+---
+
+## Test Section 16: Rhino Viewport and Capture
+
+**Goal:** Verify viewport control, camera positioning, and image capture.
+
+### Tests to Perform
+
+1. **Get Display Modes**
+   - Use `rhino_get_display_modes()`
+   - Verify standard modes listed (Wireframe, Shaded, Rendered, Raytraced, etc.)
+
+2. **Set Display Mode**
+   - Use `rhino_set_display_mode(mode="Rendered")`
+   - Verify display mode changed
+
+3. **Get Camera**
+   - Use `rhino_get_camera()`
+   - Verify returned: location, target, up, lens, distance
+
+4. **Set Camera**
+   - Use `rhino_set_camera(location="50,50,30", target="0,0,0")`
+   - Verify camera moved
+
+5. **Set Camera Lens**
+   - Use `rhino_set_camera(lens="35")`
+   - Verify lens changed (affects field of view)
+
+6. **Zoom Extents**
+   - Use `rhino_zoom_extents()`
+   - Verify all geometry fits in view
+
+7. **Zoom Objects**
+   - Use `rhino_zoom_objects(objectIds)`
+   - Verify specific objects fit in view
+
+#### Raytraced Rendering (Optional - Slower)
+
+8. **Set Raytraced Mode**
+   - Use `rhino_set_display_mode(mode="Raytraced")`
+   - Verify mode changed
+
+9. **Get Render Status**
+   - Use `rhino_get_render_status()`
+   - Verify returned: isRaytraced, currentPass, maxPasses, isComplete, progress
+
+10. **Wait For Render**
+    - Use `rhino_wait_for_render(minPasses=50, timeout=30)`
+    - Verify waits until passes reached or timeout
+
+#### Capture
+
+11. **Capture Viewport (Basic)**
+    - Use `capture_viewport()` with no path (uses temp file)
+    - Verify file created and path returned
+
+12. **Capture Viewport with Options**
+    - Use `capture_viewport(outputPath="test.png", width=1920, height=1080)`
+    - Verify image at specified resolution
+
+13. **Capture with Render Wait**
+    - In Raytraced mode: `capture_viewport(waitForRender=100, renderTimeout=30)`
+    - Verify capture waits for render passes before capturing
+
+14. **Capture with Transparency**
+    - Use `capture_viewport(outputPath="test.png", transparent=true)`
+    - Verify PNG has transparent background (requires transparent render setting)
+
+15. **Get Available Views**
+    - Use `get_available_views()`
+    - Verify standard views listed (Perspective, Top, Front, Right, etc.)
+
+16. **Capture Specific View**
+    - Use `capture_viewport(view="Top")`
+    - Verify captures from Top view, not active view
+
+### Expected Behaviors
+- Camera positions use "x,y,z" string format
+- Raytraced render status only available when in Raytraced display mode
+- Viewport capture includes Grasshopper preview geometry
+- Transparent capture requires `rhino_set_render_settings(transparent="true")`
 
 ---
 
@@ -798,8 +1321,9 @@ If requested, or if significant issues were found, you may also generate the det
 | 11 | Infrastructure Protection | PASS/PARTIAL/FAIL | X/Y | [Brief note] |
 | 12 | Complex Scenarios | PASS/PARTIAL/FAIL | X/Y | [Brief note] |
 | 13 | Error Handling | PASS/PARTIAL/FAIL | X/Y | [Brief note] |
+| 14 | Rhino Rendering Pipeline | PASS/PARTIAL/FAIL | X/Y | [Brief note] |
 
-**Overall: [X/13 sections passed] [Y total tests passed]**
+**Overall: [X/14 sections passed] [Y total tests passed]**
 
 ---
 
