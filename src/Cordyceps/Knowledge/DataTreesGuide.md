@@ -125,5 +125,5 @@ Result: Move outputs 6 items (3×2 cross product)
 ## Debugging
 
 1. Add Panel components to see data at each stage
-2. Use `get_component_outputs` to check branch/item counts
-3. Use `trace_data_flow(id, "upstream")` to find where structure diverges
+2. Use `gh_inspect(action='outputs', id='...')` to check branch/item counts
+3. Use `gh_inspect(action='trace', id='...', direction='upstream')` to find where structure diverges

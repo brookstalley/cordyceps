@@ -5,9 +5,9 @@
 ### 1. Disable Solver During Bulk Operations
 
 ```
-set_solver_enabled(false)
+gh_document(action='solver', enabled=false)
 // Add components, configure, connect
-set_solver_enabled(true)  // Single recompute
+gh_document(action='solver', enabled=true)  // Single recompute
 ```
 
 Each operation triggers full recompute. Disabling prevents dozens of unnecessary solves.
@@ -15,15 +15,15 @@ Each operation triggers full recompute. Disabling prevents dozens of unnecessary
 ### 2. Name Your Components
 
 ```
-add_component(type: "Number Slider", x: 100, y: 200, nickname: "InputRadius")
+gh_canvas(action='add', type='Number Slider', x=100, y=200, nickname='InputRadius')
 ```
 
-Benefits: readable `get_all_components`, understandable errors, `get_component_by_nickname` lookup.
+Benefits: readable `gh_canvas(action='list')`, understandable errors, `gh_canvas(action='find', nickname='...')` lookup.
 
 ### 3. Validate Before Connecting
 
 ```
-validate_connection(sourceId, sourceParam, targetId, targetParam)
+gh_wire(action='validate', sourceId='...', sourceParam='...', targetId='...', targetParam='...')
 // If valid, then connect
 ```
 
@@ -32,7 +32,7 @@ Failed connections don't error—they create disconnected inputs causing confusi
 ### 4. Check Status After Changes
 
 ```
-get_canvas_status()
+gh_inspect(action='status')
 ```
 
 Shows errors (red), warnings (orange), disconnected inputs, runtime messages.
@@ -45,8 +45,8 @@ Check both inputs' tree structures. Add Graft/Flatten/Path Mapper if needed. See
 
 | Don't | Do Instead |
 |-------|------------|
-| Guess component names | `search_components(query)` first |
-| Ignore orange warnings | Check `get_canvas_status()` |
+| Guess component names | `gh_canvas(action='search', query='...')` first |
+| Ignore orange warnings | Check `gh_inspect(action='status')` |
 | Chain without checking results | Verify `result.success` |
 | Flatten everything | Understand structure, use Graft/Shift Path |
 | Create cycles (A→B→C→A) | Design as DAG (directed acyclic graph) |
@@ -72,24 +72,24 @@ Cache these with Data Dam:
 
 1. **Isolate**: Disconnect suspected components
 2. **Visualize**: Add Panels at each stage
-3. **Check structure**: `get_component_outputs` for branch/item counts
-4. **Trace upstream**: `trace_data_flow(id, "upstream")`
-5. **Read messages**: `get_canvas_status()` runtime messages
+3. **Check structure**: `gh_inspect(action='outputs', id='...')` for branch/item counts
+4. **Trace upstream**: `gh_inspect(action='trace', id='...', direction='upstream')`
+5. **Read messages**: `gh_inspect(action='status')` runtime messages
 
 ## Script Components
 
-1. Set input types explicitly via `configure_script_component`
+1. Set input types explicitly via `gh_script(action='configure', ...)`
 2. Set access modes: Item for singles, List for collections
 3. Handle null inputs
 4. Use Report output for debugging
-5. Use `get_script_info(id)` to inspect existing scripts (source code, parameters, type hints)
-6. Use `get_script_code(id)` for quick source code retrieval
+5. Use `gh_script(action='info', id='...')` to inspect existing scripts (source code, parameters, type hints)
+6. Use `gh_script(action='get', id='...')` for quick source code retrieval
 
 ## Error Recovery
 
 | Error | Fix |
 |-------|-----|
-| "Component not found" | Check spelling, use `search_components`, use GUID |
-| "Connection failed" | Verify IDs exist, check params with `get_component_info` |
+| "Component not found" | Check spelling, use `gh_canvas(action='search')`, use GUID |
+| "Connection failed" | Verify IDs exist, check params with `gh_canvas(action='info')` |
 | Solver error/loop | Check for cycles, disable solver, fix, re-enable |
-| Canvas unresponsive | `set_solver_enabled(false)`, fix problem, re-enable |
+| Canvas unresponsive | `gh_document(action='solver', enabled=false)`, fix problem, re-enable |

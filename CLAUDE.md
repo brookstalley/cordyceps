@@ -29,19 +29,23 @@ The project targets .NET 8.0 and outputs a Grasshopper plugin (`.gha` file). Deb
 
 **Core/ComponentRegistry.cs** - Resolves component type names to actual Grasshopper components. Handles aliases (e.g., "python" -> "Python 3 Script") and supports creation by name or GUID.
 
-### Tool Classes (in Tools/)
+### Tool Classes (in Tools/Unified/)
 
-Each tool class is marked with `[McpServerToolType]` and contains methods marked with `[McpServerTool]`. Methods are automatically converted to snake_case MCP tool names (e.g., `AddComponent` -> `add_component`).
+Each tool class is marked with `[McpServerToolType]` and contains a single method marked with `[McpServerTool]`. The method name is converted to snake_case for the MCP tool name (e.g., `GhCanvas` -> `gh_canvas`). Each tool uses an `action` parameter to dispatch to different operations.
 
-- **CanvasTools** - Add, delete, move, rename components; search available component types
-- **WiringTools** - Connect/disconnect components, bulk wiring, validate connections
-- **ScriptTools** - Configure C#/Python script components with inputs, outputs, and source code
-- **ValueTools** - Set slider values, panel text, configure value lists
-- **GroupTools** - Create/manage visual groups on the canvas
-- **DocumentTools** - Save, load, clear documents; manage snapshots
-- **StateTools** - Enable/disable solver, trigger recompute
-- **InspectionTools** - Get component status, trace data flow, retrieve debug output
-- **ExecutionTools** - Run Rhino commands, Python scripts, macros
+**Grasshopper Tools:**
+- **GhCanvasTool** (`gh_canvas`) - Add, delete, move, rename, find, search, list, bake components
+- **GhWireTool** (`gh_wire`) - Connect/disconnect components, bulk wiring, validate connections
+- **GhAdjustTool** (`gh_adjust`) - Get/set values, configure sliders, toggle preview/enabled
+- **GhDocumentTool** (`gh_document`) - Save, clear documents; manage snapshots; solver control
+- **GhGroupTool** (`gh_group`) - Create/manage visual groups on the canvas
+- **GhScriptTool** (`gh_script`) - Configure C#/Python script components
+- **GhInspectTool** (`gh_inspect`) - Get component status, trace data flow, retrieve debug output
+- **GhCaptureTool** (`gh_capture`) - Capture canvas and viewport images
+
+**Rhino Tools:**
+- **RhinoSceneTool** (`rhino_scene`) - Object management, selection, visibility
+- **RhinoRenderTool** (`rhino_render`) - Display modes, camera, viewport capture
 
 ### Adding New Tools
 

@@ -6,7 +6,7 @@
 ```
 Number Slider → [component expecting Number]
 ```
-Configuration: `set_component_value(id, "0.0<0.5<1.0")` for range 0-1, default 0.5
+Configuration: `gh_adjust(action='config', id='...', min=0, max=1, value=0.5)` for range 0-1, default 0.5
 
 ### Integer Input
 ```
@@ -227,7 +227,7 @@ Evaluate Curve → Point, Tangent, etc.
 
 ## Script Patterns
 
-Use `get_script_info(id)` to inspect existing scripts—returns source code, parameters with type hints, and runtime messages. Use `get_script_code(id)` for quick source retrieval.
+Use `gh_script(action='info', id='...')` to inspect existing scripts—returns source code, parameters with type hints, and runtime messages. Use `gh_script(action='get', id='...')` for quick source retrieval.
 
 ### Basic C# Script
 ```csharp

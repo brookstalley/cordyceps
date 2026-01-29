@@ -44,9 +44,10 @@ claude mcp add --transport http http://127.0.0.1/mcp
 
 ```python
 async with ClientSession(transport) as session:
-    slider = await session.call_tool('gh_add_component', {'type': 'Number Slider', 'x': 50, 'y': 50})
-    circle = await session.call_tool('gh_add_component', {'type': 'Curve/Circle', 'x': 200, 'y': 50})
-    await session.call_tool('gh_connect', {
+    slider = await session.call_tool('gh_canvas', {'action': 'add', 'type': 'Number Slider', 'x': 50, 'y': 50})
+    circle = await session.call_tool('gh_canvas', {'action': 'add', 'type': 'Curve/Circle', 'x': 200, 'y': 50})
+    await session.call_tool('gh_wire', {
+        'action': 'connect',
         'sourceId': slider['id'], 'sourceParam': '0',
         'targetId': circle['id'], 'targetParam': 'R'
     })
@@ -64,33 +65,31 @@ The AI interprets the request and builds the complete Grasshopper definition ste
 
 ## Tools
 
-### Grasshopper Canvas
+All tools use a unified action-based interface. Use `action='help'` on any tool to see available actions and parameters.
 
-**Discovery**: `gh_get_categories`, `gh_search_components`, `gh_get_component_documentation`, `gh_check_deprecation`, `gh_suggest_connections`
+### Grasshopper Tools
 
-**Canvas**: `gh_add_component`, `gh_delete` (single or bulk via `ids` array), `gh_move` (single or bulk via `moves` array), `gh_rename`, `gh_get_all_components`, `gh_get_component_info`, `gh_find_by_nickname`, `gh_get_bounds`, `gh_validate_layout`, `gh_manage_inputs`
+| Tool | Actions | Description |
+|------|---------|-------------|
+| `gh_canvas` | add, delete, move, rename, find, search, list, info, bounds, validate, constant, bake | Component operations |
+| `gh_wire` | connect, disconnect, list, clear, validate | Connection management |
+| `gh_adjust` | get, set, config, preview, enable | Values and component settings |
+| `gh_document` | info, save, clear, solver, recompute, undo, redo, snapshot, revert, snapshots | Document operations |
+| `gh_group` | create, delete, add, remove, rename, color, move, list | Visual groups |
+| `gh_script` | get, set, configure, info | Script components |
+| `gh_inspect` | status, outputs, trace, disconnected, geometry, log, reports, categories, docs | Inspection and debugging |
+| `gh_capture` | canvas, viewport, region, views | Screenshot operations |
 
-**Wiring**: `gh_connect` (single or bulk via `connections` array), `gh_disconnect`, `gh_clear_inputs`, `gh_validate_connection`, `gh_get_connections`
+### Rhino Tools
 
-**Values**: `gh_set_value`, `gh_set_slider`, `gh_configure_value_list`, `gh_add_constant`, `gh_set_preview` (single or bulk via `ids` array), `gh_set_enabled` (single or bulk via `ids` array), `gh_bake`
+| Tool | Actions | Description |
+|------|---------|-------------|
+| `rhino_scene` | objects, select, layers, hide, show, delete, script | Scene object management |
+| `rhino_render` | display, camera, zoom, modes, render | Viewport and rendering |
 
-**Scripts**: `gh_set_script_code`, `gh_get_script_code`, `gh_get_script_info`, `gh_configure_script`
+### Rhino Document Tools
 
-**Groups**: `gh_create_group`, `gh_add_to_group`, `gh_remove_from_group`, `gh_delete_group`, `gh_rename_group`, `gh_set_group_color`, `gh_move_group`, `gh_get_all_groups`
-
-**Inspection**: `gh_get_canvas_status`, `gh_get_disconnected_inputs`, `gh_trace_data_flow`, `gh_get_component_outputs`, `gh_get_geometry`, `gh_get_debug_reports`, `gh_get_debug_log`, `gh_clear_debug_log`
-
-**Capture**: `gh_capture_canvas`, `gh_capture_canvas_region`, `gh_get_available_views`
-
-**Documents**: `gh_get_document_info`, `gh_save_document`, `gh_clear_document`, `gh_set_solver_enabled`, `gh_recompute_solution`, `gh_undo`, `gh_redo`
-
-**Snapshots**: `gh_snapshot`, `gh_revert_snapshot`, `gh_list_snapshots`, `gh_delete_snapshot`
-
-**Execution**: `rhino_execute_script`, `rhino_run_python`, `rhino_create_macro`, `rhino_run_macro`, `rhino_list_macros`, `rhino_delete_macro`
-
-### Rhino Document
-
-**Objects**: `rhino_get_objects`, `rhino_select_objects`, `rhino_deselect_all`, `rhino_set_object_layer`, `rhino_set_object_name`, `rhino_hide_objects`, `rhino_show_objects`, `rhino_delete_objects`
+Individual tools for detailed Rhino document control:
 
 **Layers**: `rhino_get_layers`, `rhino_create_layer`, `rhino_set_layer_properties`, `rhino_delete_layer`
 
@@ -99,8 +98,6 @@ The AI interprets the request and builds the complete Grasshopper definition ste
 **Environments**: `rhino_get_environments`, `rhino_get_current_environment`, `rhino_set_current_environment`, `rhino_create_environment`, `rhino_delete_environment`
 
 **Render Settings**: `rhino_get_render_settings`, `rhino_set_render_settings`, `rhino_get_ground_plane`, `rhino_set_ground_plane`, `rhino_get_sun`, `rhino_set_sun`, `rhino_get_skylight`, `rhino_set_skylight`
-
-**Viewport**: `rhino_get_display_modes`, `rhino_set_display_mode`, `rhino_get_camera`, `rhino_set_camera`, `rhino_zoom_extents`, `rhino_zoom_objects`, `rhino_get_render_status`, `rhino_wait_for_render`, `capture_viewport`
 
 ## Resources
 
@@ -136,7 +133,7 @@ Test coverage includes: component management, wiring, values, groups, scripts, i
 |---------|----------|
 | Plugin won't load | Verify Rhino 8.21+. Unblock the .gha file (Windows) or clear quarantine (macOS). |
 | Can't connect | Ensure Cordyceps component is on canvas. Check the port. |
-| Component not found | Use `gh_search_components` to find exact names. |
+| Component not found | Use `gh_canvas(action='search', query='...')` to find exact names. |
 
 ## Building
 

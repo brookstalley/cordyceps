@@ -555,12 +555,23 @@ namespace Cordyceps
 
 READ FIRST: gh://docs/getting-started (use resources/read)
 
+UNIFIED TOOLS (use action='help' for details):
+- gh_canvas: add, delete, move, rename, find, search, list, info, bounds, validate, constant, bake
+- gh_wire: connect, disconnect, list, clear, validate
+- gh_adjust: get, set, config, preview, enable
+- gh_document: info, save, clear, solver, recompute, undo, redo, snapshot, revert, snapshots
+- gh_group: create, delete, add, remove, rename, color, move, list
+- gh_script: get, set, configure, info
+- gh_inspect: status, outputs, trace, disconnected, geometry, log, reports, categories, docs
+- gh_capture: canvas, viewport, region, views
+- rhino_scene: objects, select, layers, hide, show, delete, script
+- rhino_render: display, camera, zoom, modes, render
+
 Key points:
-- Disable solver during construction: set_solver_enabled(false)
-- Ambiguous names return error with matches; use GUID or Category/Name format
-- Check role field: component (processing), parameter (container), input (slider/toggle)
-- Spacing: 150px horizontal, 70px vertical between components
-- Always validate: get_canvas_status(), validate_layout()
+- Disable solver: gh_document(action='solver', enabled=false)
+- Ambiguous names: use GUID or Category/Name format
+- Spacing: 150px horizontal, 70px vertical
+- Validate: gh_inspect(action='status'), gh_canvas(action='validate')
 
 Resources: gh://docs/getting-started, gh://docs/data-trees, gh://component/{name}, gh://patterns/*
 ";
@@ -597,8 +608,8 @@ Resources: gh://docs/getting-started, gh://docs/data-trees, gh://component/{name
             if (tool == null)
                 throw new Exception($"Unknown tool: {name}");
 
-            // Create tool instance manually (all tool classes take GrasshopperContext, McpServer)
-            var instance = Activator.CreateInstance(tool.DeclaringType, _context, this);
+            // Create tool instance (all tool classes take GrasshopperContext)
+            var instance = Activator.CreateInstance(tool.DeclaringType, _context);
 
             // Build method arguments
             var methodParams = tool.Method.GetParameters();

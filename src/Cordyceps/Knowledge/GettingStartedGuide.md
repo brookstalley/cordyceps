@@ -2,6 +2,24 @@
 
 Grasshopper is a visual dataflow graph for parametric 3D design. Components on a canvas connect via wires. Data flows left-to-right.
 
+## Unified Tools
+
+Cordyceps provides 10 unified tools, each with an `action` parameter. Use `action='help'` on any tool to see all available actions and parameters.
+
+**Grasshopper Tools:**
+- `gh_canvas` - Add, delete, move, rename, find, search, list, bake components
+- `gh_wire` - Connect, disconnect, list, validate wires
+- `gh_adjust` - Get/set values, configure sliders, toggles, panels
+- `gh_document` - Info, save, clear, solver control, undo/redo, snapshots
+- `gh_group` - Create, delete, add/remove members, rename, color groups
+- `gh_script` - Get/set script code, configure parameters
+- `gh_inspect` - Canvas status, outputs, trace data flow, find disconnected
+- `gh_capture` - Capture canvas, viewport, regions
+
+**Rhino Tools:**
+- `rhino_scene` - Objects, selection, layers, hide/show, delete, run scripts
+- `rhino_render` - Display modes, camera, zoom, render status
+
 ## Object Types
 
 Three roles (check `role` field in responses):
@@ -31,33 +49,57 @@ Typical sizes: Number Slider ~200x20px, Panel ~100x50px, Components ~60-80x50px.
 
 **Key principle**: Minimize horizontal spread. Stack inputs vertically. Only spread horizontally to follow data flow direction.
 
-Use `validate_layout()` to check overlaps. Fix overlapping components manually with `move_component()`.
+Use `gh_canvas(action='validate')` to check overlaps. Fix with `gh_canvas(action='move')`.
 
 ## Workflow
 
-1. `set_solver_enabled(false)` — prevent partial recalculation during construction
+1. `gh_document(action='solver', enabled=false)` — prevent partial recalculation during construction
 2. **If creating oriented geometry** (cylinders, cones, extrusions), read `gh://docs/geometry-orientation` first — oriented geometry extends along the plane's Z-axis, not X or Y
-3. Add components with `add_component(type, x, y)` using proper spacing
-4. Wire with `bulk_connect(connections)` for efficiency
-5. `set_solver_enabled(true)` — run the definition
-6. `get_canvas_status()` — check for errors/warnings
-7. `validate_layout()` — check for overlaps
+3. Add components with `gh_canvas(action='add', type='...', x=..., y=...)` using proper spacing
+4. Wire with `gh_wire(action='connect', connections='[...]')` for efficiency
+5. `gh_document(action='solver', enabled=true)` — run the definition
+6. `gh_inspect(action='status')` — check for errors/warnings
+7. `gh_canvas(action='validate')` — check for overlaps
 
 ## Key Tools
 
-Discovery: `get_categories()`, `search_components(query, category?, limit?)`, `get_component_info(id)`, `get_component_parameters(type)`
+**Discovery:**
+- `gh_inspect(action='categories')` — list all component categories
+- `gh_canvas(action='search', query='...')` — find components by name
+- `gh_canvas(action='info', id='...')` — get component details
+- `gh_inspect(action='docs', type='...')` — get component documentation
 
-Building: `add_component`, `connect_components`, `bulk_connect`, `set_component_value`, `set_slider_properties`
+**Building:**
+- `gh_canvas(action='add', type='...', x=..., y=...)` — add component
+- `gh_wire(action='connect', sourceId='...', sourceParam='...', targetId='...', targetParam='...')` — single connection
+- `gh_wire(action='connect', connections='[{...},{...}]')` — bulk connections
+- `gh_adjust(action='set', id='...', value='...')` — set value
+- `gh_adjust(action='config', id='...', min=..., max=..., value=...)` — configure slider
 
-Querying: `get_all_components(category?, type?, group?)`, `get_connections(componentId?)`, `get_canvas_status(category?)`
+**Querying:**
+- `gh_canvas(action='list')` — list all components
+- `gh_wire(action='list')` — list all connections
+- `gh_inspect(action='status')` — get canvas status with errors/warnings
 
-Validation: `validate_connection`, `validate_layout`, `get_disconnected_inputs`
+**Validation:**
+- `gh_wire(action='validate', sourceId='...', sourceParam='...', targetId='...', targetParam='...')` — check connection validity
+- `gh_canvas(action='validate')` — check for overlapping components
+- `gh_inspect(action='disconnected')` — find disconnected inputs
 
-Debugging: `get_component_outputs(id)`, `trace_data_flow(id, direction)`
+**Debugging:**
+- `gh_inspect(action='outputs', id='...')` — get component output values
+- `gh_inspect(action='trace', id='...', direction='upstream')` — trace data flow
 
-Scripts: `get_script_code(id)`, `get_script_info(id)`, `set_script_code(id, code)`, `configure_script_component(id, inputs, outputs, fullSource)`
+**Scripts:**
+- `gh_script(action='get', id='...')` — get script source code
+- `gh_script(action='set', id='...', code='...')` — set script code
+- `gh_script(action='info', id='...')` — get script details (code, params, errors)
+- `gh_script(action='configure', id='...', inputs='[...]', outputs='[...]', code='...')` — configure script
 
-Visualization: `capture_canvas(outputPath)`, `capture_viewport(outputPath)`, `get_available_views()`
+**Visualization:**
+- `gh_capture(action='canvas')` — capture Grasshopper canvas
+- `gh_capture(action='viewport')` — capture Rhino 3D viewport
+- `gh_capture(action='views')` — list available views
 
 ## Common Errors
 
@@ -66,21 +108,21 @@ Visualization: `capture_canvas(outputPath)`, `capture_viewport(outputPath)`, `ge
 3. Wrong role → using Circle parameter instead of Circle component
 4. Getting max(N,M) outputs instead of N×M → need to graft one input. See `gh://docs/data-trees`
 5. Unvalidated connections → silent type coercion failures
-6. Component overlaps → unreadable canvas. **Fix**: Use `validate_layout()` to detect, then `move_component()` to fix manually
+6. Component overlaps → unreadable canvas. **Fix**: Use `gh_canvas(action='validate')` to detect, then `gh_canvas(action='move')` to fix
 7. Geometry pointing wrong direction → oriented geometry (Cylinder, Cone, etc.) extends along the plane's **Z-axis**. Using XY Plane gives vertical geometry; use YZ Plane or Plane Normal for horizontal. See `gh://docs/geometry-orientation`
 
 ## Capturing Images
 
 Use capture tools to see what you've built:
 
-- `capture_canvas(outputPath)` — Save the Grasshopper canvas as an image. Auto-fits to content by default.
-- `capture_canvas(outputPath, fitContent=false)` — Capture current view without auto-fitting.
-- `capture_canvas_region(outputPath, xMin, yMin, xMax, yMax)` — Capture a specific canvas region.
-- `capture_viewport(outputPath)` — Save the Rhino 3D viewport showing geometry preview.
-- `capture_viewport(outputPath, view="Top", width=1920, height=1080)` — Capture a specific view at custom resolution.
-- `get_available_views()` — List available Rhino viewports (Perspective, Top, Front, etc.)
+- `gh_capture(action='canvas')` — Save the Grasshopper canvas as an image. Auto-fits to content by default.
+- `gh_capture(action='canvas', fit=false)` — Capture current view without auto-fitting.
+- `gh_capture(action='region', xMin=..., yMin=..., xMax=..., yMax=...)` — Capture a specific canvas region.
+- `gh_capture(action='viewport')` — Save the Rhino 3D viewport showing geometry preview.
+- `gh_capture(action='viewport', view='Top', width=1920, height=1080)` — Capture a specific view at custom resolution.
+- `gh_capture(action='views')` — List available Rhino viewports (Perspective, Top, Front, etc.)
 
-All capture functions return `base64` image data when `includeBase64=true`, useful for inline display.
+All capture functions return a file path. Use the Read tool to view captured images.
 
 ## Rhino Rendering Pipeline
 
@@ -88,26 +130,41 @@ After building geometry in Grasshopper, you can bake to Rhino and create rendere
 
 **Workflow:** Create geometry → Bake → Organize layers → Apply materials → Set viewport → Capture
 
-### Rhino Tools (rhino_* prefix)
+**Baking:**
+- `gh_canvas(action='bake', id='...', layer='...')` — bake component output to Rhino
 
-**Objects:** `rhino_get_objects`, `rhino_select_objects`, `rhino_set_object_layer`, `rhino_hide_objects`, `rhino_show_objects`, `rhino_delete_objects`
+### Rhino Tools
 
-**Layers:** `rhino_get_layers`, `rhino_create_layer`, `rhino_set_layer_properties`, `rhino_delete_layer`
+**Objects:**
+- `rhino_scene(action='objects')` — list Rhino objects
+- `rhino_scene(action='select', ids='[...]')` — select objects
+- `rhino_scene(action='hide', ids='[...]')` — hide objects
+- `rhino_scene(action='show', ids='[...]')` — show objects
+- `rhino_scene(action='delete', ids='[...]')` — delete objects
 
-**Materials:** `rhino_get_materials`, `rhino_create_material`, `rhino_apply_material`, `rhino_delete_material`
+**Layers:**
+- `rhino_scene(action='layers')` — list all layers
 
-**Viewport:** `rhino_get_display_modes`, `rhino_set_display_mode`, `rhino_get_camera`, `rhino_set_camera`, `rhino_zoom_extents`, `rhino_zoom_objects`
+**Viewport:**
+- `rhino_render(action='modes')` — list display modes
+- `rhino_render(action='display', mode='Raytraced')` — set display mode
+- `rhino_render(action='camera')` — get camera info
+- `rhino_render(action='camera', location='x,y,z', target='x,y,z')` — set camera
+- `rhino_render(action='zoom')` — zoom to fit all
+- `rhino_render(action='zoom', ids='[...]')` — zoom to specific objects
 
-**Render Status:** `rhino_get_render_status`, `rhino_wait_for_render` (for Raytraced mode)
+**Render Status:**
+- `rhino_render(action='render')` — get render status (for Raytraced mode)
+- `rhino_render(action='render', wait=200, timeout=30)` — wait for render passes
 
 ### Camera Orbit Pattern
 
 No orbit tool provided — calculate camera positions yourself:
-1. `rhino_get_camera()` → get location, target, distance
+1. `rhino_render(action='camera')` → get location, target, distance
 2. Calculate new position: `newX = target.x + distance * cos(angle)`, `newY = target.y + distance * sin(angle)`
-3. `rhino_set_camera(location="newX,newY,z")` → move camera
-4. `rhino_wait_for_render(minPasses=200)` → wait for Raytraced
-5. `capture_viewport(path="frame_001.png")` → capture frame
+3. `rhino_render(action='camera', location='newX,newY,z')` → move camera
+4. `rhino_render(action='render', wait=200)` → wait for Raytraced
+5. `gh_capture(action='viewport', path='frame_001.png')` → capture frame
 
 For complete rendering workflow details, read `gh://docs/rendering`.
 

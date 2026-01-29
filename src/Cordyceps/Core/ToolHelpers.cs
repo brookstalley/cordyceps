@@ -859,6 +859,50 @@ namespace Cordyceps.Core
             return false;
         }
 
+        /// <summary>
+        /// Parse a boolean string value with a default fallback.
+        /// Accepts: "true", "false", "1", "0" (case-insensitive)
+        /// </summary>
+        /// <param name="value">String value to parse</param>
+        /// <param name="defaultValue">Default value if parsing fails</param>
+        /// <returns>Parsed boolean or default value</returns>
+        public static bool ParseBool(string value, bool defaultValue = false)
+        {
+            if (string.IsNullOrEmpty(value))
+                return defaultValue;
+
+            if (bool.TryParse(value, out bool result))
+                return result;
+
+            // Also accept "1"/"0"
+            if (value == "1") return true;
+            if (value == "0") return false;
+
+            return defaultValue;
+        }
+
+        /// <summary>
+        /// Try to parse a Point3d from a comma-separated string "x,y,z".
+        /// </summary>
+        /// <param name="value">String in "x,y,z" format</param>
+        /// <param name="result">Output: parsed Point3d if successful</param>
+        /// <returns>True if parsing succeeded, false otherwise</returns>
+        public static bool TryParsePoint3d(string value, out Rhino.Geometry.Point3d result)
+        {
+            result = Rhino.Geometry.Point3d.Unset;
+            if (string.IsNullOrEmpty(value)) return false;
+
+            var parts = value.Split(',');
+            if (parts.Length != 3) return false;
+
+            if (!double.TryParse(parts[0].Trim(), out var x)) return false;
+            if (!double.TryParse(parts[1].Trim(), out var y)) return false;
+            if (!double.TryParse(parts[2].Trim(), out var z)) return false;
+
+            result = new Rhino.Geometry.Point3d(x, y, z);
+            return true;
+        }
+
         #endregion
     }
 }

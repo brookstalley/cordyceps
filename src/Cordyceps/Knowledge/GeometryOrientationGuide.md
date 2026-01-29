@@ -68,7 +68,7 @@ Result: Geometry oriented to surface normal
 
 ## Verifying Orientation
 
-After creating geometry, use `get_geometry(componentId)` and check bounding box:
+After creating geometry, use `gh_inspect(action='geometry', id='...')` and check bounding box:
 
 - Large extent in one axis = geometry extends along that axis
 - For cylinder pointing toward origin: long axis of bbox should point toward (0,0,0)
