@@ -139,15 +139,53 @@ namespace Cordyceps.Tools
                 {
                     dynamic scriptComp = component;
 
-                    // Source-first approach: set source, then sync parameters
-                    if (!string.IsNullOrEmpty(fullSource))
+                    // PARAMETERS-FIRST approach: Configure parameters using VariableParameterComponent,
+                    // THEN set the source code. This ensures parameter names match the source.
+                    if (component is IGH_VariableParameterComponent varParamComp)
                     {
+                        DebugLog.Info($"Configuring parameters first for {ghComponent.NickName}");
+                        configured = ConfigureViaVariableParams(ghComponent, varParamComp, inputDefs, outputDefs);
+
+                        if (configured)
+                        {
+                            message = $"Parameters configured ({ghComponent.Params.Input.Count} inputs, {ghComponent.Params.Output.Count} outputs)";
+                            DebugLog.Info(message);
+
+                            // Now set the source code after parameters are configured
+                            if (!string.IsNullOrEmpty(fullSource))
+                            {
+                                try
+                                {
+                                    scriptComp.SetSource(fullSource);
+                                    message += ", source set";
+                                    DebugLog.Info("Source code set successfully");
+                                }
+                                catch (Exception srcEx)
+                                {
+                                    DebugLog.Warn($"Failed to set source: {srcEx.Message}");
+                                    message += $", source failed: {srcEx.Message}";
+                                }
+                            }
+
+                            ghComponent.ExpireSolution(true);
+                            doc.NewSolution(false);
+                        }
+                        else
+                        {
+                            DebugLog.Warn("VariableParameterComponent configuration failed");
+                        }
+                    }
+
+                    // Fallback: Try source-first approach if VariableParameterComponent didn't work
+                    if (!configured && !string.IsNullOrEmpty(fullSource))
+                    {
+                        DebugLog.Info("Trying source-first approach as fallback");
                         try
                         {
                             scriptComp.SetSource(fullSource);
                             DebugLog.Info($"SetSource completed for {ghComponent.NickName}");
 
-                            // Try multiple methods to sync parameters
+                            // Try to sync parameters from the source
                             try
                             {
                                 scriptComp.SetParametersFromScript();
@@ -167,11 +205,11 @@ namespace Cordyceps.Tools
                                 }
                             }
 
-                            if (component is IGH_VariableParameterComponent vpComp)
+                            if (component is IGH_VariableParameterComponent vpComp2)
                             {
                                 try
                                 {
-                                    vpComp.VariableParameterMaintenance();
+                                    vpComp2.VariableParameterMaintenance();
                                     DebugLog.Debug("VariableParameterMaintenance completed");
                                 }
                                 catch (Exception ex3)
@@ -180,62 +218,27 @@ namespace Cordyceps.Tools
                                 }
                             }
 
-                            // Apply access modes
-                            ApplyAccessModes(ghComponent, inputDefs);
-
                             ghComponent.ExpireSolution(true);
                             doc.NewSolution(false);
 
-                            // Verify parameters were created
-                            int inputCount = ghComponent.Params.Input.Count;
-                            int outputCount = ghComponent.Params.Output.Count;
-                            DebugLog.Info($"After sync - inputs: {inputCount}, outputs: {outputCount}");
-
-                            // Consider configured if we have the expected parameters
-                            if (inputCount >= inputDefs.Count && outputCount >= outputDefs.Count)
+                            // Verify parameters match requested names
+                            bool paramsMatch = VerifyParameterNames(ghComponent, inputDefs, outputDefs);
+                            if (paramsMatch)
                             {
                                 configured = true;
-                                message = $"Configured via source-first ({inputCount} inputs, {outputCount} outputs)";
+                                message = $"Configured via source-first ({ghComponent.Params.Input.Count} inputs, {ghComponent.Params.Output.Count} outputs)";
                             }
                             else
                             {
-                                message = $"Source set but parameters not synced (got {inputCount}/{inputDefs.Count} inputs, {outputCount}/{outputDefs.Count} outputs)";
+                                message = "Source set but parameter names don't match - check that RunScript signature matches inputs/outputs definitions";
                                 DebugLog.Warn(message);
                             }
                         }
                         catch (Exception ex)
                         {
                             DebugLog.Error($"Source-first failed: {ex.Message}");
+                            message = $"Source-first failed: {ex.Message}";
                         }
-                    }
-
-                    // Fallback: VariableParameterComponent approach
-                    if (!configured && component is IGH_VariableParameterComponent varParamComp)
-                    {
-                        configured = ConfigureViaVariableParams(ghComponent, varParamComp, inputDefs, outputDefs);
-                        if (configured)
-                        {
-                            message = "Configured via VariableParameterComponent";
-
-                            if (!string.IsNullOrEmpty(fullSource))
-                            {
-                                try
-                                {
-                                    scriptComp.SetSource(fullSource);
-                                    message += ", source set";
-                                }
-                                catch (Exception srcEx)
-                                {
-                                    DebugLog.Warn($"Failed to set source in VariableParameter fallback: {srcEx.Message}");
-                                }
-                            }
-                        }
-                    }
-
-                    if (configured)
-                    {
-                        ghComponent.ExpireSolution(true);
-                        doc.NewSolution(false);
                     }
                 }
                 catch (Exception ex)
@@ -278,6 +281,51 @@ namespace Cordyceps.Tools
                     outputs = finalOutputs
                 });
             });
+        }
+
+        /// <summary>
+        /// Verify that the component's parameters match the requested definitions by name
+        /// </summary>
+        private bool VerifyParameterNames(IGH_Component comp, List<ParamDef> inputDefs, List<ParamDef> outputDefs)
+        {
+            // Check inputs match (skip 'out' which is always first output)
+            for (int i = 0; i < inputDefs.Count; i++)
+            {
+                if (i >= comp.Params.Input.Count)
+                    return false;
+
+                var param = comp.Params.Input[i];
+                var def = inputDefs[i];
+
+                // Check if name matches (case-insensitive)
+                if (!string.Equals(param.Name, def.Name, StringComparison.OrdinalIgnoreCase) &&
+                    !string.Equals(param.NickName, def.Name, StringComparison.OrdinalIgnoreCase))
+                {
+                    DebugLog.Debug($"Input mismatch at {i}: expected '{def.Name}', got '{param.Name}' / '{param.NickName}'");
+                    return false;
+                }
+            }
+
+            // Check outputs match (skip 'out' which is index 0)
+            for (int i = 0; i < outputDefs.Count; i++)
+            {
+                // Output index 0 is usually 'out', so user-defined outputs start at index 1
+                int paramIndex = i + 1;
+                if (paramIndex >= comp.Params.Output.Count)
+                    return false;
+
+                var param = comp.Params.Output[paramIndex];
+                var def = outputDefs[i];
+
+                if (!string.Equals(param.Name, def.Name, StringComparison.OrdinalIgnoreCase) &&
+                    !string.Equals(param.NickName, def.Name, StringComparison.OrdinalIgnoreCase))
+                {
+                    DebugLog.Debug($"Output mismatch at {i}: expected '{def.Name}', got '{param.Name}' / '{param.NickName}'");
+                    return false;
+                }
+            }
+
+            return true;
         }
 
         [McpServerTool, Description("Get the source code from a C# or Python script component")]
