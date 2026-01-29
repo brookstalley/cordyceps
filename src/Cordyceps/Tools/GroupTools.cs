@@ -27,7 +27,7 @@ namespace Cordyceps.Tools
         }
 
         [McpServerTool, Description("Create a visual group on the Grasshopper canvas")]
-        public string CreateGroup(
+        public string GhCreateGroup(
             [Description("Name/label for the group")] string name,
             [Description("Color as hex (#FF0000) or name (Red)")] string color = null)
         {
@@ -58,7 +58,7 @@ namespace Cordyceps.Tools
         }
 
         [McpServerTool, Description("Add components to a visual group")]
-        public string AddToGroup(
+        public string GhAddToGroup(
             [Description("JSON array of component GUIDs to add")] string componentIds,
             [Description("Existing group GUID (optional)")] string groupId = null,
             [Description("Name for new group if groupId not provided")] string groupName = null,
@@ -168,7 +168,7 @@ namespace Cordyceps.Tools
         }
 
         [McpServerTool, Description("Delete a visual group from the canvas")]
-        public string DeleteGroup(
+        public string GhDeleteGroup(
             [Description("Group GUID")] string id)
         {
             _server?.RecordCommand("delete_group");
@@ -192,7 +192,7 @@ namespace Cordyceps.Tools
         }
 
         [McpServerTool, Description("Set the color of a visual group")]
-        public string SetGroupColor(
+        public string GhSetGroupColor(
             [Description("Group GUID")] string id,
             [Description("Color as hex (#FF0000) or name (Red)")] string color)
         {
@@ -221,7 +221,7 @@ namespace Cordyceps.Tools
         }
 
 [McpServerTool, Description("Remove components from a visual group")]
-        public string RemoveFromGroup(
+        public string GhRemoveFromGroup(
             [Description("Group GUID")] string groupId,
             [Description("JSON array of component GUIDs to remove")] string componentIds)
         {
@@ -278,7 +278,7 @@ namespace Cordyceps.Tools
         }
 
         [McpServerTool, Description("Rename a visual group")]
-        public string RenameGroup(
+        public string GhRenameGroup(
             [Description("Group GUID")] string id,
             [Description("New name for the group")] string newName)
         {
@@ -308,7 +308,7 @@ namespace Cordyceps.Tools
         }
 
         [McpServerTool, Description("Move all components in a group by an offset")]
-        public string MoveGroup(
+        public string GhMoveGroup(
             [Description("Group GUID or name")] string group,
             [Description("X offset to move")] double dx,
             [Description("Y offset to move")] double dy)
@@ -410,7 +410,7 @@ namespace Cordyceps.Tools
         }
 
         [McpServerTool, Description("Get all visual groups on the canvas")]
-        public string GetAllGroups()
+        public string GhGetAllGroups()
         {
             _server?.RecordCommand("get_all_groups");
             return _context.ExecuteOnUiThread(() =>

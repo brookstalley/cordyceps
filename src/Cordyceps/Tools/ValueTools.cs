@@ -30,8 +30,8 @@ namespace Cordyceps.Tools
             _server = server;
         }
 
-        [McpServerTool, Description("Set a component's value (slider, panel, or parameter). For sliders, sets the current value only. Use set_slider_properties to configure slider range and type.")]
-        public string SetComponentValue(
+        [McpServerTool, Description("Set a component's value (slider, panel, or parameter). For sliders, sets the current value only. Use gh_set_slider_properties to configure slider range and type. Example: gh_set_value(id='abc', value='42')")]
+        public string GhSetValue(
             [Description("Component GUID")] string id,
             [Description("Value to set (number for sliders, text for panels)")] string value)
         {
@@ -105,8 +105,8 @@ namespace Cordyceps.Tools
             });
         }
 
-        [McpServerTool, Description("Get parameter information for a component type (inputs, outputs, descriptions)")]
-        public string GetComponentParameters(
+        [McpServerTool, Description("Get parameter information for a component type (inputs, outputs, descriptions). Example: gh_get_parameters(componentType='Circle')")]
+        public string GhGetParameters(
             [Description("Component type name (e.g., 'Circle', 'Addition')")] string componentType)
         {
             _server?.RecordCommand("get_component_parameters");
@@ -181,8 +181,8 @@ namespace Cordyceps.Tools
             });
         }
 
-        [McpServerTool, Description("Configure a Number Slider's range, value, and type (integer vs floating-point)")]
-        public string SetSliderProperties(
+        [McpServerTool, Description("Configure a Number Slider's range, value, and type (integer vs floating-point). Example: gh_set_slider(id='abc', min=0, max=100, value=50)")]
+        public string GhSetSlider(
             [Description("Slider component GUID")] string id,
             [Description("Minimum value for the slider range")] double min,
             [Description("Maximum value for the slider range")] double max,
@@ -261,104 +261,45 @@ namespace Cordyceps.Tools
             });
         }
 
-        [McpServerTool, Description("Set component preview visibility (whether geometry is shown in Rhino viewport)")]
-        public string SetPreview(
-            [Description("Component GUID")] string id,
-            [Description("Preview state: true=visible, false=hidden")] bool enabled)
+        [McpServerTool, Description("Set component preview visibility (whether geometry is shown in Rhino viewport). Accepts single id or array. Example: gh_set_preview(id='abc', enabled=true) or gh_set_preview(ids='[\"a\",\"b\"]', enabled=false)")]
+        public string GhSetPreview(
+            [Description("Single component GUID")] string id = null,
+            [Description("JSON array of component GUIDs")] string ids = null,
+            [Description("Preview state: true=visible, false=hidden")] bool enabled = true)
         {
-            _server?.RecordCommand("set_preview");
-            return _context.ExecuteOnUiThread(() =>
-            {
-                // Use protected method - infrastructure components appear as "not found"
-                if (!ToolHelpers.TryGetUnprotectedComponentWithDoc(_context, id, out var doc, out var component, out var error))
-                    return ToolHelpers.ErrorResponse(error);
-
-                if (component is IGH_PreviewObject previewObj)
-                {
-                    previewObj.Hidden = !enabled; // Hidden is opposite of preview enabled
-
-                    doc.NewSolution(false);
-
-                    return JsonConvert.SerializeObject(new
-                    {
-                        success = true,
-                        id = component.InstanceGuid.ToString(),
-                        previewEnabled = enabled
-                    });
-                }
-                else
-                {
-                    return JsonConvert.SerializeObject(new { success = false, error = "Component does not support preview" });
-                }
-            });
-        }
-
-        [McpServerTool, Description("Set component enabled/disabled state (disabled components don't compute)")]
-        public string SetEnabled(
-            [Description("Component GUID")] string id,
-            [Description("Enabled state: true=enabled (computes), false=disabled (locked)")] bool enabled)
-        {
-            _server?.RecordCommand("set_enabled");
-            return _context.ExecuteOnUiThread(() =>
-            {
-                // Use protected method - infrastructure components appear as "not found"
-                if (!ToolHelpers.TryGetUnprotectedComponentWithDoc(_context, id, out var doc, out var component, out var error))
-                    return ToolHelpers.ErrorResponse(error);
-
-                if (component is IGH_ActiveObject activeObj)
-                {
-                    activeObj.Locked = !enabled; // Locked is opposite of enabled
-
-                    activeObj.ExpireSolution(true);
-                    doc.NewSolution(false);
-
-                    return JsonConvert.SerializeObject(new
-                    {
-                        success = true,
-                        id = component.InstanceGuid.ToString(),
-                        enabled = enabled
-                    });
-                }
-                else
-                {
-                    return JsonConvert.SerializeObject(new { success = false, error = "Component does not support enable/disable" });
-                }
-            });
-        }
-
-        [McpServerTool, Description("Set preview visibility for multiple components at once")]
-        public string BulkSetPreview(
-            [Description("JSON array of component GUIDs")] string ids,
-            [Description("Preview state to set for all: true=visible, false=hidden")] bool enabled)
-        {
-            _server?.RecordCommand("bulk_set_preview");
+            _server?.RecordCommand("gh_set_preview");
             return _context.ExecuteOnUiThread(() =>
             {
                 if (!ToolHelpers.TryGetActiveDocument(_context, out var doc, out var error))
                     return ToolHelpers.ErrorResponse(error);
 
+                // Build ID list from either parameter
                 List<string> idList;
-                try
+                if (!string.IsNullOrEmpty(ids))
                 {
-                    idList = JsonConvert.DeserializeObject<List<string>>(ids);
+                    try { idList = JsonConvert.DeserializeObject<List<string>>(ids); }
+                    catch (Exception ex) { return ToolHelpers.ErrorResponse($"Invalid ids format: {ex.Message}"); }
                 }
-                catch (Exception ex)
+                else if (!string.IsNullOrEmpty(id))
                 {
-                    return ToolHelpers.ErrorResponse($"Invalid ids format: {ex.Message}");
+                    idList = new List<string> { id };
+                }
+                else
+                {
+                    return ToolHelpers.ErrorResponse("Either 'id' or 'ids' is required");
                 }
 
                 if (idList == null || idList.Count == 0)
-                    return ToolHelpers.ErrorResponse("ids array is empty");
+                    return ToolHelpers.ErrorResponse("No component IDs provided");
 
                 var results = new List<object>();
-                int succeeded = 0;
-                int failed = 0;
+                int succeeded = 0, failed = 0;
 
-                foreach (var id in idList)
+                foreach (var compId in idList)
                 {
-                    if (!ToolHelpers.TryGetUnprotectedComponent(_context, id, out var component, out var compError))
+                    if (!ToolHelpers.TryGetUnprotectedComponent(_context, compId, out var component, out var compError))
                     {
-                        results.Add(new { id, success = false, error = compError });
+                        results.Add(new { id = compId, success = false, error = compError });
                         failed++;
                         continue;
                     }
@@ -366,17 +307,21 @@ namespace Cordyceps.Tools
                     if (component is IGH_PreviewObject previewObj)
                     {
                         previewObj.Hidden = !enabled;
-                        results.Add(new { id, success = true, previewEnabled = enabled });
+                        results.Add(new { id = compId, success = true, previewEnabled = enabled });
                         succeeded++;
                     }
                     else
                     {
-                        results.Add(new { id, success = false, error = "Component does not support preview" });
+                        results.Add(new { id = compId, success = false, error = "Component does not support preview" });
                         failed++;
                     }
                 }
 
                 doc.NewSolution(false);
+
+                // Simplified response for single item
+                if (idList.Count == 1)
+                    return JsonConvert.SerializeObject(results[0]);
 
                 return JsonConvert.SerializeObject(new
                 {
@@ -390,39 +335,45 @@ namespace Cordyceps.Tools
             });
         }
 
-        [McpServerTool, Description("Set enabled/disabled state for multiple components at once")]
-        public string BulkSetEnabled(
-            [Description("JSON array of component GUIDs")] string ids,
-            [Description("Enabled state to set for all: true=enabled, false=disabled")] bool enabled)
+        [McpServerTool, Description("Set component enabled/disabled state (disabled components don't compute). Accepts single id or array. Example: gh_set_enabled(id='abc', enabled=true)")]
+        public string GhSetEnabled(
+            [Description("Single component GUID")] string id = null,
+            [Description("JSON array of component GUIDs")] string ids = null,
+            [Description("Enabled state: true=enabled (computes), false=disabled (locked)")] bool enabled = true)
         {
-            _server?.RecordCommand("bulk_set_enabled");
+            _server?.RecordCommand("gh_set_enabled");
             return _context.ExecuteOnUiThread(() =>
             {
                 if (!ToolHelpers.TryGetActiveDocument(_context, out var doc, out var error))
                     return ToolHelpers.ErrorResponse(error);
 
+                // Build ID list from either parameter
                 List<string> idList;
-                try
+                if (!string.IsNullOrEmpty(ids))
                 {
-                    idList = JsonConvert.DeserializeObject<List<string>>(ids);
+                    try { idList = JsonConvert.DeserializeObject<List<string>>(ids); }
+                    catch (Exception ex) { return ToolHelpers.ErrorResponse($"Invalid ids format: {ex.Message}"); }
                 }
-                catch (Exception ex)
+                else if (!string.IsNullOrEmpty(id))
                 {
-                    return ToolHelpers.ErrorResponse($"Invalid ids format: {ex.Message}");
+                    idList = new List<string> { id };
+                }
+                else
+                {
+                    return ToolHelpers.ErrorResponse("Either 'id' or 'ids' is required");
                 }
 
                 if (idList == null || idList.Count == 0)
-                    return ToolHelpers.ErrorResponse("ids array is empty");
+                    return ToolHelpers.ErrorResponse("No component IDs provided");
 
                 var results = new List<object>();
-                int succeeded = 0;
-                int failed = 0;
+                int succeeded = 0, failed = 0;
 
-                foreach (var id in idList)
+                foreach (var compId in idList)
                 {
-                    if (!ToolHelpers.TryGetUnprotectedComponent(_context, id, out var component, out var compError))
+                    if (!ToolHelpers.TryGetUnprotectedComponent(_context, compId, out var component, out var compError))
                     {
-                        results.Add(new { id, success = false, error = compError });
+                        results.Add(new { id = compId, success = false, error = compError });
                         failed++;
                         continue;
                     }
@@ -431,17 +382,21 @@ namespace Cordyceps.Tools
                     {
                         activeObj.Locked = !enabled;
                         activeObj.ExpireSolution(true);
-                        results.Add(new { id, success = true, enabled });
+                        results.Add(new { id = compId, success = true, enabled });
                         succeeded++;
                     }
                     else
                     {
-                        results.Add(new { id, success = false, error = "Component does not support enable/disable" });
+                        results.Add(new { id = compId, success = false, error = "Component does not support enable/disable" });
                         failed++;
                     }
                 }
 
                 doc.NewSolution(false);
+
+                // Simplified response for single item
+                if (idList.Count == 1)
+                    return JsonConvert.SerializeObject(results[0]);
 
                 return JsonConvert.SerializeObject(new
                 {
@@ -455,8 +410,8 @@ namespace Cordyceps.Tools
             });
         }
 
-        [McpServerTool, Description("Bake geometry from a component's output to the Rhino document")]
-        public string BakeGeometry(
+        [McpServerTool, Description("Bake geometry from a component's output to the Rhino document. Example: gh_bake(id='abc', layer='Baked')")]
+        public string GhBake(
             [Description("Component GUID")] string id,
             [Description("Optional layer name to bake to (creates if doesn't exist)")] string layer = null,
             [Description("Optional name to assign to baked objects")] string name = null)
@@ -578,8 +533,8 @@ namespace Cordyceps.Tools
             });
         }
 
-        [McpServerTool, Description("Configure a Value List component with named items")]
-        public string ConfigureValueList(
+        [McpServerTool, Description("Configure a Value List component with named items. Example: gh_configure_value_list(id='abc', items='[{\"name\":\"Option1\",\"value\":\"0\"}]')")]
+        public string GhConfigureValueList(
             [Description("Value List component GUID")] string id,
             [Description("JSON array of items [{name, value}] where value is the expression (usually same as index)")] string items,
             [Description("Index of initially selected item (0-based)")] int selectedIndex = 0)

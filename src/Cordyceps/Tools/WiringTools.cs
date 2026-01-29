@@ -24,65 +24,140 @@ namespace Cordyceps.Tools
             _server = server;
         }
 
-        [McpServerTool, Description("Connect an output of one component to an input of another component")]
-        public string ConnectComponents(
-            [Description("Source component GUID")] string sourceId,
-            [Description("Source output parameter name or index")] string sourceParam,
-            [Description("Target component GUID")] string targetId,
-            [Description("Target input parameter name or index")] string targetParam)
+        [McpServerTool, Description("Connect component outputs to inputs. Use single params or connections array. Example: gh_connect(sourceId='a', sourceParam='0', targetId='b', targetParam='R') or gh_connect(connections='[{...}]')")]
+        public string GhConnect(
+            [Description("Source component GUID (for single connection)")] string sourceId = null,
+            [Description("Source output parameter name or index (for single connection)")] string sourceParam = null,
+            [Description("Target component GUID (for single connection)")] string targetId = null,
+            [Description("Target input parameter name or index (for single connection)")] string targetParam = null,
+            [Description("JSON array of connections: [{sourceId, sourceParam, targetId, targetParam}, ...]")] string connections = null)
         {
-            _server?.RecordCommand("connect_components");
+            _server?.RecordCommand("gh_connect");
             return _context.ExecuteOnUiThread(() =>
             {
-                // Use protected methods - infrastructure components appear as "not found"
-                if (!ToolHelpers.TryGetUnprotectedComponentWithDoc(_context, sourceId, out var doc, out var srcObj, out var error))
-                    return ToolHelpers.ErrorResponse($"Source: {error}");
+                if (!ToolHelpers.TryGetActiveDocument(_context, out var doc, out var error))
+                    return ToolHelpers.ErrorResponse(error);
 
-                if (!ToolHelpers.TryGetUnprotectedComponent(_context, targetId, out var tgtObj, out error))
-                    return ToolHelpers.ErrorResponse($"Target: {error}");
+                // Get infrastructure IDs to filter
+                var infraIds = ToolHelpers.GetCordycepsInfrastructureIds(doc);
 
-                IGH_Param sourceOutput = GetOutputParameter(srcObj, sourceParam);
-                if (sourceOutput == null)
+                // Build connection list from either parameter style
+                List<dynamic> connectionList;
+                if (!string.IsNullOrEmpty(connections))
                 {
-                    // List available outputs for debugging
-                    var availableOutputs = new List<string>();
-                    if (srcObj is IGH_Component srcComp)
+                    try
                     {
-                        availableOutputs = srcComp.Params.Output.Select(p => p.Name).ToList();
+                        connectionList = JsonConvert.DeserializeObject<List<dynamic>>(connections);
                     }
-                    Core.DebugLog.Warn($"Source output '{sourceParam}' not found. Available: [{string.Join(", ", availableOutputs)}]");
-                    return JsonConvert.SerializeObject(new { success = false, error = $"Source output parameter not found: {sourceParam}", availableOutputs });
+                    catch (Exception ex)
+                    {
+                        return ToolHelpers.ErrorResponse($"Failed to parse connections JSON: {ex.Message}");
+                    }
+                }
+                else if (!string.IsNullOrEmpty(sourceId) && !string.IsNullOrEmpty(targetId))
+                {
+                    connectionList = new List<dynamic> { new { sourceId, sourceParam = sourceParam ?? "0", targetId, targetParam = targetParam ?? "0" } };
+                }
+                else
+                {
+                    return ToolHelpers.ErrorResponse("Provide sourceId+targetId for single connection, or connections array for bulk");
                 }
 
-                IGH_Param targetInput = GetInputParameter(tgtObj, targetParam);
-                if (targetInput == null)
+                if (connectionList == null || connectionList.Count == 0)
+                    return ToolHelpers.ErrorResponse("No connections provided");
+
+                var results = new List<object>();
+                int successCount = 0;
+                int failCount = 0;
+
+                foreach (var conn in connectionList)
                 {
-                    // List available inputs for debugging
-                    var availableInputs = new List<string>();
-                    if (tgtObj is IGH_Component tgtComp)
+                    string srcId = conn.sourceId?.ToString();
+                    string srcParam = conn.sourceParam?.ToString() ?? "0";
+                    string tgtId = conn.targetId?.ToString();
+                    string tgtParam = conn.targetParam?.ToString() ?? "0";
+
+                    if (string.IsNullOrEmpty(srcId) || string.IsNullOrEmpty(tgtId))
                     {
-                        availableInputs = tgtComp.Params.Input.Select(p => p.Name).ToList();
+                        results.Add(new { success = false, error = "Missing sourceId or targetId" });
+                        failCount++;
+                        continue;
                     }
-                    Core.DebugLog.Warn($"Target input '{targetParam}' not found on {tgtObj.NickName}. Available: [{string.Join(", ", availableInputs)}]");
-                    return JsonConvert.SerializeObject(new { success = false, error = $"Target input parameter not found: {targetParam}", availableInputs });
+
+                    if (!Guid.TryParse(srcId, out Guid srcGuid) || infraIds.Contains(srcGuid))
+                    {
+                        results.Add(new { success = false, error = "Source component not found" });
+                        failCount++;
+                        continue;
+                    }
+
+                    if (!Guid.TryParse(tgtId, out Guid tgtGuid) || infraIds.Contains(tgtGuid))
+                    {
+                        results.Add(new { success = false, error = "Target component not found" });
+                        failCount++;
+                        continue;
+                    }
+
+                    var srcObj = doc.FindObject(srcGuid, true);
+                    var tgtObj = doc.FindObject(tgtGuid, true);
+                    if (srcObj == null || tgtObj == null)
+                    {
+                        results.Add(new { success = false, error = "Component not found" });
+                        failCount++;
+                        continue;
+                    }
+
+                    IGH_Param sourceOutput = GetOutputParameter(srcObj, srcParam);
+                    IGH_Param targetInput = GetInputParameter(tgtObj, tgtParam);
+
+                    if (sourceOutput == null)
+                    {
+                        var availableOutputs = srcObj is IGH_Component c ? c.Params.Output.Select(p => p.Name).ToList() : new List<string>();
+                        results.Add(new { success = false, error = $"Source output '{srcParam}' not found", availableOutputs });
+                        failCount++;
+                        continue;
+                    }
+
+                    if (targetInput == null)
+                    {
+                        var availableInputs = tgtObj is IGH_Component c ? c.Params.Input.Select(p => p.Name).ToList() : new List<string>();
+                        results.Add(new { success = false, error = $"Target input '{tgtParam}' not found", availableInputs });
+                        failCount++;
+                        continue;
+                    }
+
+                    targetInput.AddSource(sourceOutput);
+                    results.Add(new
+                    {
+                        success = true,
+                        source = new { id = srcId, name = srcObj.NickName ?? srcObj.Name, param = sourceOutput.Name },
+                        target = new { id = tgtId, name = tgtObj.NickName ?? tgtObj.Name, param = targetInput.Name }
+                    });
+                    successCount++;
                 }
 
-                targetInput.AddSource(sourceOutput);
                 doc.NewSolution(true);
 
-                Core.DebugLog.Debug($"Connected {srcObj.NickName}.{sourceOutput.Name} -> {tgtObj.NickName}.{targetInput.Name}");
+                // Simplified response for single connection
+                if (connectionList.Count == 1)
+                {
+                    var result = results[0];
+                    return JsonConvert.SerializeObject(result);
+                }
 
                 return JsonConvert.SerializeObject(new
                 {
-                    success = true,
-                    source = new { id = sourceId, param = sourceOutput.Name },
-                    target = new { id = targetId, param = targetInput.Name }
+                    success = failCount == 0,
+                    total = connectionList.Count,
+                    succeeded = successCount,
+                    failed = failCount,
+                    results
                 });
             });
         }
 
-        [McpServerTool, Description("Disconnect a wire between two components")]
-        public string DisconnectComponents(
+        [McpServerTool, Description("Disconnect a wire between two components. Example: gh_disconnect(sourceId='a', sourceParam='0', targetId='b', targetParam='R')")]
+        public string GhDisconnect(
             [Description("Source component GUID")] string sourceId,
             [Description("Source output parameter name or index")] string sourceParam,
             [Description("Target component GUID")] string targetId,
@@ -123,8 +198,8 @@ namespace Cordyceps.Tools
             });
         }
 
-        [McpServerTool, Description("Clear all connections to a component's inputs (useful before re-wiring)")]
-        public string ClearComponentInputs(
+        [McpServerTool, Description("Clear all connections to a component's inputs (useful before re-wiring). Example: gh_clear_inputs(id='abc-123')")]
+        public string GhClearInputs(
             [Description("Component GUID")] string id)
         {
             _server?.RecordCommand("clear_component_inputs");
@@ -179,8 +254,8 @@ namespace Cordyceps.Tools
             });
         }
 
-        [McpServerTool, Description("Get all connections (wires) between components on the canvas")]
-        public string GetConnections(
+        [McpServerTool, Description("Get all connections (wires) between components on the canvas. Example: gh_get_connections() or gh_get_connections(componentId='abc')")]
+        public string GhGetConnections(
             [Description("Filter to connections involving this component ID (as source or target)")] string componentId = null)
         {
             _server?.RecordCommand("get_connections");
@@ -315,199 +390,6 @@ namespace Cordyceps.Tools
             return index >= 0 ? index : 0;
         }
 
-        [McpServerTool, Description("Create multiple connections at once efficiently. Each connection needs sourceId, sourceParam, targetId, targetParam.")]
-        public string BulkConnect(
-            [Description("JSON array of connection objects: [{sourceId, sourceParam, targetId, targetParam}, ...]")] string connections)
-        {
-            _server?.RecordCommand("bulk_connect");
-            return _context.ExecuteOnUiThread(() =>
-            {
-                if (!ToolHelpers.TryGetActiveDocument(_context, out var doc, out var error))
-                    return ToolHelpers.ErrorResponse(error);
-
-                // Get infrastructure IDs to filter
-                var infraIds = ToolHelpers.GetCordycepsInfrastructureIds(doc);
-
-                List<dynamic> connectionList;
-                try
-                {
-                    connectionList = JsonConvert.DeserializeObject<List<dynamic>>(connections);
-                }
-                catch (Exception ex)
-                {
-                    return JsonConvert.SerializeObject(new { success = false, error = $"Failed to parse connections JSON: {ex.Message}" });
-                }
-
-                if (connectionList == null || connectionList.Count == 0)
-                {
-                    return JsonConvert.SerializeObject(new { success = false, error = "No connections provided" });
-                }
-
-                var results = new List<object>();
-                int successCount = 0;
-                int failCount = 0;
-
-                int connectionIndex = 0;
-                foreach (var conn in connectionList)
-                {
-                    try
-                    {
-                        string sourceId = conn.sourceId?.ToString();
-                        string sourceParam = conn.sourceParam?.ToString();
-                        string targetId = conn.targetId?.ToString();
-                        string targetParam = conn.targetParam?.ToString();
-
-                        // Build connection reference for error reporting
-                        var connRef = new
-                        {
-                            index = connectionIndex,
-                            sourceId,
-                            sourceParam,
-                            targetId,
-                            targetParam
-                        };
-
-                        if (string.IsNullOrEmpty(sourceId) || string.IsNullOrEmpty(targetId))
-                        {
-                            results.Add(new { success = false, error = "Missing sourceId or targetId", connection = connRef });
-                            failCount++;
-                            connectionIndex++;
-                            continue;
-                        }
-
-                        if (!Guid.TryParse(sourceId, out Guid srcGuid))
-                        {
-                            results.Add(new { success = false, error = $"Invalid source ID: {sourceId}", connection = connRef });
-                            failCount++;
-                            connectionIndex++;
-                            continue;
-                        }
-
-                        if (!Guid.TryParse(targetId, out Guid tgtGuid))
-                        {
-                            results.Add(new { success = false, error = $"Invalid target ID: {targetId}", connection = connRef });
-                            failCount++;
-                            connectionIndex++;
-                            continue;
-                        }
-
-                        // Check if protected - report as "not found" to maintain invisibility
-                        if (infraIds.Contains(srcGuid))
-                        {
-                            results.Add(new { success = false, error = $"Source component not found", connection = connRef });
-                            failCount++;
-                            connectionIndex++;
-                            continue;
-                        }
-
-                        if (infraIds.Contains(tgtGuid))
-                        {
-                            results.Add(new { success = false, error = $"Target component not found", connection = connRef });
-                            failCount++;
-                            connectionIndex++;
-                            continue;
-                        }
-
-                        var srcObj = doc.FindObject(srcGuid, true);
-                        if (srcObj == null)
-                        {
-                            results.Add(new { success = false, error = $"Source component not found", connection = connRef });
-                            failCount++;
-                            connectionIndex++;
-                            continue;
-                        }
-
-                        var tgtObj = doc.FindObject(tgtGuid, true);
-                        if (tgtObj == null)
-                        {
-                            results.Add(new { success = false, error = $"Target component not found", connection = connRef });
-                            failCount++;
-                            connectionIndex++;
-                            continue;
-                        }
-
-                        // Get available params for better error messages
-                        var availableOutputs = srcObj is IGH_Component srcComp
-                            ? srcComp.Params.Output.Select(p => p.Name).ToList()
-                            : new List<string> { "(parameter)" };
-                        var availableInputs = tgtObj is IGH_Component tgtComp
-                            ? tgtComp.Params.Input.Select(p => p.Name).ToList()
-                            : new List<string> { "(parameter)" };
-
-                        IGH_Param sourceOutput = GetOutputParameter(srcObj, sourceParam ?? "0");
-                        if (sourceOutput == null)
-                        {
-                            results.Add(new
-                            {
-                                success = false,
-                                error = $"Source output '{sourceParam}' not found on '{srcObj.NickName ?? srcObj.Name}'",
-                                connection = connRef,
-                                availableOutputs
-                            });
-                            failCount++;
-                            connectionIndex++;
-                            continue;
-                        }
-
-                        IGH_Param targetInput = GetInputParameter(tgtObj, targetParam ?? "0");
-                        if (targetInput == null)
-                        {
-                            results.Add(new
-                            {
-                                success = false,
-                                error = $"Target input '{targetParam}' not found on '{tgtObj.NickName ?? tgtObj.Name}'",
-                                connection = connRef,
-                                availableInputs
-                            });
-                            failCount++;
-                            connectionIndex++;
-                            continue;
-                        }
-
-                        targetInput.AddSource(sourceOutput);
-                        results.Add(new
-                        {
-                            success = true,
-                            index = connectionIndex,
-                            source = new { id = sourceId, name = srcObj.NickName ?? srcObj.Name, param = sourceOutput.Name },
-                            target = new { id = targetId, name = tgtObj.NickName ?? tgtObj.Name, param = targetInput.Name }
-                        });
-                        successCount++;
-                    }
-                    catch (Exception ex)
-                    {
-                        results.Add(new
-                        {
-                            success = false,
-                            index = connectionIndex,
-                            error = ex.Message,
-                            connection = new
-                            {
-                                sourceId = conn.sourceId?.ToString(),
-                                sourceParam = conn.sourceParam?.ToString(),
-                                targetId = conn.targetId?.ToString(),
-                                targetParam = conn.targetParam?.ToString()
-                            }
-                        });
-                        failCount++;
-                    }
-                    connectionIndex++;
-                }
-
-                // Trigger one solution after all connections
-                doc.NewSolution(true);
-
-                return JsonConvert.SerializeObject(new
-                {
-                    success = failCount == 0,
-                    total = connectionList.Count,
-                    succeeded = successCount,
-                    failed = failCount,
-                    results = results
-                });
-            });
-        }
-
         #region Connection Validation Helpers
 
         private (string Level, string Message) AnalyzeTypeCompatibility(string sourceType, string targetType)
@@ -604,8 +486,8 @@ namespace Cordyceps.Tools
 
         #endregion
 
-        [McpServerTool, Description("Validate if a connection between two components is possible before creating it")]
-        public string ValidateConnection(
+        [McpServerTool, Description("Validate if a connection between two components is possible before creating it. Example: gh_validate_connection(sourceId='a', targetId='b')")]
+        public string GhValidateConnection(
             [Description("Source component GUID")] string sourceId,
             [Description("Source output parameter name or index (optional)")] string sourceParam = null,
             [Description("Target component GUID")] string targetId = null,

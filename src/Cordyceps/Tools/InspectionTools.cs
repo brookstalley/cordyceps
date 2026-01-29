@@ -34,7 +34,7 @@ namespace Cordyceps.Tools
         }
 
         [McpServerTool, Description("Get the status of all components on the canvas (OK, ERROR, WARNING, DISCONNECTED)")]
-        public string GetCanvasStatus(
+        public string GhGetCanvasStatus(
             [Description("Filter by category (e.g., 'Curve', 'Kangaroo'). Use get_categories to see valid values.")] string category = null)
         {
             _server?.RecordCommand("get_canvas_status");
@@ -150,7 +150,7 @@ namespace Cordyceps.Tools
         }
 
         [McpServerTool, Description("List all component categories with counts and plugin info. Use to discover valid category values for filtering.")]
-        public string GetCategories()
+        public string GhGetCategories()
         {
             _server?.RecordCommand("get_categories");
             return _context.ExecuteOnUiThread(() =>
@@ -221,7 +221,7 @@ namespace Cordyceps.Tools
         }
 
         [McpServerTool, Description("Get all disconnected (unconnected required) inputs across components")]
-        public string GetDisconnectedInputs(
+        public string GhGetDisconnectedInputs(
             [Description("Filter by component type: 'all', 'script', or component name")] string type = "all")
         {
             _server?.RecordCommand("get_disconnected_inputs");
@@ -279,7 +279,7 @@ namespace Cordyceps.Tools
         }
 
         [McpServerTool, Description("Trace the data flow upstream or downstream from a component")]
-        public string TraceDataFlow(
+        public string GhTraceDataFlow(
             [Description("Component GUID to trace from")] string id,
             [Description("Direction: 'upstream' or 'downstream'")] string direction = "upstream")
         {
@@ -318,7 +318,7 @@ namespace Cordyceps.Tools
         }
 
         [McpServerTool, Description("Get the output values/data from a component")]
-        public string GetComponentOutputs(
+        public string GhGetComponentOutputs(
             [Description("Component GUID")] string id)
         {
             _server?.RecordCommand("get_component_outputs");
@@ -386,7 +386,7 @@ namespace Cordyceps.Tools
         }
 
 [McpServerTool, Description("Get all debug report outputs (dbg_Report, out, Report) from script components")]
-        public string GetDebugReports()
+        public string GhGetDebugReports()
         {
             _server?.RecordCommand("get_debug_reports");
             return _context.ExecuteOnUiThread(() =>
@@ -443,7 +443,7 @@ namespace Cordyceps.Tools
         }
 
         [McpServerTool, Description("Get geometry information from a component's output (bounding box, counts, validity)")]
-        public string GetGeometry(
+        public string GhGetGeometry(
             [Description("Component GUID")] string id)
         {
             _server?.RecordCommand("get_geometry");
@@ -597,7 +597,7 @@ namespace Cordyceps.Tools
         }
 
         [McpServerTool, Description("Get debug log entries from the Cordyceps log buffer")]
-        public string GetDebugLog(
+        public string GhGetDebugLog(
             [Description("Maximum number of entries to return (default 100)")] int limit = 100,
             [Description("Clear the log buffer after retrieval")] bool clear = false)
         {
@@ -634,7 +634,7 @@ namespace Cordyceps.Tools
         }
 
         [McpServerTool, Description("Clear the debug log buffer")]
-        public string ClearDebugLog()
+        public string GhClearDebugLog()
         {
             _server?.RecordCommand("clear_debug_log");
             DebugLog.Clear();
@@ -642,7 +642,7 @@ namespace Cordyceps.Tools
         }
 
         [McpServerTool, Description("Check if a component type is deprecated and get upgrade information")]
-        public string CheckDeprecation(
+        public string GhCheckDeprecation(
             [Description("Component name or GUID to check")] string component)
         {
             _server?.RecordCommand("check_deprecation");
@@ -712,7 +712,7 @@ namespace Cordyceps.Tools
         }
 
         [McpServerTool, Description("Suggest compatible connections for a component output")]
-        public string SuggestConnections(
+        public string GhSuggestConnections(
             [Description("Source component GUID")] string sourceId,
             [Description("Source output parameter name or index")] string sourceParam = "0")
         {
@@ -811,7 +811,7 @@ namespace Cordyceps.Tools
         }
 
         [McpServerTool, Description("Get detailed documentation for a component type")]
-        public string GetComponentDocumentation(
+        public string GhGetComponentDocumentation(
             [Description("Component name or GUID")] string component)
         {
             _server?.RecordCommand("get_component_documentation");

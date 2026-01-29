@@ -27,7 +27,7 @@ namespace Cordyceps.Tools
         }
 
         [McpServerTool, Description("Create a snapshot of the current Grasshopper document state")]
-        public string Snapshot(
+        public string GhSnapshot(
             [Description("Name for the snapshot (auto-generated if not provided)")] string name = null)
         {
             _server?.RecordCommand("snapshot");
@@ -79,7 +79,7 @@ namespace Cordyceps.Tools
         }
 
         [McpServerTool, Description("Revert to a previously created snapshot")]
-        public string RevertSnapshot(
+        public string GhRevertSnapshot(
             [Description("Name of the snapshot to revert to")] string name)
         {
             _server?.RecordCommand("revert_snapshot");
@@ -138,7 +138,7 @@ namespace Cordyceps.Tools
         }
 
         [McpServerTool, Description("List all available snapshots")]
-        public string ListSnapshots()
+        public string GhListSnapshots()
         {
             _server?.RecordCommand("list_snapshots");
 
@@ -166,7 +166,7 @@ namespace Cordyceps.Tools
         }
 
         [McpServerTool, Description("Delete a snapshot")]
-        public string DeleteSnapshot(
+        public string GhDeleteSnapshot(
             [Description("Name of the snapshot to delete")] string name)
         {
             _server?.RecordCommand("delete_snapshot");

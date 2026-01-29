@@ -36,7 +36,7 @@ namespace Cordyceps.Tools
         }
 
         [McpServerTool, Description("Capture the Grasshopper canvas to an image file. Returns the file path. Use the Read tool to view the captured image.")]
-        public string CaptureCanvas(
+        public string GhCaptureCanvas(
             [Description("File path to save the image (supports .png, .jpg, .bmp). If omitted, saves to a temp file.")] string outputPath = null,
             [Description("If true, auto-zoom to fit all components before capture (default true)")] bool fitContent = true,
             [Description("Padding around content in pixels when fitContent is true (default 50)")] int padding = 50)
@@ -123,7 +123,7 @@ namespace Cordyceps.Tools
         }
 
         [McpServerTool, Description("Capture the Rhino viewport to an image file. This captures the 3D geometry preview including Grasshopper preview geometry.")]
-        public string CaptureViewport(
+        public string GhCaptureViewport(
             [Description("File path to save the image (supports .png, .jpg, .bmp)")] string outputPath = null,
             [Description("View name to capture (e.g., 'Perspective', 'Top', 'Front', 'Right'). Defaults to active view.")] string view = null,
             [Description("Output image width in pixels (default: current viewport width)")] int width = 0,
@@ -325,7 +325,7 @@ namespace Cordyceps.Tools
         }
 
         [McpServerTool, Description("Capture a specific region of the Grasshopper canvas by coordinates.")]
-        public string CaptureCanvasRegion(
+        public string GhCaptureCanvasRegion(
             [Description("File path to save the image (supports .png, .jpg, .bmp)")] string outputPath,
             [Description("Left coordinate (X minimum) in canvas units")] float xMin,
             [Description("Top coordinate (Y minimum) in canvas units")] float yMin,
@@ -394,7 +394,7 @@ namespace Cordyceps.Tools
         }
 
         [McpServerTool, Description("Get list of available Rhino views/viewports that can be captured.")]
-        public string GetAvailableViews()
+        public string GhGetAvailableViews()
         {
             _server?.RecordCommand("get_available_views");
 

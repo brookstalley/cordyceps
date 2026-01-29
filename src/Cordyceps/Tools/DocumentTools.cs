@@ -26,7 +26,7 @@ namespace Cordyceps.Tools
         }
 
         [McpServerTool, Description("Get information about the current Grasshopper document")]
-        public string GetDocumentInfo()
+        public string GhGetDocumentInfo()
         {
             _server?.RecordCommand("get_document_info");
             return _context.ExecuteOnUiThread(() =>
@@ -62,7 +62,7 @@ namespace Cordyceps.Tools
         }
 
         [McpServerTool, Description("Clear all objects from the Grasshopper canvas except the Cordyceps MCP infrastructure (the server component, its connected inputs/outputs, and containing group)")]
-        public string ClearDocument()
+        public string GhClearDocument()
         {
             _server?.RecordCommand("clear_document");
             return _context.ExecuteOnUiThread(() =>
@@ -95,7 +95,7 @@ namespace Cordyceps.Tools
         }
 
         [McpServerTool, Description("Save the current Grasshopper document to a .gh or .ghx file")]
-        public string SaveDocument(
+        public string GhSaveDocument(
             [Description("File path with .gh or .ghx extension")] string filePath)
         {
             _server?.RecordCommand("save_document");
@@ -154,7 +154,7 @@ namespace Cordyceps.Tools
         // Use ClearDocument instead, which preserves the Cordyceps infrastructure.
 
         [McpServerTool, Description("Enable or disable the Grasshopper solver")]
-        public string SetSolverEnabled(
+        public string GhSetSolverEnabled(
             [Description("True to enable, false to disable")] bool enabled)
         {
             _server?.RecordCommand("set_solver_enabled");
@@ -179,7 +179,7 @@ namespace Cordyceps.Tools
         }
 
         [McpServerTool, Description("Trigger a solution recompute on all components")]
-        public string RecomputeSolution()
+        public string GhRecomputeSolution()
         {
             _server?.RecordCommand("recompute_solution");
             return _context.ExecuteOnUiThread(() =>
@@ -198,7 +198,7 @@ namespace Cordyceps.Tools
         }
 
         [McpServerTool, Description("Undo the last action on the Grasshopper canvas. Only available after at least one MCP operation has been performed.")]
-        public string Undo()
+        public string GhUndo()
         {
             _server?.RecordCommand("undo");
             return _context.ExecuteOnUiThread(() =>
@@ -244,7 +244,7 @@ namespace Cordyceps.Tools
         }
 
         [McpServerTool, Description("Redo a previously undone action on the Grasshopper canvas")]
-        public string Redo()
+        public string GhRedo()
         {
             _server?.RecordCommand("redo");
             return _context.ExecuteOnUiThread(() =>

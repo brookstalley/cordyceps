@@ -26,8 +26,8 @@ namespace Cordyceps.Tools
             _server = server;
         }
 
-        [McpServerTool, Description("Add a component to the Grasshopper canvas by name or GUID. Use GUID or 'Category/Name' format to avoid ambiguity.")]
-        public string AddComponent(
+        [McpServerTool, Description("Add a component to the Grasshopper canvas by name or GUID. Use GUID or 'Category/Name' format to avoid ambiguity. Example: gh_add_component(type='Circle', x=200, y=100)")]
+        public string GhAddComponent(
             [Description("Component type name (e.g., 'Circle', 'Addition'), GUID, or category-qualified name ('Curve/Circle')")] string type,
             [Description("X position on canvas")] double x,
             [Description("Y position on canvas")] double y,
@@ -168,57 +168,52 @@ namespace Cordyceps.Tools
             });
         }
 
-        [McpServerTool, Description("Delete a component from the canvas by its ID")]
-        public string DeleteComponent(
-            [Description("Component GUID")] string id)
+        [McpServerTool, Description("Delete one or more components from the canvas. Accepts single id or array of ids. Example: gh_delete(id='abc-123') or gh_delete(ids='[\"abc\", \"def\"]')")]
+        public string GhDelete(
+            [Description("Single component GUID to delete")] string id = null,
+            [Description("JSON array of component GUIDs to delete")] string ids = null)
         {
-            _server?.RecordCommand("delete_component");
-            return _context.ExecuteOnUiThread(() =>
-            {
-                // Use protected method - infrastructure components appear as "not found"
-                if (!ToolHelpers.TryGetUnprotectedComponentWithDoc(_context, id, out var doc, out var component, out var error))
-                    return ToolHelpers.ErrorResponse(error);
-
-                doc.RemoveObject(component, true);
-                doc.NewSolution(true);
-
-                return JsonConvert.SerializeObject(new { success = true, deleted = id });
-            });
-        }
-
-        [McpServerTool, Description("Delete multiple components from the canvas. Best-effort: deletes what it can and reports failures.")]
-        public string BulkDeleteComponents(
-            [Description("JSON array of component GUIDs to delete")] string ids)
-        {
-            _server?.RecordCommand("bulk_delete_components");
+            _server?.RecordCommand("gh_delete");
             return _context.ExecuteOnUiThread(() =>
             {
                 if (!ToolHelpers.TryGetActiveDocument(_context, out var doc, out var error))
                     return ToolHelpers.ErrorResponse(error);
 
+                // Build ID list from either parameter
                 List<string> idList;
-                try
+                if (!string.IsNullOrEmpty(ids))
                 {
-                    idList = JsonConvert.DeserializeObject<List<string>>(ids);
+                    try
+                    {
+                        idList = JsonConvert.DeserializeObject<List<string>>(ids);
+                    }
+                    catch (Exception ex)
+                    {
+                        return ToolHelpers.ErrorResponse($"Invalid ids format: {ex.Message}");
+                    }
                 }
-                catch (Exception ex)
+                else if (!string.IsNullOrEmpty(id))
                 {
-                    return ToolHelpers.ErrorResponse($"Invalid ids format: {ex.Message}");
+                    idList = new List<string> { id };
+                }
+                else
+                {
+                    return ToolHelpers.ErrorResponse("Either 'id' or 'ids' is required");
                 }
 
                 if (idList == null || idList.Count == 0)
-                    return ToolHelpers.ErrorResponse("ids array is empty");
+                    return ToolHelpers.ErrorResponse("No component IDs provided");
 
                 var results = new List<object>();
                 var deletedIds = new List<string>();
                 int succeeded = 0;
                 int failed = 0;
 
-                foreach (var id in idList)
+                foreach (var compId in idList)
                 {
-                    if (!ToolHelpers.TryGetUnprotectedComponent(_context, id, out var component, out var compError))
+                    if (!ToolHelpers.TryGetUnprotectedComponent(_context, compId, out var component, out var compError))
                     {
-                        results.Add(new { id, success = false, error = compError });
+                        results.Add(new { id = compId, success = false, error = compError });
                         failed++;
                         continue;
                     }
@@ -226,13 +221,13 @@ namespace Cordyceps.Tools
                     try
                     {
                         doc.RemoveObject(component, true);
-                        deletedIds.Add(id);
-                        results.Add(new { id, success = true });
+                        deletedIds.Add(compId);
+                        results.Add(new { id = compId, success = true });
                         succeeded++;
                     }
                     catch (Exception ex)
                     {
-                        results.Add(new { id, success = false, error = ex.Message });
+                        results.Add(new { id = compId, success = false, error = ex.Message });
                         failed++;
                     }
                 }
@@ -240,6 +235,17 @@ namespace Cordyceps.Tools
                 if (succeeded > 0)
                 {
                     doc.NewSolution(true);
+                }
+
+                // Simplified response for single-item operations
+                if (idList.Count == 1)
+                {
+                    return JsonConvert.SerializeObject(new
+                    {
+                        success = succeeded == 1,
+                        deleted = deletedIds.Count > 0 ? deletedIds[0] : null,
+                        error = failed > 0 ? ((dynamic)results[0]).error : null
+                    });
                 }
 
                 return JsonConvert.SerializeObject(new
@@ -254,35 +260,134 @@ namespace Cordyceps.Tools
             });
         }
 
-        [McpServerTool, Description("Move a component to a new position on the canvas")]
-        public string MoveComponent(
-            [Description("Component GUID")] string id,
-            [Description("New X position")] double x,
-            [Description("New Y position")] double y)
+        [McpServerTool, Description("Move one or more components on the canvas. Use id/x/y for single move, or moves array for bulk. Example: gh_move(id='abc', x=100, y=200) or gh_move(moves='[{\"id\":\"abc\",\"x\":100,\"y\":200}]')")]
+        public string GhMove(
+            [Description("Single component GUID to move")] string id = null,
+            [Description("New X position (for single move)")] double x = double.NaN,
+            [Description("New Y position (for single move)")] double y = double.NaN,
+            [Description("JSON array of move operations: [{id, x, y}, ...]")] string moves = null)
         {
-            _server?.RecordCommand("move_component");
+            _server?.RecordCommand("gh_move");
             return _context.ExecuteOnUiThread(() =>
             {
-                // Use protected method - infrastructure components appear as "not found"
-                if (!ToolHelpers.TryGetUnprotectedComponent(_context, id, out var component, out var error))
+                if (!ToolHelpers.TryGetActiveDocument(_context, out var doc, out var error))
                     return ToolHelpers.ErrorResponse(error);
 
-                component.Attributes.Pivot = new PointF((float)x, (float)y);
-                component.Attributes.ExpireLayout();
+                // Build move list from either parameter style
+                List<dynamic> moveList;
+                if (!string.IsNullOrEmpty(moves))
+                {
+                    if (!ToolHelpers.TryDeserializeList<dynamic>(moves, out moveList, out error))
+                        return ToolHelpers.ErrorResponse(error);
+                }
+                else if (!string.IsNullOrEmpty(id) && !double.IsNaN(x) && !double.IsNaN(y))
+                {
+                    moveList = new List<dynamic> { new { id, x, y } };
+                }
+                else
+                {
+                    return ToolHelpers.ErrorResponse("Either provide 'id'+'x'+'y' for single move, or 'moves' array for bulk");
+                }
+
+                if (moveList == null || moveList.Count == 0)
+                    return ToolHelpers.ErrorResponse("No moves provided");
+
+                // Get infrastructure IDs to filter
+                var infraIds = ToolHelpers.GetCordycepsInfrastructureIds(doc);
+
+                var results = new List<object>();
+                int successCount = 0;
+                int failCount = 0;
+
+                foreach (var move in moveList)
+                {
+                    try
+                    {
+                        string compId = move.id?.ToString();
+                        if (string.IsNullOrEmpty(compId))
+                        {
+                            results.Add(new { success = false, error = "Missing id in move" });
+                            failCount++;
+                            continue;
+                        }
+
+                        if (!Guid.TryParse(compId, out Guid guid))
+                        {
+                            results.Add(new { success = false, id = compId, error = "Invalid component ID" });
+                            failCount++;
+                            continue;
+                        }
+
+                        // Check if protected - report as "not found" to maintain invisibility
+                        if (infraIds.Contains(guid))
+                        {
+                            results.Add(new { success = false, id = compId, error = "Component not found" });
+                            failCount++;
+                            continue;
+                        }
+
+                        var component = doc.FindObject(guid, true);
+                        if (component == null)
+                        {
+                            results.Add(new { success = false, id = compId, error = "Component not found" });
+                            failCount++;
+                            continue;
+                        }
+
+                        double moveX = (double)move.x;
+                        double moveY = (double)move.y;
+
+                        component.Attributes.Pivot = new PointF((float)moveX, (float)moveY);
+                        component.Attributes.ExpireLayout();
+
+                        var bounds = component.Attributes.Bounds;
+                        results.Add(new
+                        {
+                            success = true,
+                            id = compId,
+                            nickname = component.NickName,
+                            x = moveX,
+                            y = moveY,
+                            bounds = ToolHelpers.BuildBoundsObject(bounds)
+                        });
+                        successCount++;
+                    }
+                    catch (Exception ex)
+                    {
+                        string compId = move.id?.ToString() ?? "unknown";
+                        results.Add(new { success = false, id = compId, error = ex.Message });
+                        failCount++;
+                    }
+                }
+
                 Instances.ActiveCanvas?.Invalidate();
+
+                // Simplified response for single-item operations
+                if (moveList.Count == 1 && successCount == 1)
+                {
+                    var result = (dynamic)results[0];
+                    return JsonConvert.SerializeObject(new
+                    {
+                        success = true,
+                        id = result.id,
+                        pivot = new { x = (double)result.x, y = (double)result.y },
+                        bounds = result.bounds
+                    });
+                }
 
                 return JsonConvert.SerializeObject(new
                 {
-                    success = true,
-                    id = id,
-                    pivot = new { x = x, y = y },
-                    bounds = ToolHelpers.BuildBoundsObject(component.Attributes.Bounds)
+                    success = failCount == 0,
+                    total = moveList.Count,
+                    succeeded = successCount,
+                    failed = failCount,
+                    results
                 });
             });
         }
 
-        [McpServerTool, Description("Get detailed information about a component including its inputs and outputs")]
-        public string GetComponentInfo(
+        [McpServerTool, Description("Get detailed information about a component including its inputs, outputs, and position. Example: gh_get_component_info(id='abc-123')")]
+        public string GhGetComponentInfo(
             [Description("Component GUID")] string id)
         {
             _server?.RecordCommand("get_component_info");
@@ -297,8 +402,8 @@ namespace Cordyceps.Tools
             });
         }
 
-        [McpServerTool, Description("Get all components currently on the Grasshopper canvas, with optional filters")]
-        public string GetAllComponents(
+        [McpServerTool, Description("Get all components currently on the Grasshopper canvas, with optional filters. Example: gh_get_all_components(category='Curve')")]
+        public string GhGetAllComponents(
             [Description("Filter by category (e.g., 'Curve', 'Kangaroo'). Use get_categories to see valid values.")] string category = null,
             [Description("Filter by component type name (e.g., 'Circle', 'Number Slider')")] string type = null,
             [Description("Filter by group name or GUID")] string group = null)
@@ -415,8 +520,8 @@ namespace Cordyceps.Tools
             return null;
         }
 
-        [McpServerTool, Description("Search for available Grasshopper component types by name")]
-        public string SearchComponents(
+        [McpServerTool, Description("Search for available Grasshopper component types by name. Example: gh_search_components(query='circle', category='Curve')")]
+        public string GhSearchComponents(
             [Description("Search query (e.g., 'circle', 'script')")] string query,
             [Description("Filter by category (e.g., 'Curve', 'Kangaroo'). Use get_categories to see valid values.")] string category = null,
             [Description("Maximum number of results to return (default: 50)")] int limit = 50)
@@ -536,8 +641,8 @@ namespace Cordyceps.Tools
             });
         }
 
-        [McpServerTool, Description("Rename a component (change its nickname/display name)")]
-        public string RenameComponent(
+        [McpServerTool, Description("Rename a component (change its nickname/display name). Example: gh_rename(id='abc-123', nickname='MyCircle')")]
+        public string GhRename(
             [Description("Component GUID")] string id,
             [Description("New nickname to display")] string nickname = null,
             [Description("Alias for nickname")] string name = null)
@@ -569,8 +674,8 @@ namespace Cordyceps.Tools
             });
         }
 
-        [McpServerTool, Description("Manage zoomable/variable inputs on components like Merge or Stream Filter")]
-        public string ManageZoomableInputs(
+        [McpServerTool, Description("Manage zoomable/variable inputs on components like Merge or Stream Filter. Example: gh_manage_inputs(id='abc', action='add', side='input', count=2)")]
+        public string GhManageInputs(
             [Description("Component GUID")] string id,
             [Description("Action: 'add', 'remove', or 'set_count'")] string action,
             [Description("Parameter side: 'input' or 'output'")] string side,
@@ -695,8 +800,8 @@ namespace Cordyceps.Tools
             });
         }
 
-        [McpServerTool, Description("Get the bounding box and dimensions of a component on the canvas")]
-        public string GetComponentBounds(
+        [McpServerTool, Description("Get the bounding box and dimensions of a component on the canvas. Example: gh_get_bounds(id='abc-123')")]
+        public string GhGetBounds(
             [Description("Component GUID")] string id)
         {
             _server?.RecordCommand("get_component_bounds");
@@ -741,8 +846,8 @@ namespace Cordyceps.Tools
             });
         }
 
-        [McpServerTool, Description("Validate canvas layout for overlaps and spacing issues")]
-        public string ValidateLayout()
+        [McpServerTool, Description("Validate canvas layout for overlaps and spacing issues. Returns suggestions for fixing layout problems.")]
+        public string GhValidateLayout()
         {
             _server?.RecordCommand("validate_layout");
             return _context.ExecuteOnUiThread(() =>
@@ -840,7 +945,7 @@ namespace Cordyceps.Tools
 
         // TODO: V1.1 - Re-enable when auto-spacing is improved to preserve intentional layout
         // [McpServerTool, Description("Automatically space components to eliminate overlaps")]
-        public string AutoSpaceComponents(
+        public string GhAutoSpace(
             [Description("Spacing mode: 'flow' (default, respects data flow direction, stacks components at same depth vertically), 'vertical' (stack all vertically), 'horizontal' (WARNING: destroys vertical stacking), 'grid'")] string mode = "flow",
             [Description("JSON array of component IDs to arrange (optional, defaults to all)")] string componentIds = null,
             [Description("Spacing between components in pixels. Default 60 is about 1x component width.")] int spacing = 60,
@@ -1097,8 +1202,8 @@ namespace Cordyceps.Tools
             });
         }
 
-        [McpServerTool, Description("Add a constant value panel to the canvas (convenience for creating pre-configured panels)")]
-        public string AddConstant(
+        [McpServerTool, Description("Add a constant value panel to the canvas (convenience for creating pre-configured panels). Example: gh_add_constant(value='3.14159', x=100, y=100)")]
+        public string GhAddConstant(
             [Description("Constant value (e.g., '0', '1', '2', 'Pi')")] string value,
             [Description("X position on canvas")] double x,
             [Description("Y position on canvas")] double y,
@@ -1144,8 +1249,8 @@ namespace Cordyceps.Tools
             });
         }
 
-        [McpServerTool, Description("Suggest a pattern for a given task description")]
-        public string SuggestPattern(
+        [McpServerTool, Description("Suggest a pattern for a given task description. Example: gh_suggest_pattern(description='arrange objects in a circle')")]
+        public string GhSuggestPattern(
             [Description("Description of what you want to create (e.g., 'arrange objects in a circle')")] string description)
         {
             _server?.RecordCommand("suggest_pattern");
@@ -1216,8 +1321,8 @@ namespace Cordyceps.Tools
             });
         }
 
-        [McpServerTool, Description("Find a component by its nickname (display name)")]
-        public string GetComponentByNickname(
+        [McpServerTool, Description("Find a component by its nickname (display name). Example: gh_find_by_nickname(nickname='MyCircle')")]
+        public string GhFindByNickname(
             [Description("Nickname to search for (exact or partial match)")] string nickname,
             [Description("If true, require exact match; if false (default), allow partial/case-insensitive match")] bool exact = false)
         {
@@ -1281,109 +1386,5 @@ namespace Cordyceps.Tools
             });
         }
 
-        [McpServerTool, Description("Move multiple components at once efficiently")]
-        public string BulkMoveComponents(
-            [Description("JSON array of move operations: [{id, x, y}, ...]")] string moves)
-        {
-            _server?.RecordCommand("bulk_move_components");
-            return _context.ExecuteOnUiThread(() =>
-            {
-                if (!ToolHelpers.TryGetActiveDocument(_context, out var doc, out var error))
-                    return ToolHelpers.ErrorResponse(error);
-
-                if (!ToolHelpers.TryDeserializeList<dynamic>(moves, out var moveList, out error))
-                    return ToolHelpers.ErrorResponse(error);
-
-                if (moveList == null || moveList.Count == 0)
-                {
-                    return JsonConvert.SerializeObject(new { success = false, error = "No moves provided" });
-                }
-
-                // Get infrastructure IDs to filter
-                var infraIds = ToolHelpers.GetCordycepsInfrastructureIds(doc);
-
-                var results = new List<object>();
-                int successCount = 0;
-                int failCount = 0;
-
-                foreach (var move in moveList)
-                {
-                    try
-                    {
-                        string id = move.id?.ToString();
-                        if (string.IsNullOrEmpty(id))
-                        {
-                            results.Add(new { success = false, error = "Missing id in move" });
-                            failCount++;
-                            continue;
-                        }
-
-                        if (!Guid.TryParse(id, out Guid guid))
-                        {
-                            results.Add(new { success = false, id, error = "Invalid component ID" });
-                            failCount++;
-                            continue;
-                        }
-
-                        // Check if protected - report as "not found" to maintain invisibility
-                        if (infraIds.Contains(guid))
-                        {
-                            results.Add(new { success = false, id, error = "Component not found" });
-                            failCount++;
-                            continue;
-                        }
-
-                        var component = doc.FindObject(guid, true);
-                        if (component == null)
-                        {
-                            results.Add(new { success = false, id, error = "Component not found" });
-                            failCount++;
-                            continue;
-                        }
-
-                        double x = (double)move.x;
-                        double y = (double)move.y;
-
-                        component.Attributes.Pivot = new PointF((float)x, (float)y);
-                        component.Attributes.ExpireLayout();
-
-                        var bounds = component.Attributes.Bounds;
-                        results.Add(new
-                        {
-                            success = true,
-                            id,
-                            nickname = component.NickName,
-                            x,
-                            y,
-                            bounds = new
-                            {
-                                width = bounds.Width,
-                                height = bounds.Height,
-                                right = bounds.Right,
-                                bottom = bounds.Bottom
-                            }
-                        });
-                        successCount++;
-                    }
-                    catch (Exception ex)
-                    {
-                        string id = move.id?.ToString() ?? "unknown";
-                        results.Add(new { success = false, id, error = ex.Message });
-                        failCount++;
-                    }
-                }
-
-                Instances.ActiveCanvas?.Invalidate();
-
-                return JsonConvert.SerializeObject(new
-                {
-                    success = failCount == 0,
-                    total = moveList.Count,
-                    succeeded = successCount,
-                    failed = failCount,
-                    results
-                });
-            });
-        }
     }
 }

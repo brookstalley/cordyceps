@@ -28,7 +28,7 @@ namespace Cordyceps.Tools
         }
 
         [McpServerTool, Description("Set the source code for a C# or Python script component")]
-        public string SetScriptCode(
+        public string GhSetScriptCode(
             [Description("Script component GUID")] string id,
             [Description("Source code to set")] string code)
         {
@@ -112,7 +112,7 @@ namespace Cordyceps.Tools
         }
 
         [McpServerTool, Description("Configure a script component with inputs, outputs, and source code")]
-        public string ConfigureScriptComponent(
+        public string GhConfigureScript(
             [Description("Script component GUID")] string id,
             [Description("JSON array of input definitions [{name, type, access}]")] string inputs,
             [Description("JSON array of output definitions [{name, type}]")] string outputs,
@@ -329,7 +329,7 @@ namespace Cordyceps.Tools
         }
 
         [McpServerTool, Description("Get the source code from a C# or Python script component")]
-        public string GetScriptCode(
+        public string GhGetScriptCode(
             [Description("Script component GUID")] string id)
         {
             _server?.RecordCommand("get_script_code");
@@ -441,7 +441,7 @@ namespace Cordyceps.Tools
         }
 
         [McpServerTool, Description("Get detailed information about a script component including source code, parameters, and type hints")]
-        public string GetScriptInfo(
+        public string GhGetScriptInfo(
             [Description("Script component GUID")] string id)
         {
             _server?.RecordCommand("get_script_info");

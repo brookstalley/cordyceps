@@ -27,7 +27,7 @@ namespace Cordyceps.Tools
         }
 
         [McpServerTool, Description("Execute a Rhino command script")]
-        public string ExecuteScript(
+        public string RhinoExecuteScript(
             [Description("Rhino command script to execute")] string script)
         {
             _server?.RecordCommand("execute_script");
@@ -45,7 +45,7 @@ namespace Cordyceps.Tools
         }
 
         [McpServerTool, Description("Store a named Rhino command macro for later execution")]
-        public string CreateMacro(
+        public string RhinoCreateMacro(
             [Description("Name for the macro")] string name,
             [Description("Rhino command script to store")] string macro)
         {
@@ -73,7 +73,7 @@ namespace Cordyceps.Tools
         }
 
         [McpServerTool, Description("Run a stored macro by name, or run a provided macro directly")]
-        public string RunMacro(
+        public string RhinoRunMacro(
             [Description("Name of stored macro to run")] string name = null,
             [Description("Direct macro to run (if not using stored macro)")] string macro = null)
         {
@@ -109,7 +109,7 @@ namespace Cordyceps.Tools
         }
 
         [McpServerTool, Description("List all stored macros")]
-        public string ListMacros()
+        public string RhinoListMacros()
         {
             _server?.RecordCommand("list_macros");
 
@@ -135,7 +135,7 @@ namespace Cordyceps.Tools
         }
 
         [McpServerTool, Description("Delete a stored macro")]
-        public string DeleteMacro(
+        public string RhinoDeleteMacro(
             [Description("Name of macro to delete")] string name)
         {
             _server?.RecordCommand("delete_macro");
@@ -162,7 +162,7 @@ namespace Cordyceps.Tools
         }
 
         [McpServerTool, Description("Run a Python script in Rhino")]
-        public string RunGHPython(
+        public string RhinoRunPython(
             [Description("Python script to execute")] string script)
         {
             _server?.RecordCommand("run_gh_python");
