@@ -65,29 +65,24 @@ The AI interprets the request and builds everything autonomously—creating para
 
 ## Tools
 
-Cordyceps provides **12 tools with 90 actions**—deliberately consolidated to minimize context window usage. Rather than exposing every operation as a separate tool (which would require the model to process dozens of tool definitions), related operations are grouped under a single tool with an `action` parameter. This keeps the tool list compact while preserving full functionality.
+Cordyceps provides **8 tools with 92 actions**—deliberately consolidated to minimize context window usage. Rather than exposing every operation as a separate tool (which would require the model to process dozens of tool definitions), related operations are grouped under a single tool with an `action` parameter. This keeps the tool list compact while preserving full functionality.
 
 ### Grasshopper Tools
 
 | Tool | Actions | Description |
 |------|---------|-------------|
-| `gh_canvas` | add, delete, move, rename, find, search, list, info, bounds, validate, constant, bake | Component operations |
+| `gh_canvas` | add, delete, move, rename, find, search, list, info, bounds, validate, constant, bake, zoom, view, get, set, config, preview, enable, group_* | Components, values, groups |
 | `gh_wire` | connect, disconnect, list, clear, validate | Connection management |
-| `gh_adjust` | get, set, config, preview, enable | Values and component settings |
-| `gh_document` | info, save, clear, solver, recompute, undo, redo, snapshot, revert, snapshots | Document operations |
-| `gh_group` | create, delete, add, remove, rename, color, move, list | Visual groups |
+| `gh_document` | info, save, clear, solver, recompute, undo, redo, snapshot, revert, snapshots, capture_* | Document operations and capture |
 | `gh_script` | get, set, configure, info | Script components |
 | `gh_inspect` | status, outputs, trace, disconnected, geometry, log, reports, categories, docs | Inspection and debugging |
-| `gh_capture` | canvas, viewport, region, views | Screenshot operations |
 
 ### Rhino Tools
 
 | Tool | Actions | Description |
 |------|---------|-------------|
-| `rhino_scene` | objects, select, deselect, set_layer, set_name, layers, layer_create, layer_set, layer_delete, hide, show, delete, script | Scene and layer management |
-| `rhino_render` | display, camera, zoom, modes, render, settings, ground, sun, skylight | Viewport, camera, and render settings |
-| `rhino_material` | list, library, instantiate, create, apply, delete | PBR materials |
-| `rhino_environment` | list, current, set, create, delete | Render environments |
+| `rhino_scene` | objects, select, deselect, set_layer, set_name, layers, layer_*, hide, show, delete, script | Scene and layer management |
+| `rhino_render` | display, camera, zoom, modes, render, settings, ground, sun, skylight, material_*, env_* | Viewport, render settings, materials, environments |
 
 ## Resources
 

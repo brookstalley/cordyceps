@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.ComponentModel;
+using System.Drawing;
 using System.Globalization;
 using System.Linq;
 using System.Threading;
@@ -8,6 +9,7 @@ using Cordyceps.Core;
 using Newtonsoft.Json;
 using Rhino;
 using Rhino.Display;
+using Rhino.DocObjects;
 using Rhino.Geometry;
 using Rhino.Render;
 
@@ -20,6 +22,22 @@ namespace Cordyceps.Tools.Unified
     public class RhinoRenderTool
     {
         private readonly GrasshopperContext _context;
+
+        // Built-in material types mapped to ContentUuids
+        private static readonly Dictionary<string, Guid> BuiltInMaterialTypes = new Dictionary<string, Guid>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["Metal"] = ContentUuids.MetalMaterialType,
+            ["Glass"] = ContentUuids.GlassMaterialType,
+            ["Plastic"] = ContentUuids.PlasticMaterialType,
+            ["Paint"] = ContentUuids.PaintMaterialType,
+            ["Gem"] = ContentUuids.GemMaterialType,
+            ["Plaster"] = ContentUuids.PlasterMaterialType,
+            ["Picture"] = ContentUuids.PictureMaterialType,
+            ["PhysicallyBased"] = ContentUuids.PhysicallyBasedMaterialType,
+            ["Blend"] = ContentUuids.BlendMaterialType,
+            ["DoubleSided"] = ContentUuids.DoubleSidedMaterialType,
+            ["Emission"] = ContentUuids.EmissionMaterialType
+        };
 
         private static readonly UnifiedToolInfo ToolInfo = new UnifiedToolInfo
         {
@@ -100,12 +118,90 @@ namespace Cordyceps.Tools.Unified
                 {
                     Name = "help",
                     Description = "Show this help information"
+                },
+                // Material actions (from rhino_material)
+                ["material_list"] = new ActionInfo
+                {
+                    Name = "material_list",
+                    Description = "List all materials in the document",
+                    Example = "action='material_list'"
+                },
+                ["material_library"] = new ActionInfo
+                {
+                    Name = "material_library",
+                    Description = "List available built-in material types",
+                    Example = "action='material_library'"
+                },
+                ["material_instantiate"] = new ActionInfo
+                {
+                    Name = "material_instantiate",
+                    Description = "Create a material from a built-in type",
+                    Required = new[] { "type" },
+                    Optional = new[] { "name", "color" },
+                    Example = "action='material_instantiate', type='Metal', name='Copper', color='#B87333'"
+                },
+                ["material_create"] = new ActionInfo
+                {
+                    Name = "material_create",
+                    Description = "Create a PBR material from scratch",
+                    Required = new[] { "name", "color" },
+                    Optional = new[] { "roughness", "metallic", "transparency", "emission", "ior" },
+                    Example = "action='material_create', name='Red Metal', color='#FF0000', metallic=1"
+                },
+                ["material_apply"] = new ActionInfo
+                {
+                    Name = "material_apply",
+                    Description = "Apply material to objects",
+                    Required = new[] { "ids", "material" },
+                    Example = "action='material_apply', ids='[\"abc\"]', material='Red Metal'"
+                },
+                ["material_delete"] = new ActionInfo
+                {
+                    Name = "material_delete",
+                    Description = "Delete a material",
+                    Required = new[] { "name" },
+                    Example = "action='material_delete', name='Red Metal'"
+                },
+                // Environment actions (from rhino_environment)
+                ["env_list"] = new ActionInfo
+                {
+                    Name = "env_list",
+                    Description = "List all render environments",
+                    Example = "action='env_list'"
+                },
+                ["env_current"] = new ActionInfo
+                {
+                    Name = "env_current",
+                    Description = "Get current environment for each usage type",
+                    Example = "action='env_current'"
+                },
+                ["env_set"] = new ActionInfo
+                {
+                    Name = "env_set",
+                    Description = "Set the current render environment",
+                    Required = new[] { "environment" },
+                    Optional = new[] { "usage" },
+                    Example = "action='env_set', environment='Studio', usage='all'"
+                },
+                ["env_create"] = new ActionInfo
+                {
+                    Name = "env_create",
+                    Description = "Create a solid-color environment",
+                    Required = new[] { "name", "color" },
+                    Example = "action='env_create', name='Blue Sky', color='#87CEEB'"
+                },
+                ["env_delete"] = new ActionInfo
+                {
+                    Name = "env_delete",
+                    Description = "Delete an environment",
+                    Required = new[] { "name" },
+                    Example = "action='env_delete', name='Blue Sky'"
                 }
             },
             Notes = new[]
             {
                 "view defaults to active view if not specified",
-                "Use gh_capture to capture viewport images after setting up view"
+                "Use gh_document(action='capture_viewport') to capture images"
             }
         };
 
@@ -114,7 +210,7 @@ namespace Cordyceps.Tools.Unified
             _context = context;
         }
 
-        [McpServerTool, Description("Render operations. Actions: display|camera|zoom|modes|render|settings|ground|sun|skylight|help")]
+        [McpServerTool, Description("Render operations. Actions: display|camera|zoom|modes|render|settings|ground|sun|skylight|material_list|material_library|material_instantiate|material_create|material_apply|material_delete|env_list|env_current|env_set|env_create|env_delete|help")]
         public string RhinoRender(
             [Description("Action to perform")] string action,
             [Description("Display mode name")] string mode = null,
@@ -122,7 +218,7 @@ namespace Cordyceps.Tools.Unified
             [Description("Camera location 'x,y,z'")] string location = null,
             [Description("Camera target 'x,y,z'")] string target = null,
             [Description("35mm lens length")] string lens = null,
-            [Description("JSON array of object IDs for zoom")] string ids = null,
+            [Description("JSON array of object IDs")] string ids = null,
             [Description("Min render passes to wait for")] string wait = null,
             [Description("Timeout in seconds")] string timeout = null,
             // Settings parameters
@@ -135,7 +231,6 @@ namespace Cordyceps.Tools.Unified
             [Description("Ground plane altitude in model units")] string groundAltitude = null,
             [Description("Auto-altitude (true/false)")] string autoAltitude = null,
             [Description("Shadow-only mode (true/false)")] string shadowOnly = null,
-            [Description("Material name for ground")] string material = null,
             // Sun parameters
             [Description("Enable sun (true/false)")] string sunEnabled = null,
             [Description("Sun azimuth 0-360 (135/225=classic 3/4 lighting)")] string azimuth = null,
@@ -147,7 +242,20 @@ namespace Cordyceps.Tools.Unified
             // Skylight parameters
             [Description("Enable skylight (use WITH sun for realistic shadows)")] string skylightEnabled = null,
             [Description("Shadow intensity")] string shadowIntensity = null,
-            [Description("Custom environment name")] string customEnvironment = null)
+            [Description("Custom environment name")] string customEnvironment = null,
+            // Material parameters
+            [Description("Material or object name")] string name = null,
+            [Description("Built-in material type")] string type = null,
+            [Description("Base color as hex '#RRGGBB'")] string color = null,
+            [Description("Roughness 0-1")] double roughness = 0.5,
+            [Description("Metalness 0-1")] double metallic = 0,
+            [Description("Transparency 0-1")] double transparency = 0,
+            [Description("Emission color")] string emission = null,
+            [Description("IOR (glass=1.5)")] double ior = 1.0,
+            [Description("Material name to apply")] string material = null,
+            // Environment parameters
+            [Description("Environment name or GUID")] string environment = null,
+            [Description("Usage: 'background', 'lighting', 'reflection', 'all'")] string usage = "all")
         {
             if (string.Equals(action, "help", StringComparison.OrdinalIgnoreCase))
                 return UnifiedToolHelpers.GenerateHelp(ToolInfo);
@@ -179,7 +287,19 @@ namespace Cordyceps.Tools.Unified
                 ("dateTime", dateTime),
                 ("skylightEnabled", skylightEnabled),
                 ("shadowIntensity", shadowIntensity),
-                ("customEnvironment", customEnvironment)
+                ("customEnvironment", customEnvironment),
+                // Material params
+                ("name", name),
+                ("type", type),
+                ("color", color),
+                ("roughness", roughness),
+                ("metallic", metallic),
+                ("transparency", transparency),
+                ("emission", emission),
+                ("ior", ior),
+                // Environment params
+                ("environment", environment),
+                ("usage", usage)
             );
 
             var validationError = UnifiedToolHelpers.ValidateAction(ToolInfo, action, providedParams);
@@ -202,6 +322,19 @@ namespace Cordyceps.Tools.Unified
                 "ground" => ActionGround(groundEnabled, groundAltitude, autoAltitude, shadowOnly, material),
                 "sun" => ActionSun(sunEnabled, azimuth, sunAltitude, intensity, latitude, longitude, dateTime),
                 "skylight" => ActionSkylight(skylightEnabled, shadowIntensity, customEnvironment),
+                // Material actions
+                "material_list" => ActionMaterialList(),
+                "material_library" => ActionMaterialLibrary(),
+                "material_instantiate" => ActionMaterialInstantiate(type, name, color),
+                "material_create" => ActionMaterialCreate(name, color, roughness, metallic, transparency, emission, ior),
+                "material_apply" => ActionMaterialApply(ids, material),
+                "material_delete" => ActionMaterialDelete(name),
+                // Environment actions
+                "env_list" => ActionEnvList(),
+                "env_current" => ActionEnvCurrent(),
+                "env_set" => ActionEnvSet(environment, usage),
+                "env_create" => ActionEnvCreate(name, color),
+                "env_delete" => ActionEnvDelete(name),
                 _ => JsonConvert.SerializeObject(new { success = false, error = $"Unknown action: {action}" })
             };
         }
@@ -741,5 +874,543 @@ namespace Cordyceps.Tools.Unified
                 });
             });
         }
+
+        #region Material Actions (from rhino_material)
+
+        private string ActionMaterialList()
+        {
+            return _context.ExecuteOnUiThread(() =>
+            {
+                var rhinoDoc = RhinoDoc.ActiveDoc;
+                if (rhinoDoc == null)
+                    return ToolHelpers.ErrorResponse("No active Rhino document");
+
+                var materials = new List<object>();
+
+                foreach (var renderMaterial in rhinoDoc.RenderMaterials)
+                {
+                    var pbr = renderMaterial.ConvertToPhysicallyBased(RenderTexture.TextureGeneration.Allow);
+
+                    var materialInfo = new Dictionary<string, object>
+                    {
+                        ["id"] = renderMaterial.Id.ToString(),
+                        ["name"] = renderMaterial.Name,
+                        ["type"] = "RenderMaterial"
+                    };
+
+                    if (pbr != null)
+                    {
+                        materialInfo["baseColor"] = ToolHelpers.ColorToHex(pbr.BaseColor);
+                        materialInfo["roughness"] = pbr.Roughness;
+                        materialInfo["metallic"] = pbr.Metallic;
+                        materialInfo["opacity"] = pbr.Opacity;
+                        materialInfo["ior"] = pbr.OpacityIOR;
+                    }
+
+                    materials.Add(materialInfo);
+                }
+
+                return JsonConvert.SerializeObject(new
+                {
+                    success = true,
+                    count = materials.Count,
+                    materials
+                });
+            });
+        }
+
+        private string ActionMaterialLibrary()
+        {
+            var types = BuiltInMaterialTypes.Select(kvp => new
+            {
+                name = kvp.Key,
+                guid = kvp.Value.ToString(),
+                description = GetMaterialTypeDescription(kvp.Key)
+            }).ToList();
+
+            return JsonConvert.SerializeObject(new
+            {
+                success = true,
+                count = types.Count,
+                types,
+                usage = "Use action='material_instantiate', type='<type>' to create"
+            });
+        }
+
+        private static string GetMaterialTypeDescription(string typeName)
+        {
+            return typeName switch
+            {
+                "Metal" => "Metallic materials (gold, copper, silver, aluminum)",
+                "Glass" => "Transparent with refraction (ior=1.5)",
+                "Plastic" => "Non-metallic with varying glossiness",
+                "Paint" => "Painted surface with color and sheen",
+                "Gem" => "Gemstone materials with dispersion",
+                "Plaster" => "Matte diffuse (concrete, stone)",
+                "Picture" => "Image-based materials",
+                "PhysicallyBased" => "Full PBR material",
+                "Blend" => "Blend between two materials",
+                "DoubleSided" => "Different materials front/back",
+                "Emission" => "Light-emitting materials",
+                _ => "Material type"
+            };
+        }
+
+        private string ActionMaterialInstantiate(string type, string name, string color)
+        {
+            return _context.ExecuteOnUiThread(() =>
+            {
+                var rhinoDoc = RhinoDoc.ActiveDoc;
+                if (rhinoDoc == null)
+                    return ToolHelpers.ErrorResponse("No active Rhino document");
+
+                if (string.IsNullOrEmpty(type))
+                    return ToolHelpers.ErrorResponse("type is required. Use action='material_library' to see types.");
+
+                if (!BuiltInMaterialTypes.TryGetValue(type, out var typeGuid))
+                {
+                    var availableTypes = string.Join(", ", BuiltInMaterialTypes.Keys);
+                    return ToolHelpers.ErrorResponse($"Unknown type: '{type}'. Available: {availableTypes}");
+                }
+
+                var materialName = !string.IsNullOrEmpty(name) ? name : $"{type} Material";
+
+                var existing = rhinoDoc.RenderMaterials.FirstOrDefault(m =>
+                    m.Name.Equals(materialName, StringComparison.OrdinalIgnoreCase));
+                if (existing != null)
+                {
+                    return JsonConvert.SerializeObject(new
+                    {
+                        success = true,
+                        created = false,
+                        alreadyExists = true,
+                        id = existing.Id.ToString(),
+                        name = existing.Name,
+                        type
+                    });
+                }
+
+                try
+                {
+                    var renderMaterial = RenderContentType.NewContentFromTypeId(typeGuid) as RenderMaterial;
+                    if (renderMaterial == null)
+                        return ToolHelpers.ErrorResponse($"Failed to create material of type '{type}'");
+
+                    renderMaterial.BeginChange(RenderContent.ChangeContexts.Program);
+                    renderMaterial.Name = materialName;
+
+                    if (!string.IsNullOrEmpty(color) && ToolHelpers.TryParseColor(color, out var baseColor))
+                    {
+                        var color4f = Color4f.FromArgb(1, baseColor.R / 255f, baseColor.G / 255f, baseColor.B / 255f);
+                        var colorParamNames = new[] { "color", "diffuse", "diffuse-color", "base-color", "Color" };
+                        bool colorSet = false;
+
+                        foreach (var paramName in colorParamNames)
+                        {
+                            try
+                            {
+                                if (renderMaterial.SetParameter(paramName, color4f))
+                                {
+                                    colorSet = true;
+                                    break;
+                                }
+                            }
+                            catch { }
+                        }
+
+                        if (!colorSet)
+                        {
+                            try
+                            {
+                                var sim = renderMaterial.ToMaterial(RenderTexture.TextureGeneration.Allow);
+                                if (sim != null)
+                                    sim.DiffuseColor = baseColor;
+                            }
+                            catch { }
+                        }
+                    }
+
+                    renderMaterial.EndChange();
+                    rhinoDoc.RenderMaterials.Add(renderMaterial);
+
+                    return JsonConvert.SerializeObject(new
+                    {
+                        success = true,
+                        created = true,
+                        id = renderMaterial.Id.ToString(),
+                        name = renderMaterial.Name,
+                        type,
+                        typeGuid = typeGuid.ToString()
+                    });
+                }
+                catch (Exception ex)
+                {
+                    return ToolHelpers.ErrorResponse($"Failed to instantiate material: {ex.Message}");
+                }
+            });
+        }
+
+        private string ActionMaterialCreate(string name, string color, double roughness, double metallic, double transparency, string emission, double ior)
+        {
+            return _context.ExecuteOnUiThread(() =>
+            {
+                var rhinoDoc = RhinoDoc.ActiveDoc;
+                if (rhinoDoc == null)
+                    return ToolHelpers.ErrorResponse("No active Rhino document");
+
+                if (!ToolHelpers.TryParseColor(color, out var baseColor))
+                    return ToolHelpers.ErrorResponse($"Invalid color format: {color}");
+
+                var existing = rhinoDoc.RenderMaterials.FirstOrDefault(m =>
+                    m.Name.Equals(name, StringComparison.OrdinalIgnoreCase));
+                if (existing != null)
+                {
+                    return JsonConvert.SerializeObject(new
+                    {
+                        success = true,
+                        created = false,
+                        alreadyExists = true,
+                        id = existing.Id.ToString(),
+                        name = existing.Name
+                    });
+                }
+
+                roughness = Math.Max(0, Math.Min(1, roughness));
+                metallic = Math.Max(0, Math.Min(1, metallic));
+                transparency = Math.Max(0, Math.Min(1, transparency));
+                ior = Math.Max(1, Math.Min(3, ior));
+
+                var basicMaterial = new Material
+                {
+                    Name = name,
+                    DiffuseColor = baseColor,
+                    Transparency = transparency,
+                    Reflectivity = metallic * 0.5,
+                    IndexOfRefraction = ior
+                };
+
+                var renderMaterial = RenderMaterial.CreateBasicMaterial(basicMaterial, rhinoDoc);
+
+                try
+                {
+                    var pbr = renderMaterial.ConvertToPhysicallyBased(RenderTexture.TextureGeneration.Allow);
+                    if (pbr != null)
+                    {
+                        pbr.BaseColor = Color4f.FromArgb(1, baseColor.R / 255f, baseColor.G / 255f, baseColor.B / 255f);
+                        pbr.Roughness = roughness;
+                        pbr.Metallic = metallic;
+                        pbr.Opacity = 1.0 - transparency;
+                        pbr.OpacityIOR = ior;
+
+                        if (!string.IsNullOrEmpty(emission) && ToolHelpers.TryParseColor(emission, out var emissionColor))
+                            pbr.Emission = Color4f.FromArgb(1, emissionColor.R / 255f, emissionColor.G / 255f, emissionColor.B / 255f);
+                    }
+                }
+                catch { }
+
+                rhinoDoc.RenderMaterials.Add(renderMaterial);
+
+                return JsonConvert.SerializeObject(new
+                {
+                    success = true,
+                    created = true,
+                    id = renderMaterial.Id.ToString(),
+                    name = renderMaterial.Name,
+                    color = ToolHelpers.ColorToHex(baseColor),
+                    roughness,
+                    metallic,
+                    transparency,
+                    ior
+                });
+            });
+        }
+
+        private string ActionMaterialApply(string objectIds, string material)
+        {
+            return _context.ExecuteOnUiThread(() =>
+            {
+                var rhinoDoc = RhinoDoc.ActiveDoc;
+                if (rhinoDoc == null)
+                    return ToolHelpers.ErrorResponse("No active Rhino document");
+
+                if (!ToolHelpers.TryParseGuidArray(objectIds, out var guids, out var parseError))
+                    return ToolHelpers.ErrorResponse(parseError);
+
+                RenderMaterial renderMaterial = rhinoDoc.RenderMaterials.FirstOrDefault(m =>
+                    m.Name.Equals(material, StringComparison.OrdinalIgnoreCase));
+
+                int materialIndex = -1;
+                if (renderMaterial == null)
+                {
+                    if (int.TryParse(material, out var idx) && idx >= 0 && idx < rhinoDoc.Materials.Count)
+                        materialIndex = idx;
+                    else
+                        return ToolHelpers.ErrorResponse($"Material '{material}' not found");
+                }
+
+                int succeeded = 0, failed = 0;
+
+                foreach (var guid in guids)
+                {
+                    var obj = rhinoDoc.Objects.FindId(guid);
+                    if (obj == null) { failed++; continue; }
+
+                    var attrs = obj.Attributes.Duplicate();
+                    attrs.MaterialSource = ObjectMaterialSource.MaterialFromObject;
+
+                    if (renderMaterial != null)
+                        attrs.RenderMaterial = renderMaterial;
+                    else
+                        attrs.MaterialIndex = materialIndex;
+
+                    if (rhinoDoc.Objects.ModifyAttributes(obj, attrs, true))
+                        succeeded++;
+                    else
+                        failed++;
+                }
+
+                rhinoDoc.Views.Redraw();
+
+                return JsonConvert.SerializeObject(new
+                {
+                    success = failed == 0,
+                    total = guids.Count,
+                    succeeded,
+                    failed,
+                    material = renderMaterial?.Name ?? material
+                });
+            });
+        }
+
+        private string ActionMaterialDelete(string name)
+        {
+            return _context.ExecuteOnUiThread(() =>
+            {
+                var rhinoDoc = RhinoDoc.ActiveDoc;
+                if (rhinoDoc == null)
+                    return ToolHelpers.ErrorResponse("No active Rhino document");
+
+                var renderMaterial = rhinoDoc.RenderMaterials.FirstOrDefault(m =>
+                    m.Name.Equals(name, StringComparison.OrdinalIgnoreCase));
+
+                if (renderMaterial != null)
+                {
+                    var deleted = rhinoDoc.RenderMaterials.Remove(renderMaterial);
+                    return JsonConvert.SerializeObject(new { success = deleted, name, deleted });
+                }
+
+                var materialIndex = rhinoDoc.Materials.Find(name, true);
+                if (materialIndex >= 0)
+                {
+                    var deleted = rhinoDoc.Materials.DeleteAt(materialIndex);
+                    return JsonConvert.SerializeObject(new { success = deleted, name, deleted });
+                }
+
+                return ToolHelpers.ErrorResponse($"Material '{name}' not found");
+            });
+        }
+
+        #endregion
+
+        #region Environment Actions (from rhino_environment)
+
+        private string ActionEnvList()
+        {
+            return _context.ExecuteOnUiThread(() =>
+            {
+                var rhinoDoc = RhinoDoc.ActiveDoc;
+                if (rhinoDoc == null)
+                    return ToolHelpers.ErrorResponse("No active Rhino document");
+
+                var environments = new List<object>();
+
+                foreach (var env in rhinoDoc.RenderEnvironments)
+                {
+                    var simEnv = env.SimulateEnvironment(true);
+                    var envInfo = new Dictionary<string, object>
+                    {
+                        ["id"] = env.Id.ToString(),
+                        ["name"] = env.Name,
+                        ["typeName"] = env.TypeName
+                    };
+
+                    if (simEnv != null)
+                        envInfo["backgroundColor"] = ToolHelpers.ColorToHex(simEnv.BackgroundColor);
+
+                    environments.Add(envInfo);
+                }
+
+                return JsonConvert.SerializeObject(new
+                {
+                    success = true,
+                    count = environments.Count,
+                    environments
+                });
+            });
+        }
+
+        private string ActionEnvCurrent()
+        {
+            return _context.ExecuteOnUiThread(() =>
+            {
+                var rhinoDoc = RhinoDoc.ActiveDoc;
+                if (rhinoDoc == null)
+                    return ToolHelpers.ErrorResponse("No active Rhino document");
+
+                var rs = rhinoDoc.RenderSettings;
+
+                object GetEnvInfo(RenderSettings.EnvironmentUsage usage)
+                {
+                    var env = rs.RenderEnvironment(usage, RenderSettings.EnvironmentPurpose.Standard);
+                    if (env == null) return null;
+                    return new { id = env.Id.ToString(), name = env.Name };
+                }
+
+                return JsonConvert.SerializeObject(new
+                {
+                    success = true,
+                    background = GetEnvInfo(RenderSettings.EnvironmentUsage.Background),
+                    lighting = GetEnvInfo(RenderSettings.EnvironmentUsage.Skylighting),
+                    reflection = GetEnvInfo(RenderSettings.EnvironmentUsage.Reflection)
+                });
+            });
+        }
+
+        private string ActionEnvSet(string environment, string usage)
+        {
+            return _context.ExecuteOnUiThread(() =>
+            {
+                var rhinoDoc = RhinoDoc.ActiveDoc;
+                if (rhinoDoc == null)
+                    return ToolHelpers.ErrorResponse("No active Rhino document");
+
+                RenderEnvironment targetEnv = null;
+
+                if (Guid.TryParse(environment, out var guid))
+                    targetEnv = rhinoDoc.RenderEnvironments.FirstOrDefault(e => e.Id == guid);
+
+                if (targetEnv == null)
+                    targetEnv = rhinoDoc.RenderEnvironments.FirstOrDefault(e =>
+                        e.Name.Equals(environment, StringComparison.OrdinalIgnoreCase));
+
+                if (targetEnv == null)
+                {
+                    var available = string.Join(", ", rhinoDoc.RenderEnvironments.Select(e => e.Name));
+                    return ToolHelpers.ErrorResponse($"Environment '{environment}' not found. Available: {available}");
+                }
+
+                var rs = rhinoDoc.RenderSettings;
+                var modified = new List<string>();
+
+                usage = usage?.ToLowerInvariant() ?? "all";
+
+                switch (usage)
+                {
+                    case "background":
+                        rs.SetRenderEnvironment(RenderSettings.EnvironmentUsage.Background, targetEnv);
+                        modified.Add("background");
+                        break;
+                    case "lighting":
+                        rs.SetRenderEnvironment(RenderSettings.EnvironmentUsage.Skylighting, targetEnv);
+                        rs.SetRenderEnvironmentOverride(RenderSettings.EnvironmentUsage.Skylighting, true);
+                        modified.Add("lighting");
+                        break;
+                    case "reflection":
+                        rs.SetRenderEnvironment(RenderSettings.EnvironmentUsage.Reflection, targetEnv);
+                        rs.SetRenderEnvironmentOverride(RenderSettings.EnvironmentUsage.Reflection, true);
+                        modified.Add("reflection");
+                        break;
+                    case "all":
+                        rs.SetRenderEnvironment(RenderSettings.EnvironmentUsage.Background, targetEnv);
+                        rs.SetRenderEnvironment(RenderSettings.EnvironmentUsage.Skylighting, targetEnv);
+                        rs.SetRenderEnvironment(RenderSettings.EnvironmentUsage.Reflection, targetEnv);
+                        rs.SetRenderEnvironmentOverride(RenderSettings.EnvironmentUsage.Skylighting, true);
+                        rs.SetRenderEnvironmentOverride(RenderSettings.EnvironmentUsage.Reflection, true);
+                        modified.AddRange(new[] { "background", "lighting", "reflection" });
+                        break;
+                    default:
+                        return ToolHelpers.ErrorResponse($"Invalid usage: {usage}. Use 'background', 'lighting', 'reflection', or 'all'");
+                }
+
+                rhinoDoc.Views.Redraw();
+
+                return JsonConvert.SerializeObject(new
+                {
+                    success = true,
+                    environment = targetEnv.Name,
+                    environmentId = targetEnv.Id.ToString(),
+                    modified
+                });
+            });
+        }
+
+        private string ActionEnvCreate(string name, string color)
+        {
+            return _context.ExecuteOnUiThread(() =>
+            {
+                var rhinoDoc = RhinoDoc.ActiveDoc;
+                if (rhinoDoc == null)
+                    return ToolHelpers.ErrorResponse("No active Rhino document");
+
+                if (!ToolHelpers.TryParseColor(color, out var bgColor))
+                    return ToolHelpers.ErrorResponse($"Invalid color format: {color}");
+
+                var existing = rhinoDoc.RenderEnvironments.FirstOrDefault(e =>
+                    e.Name.Equals(name, StringComparison.OrdinalIgnoreCase));
+                if (existing != null)
+                {
+                    return JsonConvert.SerializeObject(new
+                    {
+                        success = true,
+                        created = false,
+                        alreadyExists = true,
+                        id = existing.Id.ToString(),
+                        name = existing.Name
+                    });
+                }
+
+                var simEnv = new SimulatedEnvironment();
+                simEnv.BackgroundColor = bgColor;
+
+                var renderEnv = RenderEnvironment.NewBasicEnvironment(simEnv, rhinoDoc);
+                if (renderEnv == null)
+                    return ToolHelpers.ErrorResponse("Failed to create environment");
+
+                renderEnv.Name = name;
+                rhinoDoc.RenderEnvironments.Add(renderEnv);
+
+                return JsonConvert.SerializeObject(new
+                {
+                    success = true,
+                    created = true,
+                    id = renderEnv.Id.ToString(),
+                    name = renderEnv.Name,
+                    color = ToolHelpers.ColorToHex(bgColor)
+                });
+            });
+        }
+
+        private string ActionEnvDelete(string name)
+        {
+            return _context.ExecuteOnUiThread(() =>
+            {
+                var rhinoDoc = RhinoDoc.ActiveDoc;
+                if (rhinoDoc == null)
+                    return ToolHelpers.ErrorResponse("No active Rhino document");
+
+                var env = rhinoDoc.RenderEnvironments.FirstOrDefault(e =>
+                    e.Name.Equals(name, StringComparison.OrdinalIgnoreCase));
+
+                if (env == null)
+                    return ToolHelpers.ErrorResponse($"Environment '{name}' not found");
+
+                var envId = env.Id.ToString();
+                var deleted = rhinoDoc.RenderEnvironments.Remove(env);
+
+                return JsonConvert.SerializeObject(new { success = deleted, name, id = envId, deleted });
+            });
+        }
+
+        #endregion
     }
 }

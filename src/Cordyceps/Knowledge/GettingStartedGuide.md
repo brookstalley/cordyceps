@@ -2,216 +2,87 @@
 
 Grasshopper is a visual dataflow graph for parametric 3D design. Components on a canvas connect via wires. Data flows left-to-right.
 
-## Unified Tools
+## Unified Tools (8 tools)
 
-Cordyceps provides 10 unified tools, each with an `action` parameter. Use `action='help'` on any tool to see all available actions and parameters.
+Use `action='help'` on any tool to see all available actions and parameters.
 
 **Grasshopper Tools:**
-- `gh_canvas` - Add, delete, move, rename, find, search, list, bake components, zoom/view control
+- `gh_canvas` - Components, values, groups: add, delete, move, find, search, list, bake, zoom/view, get/set values, group management
 - `gh_wire` - Connect, disconnect, list, validate wires
-- `gh_adjust` - Get/set values, configure sliders, toggles, panels
-- `gh_document` - Info, save, clear, solver control, undo/redo, snapshots
-- `gh_group` - Create, delete, add/remove members, rename, color groups
+- `gh_document` - Info, save, clear, solver control, snapshots, capture canvas/viewport
 - `gh_script` - Get/set script code, configure parameters
-- `gh_inspect` - Canvas status, outputs, trace data flow, find disconnected
-- `gh_capture` - Capture canvas, viewport, regions
+- `gh_inspect` - Status, outputs, trace data flow, find disconnected
 
 **Rhino Tools:**
-- `rhino_scene` - Objects, selection, layers (full CRUD), hide/show, delete, run scripts
-- `rhino_render` - Display modes, camera, zoom, render status, settings, sun, skylight, ground plane
-- `rhino_material` - List, create, apply, delete materials; use built-in library types (Metal, Glass, Plastic, etc.)
-- `rhino_environment` - List, set, create, delete render environments
+- `rhino_scene` - Objects, selection, layers (CRUD), hide/show, delete
+- `rhino_render` - Display modes, camera, render status, materials, environments
+
+## Quick Reference
+
+**Workflow:**
+1. `gh_document(action='solver', enabled=false)` — prevent partial recalculation
+2. Add components: `gh_canvas(action='add', type='...', x=..., y=...)`
+3. Wire: `gh_wire(action='connect', connections='[...]')`
+4. `gh_document(action='solver', enabled=true)` — run definition
+5. `gh_inspect(action='status')` — check for errors
+
+**Values:**
+- `gh_canvas(action='set', id='...', value='...')` — set slider/panel/toggle
+- `gh_canvas(action='config', id='...', min=..., max=...)` — configure slider range
+
+**Groups:**
+- `gh_canvas(action='group_create', name='...', ids='[...]', color='#FF6B6B')`
+- `gh_canvas(action='group_list')` — list all groups
+
+**Capture:**
+- `gh_document(action='capture_canvas')` — Grasshopper canvas
+- `gh_document(action='capture_viewport')` — Rhino 3D viewport
+
+**Materials:**
+- `rhino_render(action='material_library')` — list built-in types
+- `rhino_render(action='material_instantiate', type='Metal', name='Gold', color='#FFD700')`
+- `rhino_render(action='material_apply', ids='[...]', material='...')`
+
+**Environments:**
+- `rhino_render(action='env_list')` — list environments
+- `rhino_render(action='env_set', environment='...', usage='all')`
 
 ## Object Types
 
-Three roles (check `role` field in responses):
-- **component**: Processing node with inputs/outputs. Usually what you want.
-- **parameter**: Data container (Params category). Holds geometry/values.
-- **input**: Interactive control (Params/Input subcategory). Sliders, toggles.
+Three roles (check `role` field):
+- **component**: Processing node with inputs/outputs (usually what you want)
+- **parameter**: Data container (Params category)
+- **input**: Interactive control (Params/Input)
 
-**Ambiguous names**: "Circle" matches both Circle component (Curve/Primitive) and Circle parameter (Params/Geometry). On ambiguity, you get `ambiguous_name` error with all matches. Resolve with GUID or category-qualified name like `Curve/Circle`.
+**Ambiguous names**: "Circle" matches both Circle component (Curve/Primitive) and Circle parameter (Params/Geometry). On ambiguity, you get `ambiguous_name` error with matches. Resolve with GUID or `Category/Name` format.
 
-**Deprecated components**: Search results and disambiguation include `deprecated` field. **Always prefer components where `deprecated=false`**. Deprecated components have a `upgradeTo` field showing the recommended replacement. Results are sorted with non-deprecated components first.
-
-## Data Trees
-
-Grasshopper uses hierarchical data trees with paths like `{0;0;1}`, not flat arrays. Mismatched tree structures cause cross-products. A 10-item list connected to a single-item input runs 10 operations. Read `gh://docs/data-trees` before working with lists.
+**Deprecated**: Always prefer `deprecated=false`. Results are sorted with non-deprecated first.
 
 ## Layout
 
-**Goal: Avoid backwards wires. Prefer vertical stacking over horizontal spread.**
-
-Components have physical dimensions. Place carefully to avoid overlaps.
-
-Typical sizes: Number Slider ~200x20px, Panel ~100x50px, Components ~60-80x50px.
+**Goal: Avoid backwards wires. Stack vertically.**
 
 **Spacing:**
-- **Horizontal**: 60-80px between columns (about 1x component width)
-- **Vertical**: 70px between stacked components
-- **Inputs**: Stack sliders vertically at x≈50, y=50/120/190/260...
-- **Processing**: Columns at x≈300, 380, 460... (after sliders' right edge)
+- Horizontal: 60-80px between columns
+- Vertical: 70px between stacked components
+- Inputs: Stack sliders at x≈50, y=50/120/190...
 
-**Key principle**: Minimize horizontal spread. Stack inputs vertically. Only spread horizontally to follow data flow direction.
-
-Use `gh_canvas(action='validate')` to check overlaps. Fix with `gh_canvas(action='move')`.
-
-## Workflow
-
-1. `gh_document(action='solver', enabled=false)` — prevent partial recalculation during construction
-2. **If creating oriented geometry** (cylinders, cones, extrusions), read `gh://docs/geometry-orientation` first — oriented geometry extends along the plane's Z-axis, not X or Y
-3. Add components with `gh_canvas(action='add', type='...', x=..., y=...)` using proper spacing
-4. Wire with `gh_wire(action='connect', connections='[...]')` for efficiency
-5. `gh_document(action='solver', enabled=true)` — run the definition
-6. `gh_inspect(action='status')` — check for errors/warnings
-7. `gh_canvas(action='validate')` — check for overlaps
-
-## Key Tools
-
-**Discovery:**
-- `gh_inspect(action='categories')` — list all component categories
-- `gh_canvas(action='search', query='...')` — find components by name
-- `gh_canvas(action='info', id='...')` — get component details
-- `gh_inspect(action='docs', type='...')` — get component documentation
-
-**Building:**
-- `gh_canvas(action='add', type='...', x=..., y=...)` — add component
-- `gh_wire(action='connect', sourceId='...', sourceParam='...', targetId='...', targetParam='...')` — single connection
-- `gh_wire(action='connect', connections='[{...},{...}]')` — bulk connections
-- `gh_adjust(action='set', id='...', value='...')` — set value
-- `gh_adjust(action='config', id='...', min=..., max=..., value=...)` — configure slider
-
-**Querying:**
-- `gh_canvas(action='list')` — list all components
-- `gh_wire(action='list')` — list all connections
-- `gh_inspect(action='status')` — get canvas status with errors/warnings
-
-**Validation:**
-- `gh_wire(action='validate', sourceId='...', sourceParam='...', targetId='...', targetParam='...')` — check connection validity
-- `gh_canvas(action='validate')` — check for overlapping components
-- `gh_inspect(action='disconnected')` — find disconnected inputs
-
-**Debugging:**
-- `gh_inspect(action='outputs', id='...')` — get component output values
-- `gh_inspect(action='trace', id='...', direction='upstream')` — trace data flow
-
-**Scripts:**
-- `gh_script(action='get', id='...')` — get script source code
-- `gh_script(action='set', id='...', code='...')` — set script code
-- `gh_script(action='info', id='...')` — get script details (code, params, errors)
-- `gh_script(action='configure', id='...', inputs='[...]', outputs='[...]', code='...')` — configure script
-
-**Visualization:**
-- `gh_canvas(action='zoom')` — zoom canvas to fit all components
-- `gh_canvas(action='zoom', id='...', padding=100)` — zoom to specific component with margin
-- `gh_canvas(action='view')` — get current canvas view (center, zoom level)
-- `gh_canvas(action='view', centerX=..., centerY=..., zoom=1.0)` — set canvas view explicitly
-- `gh_capture(action='canvas')` — capture Grasshopper canvas
-- `gh_capture(action='viewport')` — capture Rhino 3D viewport
-- `gh_capture(action='views')` — list available views
+Use `gh_canvas(action='validate')` to check overlaps. See `gh://docs/canvas-layout` for details.
 
 ## Common Errors
 
-1. Adding components with solver enabled → partial recalculation errors OR slow performance
-2. Overlapping components → unreadable canvas
-3. Wrong role → using Circle parameter instead of Circle component
-4. Getting max(N,M) outputs instead of N×M → need to graft one input. See `gh://docs/data-trees`
-5. Unvalidated connections → silent type coercion failures
-6. Component overlaps → unreadable canvas. **Fix**: Use `gh_canvas(action='validate')` to detect, then `gh_canvas(action='move')` to fix
-7. Geometry pointing wrong direction → oriented geometry (Cylinder, Cone, etc.) extends along the plane's **Z-axis**. Using XY Plane gives vertical geometry; use YZ Plane or Plane Normal for horizontal. See `gh://docs/geometry-orientation`
-8. Using deprecated components → old/obsolete components may have bugs or missing features. **Always check `deprecated` field** and prefer `deprecated=false`. If a component shows `deprecated=true`, use the `upgradeTo` component instead.
-
-## Capturing Images
-
-Use capture tools to see what you've built:
-
-**Canvas View Control:**
-- `gh_canvas(action='zoom')` — Zoom canvas to fit all components with margin. **Use before capturing** to ensure all components are visible.
-- `gh_canvas(action='zoom', id='...', padding=100)` — Zoom to a specific component with custom padding.
-- `gh_canvas(action='view')` — Get current view state (centerX, centerY, zoom level).
-- `gh_canvas(action='view', centerX=..., centerY=..., zoom=1.0)` — Set view explicitly. Zoom 1.0=100%, 0.5=50%, 2.0=200%.
-
-**Capture:**
-- `gh_capture(action='canvas')` — Save the Grasshopper canvas as an image. Auto-fits to content by default.
-- `gh_capture(action='canvas', fit=false)` — Capture current view without auto-fitting.
-- `gh_capture(action='region', xMin=..., yMin=..., xMax=..., yMax=...)` — Capture a specific canvas region.
-- `gh_capture(action='viewport')` — Save the Rhino 3D viewport showing geometry preview.
-- `gh_capture(action='viewport', view='Top', width=1920, height=1080)` — Capture a specific view at custom resolution.
-- `gh_capture(action='views')` — List available Rhino viewports (Perspective, Top, Front, etc.)
-
-All capture functions return a file path. Use the Read tool to view captured images.
-
-**Best practice:** Call `gh_canvas(action='zoom')` before `gh_capture(action='canvas')` to ensure all components are framed properly.
-
-## Rhino Rendering Pipeline
-
-After building geometry in Grasshopper, you can bake to Rhino and create rendered images:
-
-**Workflow:** Create geometry → Bake → Organize layers → Apply materials → Set viewport → Capture
-
-**Baking:**
-- `gh_canvas(action='bake', id='...', layer='...')` — bake component output to Rhino
-
-### Rhino Tools
-
-**Objects:**
-- `rhino_scene(action='objects')` — list Rhino objects
-- `rhino_scene(action='select', ids='[...]')` — select objects
-- `rhino_scene(action='deselect')` — clear selection
-- `rhino_scene(action='set_layer', ids='[...]', layer='...')` — move objects to layer
-- `rhino_scene(action='set_name', ids='[...]', name='...')` — rename objects
-- `rhino_scene(action='hide', ids='[...]')` — hide objects
-- `rhino_scene(action='show', ids='[...]')` — show objects
-- `rhino_scene(action='delete', ids='[...]')` — delete objects
-
-**Layers:**
-- `rhino_scene(action='layers')` — list all layers
-- `rhino_scene(action='layer_create', name='...')` — create layer
-- `rhino_scene(action='layer_set', name='...', visible='false')` — modify layer
-- `rhino_scene(action='layer_delete', name='...')` — delete layer
-
-**Viewport:**
-- `rhino_render(action='modes')` — list display modes
-- `rhino_render(action='display', mode='Raytraced')` — set display mode
-- `rhino_render(action='camera')` — get camera info
-- `rhino_render(action='camera', location='x,y,z', target='x,y,z')` — set camera
-- `rhino_render(action='zoom')` — zoom to fit all
-- `rhino_render(action='zoom', ids='[...]')` — zoom to specific objects
-
-**Render Status:**
-- `rhino_render(action='render')` — get render status (for Raytraced mode)
-- `rhino_render(action='render', wait=200, timeout=30)` — wait for render passes
-
-**Materials:**
-- `rhino_material(action='library')` — list built-in material types (Metal, Glass, Plastic, etc.)
-- `rhino_material(action='instantiate', type='Metal', name='Gold', color='#FFD700')` — create from built-in type
-- `rhino_material(action='create', name='...', color='...', metallic=..., roughness=...)` — create custom PBR
-- `rhino_material(action='apply', ids='[...]', material='...')` — apply to objects
-
-**NOTE:** Materials only render in **Raytraced** or **Rendered** display modes. Use Raytraced for physically accurate results.
-
-### Camera Orbit Pattern
-
-No orbit tool provided — calculate camera positions yourself:
-1. `rhino_render(action='camera')` → get location, target, distance
-2. Calculate new position: `newX = target.x + distance * cos(angle)`, `newY = target.y + distance * sin(angle)`
-3. `rhino_render(action='camera', location='newX,newY,z')` → move camera
-4. `rhino_render(action='render', wait=200)` → wait for Raytraced
-5. `gh_capture(action='viewport', path='frame_001.png')` → capture frame
-
-For complete rendering workflow details, read `gh://docs/rendering`.
-
-## Testing & Validation
-
-If asked to test the MCP server, validate Cordyceps, or help debug connection issues, read `gh://docs/mcp-testing` for comprehensive test instructions covering all features.
+1. Solver enabled during bulk ops → partial errors, slow
+2. Wrong role → Circle parameter vs Circle component
+3. Tree mismatch → use grafting. See `gh://docs/data-trees`
+4. Geometry wrong direction → extends along plane Z-axis. See `gh://docs/geometry-orientation`
+5. Using deprecated components → check `deprecated` field
 
 ## Resources
 
-- `gh://docs/getting-started` — this guide
 - `gh://docs/data-trees` — essential for list/tree operations
 - `gh://docs/canvas-layout` — spacing details
-- `gh://docs/geometry-orientation` — how planes work, which axis is "direction" for oriented geometry
-- `gh://docs/type-system` — type compatibility
-- `gh://docs/rendering` — complete Rhino rendering pipeline (bake → materials → viewport → capture)
-- `gh://docs/mcp-testing` — test instructions for validating MCP server functionality
-- `gh://component/{name}` — any component's inputs/outputs (includes orientation hints)
+- `gh://docs/geometry-orientation` — plane axes for oriented geometry
+- `gh://docs/rendering` — bake → materials → viewport → capture
+- `gh://docs/mcp-testing` — test instructions
+- `gh://component/{name}` — component inputs/outputs
 - `gh://patterns/*` — linear-array, grid-array

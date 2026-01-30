@@ -13,7 +13,7 @@ using Rhino;
 namespace Cordyceps.Tools.Unified
 {
     /// <summary>
-    /// Unified canvas tool - component operations (add, delete, move, rename, find, search, list)
+    /// Unified canvas tool - component operations, value adjustments, and group management
     /// </summary>
     [McpServerToolType]
     public class GhCanvasTool
@@ -140,13 +140,113 @@ namespace Cordyceps.Tools.Unified
                 {
                     Name = "help",
                     Description = "Show this help information"
+                },
+                // Value adjustment actions (from gh_adjust)
+                ["get"] = new ActionInfo
+                {
+                    Name = "get",
+                    Description = "Read current value(s) from a component",
+                    Required = new[] { "id" },
+                    Example = "action='get', id='abc-123'"
+                },
+                ["set"] = new ActionInfo
+                {
+                    Name = "set",
+                    Description = "Set value on a component (slider, panel, toggle)",
+                    Required = new[] { "id", "value" },
+                    Example = "action='set', id='abc-123', value='42'",
+                    Tips = new[] { "For sliders, value must be within range", "For toggles, use 'true' or 'false'" }
+                },
+                ["config"] = new ActionInfo
+                {
+                    Name = "config",
+                    Description = "Configure input component constraints",
+                    Required = new[] { "id" },
+                    Optional = new[] { "min", "max", "value", "decimals", "items" },
+                    Example = "action='config', id='abc', min=0, max=100, value=50",
+                    Tips = new[] { "For value lists: items='[{\"name\":\"A\",\"value\":\"0\"}]'" }
+                },
+                ["preview"] = new ActionInfo
+                {
+                    Name = "preview",
+                    Description = "Set component preview visibility",
+                    Required = new[] { "enabled" },
+                    Optional = new[] { "id", "ids" },
+                    Example = "action='preview', id='abc', enabled=false"
+                },
+                ["enable"] = new ActionInfo
+                {
+                    Name = "enable",
+                    Description = "Enable or disable component computation",
+                    Required = new[] { "enabled" },
+                    Optional = new[] { "id", "ids" },
+                    Example = "action='enable', id='abc', enabled=false"
+                },
+                // Group actions (from gh_group)
+                ["group_create"] = new ActionInfo
+                {
+                    Name = "group_create",
+                    Description = "Create a visual group",
+                    Required = new[] { "name" },
+                    Optional = new[] { "ids", "color" },
+                    Example = "action='group_create', name='Inputs', ids='[\"a\",\"b\"]', color='#FF6B6B'"
+                },
+                ["group_delete"] = new ActionInfo
+                {
+                    Name = "group_delete",
+                    Description = "Delete a visual group (components remain)",
+                    Required = new[] { "id" },
+                    Example = "action='group_delete', id='abc-123'"
+                },
+                ["group_add"] = new ActionInfo
+                {
+                    Name = "group_add",
+                    Description = "Add components to a group",
+                    Required = new[] { "ids" },
+                    Optional = new[] { "id", "name", "color" },
+                    Example = "action='group_add', ids='[\"a\",\"b\"]', name='MyGroup'"
+                },
+                ["group_remove"] = new ActionInfo
+                {
+                    Name = "group_remove",
+                    Description = "Remove components from a group",
+                    Required = new[] { "id", "ids" },
+                    Example = "action='group_remove', id='group-id', ids='[\"comp-a\"]'"
+                },
+                ["group_list"] = new ActionInfo
+                {
+                    Name = "group_list",
+                    Description = "List all groups on canvas",
+                    Example = "action='group_list'"
+                },
+                ["group_rename"] = new ActionInfo
+                {
+                    Name = "group_rename",
+                    Description = "Rename a group",
+                    Required = new[] { "id", "name" },
+                    Example = "action='group_rename', id='abc-123', name='NewName'"
+                },
+                ["group_color"] = new ActionInfo
+                {
+                    Name = "group_color",
+                    Description = "Set group color",
+                    Required = new[] { "id", "color" },
+                    Example = "action='group_color', id='abc', color='#4ECDC4'"
+                },
+                ["group_move"] = new ActionInfo
+                {
+                    Name = "group_move",
+                    Description = "Move all components in a group by offset",
+                    Required = new[] { "id", "dx", "dy" },
+                    Example = "action='group_move', id='abc', dx=100, dy=50"
                 }
             },
             Notes = new[]
             {
                 "Disable solver before bulk operations: gh_document(action='solver', enabled=false)",
                 "Recommended spacing: 150px horizontal, 70px vertical between components",
-                "Use action='zoom' before capturing to ensure all components are visible"
+                "Use action='zoom' before capturing to ensure all components are visible",
+                "Groups are visual containers - deleting a group doesn't delete its components"
             }
         };
 
@@ -155,14 +255,14 @@ namespace Cordyceps.Tools.Unified
             _context = context;
         }
 
-        [McpServerTool, Description("Component operations. Actions: add|delete|move|rename|find|search|list|info|bounds|validate|constant|bake|zoom|view|help")]
+        [McpServerTool, Description("Component operations. Actions: add|delete|move|rename|find|search|list|info|bounds|validate|constant|bake|zoom|view|get|set|config|preview|enable|group_create|group_delete|group_add|group_remove|group_list|group_rename|group_color|group_move|help")]
         public string GhCanvas(
             [Description("Action to perform")] string action,
             [Description("Component type for 'add', or search query for 'search'")] string type = null,
             [Description("X position")] double x = double.NaN,
             [Description("Y position")] double y = double.NaN,
             [Description("Component GUID")] string id = null,
-            [Description("JSON array of IDs for bulk delete")] string ids = null,
+            [Description("JSON array of IDs")] string ids = null,
             [Description("JSON array of moves: [{id,x,y},...]")] string moves = null,
             [Description("Nickname for rename/find/add")] string nickname = null,
             [Description("Search query")] string query = null,
@@ -171,13 +271,23 @@ namespace Cordyceps.Tools.Unified
             [Description("Group filter for list")] string group = null,
             [Description("Result limit for search")] int limit = 50,
             [Description("Exact match for find")] bool exact = false,
-            [Description("Value for constant panel")] string value = null,
+            [Description("Value to set")] string value = null,
             [Description("Layer name for bake")] string layer = null,
-            [Description("Object name for bake")] string name = null,
+            [Description("Object name for bake/group")] string name = null,
             [Description("Padding for zoom (default 50)")] int padding = 50,
             [Description("Center X for view")] double centerX = double.NaN,
             [Description("Center Y for view")] double centerY = double.NaN,
-            [Description("Zoom level for view (1.0=100%)")] double zoom = double.NaN)
+            [Description("Zoom level for view (1.0=100%)")] double zoom = double.NaN,
+            // Value adjustment params
+            [Description("Minimum value for slider")] double min = double.NaN,
+            [Description("Maximum value for slider")] double max = double.NaN,
+            [Description("Decimal places for slider")] int decimals = -1,
+            [Description("Items for value list (JSON)")] string items = null,
+            [Description("Preview/enable state")] string enabled = null,
+            // Group params
+            [Description("Color (hex or name)")] string color = null,
+            [Description("X offset for group move")] double dx = double.NaN,
+            [Description("Y offset for group move")] double dy = double.NaN)
         {
             // Handle help action
             if (string.Equals(action, "help", StringComparison.OrdinalIgnoreCase))
@@ -206,13 +316,26 @@ namespace Cordyceps.Tools.Unified
                 ("padding", padding != 50 ? (object)padding : null),
                 ("centerX", double.IsNaN(centerX) ? null : (object)centerX),
                 ("centerY", double.IsNaN(centerY) ? null : (object)centerY),
-                ("zoom", double.IsNaN(zoom) ? null : (object)zoom)
+                ("zoom", double.IsNaN(zoom) ? null : (object)zoom),
+                // Value adjustment params
+                ("min", double.IsNaN(min) ? null : (object)min),
+                ("max", double.IsNaN(max) ? null : (object)max),
+                ("decimals", decimals < 0 ? null : (object)decimals),
+                ("items", items),
+                ("enabled", enabled),
+                // Group params
+                ("color", color),
+                ("dx", double.IsNaN(dx) ? null : (object)dx),
+                ("dy", double.IsNaN(dy) ? null : (object)dy)
             );
 
             // Validate action and required params
             var validationError = UnifiedToolHelpers.ValidateAction(ToolInfo, action, providedParams);
             if (validationError != null)
                 return validationError;
+
+            // Parse enabled - default to true if not specified (for preview/enable actions)
+            bool enabledBool = string.IsNullOrEmpty(enabled) || ToolHelpers.ParseBool(enabled, true);
 
             // Dispatch to action handler
             return action.ToLowerInvariant() switch
@@ -231,6 +354,21 @@ namespace Cordyceps.Tools.Unified
                 "bake" => ActionBake(id, layer, name),
                 "zoom" => ActionZoom(id, padding),
                 "view" => ActionView(centerX, centerY, zoom),
+                // Value adjustment actions
+                "get" => ActionGet(id),
+                "set" => ActionSet(id, value),
+                "config" => ActionConfig(id, min, max, value, decimals, items),
+                "preview" => ActionPreview(id, ids, enabledBool),
+                "enable" => ActionEnable(id, ids, enabledBool),
+                // Group actions
+                "group_create" => ActionGroupCreate(name, ids, color),
+                "group_delete" => ActionGroupDelete(id),
+                "group_add" => ActionGroupAdd(id, ids, name, color),
+                "group_remove" => ActionGroupRemove(id, ids),
+                "group_list" => ActionGroupList(),
+                "group_rename" => ActionGroupRename(id, name),
+                "group_color" => ActionGroupColor(id, color),
+                "group_move" => ActionGroupMove(id, dx, dy),
                 _ => JsonConvert.SerializeObject(new { success = false, error = $"Unknown action: {action}" })
             };
         }
@@ -956,5 +1094,594 @@ namespace Cordyceps.Tools.Unified
             }
             return null;
         }
+
+        #region Value Adjustment Actions (from gh_adjust)
+
+        private string ActionGet(string id)
+        {
+            return _context.ExecuteOnUiThread(() =>
+            {
+                if (!ToolHelpers.TryGetUnprotectedComponent(_context, id, out var component, out var error))
+                    return ToolHelpers.ErrorResponse(error);
+
+                object currentValue = null;
+                string valueType = "unknown";
+
+                if (component is GH_NumberSlider slider)
+                {
+                    currentValue = slider.CurrentValue;
+                    valueType = "slider";
+                }
+                else if (component is GH_Panel panel)
+                {
+                    currentValue = panel.UserText;
+                    valueType = "panel";
+                }
+                else if (component is GH_BooleanToggle toggle)
+                {
+                    currentValue = toggle.Value;
+                    valueType = "toggle";
+                }
+                else if (component is GH_ValueList valueList)
+                {
+                    var selected = valueList.SelectedItems.FirstOrDefault();
+                    currentValue = selected?.Name ?? "(none)";
+                    valueType = "value_list";
+                }
+
+                return JsonConvert.SerializeObject(new
+                {
+                    success = true,
+                    id,
+                    name = component.Name,
+                    nickname = component.NickName,
+                    valueType,
+                    value = currentValue
+                });
+            });
+        }
+
+        private string ActionSet(string id, string value)
+        {
+            return _context.ExecuteOnUiThread(() =>
+            {
+                if (!ToolHelpers.TryGetUnprotectedComponentWithDoc(_context, id, out var doc, out var component, out var error))
+                    return ToolHelpers.ErrorResponse(error);
+
+                if (component is GH_Panel panel)
+                {
+                    panel.UserText = value;
+                }
+                else if (component is GH_NumberSlider slider)
+                {
+                    if (!double.TryParse(value, out double numValue))
+                        return ToolHelpers.ErrorResponse($"Invalid number: {value}");
+
+                    if (numValue < (double)slider.Slider.Minimum || numValue > (double)slider.Slider.Maximum)
+                        return ToolHelpers.ErrorResponse($"Value {numValue} out of range [{slider.Slider.Minimum}, {slider.Slider.Maximum}]");
+
+                    slider.SetSliderValue((decimal)numValue);
+                }
+                else if (component is GH_BooleanToggle toggle)
+                {
+                    toggle.Value = value.ToLower() == "true" || value == "1";
+                }
+                else if (component is GH_ValueList valueList)
+                {
+                    var item = valueList.ListItems.FirstOrDefault(i =>
+                        i.Name.Equals(value, StringComparison.OrdinalIgnoreCase) ||
+                        i.Expression.Equals(value, StringComparison.OrdinalIgnoreCase));
+
+                    if (item == null)
+                        return ToolHelpers.ErrorResponse($"Value '{value}' not found in list. Available: {string.Join(", ", valueList.ListItems.Select(i => i.Name))}");
+
+                    valueList.SelectItem(valueList.ListItems.IndexOf(item));
+                }
+                else
+                {
+                    return ToolHelpers.ErrorResponse($"Cannot set value on {component.GetType().Name}");
+                }
+
+                doc.NewSolution(true);
+
+                return JsonConvert.SerializeObject(new
+                {
+                    success = true,
+                    id,
+                    type = component.Name,
+                    value
+                });
+            });
+        }
+
+        private string ActionConfig(string id, double min, double max, string value, int decimals, string items)
+        {
+            return _context.ExecuteOnUiThread(() =>
+            {
+                if (!ToolHelpers.TryGetUnprotectedComponentWithDoc(_context, id, out var doc, out var component, out var error))
+                    return ToolHelpers.ErrorResponse(error);
+
+                if (component is GH_NumberSlider slider)
+                {
+                    if (!double.IsNaN(min)) slider.Slider.Minimum = (decimal)min;
+                    if (!double.IsNaN(max)) slider.Slider.Maximum = (decimal)max;
+                    if (decimals >= 0) slider.Slider.DecimalPlaces = decimals;
+                    if (!string.IsNullOrEmpty(value) && double.TryParse(value, out double val))
+                        slider.SetSliderValue((decimal)val);
+
+                    doc.NewSolution(true);
+
+                    return JsonConvert.SerializeObject(new
+                    {
+                        success = true,
+                        id,
+                        type = "slider",
+                        min = (double)slider.Slider.Minimum,
+                        max = (double)slider.Slider.Maximum,
+                        value = (double)slider.CurrentValue,
+                        decimals = slider.Slider.DecimalPlaces
+                    });
+                }
+                else if (component is GH_ValueList valueList && !string.IsNullOrEmpty(items))
+                {
+                    try
+                    {
+                        var itemList = JsonConvert.DeserializeObject<List<Dictionary<string, string>>>(items);
+                        valueList.ListItems.Clear();
+
+                        foreach (var item in itemList)
+                        {
+                            var itemName = item.ContainsKey("name") ? item["name"] : "Item";
+                            var expr = item.ContainsKey("value") ? item["value"] : "0";
+                            valueList.ListItems.Add(new GH_ValueListItem(itemName, expr));
+                        }
+
+                        if (valueList.ListItems.Count > 0)
+                            valueList.SelectItem(0);
+
+                        doc.NewSolution(true);
+
+                        return JsonConvert.SerializeObject(new
+                        {
+                            success = true,
+                            id,
+                            type = "value_list",
+                            itemCount = valueList.ListItems.Count,
+                            items = valueList.ListItems.Select(i => new { name = i.Name, value = i.Expression }).ToList()
+                        });
+                    }
+                    catch (Exception ex)
+                    {
+                        return ToolHelpers.ErrorResponse($"Failed to parse items: {ex.Message}");
+                    }
+                }
+                else
+                {
+                    return ToolHelpers.ErrorResponse($"Cannot configure {component.GetType().Name}. Use config for sliders and value lists.");
+                }
+            });
+        }
+
+        private string ActionPreview(string id, string ids, bool enabled)
+        {
+            return _context.ExecuteOnUiThread(() =>
+            {
+                if (!ToolHelpers.TryGetActiveDocument(_context, out var doc, out var error))
+                    return ToolHelpers.ErrorResponse(error);
+
+                List<string> idList = BuildIdList(id, ids, out error);
+                if (idList == null) return ToolHelpers.ErrorResponse(error);
+
+                int changed = 0;
+                foreach (var compId in idList)
+                {
+                    if (ToolHelpers.TryGetUnprotectedComponent(_context, compId, out var comp, out _))
+                    {
+                        if (comp is IGH_PreviewObject preview)
+                        {
+                            preview.Hidden = !enabled;
+                            changed++;
+                        }
+                    }
+                }
+
+                Instances.ActiveCanvas?.Invalidate();
+
+                return JsonConvert.SerializeObject(new
+                {
+                    success = true,
+                    previewEnabled = enabled,
+                    changedCount = changed
+                });
+            });
+        }
+
+        private string ActionEnable(string id, string ids, bool enabled)
+        {
+            return _context.ExecuteOnUiThread(() =>
+            {
+                if (!ToolHelpers.TryGetActiveDocument(_context, out var doc, out var error))
+                    return ToolHelpers.ErrorResponse(error);
+
+                List<string> idList = BuildIdList(id, ids, out error);
+                if (idList == null) return ToolHelpers.ErrorResponse(error);
+
+                int changed = 0;
+                foreach (var compId in idList)
+                {
+                    if (ToolHelpers.TryGetUnprotectedComponent(_context, compId, out var comp, out _))
+                    {
+                        if (comp is IGH_ActiveObject active)
+                        {
+                            active.Locked = !enabled;
+                            changed++;
+                        }
+                    }
+                }
+
+                doc.NewSolution(true);
+
+                return JsonConvert.SerializeObject(new
+                {
+                    success = true,
+                    enabled,
+                    changedCount = changed
+                });
+            });
+        }
+
+        private List<string> BuildIdList(string id, string ids, out string error)
+        {
+            error = null;
+            if (!string.IsNullOrEmpty(ids))
+            {
+                try { return JsonConvert.DeserializeObject<List<string>>(ids); }
+                catch { error = "Invalid ids JSON array"; return null; }
+            }
+            if (!string.IsNullOrEmpty(id))
+                return new List<string> { id };
+
+            error = "Either 'id' or 'ids' is required";
+            return null;
+        }
+
+        #endregion
+
+        #region Group Actions (from gh_group)
+
+        private string ActionGroupCreate(string name, string componentIds, string color)
+        {
+            return _context.ExecuteOnUiThread(() =>
+            {
+                if (!ToolHelpers.TryGetActiveDocument(_context, out var doc, out var error))
+                    return ToolHelpers.ErrorResponse(error);
+
+                var group = new GH_Group();
+                group.NickName = name;
+                group.Name = name;
+
+                if (ToolHelpers.TryParseColor(color, out var groupColor))
+                    group.Colour = groupColor;
+
+                doc.AddObject(group, false);
+
+                var addedIds = new List<string>();
+                if (!string.IsNullOrEmpty(componentIds))
+                {
+                    if (ToolHelpers.TryParseGuidArray(componentIds, out var guids, out _))
+                    {
+                        foreach (var guid in guids)
+                        {
+                            var obj = doc.FindObject(guid, true);
+                            if (obj != null)
+                            {
+                                group.AddObject(obj.InstanceGuid);
+                                addedIds.Add(guid.ToString());
+                            }
+                        }
+                        group.ExpireCaches();
+                    }
+                }
+
+                Instances.ActiveCanvas?.Invalidate();
+
+                return JsonConvert.SerializeObject(new
+                {
+                    success = true,
+                    id = group.InstanceGuid.ToString(),
+                    name = group.NickName,
+                    color = ColorTranslator.ToHtml(group.Colour),
+                    memberCount = addedIds.Count,
+                    memberIds = addedIds
+                });
+            });
+        }
+
+        private string ActionGroupDelete(string id)
+        {
+            return _context.ExecuteOnUiThread(() =>
+            {
+                if (!ToolHelpers.TryGetUnprotectedComponentWithDoc(_context, id, out var doc, out var obj, out var error))
+                    return ToolHelpers.ErrorResponse(error);
+
+                if (!(obj is GH_Group group))
+                    return ToolHelpers.ErrorResponse($"Object is not a group: {id}");
+
+                doc.RemoveObject(group, true);
+
+                return JsonConvert.SerializeObject(new
+                {
+                    success = true,
+                    deleted = id
+                });
+            });
+        }
+
+        private string ActionGroupAdd(string groupId, string componentIds, string groupName, string color)
+        {
+            return _context.ExecuteOnUiThread(() =>
+            {
+                if (!ToolHelpers.TryGetActiveDocument(_context, out var doc, out var error))
+                    return ToolHelpers.ErrorResponse(error);
+
+                if (!ToolHelpers.TryParseGuidArray(componentIds, out var guids, out error))
+                    return ToolHelpers.ErrorResponse(error);
+
+                var objects = new List<IGH_DocumentObject>();
+                foreach (var guid in guids)
+                {
+                    var obj = doc.FindObject(guid, true);
+                    if (obj != null)
+                        objects.Add(obj);
+                }
+
+                if (objects.Count == 0)
+                    return ToolHelpers.ErrorResponse("No valid components found");
+
+                GH_Group group = null;
+                if (!string.IsNullOrEmpty(groupId) && Guid.TryParse(groupId, out Guid gGuid))
+                    group = doc.FindObject(gGuid, true) as GH_Group;
+
+                if (group == null)
+                {
+                    group = new GH_Group();
+                    group.NickName = groupName ?? "Group";
+                    group.Name = groupName ?? "Group";
+                    doc.AddObject(group, false);
+                }
+
+                if (ToolHelpers.TryParseColor(color, out var parsedColor))
+                    group.Colour = parsedColor;
+
+                foreach (var obj in objects)
+                    group.AddObject(obj.InstanceGuid);
+
+                group.ExpireCaches();
+                Instances.ActiveCanvas?.Invalidate();
+
+                var bounds = group.Attributes?.Bounds ?? RectangleF.Empty;
+
+                return JsonConvert.SerializeObject(new
+                {
+                    success = true,
+                    groupId = group.InstanceGuid.ToString(),
+                    groupName = group.NickName,
+                    addedCount = objects.Count,
+                    addedIds = objects.Select(o => o.InstanceGuid.ToString()).ToList(),
+                    bounds = new { x = bounds.X, y = bounds.Y, width = bounds.Width, height = bounds.Height }
+                });
+            });
+        }
+
+        private string ActionGroupRemove(string groupId, string componentIds)
+        {
+            return _context.ExecuteOnUiThread(() =>
+            {
+                if (!ToolHelpers.TryGetComponent(_context, groupId, out var obj, out var error))
+                    return ToolHelpers.ErrorResponse(error);
+
+                if (!(obj is GH_Group group))
+                    return ToolHelpers.ErrorResponse($"Object is not a group: {groupId}");
+
+                if (!ToolHelpers.TryParseGuidArray(componentIds, out var guids, out error))
+                    return ToolHelpers.ErrorResponse(error);
+
+                int removedCount = 0;
+                var removedIds = new List<string>();
+
+                foreach (var guid in guids)
+                {
+                    if (group.ObjectIDs != null && group.ObjectIDs.Contains(guid))
+                    {
+                        group.RemoveObject(guid);
+                        removedCount++;
+                        removedIds.Add(guid.ToString());
+                    }
+                }
+
+                group.ExpireCaches();
+                Instances.ActiveCanvas?.Invalidate();
+
+                return JsonConvert.SerializeObject(new
+                {
+                    success = true,
+                    groupId = group.InstanceGuid.ToString(),
+                    removedCount,
+                    removedIds
+                });
+            });
+        }
+
+        private string ActionGroupList()
+        {
+            return _context.ExecuteOnUiThread(() =>
+            {
+                if (!ToolHelpers.TryGetActiveDocument(_context, out var doc, out var error))
+                    return ToolHelpers.ErrorResponse(error);
+
+                var infraIds = ToolHelpers.GetCordycepsInfrastructureIds(doc);
+                var groups = new List<object>();
+
+                foreach (var obj in doc.Objects)
+                {
+                    if (obj is GH_Group group && !infraIds.Contains(group.InstanceGuid))
+                    {
+                        var memberIds = group.ObjectIDs?
+                            .Where(g => !infraIds.Contains(g))
+                            .Select(g => g.ToString())
+                            .ToList() ?? new List<string>();
+
+                        var bounds = group.Attributes?.Bounds ?? RectangleF.Empty;
+
+                        groups.Add(new
+                        {
+                            id = group.InstanceGuid.ToString(),
+                            name = group.NickName,
+                            color = ColorTranslator.ToHtml(group.Colour),
+                            memberCount = memberIds.Count,
+                            memberIds,
+                            bounds = new { x = bounds.X, y = bounds.Y, width = bounds.Width, height = bounds.Height }
+                        });
+                    }
+                }
+
+                return JsonConvert.SerializeObject(new
+                {
+                    success = true,
+                    count = groups.Count,
+                    groups
+                });
+            });
+        }
+
+        private string ActionGroupRename(string id, string newName)
+        {
+            return _context.ExecuteOnUiThread(() =>
+            {
+                if (!ToolHelpers.TryGetComponent(_context, id, out var obj, out var error))
+                    return ToolHelpers.ErrorResponse(error);
+
+                if (!(obj is GH_Group group))
+                    return ToolHelpers.ErrorResponse($"Object is not a group: {id}");
+
+                string oldName = group.NickName;
+                group.NickName = newName;
+                group.Name = newName;
+                Instances.ActiveCanvas?.Invalidate();
+
+                return JsonConvert.SerializeObject(new
+                {
+                    success = true,
+                    id = group.InstanceGuid.ToString(),
+                    oldName,
+                    name = group.NickName
+                });
+            });
+        }
+
+        private string ActionGroupColor(string id, string color)
+        {
+            return _context.ExecuteOnUiThread(() =>
+            {
+                if (!ToolHelpers.TryGetComponent(_context, id, out var obj, out var error))
+                    return ToolHelpers.ErrorResponse(error);
+
+                if (!(obj is GH_Group group))
+                    return ToolHelpers.ErrorResponse($"Object is not a group: {id}");
+
+                if (!ToolHelpers.TryParseColor(color, out var groupColor))
+                    return ToolHelpers.ErrorResponse($"Invalid color: {color}");
+
+                group.Colour = groupColor;
+                Instances.ActiveCanvas?.Invalidate();
+
+                return JsonConvert.SerializeObject(new
+                {
+                    success = true,
+                    id,
+                    color = ColorTranslator.ToHtml(group.Colour)
+                });
+            });
+        }
+
+        private string ActionGroupMove(string groupSpec, double dx, double dy)
+        {
+            return _context.ExecuteOnUiThread(() =>
+            {
+                if (string.IsNullOrEmpty(groupSpec))
+                    return ToolHelpers.ErrorResponse("Group id is required");
+
+                if (!ToolHelpers.TryGetActiveDocument(_context, out var doc, out var error))
+                    return ToolHelpers.ErrorResponse(error);
+
+                var infraIds = ToolHelpers.GetCordycepsInfrastructureIds(doc);
+
+                GH_Group targetGroup = null;
+                if (Guid.TryParse(groupSpec, out Guid groupGuid))
+                {
+                    if (infraIds.Contains(groupGuid))
+                        return ToolHelpers.ErrorResponse($"Protected: required for MCP server. Cannot modify: {groupSpec}");
+                    targetGroup = doc.FindObject(groupGuid, true) as GH_Group;
+                }
+
+                if (targetGroup == null)
+                {
+                    foreach (var obj in doc.Objects)
+                    {
+                        if (obj is GH_Group g && !infraIds.Contains(g.InstanceGuid) &&
+                            (g.NickName.Equals(groupSpec, StringComparison.OrdinalIgnoreCase) ||
+                             g.Name.Equals(groupSpec, StringComparison.OrdinalIgnoreCase)))
+                        {
+                            targetGroup = g;
+                            break;
+                        }
+                    }
+                }
+
+                if (targetGroup == null)
+                    return ToolHelpers.ErrorResponse($"Group not found: {groupSpec}");
+
+                var memberIds = targetGroup.ObjectIDs?.ToList() ?? new List<Guid>();
+                if (memberIds.Count == 0)
+                {
+                    return JsonConvert.SerializeObject(new
+                    {
+                        success = true,
+                        groupId = targetGroup.InstanceGuid.ToString(),
+                        movedCount = 0,
+                        message = "Group has no members"
+                    });
+                }
+
+                int movedCount = 0;
+                foreach (var memberId in memberIds)
+                {
+                    var member = doc.FindObject(memberId, true);
+                    if (member?.Attributes != null)
+                    {
+                        var pivot = member.Attributes.Pivot;
+                        member.Attributes.Pivot = new PointF(pivot.X + (float)dx, pivot.Y + (float)dy);
+                        member.Attributes.ExpireLayout();
+                        movedCount++;
+                    }
+                }
+
+                targetGroup.ExpireCaches();
+                Instances.ActiveCanvas?.Invalidate();
+
+                var bounds = targetGroup.Attributes?.Bounds ?? RectangleF.Empty;
+
+                return JsonConvert.SerializeObject(new
+                {
+                    success = true,
+                    groupId = targetGroup.InstanceGuid.ToString(),
+                    movedCount,
+                    offset = new { dx, dy },
+                    bounds = new { x = bounds.X, y = bounds.Y, width = bounds.Width, height = bounds.Height }
+                });
+            });
+        }
+
+        #endregion
     }
 }
