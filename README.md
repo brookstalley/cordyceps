@@ -1,6 +1,6 @@
 # Cordyceps
 
-**MCP server for Grasshopper.** Give AI agents or scripts direct control over your parametric design canvas.
+**MCP server for Grasshopper.** Gives AI agents or scripts direct control over your parametric design canvas and select Rhino viewport + rendering tools.
 
 ## Requirements
 
@@ -15,7 +15,7 @@
 
 * You may need to unblock the file before running. Windows: right click Cordyceps.gha -> properties -> Unblock. 
 
-**Start**: Drop the Cordyceps component on your canvas (*Params → Util → Cordyceps*). The server starts on port 26929 by default—change it via the Port input if needed.
+**Start**: Drop the Cordyceps component on your canvas (*Params → Util → Cordyceps*). The server starts on port 26929 by default; change Port input if required.
 
 **Connect**: Configure your MCP client:
 
