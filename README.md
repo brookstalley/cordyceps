@@ -57,7 +57,7 @@ async with ClientSession(transport) as session:
 
 Here's what happens when you give Claude this natural language prompt:
 
-> Let's make a GIF for the GitHub README that shows the full journey from parametric modeling to photorealistic render. The subject is a small collection of geometric forms — maybe five or six objects with varied shapes, scales, and proportions. Arrange them as a pleasing composition. The GIF shows three phases: building the geometry in Grasshopper with solver enabled and frequent captures, then baking and setting up a beautiful render in Rhino with previews disabled, and finally a smooth raytraced orbit. Use an outdoor environment and a variety of materials to make it visually rich.
+> Make an animated GIF that shows the full journey from parametric modeling to photorealistic render. The subject is a small collection of geometric forms — maybe five or six objects with varied shapes, scales, and proportions. Arrange them as a pleasing composition. The GIF shows three phases: building the geometry in Grasshopper with solver enabled and frequent captures, then baking and setting up a beautiful render in Rhino with previews disabled, and finally a smooth raytraced orbit. Use an outdoor environment and a variety of materials to make it visually rich. The GIF must include both canvas and viewport in every frame.
 
 ![Cordyceps Showcase](images/cordyceps_showcase.gif)
 
