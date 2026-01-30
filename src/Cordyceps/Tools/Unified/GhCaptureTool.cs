@@ -362,82 +362,51 @@ namespace Cordyceps.Tools.Unified
 
         private Bitmap CaptureCanvasRegion(GH_Canvas canvas, RectangleF canvasBounds)
         {
-            const int MaxDim = 4096, MinDim = 100;
-            float ar = canvasBounds.Width / canvasBounds.Height;
-            int outW, outH;
+            // Calculate zoom to fit content within the actual canvas window with margin
+            int canvasW = canvas.Width;
+            int canvasH = canvas.Height;
+            const float marginFactor = 0.9f; // Leave 10% margin on each side
+            var center = new PointF(canvasBounds.X + canvasBounds.Width / 2, canvasBounds.Y + canvasBounds.Height / 2);
+            float zoom = Math.Min((float)canvasW / canvasBounds.Width, (float)canvasH / canvasBounds.Height) * marginFactor;
 
-            if (ar >= 1f)
+            // Focus needs pre-scaled coordinates: Focus(center * zoom) then set Zoom
+            // Because GH_Viewport MidPoint_displayed = MidPoint_internal / zoom
+            var scaledCenter = new PointF(center.X * zoom, center.Y * zoom);
+
+            canvas.Viewport.Focus(scaledCenter);
+            canvas.Viewport.Zoom = zoom;
+            canvas.Viewport.ComputeProjection();
+
+            // Force the viewport change to take effect
+            canvas.Invalidate();
+            canvas.Refresh();
+            Application.DoEvents();
+            System.Threading.Thread.Sleep(150);
+            canvas.Refresh();
+            Application.DoEvents();
+
+            // Capture screen buffer
+            Bitmap buf = canvas.GetCanvasScreenBuffer(GH_CanvasMode.Control);
+            if (buf != null && !IsBlackImage(buf))
             {
-                outW = Math.Min(MaxDim, Math.Max(MinDim, (int)canvasBounds.Width));
-                outH = Math.Max(MinDim, (int)(outW / ar));
+                var result = new Bitmap(buf);
+                buf.Dispose();
+                return result;
             }
-            else
+            buf?.Dispose();
+
+            // Fallback to Export mode
+            buf = canvas.GetCanvasScreenBuffer(GH_CanvasMode.Export);
+            if (buf != null && !IsBlackImage(buf))
             {
-                outH = Math.Min(MaxDim, Math.Max(MinDim, (int)canvasBounds.Height));
-                outW = Math.Max(MinDim, (int)(outH * ar));
+                var result = new Bitmap(buf);
+                buf.Dispose();
+                return result;
             }
+            buf?.Dispose();
 
-            var origMid = canvas.Viewport.MidPoint;
-            var origZoom = canvas.Viewport.Zoom;
-
-            try
-            {
-                var center = new PointF(canvasBounds.X + canvasBounds.Width / 2, canvasBounds.Y + canvasBounds.Height / 2);
-                float zoom = Math.Min((float)outW / canvasBounds.Width, (float)outH / canvasBounds.Height);
-                canvas.Viewport.MidPoint = center;
-                canvas.Viewport.Zoom = zoom;
-
-                // Force canvas to repaint with multiple approaches
-                canvas.Refresh();
-                Application.DoEvents();
-                System.Threading.Thread.Sleep(150);
-                canvas.Invalidate(true);
-                canvas.Update();
-                Application.DoEvents();
-
-                // Try Export mode first (should work for offscreen rendering)
-                Bitmap buf = canvas.GetCanvasScreenBuffer(GH_CanvasMode.Export);
-                if (buf != null && !IsBlackImage(buf))
-                {
-                    var result = new Bitmap(outW, outH, PixelFormat.Format32bppArgb);
-                    using (var g = Graphics.FromImage(result))
-                    {
-                        g.InterpolationMode = System.Drawing.Drawing2D.InterpolationMode.HighQualityBicubic;
-                        g.DrawImage(buf, 0, 0, outW, outH);
-                    }
-                    buf.Dispose();
-                    return result;
-                }
-                buf?.Dispose();
-
-                // Try Control mode
-                buf = canvas.GetCanvasScreenBuffer(GH_CanvasMode.Control);
-                if (buf != null && !IsBlackImage(buf))
-                {
-                    var result = new Bitmap(outW, outH, PixelFormat.Format32bppArgb);
-                    using (var g = Graphics.FromImage(result))
-                    {
-                        g.InterpolationMode = System.Drawing.Drawing2D.InterpolationMode.HighQualityBicubic;
-                        float srcW = canvasBounds.Width * zoom, srcH = canvasBounds.Height * zoom;
-                        float srcX = Math.Max(0, (buf.Width - srcW) / 2f), srcY = Math.Max(0, (buf.Height - srcH) / 2f);
-                        srcW = Math.Min(srcW, buf.Width - srcX);
-                        srcH = Math.Min(srcH, buf.Height - srcY);
-                        g.DrawImage(buf, new RectangleF(0, 0, outW, outH), new RectangleF(srcX, srcY, srcW, srcH), GraphicsUnit.Pixel);
-                    }
-                    buf.Dispose();
-                    return result;
-                }
-                buf?.Dispose();
-
-                // Both modes returned black images - return null to signal failure
-                return null;
-            }
-            finally
-            {
-                canvas.Viewport.MidPoint = origMid;
-                canvas.Viewport.Zoom = origZoom;
-                canvas.Refresh();
-            }
+            DebugLog.Warn("CaptureCanvasRegion: Both capture modes returned black images");
+            return null;
         }
 
         private bool IsBlackImage(Bitmap bitmap)

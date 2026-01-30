@@ -7,7 +7,7 @@ Grasshopper is a visual dataflow graph for parametric 3D design. Components on a
 Cordyceps provides 10 unified tools, each with an `action` parameter. Use `action='help'` on any tool to see all available actions and parameters.
 
 **Grasshopper Tools:**
-- `gh_canvas` - Add, delete, move, rename, find, search, list, bake components
+- `gh_canvas` - Add, delete, move, rename, find, search, list, bake components, zoom/view control
 - `gh_wire` - Connect, disconnect, list, validate wires
 - `gh_adjust` - Get/set values, configure sliders, toggles, panels
 - `gh_document` - Info, save, clear, solver control, undo/redo, snapshots
@@ -19,7 +19,7 @@ Cordyceps provides 10 unified tools, each with an `action` parameter. Use `actio
 **Rhino Tools:**
 - `rhino_scene` - Objects, selection, layers (full CRUD), hide/show, delete, run scripts
 - `rhino_render` - Display modes, camera, zoom, render status, settings, sun, skylight, ground plane
-- `rhino_material` - List, create, apply, delete PBR materials
+- `rhino_material` - List, create, apply, delete materials; use built-in library types (Metal, Glass, Plastic, etc.)
 - `rhino_environment` - List, set, create, delete render environments
 
 ## Object Types
@@ -30,6 +30,8 @@ Three roles (check `role` field in responses):
 - **input**: Interactive control (Params/Input subcategory). Sliders, toggles.
 
 **Ambiguous names**: "Circle" matches both Circle component (Curve/Primitive) and Circle parameter (Params/Geometry). On ambiguity, you get `ambiguous_name` error with all matches. Resolve with GUID or category-qualified name like `Curve/Circle`.
+
+**Deprecated components**: Search results and disambiguation include `deprecated` field. **Always prefer components where `deprecated=false`**. Deprecated components have a `upgradeTo` field showing the recommended replacement. Results are sorted with non-deprecated components first.
 
 ## Data Trees
 
@@ -99,6 +101,10 @@ Use `gh_canvas(action='validate')` to check overlaps. Fix with `gh_canvas(action
 - `gh_script(action='configure', id='...', inputs='[...]', outputs='[...]', code='...')` — configure script
 
 **Visualization:**
+- `gh_canvas(action='zoom')` — zoom canvas to fit all components
+- `gh_canvas(action='zoom', id='...', padding=100)` — zoom to specific component with margin
+- `gh_canvas(action='view')` — get current canvas view (center, zoom level)
+- `gh_canvas(action='view', centerX=..., centerY=..., zoom=1.0)` — set canvas view explicitly
 - `gh_capture(action='canvas')` — capture Grasshopper canvas
 - `gh_capture(action='viewport')` — capture Rhino 3D viewport
 - `gh_capture(action='views')` — list available views
@@ -112,11 +118,19 @@ Use `gh_canvas(action='validate')` to check overlaps. Fix with `gh_canvas(action
 5. Unvalidated connections → silent type coercion failures
 6. Component overlaps → unreadable canvas. **Fix**: Use `gh_canvas(action='validate')` to detect, then `gh_canvas(action='move')` to fix
 7. Geometry pointing wrong direction → oriented geometry (Cylinder, Cone, etc.) extends along the plane's **Z-axis**. Using XY Plane gives vertical geometry; use YZ Plane or Plane Normal for horizontal. See `gh://docs/geometry-orientation`
+8. Using deprecated components → old/obsolete components may have bugs or missing features. **Always check `deprecated` field** and prefer `deprecated=false`. If a component shows `deprecated=true`, use the `upgradeTo` component instead.
 
 ## Capturing Images
 
 Use capture tools to see what you've built:
 
+**Canvas View Control:**
+- `gh_canvas(action='zoom')` — Zoom canvas to fit all components with margin. **Use before capturing** to ensure all components are visible.
+- `gh_canvas(action='zoom', id='...', padding=100)` — Zoom to a specific component with custom padding.
+- `gh_canvas(action='view')` — Get current view state (centerX, centerY, zoom level).
+- `gh_canvas(action='view', centerX=..., centerY=..., zoom=1.0)` — Set view explicitly. Zoom 1.0=100%, 0.5=50%, 2.0=200%.
+
+**Capture:**
 - `gh_capture(action='canvas')` — Save the Grasshopper canvas as an image. Auto-fits to content by default.
 - `gh_capture(action='canvas', fit=false)` — Capture current view without auto-fitting.
 - `gh_capture(action='region', xMin=..., yMin=..., xMax=..., yMax=...)` — Capture a specific canvas region.
@@ -125,6 +139,8 @@ Use capture tools to see what you've built:
 - `gh_capture(action='views')` — List available Rhino viewports (Perspective, Top, Front, etc.)
 
 All capture functions return a file path. Use the Read tool to view captured images.
+
+**Best practice:** Call `gh_canvas(action='zoom')` before `gh_capture(action='canvas')` to ensure all components are framed properly.
 
 ## Rhino Rendering Pipeline
 
@@ -164,6 +180,14 @@ After building geometry in Grasshopper, you can bake to Rhino and create rendere
 **Render Status:**
 - `rhino_render(action='render')` — get render status (for Raytraced mode)
 - `rhino_render(action='render', wait=200, timeout=30)` — wait for render passes
+
+**Materials:**
+- `rhino_material(action='library')` — list built-in material types (Metal, Glass, Plastic, etc.)
+- `rhino_material(action='instantiate', type='Metal', name='Gold', color='#FFD700')` — create from built-in type
+- `rhino_material(action='create', name='...', color='...', metallic=..., roughness=...)` — create custom PBR
+- `rhino_material(action='apply', ids='[...]', material='...')` — apply to objects
+
+**NOTE:** Materials only render in **Raytraced** or **Rendered** display modes. Use Raytraced for physically accurate results.
 
 ### Camera Orbit Pattern
 

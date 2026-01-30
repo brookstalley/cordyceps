@@ -120,6 +120,22 @@ namespace Cordyceps.Tools.Unified
                     Example = "action='bake', id='abc-123', layer='Baked'",
                     Tips = new[] { "Creates permanent Rhino objects from component output", "Specify layer to organize baked geometry" }
                 },
+                ["zoom"] = new ActionInfo
+                {
+                    Name = "zoom",
+                    Description = "Zoom canvas to fit all components or a specific component",
+                    Optional = new[] { "id", "padding" },
+                    Example = "action='zoom' OR action='zoom', id='abc-123', padding=100",
+                    Tips = new[] { "No id = zoom to fit all components", "padding adds margin around content (default 50)" }
+                },
+                ["view"] = new ActionInfo
+                {
+                    Name = "view",
+                    Description = "Get or set canvas view (center point and zoom level)",
+                    Optional = new[] { "centerX", "centerY", "zoom" },
+                    Example = "action='view' OR action='view', centerX=300, centerY=200, zoom=1.0",
+                    Tips = new[] { "No params = get current view", "zoom: 1.0=100%, 0.5=50%, 2.0=200%" }
+                },
                 ["help"] = new ActionInfo
                 {
                     Name = "help",
@@ -129,7 +145,8 @@ namespace Cordyceps.Tools.Unified
             Notes = new[]
             {
                 "Disable solver before bulk operations: gh_document(action='solver', enabled=false)",
-                "Recommended spacing: 150px horizontal, 70px vertical between components"
+                "Recommended spacing: 150px horizontal, 70px vertical between components",
+                "Use action='zoom' before capturing to ensure all components are visible"
             }
         };
 
@@ -138,7 +155,7 @@ namespace Cordyceps.Tools.Unified
             _context = context;
         }
 
-        [McpServerTool, Description("Component operations. Actions: add|delete|move|rename|find|search|list|info|bounds|validate|constant|bake|help")]
+        [McpServerTool, Description("Component operations. Actions: add|delete|move|rename|find|search|list|info|bounds|validate|constant|bake|zoom|view|help")]
         public string GhCanvas(
             [Description("Action to perform")] string action,
             [Description("Component type for 'add', or search query for 'search'")] string type = null,
@@ -156,7 +173,11 @@ namespace Cordyceps.Tools.Unified
             [Description("Exact match for find")] bool exact = false,
             [Description("Value for constant panel")] string value = null,
             [Description("Layer name for bake")] string layer = null,
-            [Description("Object name for bake")] string name = null)
+            [Description("Object name for bake")] string name = null,
+            [Description("Padding for zoom (default 50)")] int padding = 50,
+            [Description("Center X for view")] double centerX = double.NaN,
+            [Description("Center Y for view")] double centerY = double.NaN,
+            [Description("Zoom level for view (1.0=100%)")] double zoom = double.NaN)
         {
             // Handle help action
             if (string.Equals(action, "help", StringComparison.OrdinalIgnoreCase))
@@ -181,7 +202,11 @@ namespace Cordyceps.Tools.Unified
                 ("exact", exact),
                 ("value", value),
                 ("layer", layer),
-                ("name", name)
+                ("name", name),
+                ("padding", padding != 50 ? (object)padding : null),
+                ("centerX", double.IsNaN(centerX) ? null : (object)centerX),
+                ("centerY", double.IsNaN(centerY) ? null : (object)centerY),
+                ("zoom", double.IsNaN(zoom) ? null : (object)zoom)
             );
 
             // Validate action and required params
@@ -204,6 +229,8 @@ namespace Cordyceps.Tools.Unified
                 "validate" => ActionValidate(),
                 "constant" => ActionConstant(value, x, y, nickname),
                 "bake" => ActionBake(id, layer, name),
+                "zoom" => ActionZoom(id, padding),
+                "view" => ActionView(centerX, centerY, zoom),
                 _ => JsonConvert.SerializeObject(new { success = false, error = $"Unknown action: {action}" })
             };
         }
@@ -228,7 +255,7 @@ namespace Cordyceps.Tools.Unified
                         {
                             success = false,
                             error = "ambiguous_name",
-                            message = $"Multiple components match '{type}'. Use GUID or 'Category/Name' format.",
+                            message = $"Multiple components match '{type}'. Use GUID or 'Category/Name' format. Prefer non-deprecated components.",
                             matchCount = matches.Count,
                             matches = matches.Select(m => new
                             {
@@ -236,7 +263,10 @@ namespace Cordyceps.Tools.Unified
                                 guid = m.Guid,
                                 category = m.Category,
                                 subcategory = m.SubCategory,
-                                role = m.Role
+                                role = m.Role,
+                                deprecated = m.Deprecated,
+                                upgradeTo = m.UpgradeTo,
+                                upgradeToGuid = m.UpgradeToGuid
                             })
                         });
                     }
@@ -516,7 +546,10 @@ namespace Cordyceps.Tools.Unified
                     category = r.Category,
                     subcategory = r.SubCategory,
                     role = ComponentRegistry.GetRole(r.Category, r.SubCategory),
-                    guid = r.Guid
+                    guid = r.Guid,
+                    deprecated = r.Deprecated,
+                    upgradeTo = r.UpgradeTo,
+                    upgradeToGuid = r.UpgradeToGuid
                 }).ToList();
 
                 return JsonConvert.SerializeObject(new
@@ -524,6 +557,7 @@ namespace Cordyceps.Tools.Unified
                     success = true,
                     count = enhanced.Count,
                     totalMatches = results.Count,
+                    note = "Results are sorted with non-deprecated components first. Prefer components where deprecated=false.",
                     components = enhanced
                 });
             });
@@ -773,6 +807,131 @@ namespace Cordyceps.Tools.Unified
                     bakedCount = bakedIds.Count,
                     layer = layer ?? "Default",
                     objectIds = bakedIds
+                });
+            });
+        }
+
+        private string ActionZoom(string id, int padding)
+        {
+            return _context.ExecuteOnUiThread(() =>
+            {
+                var canvas = Instances.ActiveCanvas;
+                if (canvas == null)
+                    return ToolHelpers.ErrorResponse("No active Grasshopper canvas");
+
+                var doc = canvas.Document;
+                if (doc == null)
+                    return ToolHelpers.ErrorResponse("No active Grasshopper document");
+
+                RectangleF bounds;
+
+                if (!string.IsNullOrEmpty(id))
+                {
+                    // Zoom to specific component
+                    if (!ToolHelpers.TryGetUnprotectedComponent(_context, id, out var component, out var error))
+                        return ToolHelpers.ErrorResponse(error);
+
+                    bounds = component.Attributes.Bounds;
+                    bounds.Inflate(padding, padding);
+                }
+                else
+                {
+                    // Zoom to fit all components
+                    var infraIds = ToolHelpers.GetCordycepsInfrastructureIds(doc);
+                    float minX = float.MaxValue, minY = float.MaxValue;
+                    float maxX = float.MinValue, maxY = float.MinValue;
+                    bool hasContent = false;
+
+                    foreach (var obj in doc.Objects)
+                    {
+                        if (ToolHelpers.IsCordycepsInfrastructure(obj, infraIds)) continue;
+                        hasContent = true;
+                        var b = obj.Attributes.Bounds;
+                        minX = Math.Min(minX, b.Left);
+                        minY = Math.Min(minY, b.Top);
+                        maxX = Math.Max(maxX, b.Right);
+                        maxY = Math.Max(maxY, b.Bottom);
+                    }
+
+                    if (!hasContent)
+                        return ToolHelpers.ErrorResponse("No components on canvas to zoom to");
+
+                    bounds = new RectangleF(minX - padding, minY - padding,
+                                           (maxX - minX) + padding * 2,
+                                           (maxY - minY) + padding * 2);
+                }
+
+                // Calculate center and zoom to fit bounds in viewport
+                var center = new PointF(bounds.X + bounds.Width / 2, bounds.Y + bounds.Height / 2);
+                var viewportSize = canvas.Viewport.VisibleRegion;
+                float zoomX = viewportSize.Width / bounds.Width;
+                float zoomY = viewportSize.Height / bounds.Height;
+                float newZoom = Math.Min(zoomX, zoomY) * 0.9f; // 90% to leave margin
+
+                // Clamp zoom to reasonable range
+                newZoom = Math.Max(0.1f, Math.Min(5f, newZoom));
+
+                canvas.Viewport.MidPoint = center;
+                canvas.Viewport.Zoom = newZoom;
+                canvas.Refresh();
+
+                return JsonConvert.SerializeObject(new
+                {
+                    success = true,
+                    centerX = center.X,
+                    centerY = center.Y,
+                    zoom = newZoom,
+                    bounds = new { x = bounds.X, y = bounds.Y, width = bounds.Width, height = bounds.Height }
+                });
+            });
+        }
+
+        private string ActionView(double centerX, double centerY, double zoom)
+        {
+            return _context.ExecuteOnUiThread(() =>
+            {
+                var canvas = Instances.ActiveCanvas;
+                if (canvas == null)
+                    return ToolHelpers.ErrorResponse("No active Grasshopper canvas");
+
+                // If no parameters provided, return current view state
+                if (double.IsNaN(centerX) && double.IsNaN(centerY) && double.IsNaN(zoom))
+                {
+                    var currentMid = canvas.Viewport.MidPoint;
+                    var currentZoom = canvas.Viewport.Zoom;
+                    var visible = canvas.Viewport.VisibleRegion;
+
+                    return JsonConvert.SerializeObject(new
+                    {
+                        success = true,
+                        centerX = currentMid.X,
+                        centerY = currentMid.Y,
+                        zoom = currentZoom,
+                        visibleRegion = new { x = visible.X, y = visible.Y, width = visible.Width, height = visible.Height }
+                    });
+                }
+
+                // Set view parameters
+                var newCenter = canvas.Viewport.MidPoint;
+                if (!double.IsNaN(centerX)) newCenter.X = (float)centerX;
+                if (!double.IsNaN(centerY)) newCenter.Y = (float)centerY;
+                canvas.Viewport.MidPoint = newCenter;
+
+                if (!double.IsNaN(zoom))
+                {
+                    // Clamp zoom to reasonable range
+                    var newZoom = Math.Max(0.1, Math.Min(5.0, zoom));
+                    canvas.Viewport.Zoom = (float)newZoom;
+                }
+
+                canvas.Refresh();
+
+                return JsonConvert.SerializeObject(new
+                {
+                    success = true,
+                    centerX = canvas.Viewport.MidPoint.X,
+                    centerY = canvas.Viewport.MidPoint.Y,
+                    zoom = canvas.Viewport.Zoom
                 });
             });
         }

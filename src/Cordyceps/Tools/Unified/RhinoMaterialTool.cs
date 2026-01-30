@@ -20,10 +20,26 @@ namespace Cordyceps.Tools.Unified
     {
         private readonly GrasshopperContext _context;
 
+        // Built-in material types mapped to ContentUuids
+        private static readonly Dictionary<string, Guid> BuiltInMaterialTypes = new Dictionary<string, Guid>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["Metal"] = ContentUuids.MetalMaterialType,
+            ["Glass"] = ContentUuids.GlassMaterialType,
+            ["Plastic"] = ContentUuids.PlasticMaterialType,
+            ["Paint"] = ContentUuids.PaintMaterialType,
+            ["Gem"] = ContentUuids.GemMaterialType,
+            ["Plaster"] = ContentUuids.PlasterMaterialType,
+            ["Picture"] = ContentUuids.PictureMaterialType,
+            ["PhysicallyBased"] = ContentUuids.PhysicallyBasedMaterialType,
+            ["Blend"] = ContentUuids.BlendMaterialType,
+            ["DoubleSided"] = ContentUuids.DoubleSidedMaterialType,
+            ["Emission"] = ContentUuids.EmissionMaterialType
+        };
+
         private static readonly UnifiedToolInfo ToolInfo = new UnifiedToolInfo
         {
             ToolName = "rhino_material",
-            Description = "Rhino material operations - create PBR materials, apply to objects, list, delete",
+            Description = "Rhino material operations - create PBR materials, apply to objects, list, delete, use built-in library types",
             Actions = new Dictionary<string, ActionInfo>
             {
                 ["list"] = new ActionInfo
@@ -32,10 +48,25 @@ namespace Cordyceps.Tools.Unified
                     Description = "List all materials in the document",
                     Example = "action='list'"
                 },
+                ["library"] = new ActionInfo
+                {
+                    Name = "library",
+                    Description = "List available built-in material types (Metal, Glass, Plastic, etc.)",
+                    Example = "action='library'"
+                },
+                ["instantiate"] = new ActionInfo
+                {
+                    Name = "instantiate",
+                    Description = "Create a material from a built-in type",
+                    Required = new[] { "type" },
+                    Optional = new[] { "name", "color" },
+                    Example = "action='instantiate', type='Metal', name='Copper', color='#B87333'",
+                    Tips = new[] { "Types: Metal, Glass, Plastic, Paint, Gem, Plaster, Emission", "name defaults to type name if not provided" }
+                },
                 ["create"] = new ActionInfo
                 {
                     Name = "create",
-                    Description = "Create a PBR material",
+                    Description = "Create a PBR material from scratch",
                     Required = new[] { "name", "color" },
                     Optional = new[] { "roughness", "metallic", "transparency", "emission", "ior" },
                     Example = "action='create', name='Red Metal', color='#FF0000', metallic=1, roughness=0.3",
@@ -68,10 +99,11 @@ namespace Cordyceps.Tools.Unified
             _context = context;
         }
 
-        [McpServerTool, Description("Material operations. Actions: list|create|apply|delete|help")]
+        [McpServerTool, Description("Material operations. Actions: list|library|instantiate|create|apply|delete|help")]
         public string RhinoMaterial(
             [Description("Action to perform")] string action,
             [Description("Material name")] string name = null,
+            [Description("Built-in material type (Metal, Glass, Plastic, Paint, Gem, Plaster, Emission, etc.)")] string type = null,
             [Description("Base color as hex '#RRGGBB' or RGB '255,128,0'")] string color = null,
             [Description("Surface roughness 0-1 (0=mirror, 1=matte)")] double roughness = 0.5,
             [Description("Metalness 0-1 (0=dielectric, 1=metal)")] double metallic = 0,
@@ -86,6 +118,7 @@ namespace Cordyceps.Tools.Unified
 
             var providedParams = UnifiedToolHelpers.BuildParams(
                 ("name", name),
+                ("type", type),
                 ("color", color),
                 ("roughness", roughness),
                 ("metallic", metallic),
@@ -103,6 +136,8 @@ namespace Cordyceps.Tools.Unified
             return action.ToLowerInvariant() switch
             {
                 "list" => ActionList(),
+                "library" => ActionLibrary(),
+                "instantiate" => ActionInstantiate(type, name, color),
                 "create" => ActionCreate(name, color, roughness, metallic, transparency, emission, ior),
                 "apply" => ActionApply(ids, material),
                 "delete" => ActionDelete(name),
@@ -149,6 +184,150 @@ namespace Cordyceps.Tools.Unified
                     count = materials.Count,
                     materials
                 });
+            });
+        }
+
+        private string ActionLibrary()
+        {
+            var types = BuiltInMaterialTypes.Select(kvp => new
+            {
+                name = kvp.Key,
+                guid = kvp.Value.ToString(),
+                description = GetMaterialTypeDescription(kvp.Key)
+            }).ToList();
+
+            return JsonConvert.SerializeObject(new
+            {
+                success = true,
+                count = types.Count,
+                types,
+                usage = "Use action='instantiate', type='<type>' to create a material from these types"
+            });
+        }
+
+        private static string GetMaterialTypeDescription(string typeName)
+        {
+            return typeName switch
+            {
+                "Metal" => "Metallic materials with realistic reflections (gold, silver, copper, aluminum)",
+                "Glass" => "Transparent materials with refraction (windows, bottles, lenses)",
+                "Plastic" => "Non-metallic materials with varying glossiness",
+                "Paint" => "Painted surface materials with color and sheen",
+                "Gem" => "Gemstone materials with dispersion (diamonds, rubies, emeralds)",
+                "Plaster" => "Matte, diffuse materials (walls, ceilings)",
+                "Picture" => "Image-based materials for decals and textures",
+                "PhysicallyBased" => "Full PBR material with all parameters",
+                "Blend" => "Blend between two materials",
+                "DoubleSided" => "Different materials on front and back faces",
+                "Emission" => "Light-emitting materials (screens, neon, glowing objects)",
+                _ => "Material type"
+            };
+        }
+
+        private string ActionInstantiate(string type, string name, string color)
+        {
+            return _context.ExecuteOnUiThread(() =>
+            {
+                var rhinoDoc = RhinoDoc.ActiveDoc;
+                if (rhinoDoc == null)
+                    return ToolHelpers.ErrorResponse("No active Rhino document");
+
+                if (string.IsNullOrEmpty(type))
+                    return ToolHelpers.ErrorResponse("type is required. Use action='library' to see available types.");
+
+                if (!BuiltInMaterialTypes.TryGetValue(type, out var typeGuid))
+                {
+                    var availableTypes = string.Join(", ", BuiltInMaterialTypes.Keys);
+                    return ToolHelpers.ErrorResponse($"Unknown material type: '{type}'. Available types: {availableTypes}");
+                }
+
+                // Use the provided name or generate one based on the type
+                var materialName = !string.IsNullOrEmpty(name) ? name : $"{type} Material";
+
+                // Check if a material with this name already exists
+                var existing = rhinoDoc.RenderMaterials.FirstOrDefault(m =>
+                    m.Name.Equals(materialName, StringComparison.OrdinalIgnoreCase));
+                if (existing != null)
+                {
+                    return JsonConvert.SerializeObject(new
+                    {
+                        success = true,
+                        created = false,
+                        alreadyExists = true,
+                        id = existing.Id.ToString(),
+                        name = existing.Name,
+                        type
+                    });
+                }
+
+                try
+                {
+                    // Create temporary content from the built-in type using NewContentFromTypeId
+                    var renderMaterial = RenderContentType.NewContentFromTypeId(typeGuid) as RenderMaterial;
+
+                    if (renderMaterial == null)
+                        return ToolHelpers.ErrorResponse($"Failed to create material of type '{type}'. The type GUID may not be available.");
+
+                    // Configure the material
+                    renderMaterial.BeginChange(RenderContent.ChangeContexts.Program);
+                    renderMaterial.Name = materialName;
+
+                    // Apply color if provided
+                    if (!string.IsNullOrEmpty(color) && ToolHelpers.TryParseColor(color, out var baseColor))
+                    {
+                        var color4f = Color4f.FromArgb(1, baseColor.R / 255f, baseColor.G / 255f, baseColor.B / 255f);
+
+                        // Try multiple parameter names that different material types might use
+                        var colorParamNames = new[] { "color", "diffuse", "diffuse-color", "base-color", "Color" };
+                        bool colorSet = false;
+
+                        foreach (var paramName in colorParamNames)
+                        {
+                            try
+                            {
+                                if (renderMaterial.SetParameter(paramName, color4f))
+                                {
+                                    colorSet = true;
+                                    break;
+                                }
+                            }
+                            catch { }
+                        }
+
+                        // Also try setting via ToMaterial if direct parameter setting didn't work
+                        if (!colorSet)
+                        {
+                            try
+                            {
+                                var sim = renderMaterial.ToMaterial(RenderTexture.TextureGeneration.Allow);
+                                if (sim != null)
+                                {
+                                    sim.DiffuseColor = baseColor;
+                                }
+                            }
+                            catch { }
+                        }
+                    }
+
+                    renderMaterial.EndChange();
+
+                    // Add the material to the document
+                    rhinoDoc.RenderMaterials.Add(renderMaterial);
+
+                    return JsonConvert.SerializeObject(new
+                    {
+                        success = true,
+                        created = true,
+                        id = renderMaterial.Id.ToString(),
+                        name = renderMaterial.Name,
+                        type,
+                        typeGuid = typeGuid.ToString()
+                    });
+                }
+                catch (Exception ex)
+                {
+                    return ToolHelpers.ErrorResponse($"Failed to instantiate material: {ex.Message}");
+                }
             });
         }
 

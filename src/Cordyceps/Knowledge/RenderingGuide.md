@@ -43,15 +43,55 @@ Complete workflow from Grasshopper geometry → Rhino baking → materials → v
 ### Render Settings (rhino_render)
 - `rhino_render(action='settings')` - get background style, colors
 - `rhino_render(action='settings', style='gradient', colorTop='#87CEEB', colorBottom='#FFFFFF')` - set background
-- `rhino_render(action='ground', enabled='true', shadowOnly='true')` - ground plane
-- `rhino_render(action='sun', enabled='true', azimuth='180', altitude='45')` - sun position
-- `rhino_render(action='skylight', enabled='true')` - ambient lighting
+- `rhino_render(action='ground', groundEnabled='true', shadowOnly='true')` - ground plane
+- `rhino_render(action='sun', sunEnabled='true', azimuth='180', sunAltitude='45')` - sun position
+- `rhino_render(action='skylight', skylightEnabled='true')` - ambient lighting
 
 ### Materials (rhino_material)
-- `rhino_material(action='list')` - list all materials
-- `rhino_material(action='create', name='Red Metal', color='#FF0000', metallic=1, roughness=0.3)` - create PBR material
-- `rhino_material(action='apply', ids='[...]', material='Red Metal')` - apply to objects
-- `rhino_material(action='delete', name='Red Metal')` - delete material
+
+**IMPORTANT**: Materials only render in **Raytraced** or **Rendered** display modes. Raytraced provides physically accurate rendering; Rendered gives faster preview quality.
+
+**List & Inspect:**
+- `rhino_material(action='list')` - list all materials in the document
+- `rhino_material(action='library')` - list available built-in material types
+
+**Built-in Material Types** (use with `instantiate`):
+| Type | Description |
+|------|-------------|
+| Metal | Metallic materials - gold, silver, copper, aluminum |
+| Glass | Transparent with refraction - windows, bottles, lenses |
+| Plastic | Non-metallic with varying glossiness |
+| Paint | Painted surfaces with color and sheen |
+| Gem | Gemstones with dispersion - diamonds, rubies |
+| Plaster | Matte diffuse - walls, ceilings |
+| Emission | Light-emitting - screens, neon, glowing objects |
+| PhysicallyBased | Full PBR with all parameters |
+| Blend | Blend between two materials |
+| DoubleSided | Different materials on front/back faces |
+| Picture | Image-based materials for decals |
+
+**Create Materials:**
+- `rhino_material(action='instantiate', type='Metal', name='Copper', color='#B87333')` - create from built-in type
+- `rhino_material(action='create', name='Red Metal', color='#FF0000', metallic=1, roughness=0.3)` - create custom PBR material
+
+**Apply & Delete:**
+- `rhino_material(action='apply', ids='[...]', material='Copper')` - apply to objects
+- `rhino_material(action='delete', name='Copper')` - delete material
+
+**Workflow Example:**
+```
+# 1. Create materials from built-in types
+rhino_material(action='instantiate', type='Metal', name='Gold', color='#FFD700')
+rhino_material(action='instantiate', type='Glass', name='Clear Glass')
+
+# 2. Apply to baked geometry
+rhino_material(action='apply', ids='["guid1"]', material='Gold')
+rhino_material(action='apply', ids='["guid2"]', material='Clear Glass')
+
+# 3. Set Raytraced mode to see materials
+rhino_render(action='display', mode='Raytraced')
+rhino_render(action='render', wait=200)  # Wait for render passes
+```
 
 ### Environments (rhino_environment)
 - `rhino_environment(action='list')` - list render environments

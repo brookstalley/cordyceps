@@ -77,22 +77,24 @@ namespace Cordyceps.Tools.Unified
                 {
                     Name = "ground",
                     Description = "Get/set ground plane settings",
-                    Optional = new[] { "enabled", "altitude", "autoAltitude", "shadowOnly", "material" },
-                    Example = "action='ground', enabled='true', shadowOnly='true'"
+                    Optional = new[] { "groundEnabled", "groundAltitude", "autoAltitude", "shadowOnly", "material" },
+                    Example = "action='ground', groundEnabled='true', shadowOnly='true'",
+                    Tips = new[] { "groundAltitude is in model units" }
                 },
                 ["sun"] = new ActionInfo
                 {
                     Name = "sun",
                     Description = "Get/set sun settings",
-                    Optional = new[] { "enabled", "azimuth", "altitude", "intensity", "latitude", "longitude", "dateTime" },
-                    Example = "action='sun', enabled='true', azimuth='180', altitude='45'"
+                    Optional = new[] { "sunEnabled", "azimuth", "sunAltitude", "intensity", "latitude", "longitude", "dateTime" },
+                    Example = "action='sun', sunEnabled='true', azimuth='180', sunAltitude='45'",
+                    Tips = new[] { "sunAltitude is in degrees (-90 to 90)" }
                 },
                 ["skylight"] = new ActionInfo
                 {
                     Name = "skylight",
                     Description = "Get/set skylight settings",
-                    Optional = new[] { "enabled", "shadowIntensity", "customEnvironment" },
-                    Example = "action='skylight', enabled='true'"
+                    Optional = new[] { "skylightEnabled", "shadowIntensity", "customEnvironment" },
+                    Example = "action='skylight', skylightEnabled='true'"
                 },
                 ["help"] = new ActionInfo
                 {
@@ -129,18 +131,21 @@ namespace Cordyceps.Tools.Unified
             [Description("Bottom gradient color")] string colorBottom = null,
             [Description("Transparent background (true/false)")] string transparent = null,
             // Ground plane parameters
-            [Description("Enable ground plane (true/false)")] string enabled = null,
-            [Description("Ground plane altitude")] string altitude = null,
+            [Description("Enable ground plane (true/false)")] string groundEnabled = null,
+            [Description("Ground plane altitude in model units")] string groundAltitude = null,
             [Description("Auto-altitude (true/false)")] string autoAltitude = null,
             [Description("Shadow-only mode (true/false)")] string shadowOnly = null,
             [Description("Material name for ground")] string material = null,
             // Sun parameters
-            [Description("Sun azimuth in degrees")] string azimuth = null,
+            [Description("Enable sun (true/false)")] string sunEnabled = null,
+            [Description("Sun azimuth in degrees (0-360)")] string azimuth = null,
+            [Description("Sun altitude in degrees (-90 to 90)")] string sunAltitude = null,
             [Description("Sun intensity multiplier")] string intensity = null,
             [Description("Latitude for sun calculation")] string latitude = null,
             [Description("Longitude for sun calculation")] string longitude = null,
             [Description("DateTime for sun calculation")] string dateTime = null,
             // Skylight parameters
+            [Description("Enable skylight (true/false)")] string skylightEnabled = null,
             [Description("Shadow intensity")] string shadowIntensity = null,
             [Description("Custom environment name")] string customEnvironment = null)
         {
@@ -160,16 +165,19 @@ namespace Cordyceps.Tools.Unified
                 ("colorTop", colorTop),
                 ("colorBottom", colorBottom),
                 ("transparent", transparent),
-                ("enabled", enabled),
-                ("altitude", altitude),
+                ("groundEnabled", groundEnabled),
+                ("groundAltitude", groundAltitude),
                 ("autoAltitude", autoAltitude),
                 ("shadowOnly", shadowOnly),
                 ("material", material),
+                ("sunEnabled", sunEnabled),
                 ("azimuth", azimuth),
+                ("sunAltitude", sunAltitude),
                 ("intensity", intensity),
                 ("latitude", latitude),
                 ("longitude", longitude),
                 ("dateTime", dateTime),
+                ("skylightEnabled", skylightEnabled),
                 ("shadowIntensity", shadowIntensity),
                 ("customEnvironment", customEnvironment)
             );
@@ -191,9 +199,9 @@ namespace Cordyceps.Tools.Unified
                 "modes" => ActionModes(),
                 "render" => ActionRender(view, waitInt, timeoutInt),
                 "settings" => ActionSettings(style, colorTop, colorBottom, transparent),
-                "ground" => ActionGround(enabled, altitude, autoAltitude, shadowOnly, material),
-                "sun" => ActionSun(enabled, azimuth, altitude, intensity, latitude, longitude, dateTime),
-                "skylight" => ActionSkylight(enabled, shadowIntensity, customEnvironment),
+                "ground" => ActionGround(groundEnabled, groundAltitude, autoAltitude, shadowOnly, material),
+                "sun" => ActionSun(sunEnabled, azimuth, sunAltitude, intensity, latitude, longitude, dateTime),
+                "skylight" => ActionSkylight(skylightEnabled, shadowIntensity, customEnvironment),
                 _ => JsonConvert.SerializeObject(new { success = false, error = $"Unknown action: {action}" })
             };
         }
@@ -539,17 +547,17 @@ namespace Cordyceps.Tools.Unified
                 if (!string.IsNullOrEmpty(enabled))
                 {
                     if (!bool.TryParse(enabled, out var val))
-                        return ToolHelpers.ErrorResponse($"Invalid enabled: {enabled}");
+                        return ToolHelpers.ErrorResponse($"Invalid groundEnabled: {enabled}");
                     gp.Enabled = val;
-                    modified.Add("enabled");
+                    modified.Add("groundEnabled");
                 }
 
                 if (!string.IsNullOrEmpty(altitude))
                 {
                     if (!double.TryParse(altitude, out var val))
-                        return ToolHelpers.ErrorResponse($"Invalid altitude: {altitude}");
+                        return ToolHelpers.ErrorResponse($"Invalid groundAltitude: {altitude}");
                     gp.Altitude = val;
-                    modified.Add("altitude");
+                    modified.Add("groundAltitude");
                 }
 
                 if (!string.IsNullOrEmpty(autoAltitude))
@@ -606,9 +614,9 @@ namespace Cordyceps.Tools.Unified
                 if (!string.IsNullOrEmpty(enabled))
                 {
                     if (!bool.TryParse(enabled, out var val))
-                        return ToolHelpers.ErrorResponse($"Invalid enabled: {enabled}");
+                        return ToolHelpers.ErrorResponse($"Invalid sunEnabled: {enabled}");
                     sun.Enabled = val;
-                    modified.Add("enabled");
+                    modified.Add("sunEnabled");
                 }
 
                 if (!string.IsNullOrEmpty(intensity))
@@ -633,8 +641,8 @@ namespace Cordyceps.Tools.Unified
                     if (!string.IsNullOrEmpty(altitude))
                     {
                         if (!double.TryParse(altitude, out alt) || alt < -90 || alt > 90)
-                            return ToolHelpers.ErrorResponse($"Invalid altitude: {altitude}");
-                        modified.Add("altitude");
+                            return ToolHelpers.ErrorResponse($"Invalid sunAltitude: {altitude}");
+                        modified.Add("sunAltitude");
                     }
 
                     sun.ManualControlOn = true;
@@ -697,9 +705,9 @@ namespace Cordyceps.Tools.Unified
                 if (!string.IsNullOrEmpty(enabled))
                 {
                     if (!bool.TryParse(enabled, out var val))
-                        return ToolHelpers.ErrorResponse($"Invalid enabled: {enabled}");
+                        return ToolHelpers.ErrorResponse($"Invalid skylightEnabled: {enabled}");
                     skylight.Enabled = val;
-                    modified.Add("enabled");
+                    modified.Add("skylightEnabled");
                 }
 
                 if (!string.IsNullOrEmpty(shadowIntensity))

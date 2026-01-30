@@ -28,9 +28,9 @@ namespace Cordyceps.Tools.Unified
                 {
                     Name = "objects",
                     Description = "List objects in scene with optional filtering",
-                    Optional = new[] { "type", "layer", "selected", "limit" },
+                    Optional = new[] { "type", "layer", "objectName", "selected", "includeHidden", "limit" },
                     Example = "action='objects' OR action='objects', type='brep', layer='Default'",
-                    Tips = new[] { "types: brep, curve, mesh, point, surface, etc.", "limit defaults to 100" }
+                    Tips = new[] { "types: brep, curve, mesh, point, surface, etc.", "limit defaults to 100", "includeHidden defaults to true" }
                 },
                 ["select"] = new ActionInfo
                 {
@@ -144,7 +144,9 @@ namespace Cordyceps.Tools.Unified
             [Description("JSON array of object IDs")] string ids = null,
             [Description("Object type filter")] string type = null,
             [Description("Layer name filter")] string layer = null,
+            [Description("Object name filter (substring match)")] string objectName = null,
             [Description("Filter by selected (true/false)")] string selected = null,
+            [Description("Include hidden objects (true/false, default true)")] string includeHidden = null,
             [Description("Add to selection (true/false)")] string add = null,
             [Description("Show all hidden (true/false)")] string all = null,
             [Description("Rhino command script")] string cmd = null,
@@ -164,7 +166,9 @@ namespace Cordyceps.Tools.Unified
                 ("ids", ids),
                 ("type", type),
                 ("layer", layer),
+                ("objectName", objectName),
                 ("selected", selected),
+                ("includeHidden", includeHidden),
                 ("add", add),
                 ("all", all),
                 ("cmd", cmd),
@@ -183,6 +187,7 @@ namespace Cordyceps.Tools.Unified
 
             // Parse optional parameters with defaults
             bool selectedBool = ToolHelpers.ParseBool(selected, false);
+            bool includeHiddenBool = ToolHelpers.ParseBool(includeHidden, true);
             bool addBool = ToolHelpers.ParseBool(add, false);
             bool allBool = ToolHelpers.ParseBool(all, false);
             int limitInt = string.IsNullOrEmpty(limit) ? 100 : (int.TryParse(limit, out var l) ? l : 100);
@@ -191,7 +196,7 @@ namespace Cordyceps.Tools.Unified
 
             return action.ToLowerInvariant() switch
             {
-                "objects" => ActionObjects(type, layer, selectedBool, limitInt),
+                "objects" => ActionObjects(type, layer, objectName, selectedBool, includeHiddenBool, limitInt),
                 "select" => ActionSelect(ids, type, layer, addBool),
                 "deselect" => ActionDeselect(),
                 "set_layer" => ActionSetLayer(ids, layer),
@@ -208,7 +213,7 @@ namespace Cordyceps.Tools.Unified
             };
         }
 
-        private string ActionObjects(string type, string layer, bool selectedOnly, int limit)
+        private string ActionObjects(string type, string layer, string objectName, bool selectedOnly, bool includeHidden, int limit)
         {
             return _context.ExecuteOnUiThread(() =>
             {
@@ -224,11 +229,17 @@ namespace Cordyceps.Tools.Unified
                     if (objects.Count >= limit) break;
                     if (obj.IsDeleted) continue;
 
+                    if (!includeHidden && obj.IsHidden) continue;
                     if (typeFilter.HasValue && obj.ObjectType != typeFilter.Value) continue;
                     if (!string.IsNullOrEmpty(layer))
                     {
                         var objLayer = doc.Layers[obj.Attributes.LayerIndex];
                         if (!objLayer.Name.Equals(layer, StringComparison.OrdinalIgnoreCase)) continue;
+                    }
+                    if (!string.IsNullOrEmpty(objectName))
+                    {
+                        var name = obj.Attributes.Name ?? "";
+                        if (!name.Contains(objectName, StringComparison.OrdinalIgnoreCase)) continue;
                     }
                     if (selectedOnly && obj.IsSelected(true) == 0) continue;
 
