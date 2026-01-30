@@ -21,7 +21,7 @@
 
 *Claude Code (command line):*
 ```cmd
-claude mcp add --transport http http://127.0.0.1/mcp
+claude mcp add --transport http http://127.0.0.1:26929/mcp
 ```
 
 *Most others (config file):*
