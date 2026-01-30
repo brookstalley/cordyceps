@@ -9,7 +9,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ### Added
 
 **Unified Tool Architecture**
-- Consolidated ~25+ individual tools into 12 action-based tools (90 total actions) for reduced context window usage
+- Consolidated ~130+ individual tools into 12 action-based tools (90 total actions) for reduced context window usage
 - Grasshopper tools: `gh_canvas`, `gh_wire`, `gh_adjust`, `gh_document`, `gh_group`, `gh_script`, `gh_inspect`, `gh_capture`
 - Rhino tools: `rhino_scene`, `rhino_render`, `rhino_material`, `rhino_environment`
 
@@ -64,15 +64,4 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 This pattern reduces context window usage (fewer tool definitions to process) and matches how other MCP servers organize their tools.
 
-## [0.1.0] - 2024-12-01
 
-### Added
-
-- Initial release
-- MCP server with HTTP/SSE transport
-- Grasshopper canvas manipulation tools
-- Component wiring and value management
-- Script component support (C#, Python)
-- Document operations (save, clear, undo/redo, snapshots)
-- Canvas and viewport capture
-- Knowledge resources for LLM guidance
