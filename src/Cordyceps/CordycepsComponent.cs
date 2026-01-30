@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Drawing;
 using System.Reflection;
 using System.Text;
@@ -17,9 +18,12 @@ namespace Cordyceps
     public class CordycepsComponent : GH_Component
     {
         private static readonly object _lock = new object();
-        private static McpServer _mcpServer;
-        private static CordycepsComponent _activeInstance;
-        private static int _currentPort = 26929;
+        // Support multiple servers on different ports
+        private static readonly Dictionary<int, McpServer> _servers = new Dictionary<int, McpServer>();
+        private static readonly Dictionary<int, CordycepsComponent> _portOwners = new Dictionary<int, CordycepsComponent>();
+
+        // Track which port this instance is using (0 = not running)
+        private int _myPort = 0;
 
         /// <summary>
         /// Initialize a new instance of the CordycepsComponent class
@@ -61,30 +65,51 @@ namespace Cordyceps
             int port = 26929;
             if (!DA.GetData(0, ref port)) return;
 
+            bool isBlocked = false;
+            McpServer myServer = null;
+
             lock (_lock)
             {
-                // Track active instance for callbacks
-                _activeInstance = this;
-
-                // Handle port change
-                if (_mcpServer != null && _mcpServer.IsRunning && port != _currentPort)
+                // Check if this port is already owned by a DIFFERENT component
+                if (_portOwners.TryGetValue(port, out var owner) && owner != this)
                 {
-                    RhinoApp.WriteLine($"Cordyceps: Port changed from {_currentPort} to {port}, restarting server...");
-                    StopServer();
+                    isBlocked = true;
+                    AddRuntimeMessage(GH_RuntimeMessageLevel.Error,
+                        $"Port {port} is already in use by another Cordyceps component. Change this component's port input to use a different port.");
                 }
-
-                // Start server if not running (component being enabled starts the server)
-                if (_mcpServer == null || !_mcpServer.IsRunning)
+                else
                 {
-                    _currentPort = port;
-                    StartServer(port);
+                    // If we were previously using a different port, release it
+                    if (_myPort != 0 && _myPort != port)
+                    {
+                        RhinoApp.WriteLine($"Cordyceps: Port changed from {_myPort} to {port}, restarting server...");
+                        StopServer(_myPort);
+                    }
+
+                    // Start server on requested port if not already running
+                    if (!_servers.TryGetValue(port, out myServer) || !myServer.IsRunning)
+                    {
+                        myServer = StartServer(port);
+                    }
+
+                    // Register this component as the owner of this port
+                    _portOwners[port] = this;
+                    _myPort = port;
                 }
             }
 
             // Set outputs (outside lock to avoid potential deadlock)
             DA.SetData(0, GetAboutInfo());
-            DA.SetData(1, GetStatusInfo());
-            DA.SetData(2, _mcpServer?.LastCommand ?? "(server not running)");
+            if (isBlocked)
+            {
+                DA.SetData(1, $"Server: BLOCKED\nPort {port} is owned by another Cordyceps component.\nChange port input to use a different port.");
+                DA.SetData(2, "(blocked)");
+            }
+            else
+            {
+                DA.SetData(1, GetStatusInfo(myServer));
+                DA.SetData(2, myServer?.LastCommand ?? "(server not running)");
+            }
         }
 
         /// <summary>
@@ -96,32 +121,43 @@ namespace Cordyceps
 
             lock (_lock)
             {
-                if (_activeInstance == this)
+                if (_myPort != 0)
                 {
-                    StopServer();
-                    _activeInstance = null;
+                    // Only stop if we're the owner of this port
+                    if (_portOwners.TryGetValue(_myPort, out var owner) && owner == this)
+                    {
+                        StopServer(_myPort);
+                    }
+                    _myPort = 0;
                 }
             }
         }
 
         /// <summary>
-        /// Start the MCP server
+        /// Start the MCP server on specified port
         /// </summary>
-        private static void StartServer(int port)
+        private static McpServer StartServer(int port)
         {
-            if (_mcpServer != null && _mcpServer.IsRunning) return;
+            if (_servers.TryGetValue(port, out var existing) && existing.IsRunning)
+                return existing;
 
-            _mcpServer = new McpServer();
-            _mcpServer.Start(port);
+            var server = new McpServer();
+            server.Start(port);
+            _servers[port] = server;
+            return server;
         }
 
         /// <summary>
-        /// Stop the MCP server
+        /// Stop the MCP server on specified port
         /// </summary>
-        private static void StopServer()
+        private static void StopServer(int port)
         {
-            _mcpServer?.Stop();
-            _mcpServer = null;
+            if (_servers.TryGetValue(port, out var server))
+            {
+                server.Stop();
+                _servers.Remove(port);
+            }
+            _portOwners.Remove(port);
         }
 
         /// <summary>
@@ -162,34 +198,34 @@ namespace Cordyceps
         /// <summary>
         /// Get server status information
         /// </summary>
-        private static string GetStatusInfo()
+        private static string GetStatusInfo(McpServer server)
         {
-            if (_mcpServer == null || !_mcpServer.IsRunning)
+            if (server == null || !server.IsRunning)
             {
                 return "Server: NOT RUNNING";
             }
 
             var sb = new StringBuilder();
             sb.AppendLine("Server: LISTENING (MCP Protocol)");
-            sb.AppendLine($"Port: {_mcpServer.Port}");
-            sb.AppendLine($"Commands received: {_mcpServer.CommandCount}");
-            sb.AppendLine($"MCP endpoint: http://localhost:{_mcpServer.Port}/mcp");
+            sb.AppendLine($"Port: {server.Port}");
+            sb.AppendLine($"Commands received: {server.CommandCount}");
+            sb.AppendLine($"MCP endpoint: http://localhost:{server.Port}/mcp");
 
             return sb.ToString();
         }
 
         /// <summary>
-        /// Expire the component to refresh outputs
+        /// Expire the component to refresh outputs (refreshes all active instances)
         /// </summary>
         public static void RefreshComponent()
         {
-            CordycepsComponent instance;
+            List<CordycepsComponent> instances;
             lock (_lock)
             {
-                instance = _activeInstance;
+                instances = new List<CordycepsComponent>(_portOwners.Values);
             }
 
-            if (instance != null)
+            foreach (var instance in instances)
             {
                 RhinoApp.InvokeOnUiThread(new Action(() =>
                 {

@@ -1,941 +1,339 @@
-# Cordyceps MCP Server Test Instructions
-
-This document provides instructions for testing the Cordyceps MCP server for Grasshopper. It is written for an LLM-based MCP client to follow systematically.
+# Cordyceps MCP Server Testing Guide
 
 **Keywords:** test cordyceps, test mcp, test grasshopper, help test, validate mcp, mcp testing, grasshopper testing, cordyceps validation
 
-## Overview
+## Purpose
 
-Cordyceps is an MCP server that allows programmatic control of Grasshopper, the visual programming environment for Rhino 3D. These tests verify that all features work correctly and that the infrastructure protection mechanisms prevent accidental self-destruction.
+This guide helps you systematically test and validate the Cordyceps MCP server. The goal is thoroughness—you should explore capabilities, push boundaries, and verify that both success and failure cases are handled properly.
 
-## Before You Begin
+**Testing philosophy**: Don't just verify that things work—verify that they work *correctly*. Check that outputs make sense, that errors are informative, and that the system behaves predictably.
 
-### Prerequisites
-- Rhino 8 with Grasshopper open
-- Cordyceps component placed on the canvas
-- MCP connection established (you're reading this, so it's working)
+## How to Test
 
-### Test Tracking
+For each section below:
 
-As you perform each test section, track results in this format:
+1. **Explore** - Use `action='help'` on relevant tools to understand available capabilities
+2. **Execute** - Try the suggested scenarios, adapting as needed
+3. **Verify** - Check that results are correct, not just that calls succeeded
+4. **Push boundaries** - Try edge cases, invalid inputs, and combinations
+5. **Document** - Note what worked, what failed, and any surprises
 
+Track your results:
 ```
-## Test Results: [Section Name]
-- Status: PASS / FAIL / PARTIAL
-- Tests Run: X
-- Tests Passed: X
-- Issues Found:
-  - [Description of any issues]
-- Improvement Suggestions:
-  - [Any ideas for better behavior]
-```
-
-### Error Reporting Guidelines
-
-When you encounter an error:
-1. Note the exact operation attempted
-2. Record the error message verbatim
-3. Note whether the error was expected (e.g., intentional invalid input) or unexpected
-4. If the error seems like a bug, describe what you expected to happen
-5. Note if the error message was helpful or confusing
-
-### Friction Tracking (Successful But Difficult Operations)
-
-Even when operations succeed, track any friction you experienced:
-
-```
-## Friction Log Entry
-- Operation: [What you were trying to do]
-- Difficulty: LOW / MEDIUM / HIGH
-- What Made It Hard:
-  - [e.g., "Had to make 3 calls when 1 should suffice"]
-  - [e.g., "Parameter name was confusing"]
-  - [e.g., "Couldn't find the right component name"]
-- Feature Request: [One sentence describing improvement]
-  - Example: "Add a 'connect_slider_to_input' convenience method"
-  - Example: "Include common aliases in component search"
-  - Example: "Return suggested connections when wiring fails"
+## [Section Name]
+- Tested: [what you tried]
+- Worked: [what succeeded]
+- Issues: [problems found, with details]
+- Notes: [observations, suggestions]
 ```
 
-Track friction for:
-- Operations requiring multiple steps that feel like they should be one step
-- Confusing parameter names or unclear documentation
-- Having to guess at correct values or formats
-- Needing to call inspection tools to figure out what to do next
-- Any time you wished a tool existed that doesn't
+---
+
+## Part 1: Connection and Fundamentals
+
+**Goal**: Verify the MCP connection is working and you can discover what's available.
+
+### What to Verify
+
+**Basic communication**: Can you get information about the current Grasshopper document? You should be able to retrieve document info, see what's on the canvas, and understand the current state.
+
+**Tool discovery**: Every unified tool supports `action='help'`. Use this to understand what each tool can do. Verify the help output is useful and accurate.
+
+**Infrastructure protection**: Cordyceps protects itself from accidental modification. Verify that:
+- The Cordyceps component doesn't appear in component listings
+- You cannot find, modify, or delete Cordyceps infrastructure
+- Clearing the document preserves the MCP connection
+
+**Component discovery**: Can you search for Grasshopper components by name? Can you get documentation about a component's inputs, outputs, and purpose? Try searching for common components (Circle, Panel, Slider) and verify the information is useful.
+
+### Success Criteria
+
+- [ ] You can retrieve document state
+- [ ] Help is available and informative for all tools
+- [ ] Infrastructure protection works (Cordyceps is invisible)
+- [ ] Component search and documentation work
 
 ---
 
-## Test Section 1: Basic Connectivity and Document Info
+## Part 2: Grasshopper Core Tasks
 
-**Goal:** Verify basic communication with Grasshopper is working.
+**Goal**: Verify you can perform fundamental Grasshopper operations—the building blocks for any definition.
 
-### Tests to Perform
+### Canvas Operations
 
-1. **Get Document Info**
-   - Request information about the current Grasshopper document
-   - Verify you receive: file path (or "unsaved"), object counts, solver status
-   - Note if the response is clear and useful
+Test your ability to manipulate the Grasshopper canvas:
 
-2. **Get Canvas Status**
-   - Request the status of all components on the canvas
-   - Verify you receive component statuses (OK, ERROR, WARNING, DISCONNECTED)
-   - Confirm the Cordyceps component itself is NOT listed (infrastructure protection)
+- **Add components**: Can you add various component types (sliders, panels, geometry components, math operations)? Do they appear at the correct positions?
+- **Positioning**: Can you move components? Do positions update correctly?
+- **Naming**: Can you rename components for clarity? Can you find them by nickname later?
+- **Deletion**: Can you remove components individually and in bulk?
+- **Layout validation**: Can you detect overlapping components?
 
-3. **Get All Components**
-   - Request a list of all components
-   - Verify the Cordyceps component and its connected panels/sliders are NOT included
-   - If other components exist, verify their information is complete
+### Wiring
 
-4. **Get All Groups**
-   - Request a list of all groups
-   - Verify any "Cordyceps MCP" group is NOT listed (infrastructure protection)
-   - If other groups exist, verify their information is accurate
+Test your ability to create and manage connections:
 
-### Expected Behaviors
-- All requests should return valid JSON with a `success` field
-- Infrastructure components should be completely invisible
-- Error messages should be clear and actionable
+- **Basic connections**: Can you connect an output to an input?
+- **Bulk wiring**: Can you create multiple connections efficiently?
+- **Validation**: Can you check if a connection is valid before making it?
+- **Disconnection**: Can you remove connections cleanly?
+- **Connection listing**: Can you see all connections on the canvas?
 
----
+### Values and Configuration
 
-## Test Section 2: Component Search and Discovery
+Test your ability to configure input components:
 
-**Goal:** Verify you can find and understand available Grasshopper components.
+- **Sliders**: Can you set values? Configure ranges (min/max)?
+- **Panels**: Can you set text content?
+- **Toggles**: Can you set boolean values?
+- **Component state**: Can you enable/disable components? Toggle preview visibility?
 
-### Tests to Perform
+### Document Operations
 
-1. **Search for Common Components**
-   - Search for "Circle" - should find multiple circle-related components
-   - Search for "Panel" - should find the Panel component
-   - Search for "Slider" - should find Number Slider
-   - Search for "Addition" - should find the math addition component
+Test document-level controls:
 
-2. **Get Component Documentation**
-   - Request documentation for "Circle" component
-   - Verify you receive: inputs, outputs, descriptions, category
-   - Request documentation for "C# Script" component
-   - Verify script components show their special parameters
+- **Solver control**: Can you disable the solver for bulk operations? Re-enable it?
+- **Forced recompute**: Can you trigger a solution after making changes?
+- **Undo/redo**: Do undo and redo work as expected?
+- **Snapshots**: Can you save and restore document states?
 
-3. **Get Component Parameters**
-   - Request parameter info for a component type before adding it
-   - Verify input/output names, types, and optionality are clear
+### Groups
 
-4. **Search for Non-Existent Component**
-   - Search for "XyzNotARealComponent123"
-   - Verify you receive an appropriate "not found" response
+Test visual organization:
 
-### Expected Behaviors
-- Search should be case-insensitive
-- Partial matches should work
-- Results should include category information for disambiguation
+- **Creation**: Can you create named groups with custom colors?
+- **Membership**: Can you add/remove components from groups?
+- **Movement**: When you move a group, do all members move together?
 
----
+### Scripts
 
-## Test Section 3: Adding and Managing Components
+If script components are important to your workflow, test:
 
-**Goal:** Verify you can add, position, rename, and remove components.
+- **Adding script components**: Can you add C# or Python script components?
+- **Code management**: Can you get and set script source code?
+- **Configuration**: Can you configure script inputs and outputs?
 
-### Tests to Perform
+### Inspection and Debugging
 
-1. **Add a Number Slider**
-   - Add a Number Slider at position (100, 100)
-   - Verify success and note the returned component ID
-   - Optionally give it a nickname like "TestSlider"
+Test your ability to understand what's happening:
 
-2. **Add a Circle Component**
-   - Add a Circle component at position (300, 100)
-   - Verify success and note the returned component ID
+- **Canvas status**: Can you see which components have errors, warnings, or disconnected inputs?
+- **Output inspection**: Can you see what values a component is producing?
+- **Data flow tracing**: Can you trace data flow upstream and downstream?
+- **Geometry inspection**: Can you get bounding boxes and validity info for geometry?
 
-3. **Add a Panel**
-   - Add a Panel at position (500, 100)
-   - Verify success
+### Capture
 
-4. **Get Component Info**
-   - Request detailed info for the Circle component
-   - Verify inputs (Plane, Radius) and output (Circle) are listed
-   - Verify position matches where you placed it
+Test visualization:
 
-5. **Move a Component**
-   - Move the Circle component to position (300, 200)
-   - Verify the new position in the response
+- **Canvas capture**: Can you capture the Grasshopper canvas as an image?
+- **Specific regions**: Can you capture just part of the canvas?
 
-6. **Rename a Component**
-   - Rename the Circle component to "MyCircle"
-   - Verify the nickname change
+### Success Criteria
 
-7. **Get Component Bounds**
-   - Request bounds for a component
-   - Verify you receive x, y, width, height, right, bottom
-
-8. **Delete a Component**
-   - Delete the Panel you created
-   - Verify it's removed from the canvas
-
-9. **Bulk Move Components**
-   - Create 3 components and move them all at once
-   - Verify all moves succeeded
-
-10. **Bulk Delete Components**
-    - Create 3 test components
-    - Use `bulk_delete_components` to delete all at once
-    - Verify all were removed
-    - Test partial failure: include one invalid ID in the array
-    - Verify valid components are still deleted, invalid ID returns error in results
-
-### Expected Behaviors
-- Components should appear at specified positions
-- Component IDs should be valid GUIDs
-- Deleted components should disappear immediately
-- Layout validation should detect overlapping components
+- [ ] You can build simple component networks (add, wire, configure)
+- [ ] Solver control works for efficient bulk operations
+- [ ] You can inspect and debug component state
+- [ ] Groups and organization features work
+- [ ] Canvas capture produces viewable images
 
 ---
 
-## Test Section 4: Wiring Components Together
+## Part 3: Rhino Integration
 
-**Goal:** Verify you can connect and disconnect component parameters.
+**Goal**: Verify you can work with Rhino's 3D environment—objects, layers, viewport, and rendering.
 
-### Tests to Perform
+### Scene Objects
 
-1. **Simple Connection**
-   - Connect the Number Slider output to the Circle's Radius input
-   - Verify the connection was created
+Test your ability to work with Rhino objects:
 
-2. **Get Connections**
-   - Request all connections on the canvas
-   - Verify your new connection appears in the list
-   - Verify NO connections to/from Cordyceps infrastructure appear
+- **Baking**: Can you bake Grasshopper geometry to Rhino? Does it appear on the correct layer?
+- **Object listing**: Can you list objects in the scene? Filter by layer or type?
+- **Selection**: Can you select objects programmatically?
+- **Visibility**: Can you hide and show objects?
+- **Deletion**: Can you delete baked objects?
 
-3. **Validate Connection Before Making It**
-   - Use validate_connection to check if Circle output can connect to a Panel
-   - Verify you get compatibility information
+### Layers
 
-4. **Suggest Connections**
-   - Ask for connection suggestions from the Circle's output
-   - Verify suggestions include compatible input types
+Test layer operations:
 
-5. **Disconnect Components**
-   - Disconnect the slider from the circle
-   - Verify the connection is removed
+- **Layer listing**: Can you see all layers?
+- **Layer filtering**: Can you filter objects by layer?
 
-6. **Clear Component Inputs**
-   - Reconnect the slider, then clear all inputs on the Circle
-   - Verify all inputs are disconnected
+### Viewport Control
 
-7. **Bulk Connect**
-   - Create a small network: Slider -> Circle -> Panel
-   - Make multiple connections in one operation
-   - Verify all connections succeeded
+Test your ability to control what you see:
 
-### Expected Behaviors
-- Connections should be validated before creation
-- Invalid connections should fail with helpful messages
-- Connection info should include parameter names and indices
+- **Display modes**: Can you list available modes? Switch between them (Wireframe, Shaded, Rendered, Raytraced)?
+- **Camera control**: Can you get the current camera position? Set a new camera position and target?
+- **Zoom**: Can you zoom to fit all geometry? Zoom to specific objects?
 
----
+### Viewport Capture
 
-## Test Section 5: Setting Values
+Test your ability to capture the 3D view:
 
-**Goal:** Verify you can set values on sliders, panels, and parameters.
+- **Basic capture**: Can you capture the viewport as an image?
+- **View selection**: Can you capture from different views (Perspective, Top, Front)?
+- **Resolution control**: Can you specify capture dimensions?
 
-### Tests to Perform
+### Rendering (Raytraced)
 
-1. **Set Slider Value**
-   - Set a Number Slider to value 5.0 using: `set_component_value(id, value="5")`
-   - Verify the value was set (check component outputs if possible)
-   - Note: This only sets the current value within the existing range
+If using Raytraced mode:
 
-2. **Configure Slider Range and Type**
-   - Configure a slider's full properties using `set_slider_properties`:
-     `set_slider_properties(id, min=0, max=10, value=5)`
-   - Verify minimum, maximum, and current value all changed
-   - Test integer detection: use whole numbers (min=0, max=100, value=50)
-     and verify the slider becomes an integer slider
-   - Test explicit integer flag: `set_slider_properties(id, min=0.0, max=1.0, value=0.5, integer=false)`
-     to force floating-point even with whole-number-looking values
+- **Status**: Can you check render progress (passes, completion)?
+- **Waiting**: Can you wait for a minimum number of render passes before capturing?
 
-3. **Set Panel Value**
-   - Set a Panel's text to "Hello Grasshopper"
-   - Verify the text appears
+### Success Criteria
 
-4. **Set Component Preview**
-   - Set preview to false (hidden) for a component
-   - Set preview to true (visible)
-   - Verify the state changes
-
-5. **Set Component Enabled**
-   - Set enabled to false (disable/lock a component)
-   - Set enabled to true (re-enable it)
-   - Verify the state changes
-
-6. **Bulk Set Preview**
-   - Create 3+ components
-   - Use `bulk_set_preview` to hide all at once
-   - Verify all components have preview disabled
-   - Use `bulk_set_preview` to show all at once
-
-7. **Bulk Set Enabled**
-   - Use `bulk_set_enabled` to disable multiple components
-   - Verify all are locked
-   - Re-enable them in bulk
-
-8. **Configure Value List**
-   - Add a Value List component
-   - Configure it with named options: [{name: "Option A", value: "0"}, {name: "Option B", value: "1"}]
-   - Select a specific option
-   - Verify configuration
-
-### Expected Behaviors
-- Slider values should clamp to min/max range
-- Invalid value formats should return clear errors
-- State changes should take effect immediately
-- Bulk operations should report per-component success/failure
-- Bulk operations with partial failures should still process valid items
+- [ ] Baking works and objects appear in Rhino
+- [ ] You can manipulate object visibility and selection
+- [ ] Viewport and camera control work
+- [ ] Viewport capture produces viewable images
+- [ ] (If tested) Raytraced rendering status and waiting work
 
 ---
 
-## Test Section 6: Groups
+## Part 4: End-to-End Scenarios
 
-**Goal:** Verify you can create and manage visual groups.
+**Goal**: Test realistic workflows that combine multiple capabilities. These scenarios are intentionally ambitious—they test whether you can accomplish real goals, not just call individual functions.
 
-### Tests to Perform
+### Scenario A: Parametric Circle Grid
 
-1. **Create a Group**
-   - Create a new group named "Test Group"
-   - Optionally set a color
+**Challenge**: Create a parametric grid of circles where both the grid dimensions (rows, columns) and circle radius are controlled by sliders.
 
-2. **Add Components to Group**
-   - Add 2-3 components to the group
-   - Verify the membership
+**What this tests**:
+- Adding multiple component types
+- Wiring a non-trivial data flow
+- Configuring slider ranges appropriately
+- Layout and organization
+- Verifying the result visually
 
-3. **Get Components in Group**
-   - Request all components in "Test Group"
-   - Verify the correct components are listed
+**Verification**: Capture the canvas and viewport. Adjust slider values and verify the geometry updates correctly.
 
-4. **Move Group**
-   - Move the entire group by an offset (e.g., dx=100, dy=50)
-   - Verify all member components moved together
+### Scenario B: Geometry Analysis Pipeline
 
-5. **Rename Group**
-   - Rename the group to "Renamed Group"
-   - Verify the change
+**Challenge**: Create a definition that takes a curve (via a Curve parameter), measures its length, and displays the result in a panel.
 
-6. **Set Group Color**
-   - Change the group color (e.g., to "#FF5500" or "Orange")
-   - Verify the color changed
+**What this tests**:
+- Working with geometry parameters
+- Using analysis components
+- Displaying computed results
+- Understanding data flow
 
-7. **Remove Components from Group**
-   - Remove one component from the group
-   - Verify it's no longer a member
+**Verification**: The panel should show a meaningful length value when a curve is provided.
 
-8. **Delete Group**
-   - Delete the group
-   - Verify components are NOT deleted (only the group itself)
+### Scenario C: Organized Definition with Groups
 
-### Expected Behaviors
-- Groups should visually contain their member components
-- Moving a group should move all members
-- Deleting a group should preserve its contents
+**Challenge**: Build a simple definition (your choice of geometry), then organize it into logical groups—inputs in one group, processing in another, outputs in a third. Use different colors for each group.
 
----
+**What this tests**:
+- Building complete definitions
+- Using groups for organization
+- Multi-step workflows
 
-## Test Section 7: Script Components
+**Verification**: Capture the canvas. The groups should be visually distinct and logically organized.
 
-**Goal:** Verify you can work with C# and Python script components.
+### Scenario D: Bake and Render
 
-### Tests to Perform
+**Challenge**: Create simple geometry in Grasshopper (a box or sphere), bake it to Rhino, set up a camera view, and capture a rendered image.
 
-1. **Add a C# Script Component**
-   - Add a C# Script component to the canvas
-   - Note: search for "C# Script" or use the category-qualified name
+**What this tests**:
+- Full Grasshopper-to-Rhino pipeline
+- Baking workflow
+- Viewport and camera control
+- Image capture
 
-2. **Set Script Code**
-   - Set simple code that outputs a value:
-     ```csharp
-     A = x * 2;
-     ```
-   - Where `x` is an input and `A` is an output
+**Verification**: The captured image should show the geometry from the specified camera angle.
 
-3. **Get Script Code**
-   - Retrieve the code you just set
-   - Verify it matches what you sent
+### Scenario E: Debug a Broken Definition
 
-4. **Get Script Info**
-   - Request detailed script info
-   - Verify you receive: source code, input parameters with types, output parameters
+**Challenge**: Create a definition with an intentional error (a disconnected required input, or a type mismatch). Then use inspection tools to identify the problem.
 
-5. **Configure Script Component**
-   - Configure inputs and outputs explicitly:
-     - Input: `x` (type: double)
-     - Output: `A` (type: double)
-   - Set the full source code
-   - Verify the configuration took effect
+**What this tests**:
+- Error detection capabilities
+- Diagnostic tools
+- Understanding error states
 
-6. **Test Script Execution**
-   - Connect a slider to the script input
-   - Check if the script runs without errors (get canvas status)
-   - If possible, verify output values
+**Verification**: You should be able to identify exactly which component has the problem and why.
 
-### Expected Behaviors
-- Script code should persist after setting
-- Parameter configuration should update the component's interface
-- Compile errors should appear in canvas status
+### Scenario F: Complex Geometry Pattern
+
+**Challenge**: Create an array of geometry (linear or radial) where each copy is transformed based on its position in the array.
+
+**What this tests**:
+- Data tree understanding (or avoidance)
+- Transformation components
+- Series and list operations
+- More complex data flow
+
+**Verification**: The geometry should show clear variation across the array.
+
+### Success Criteria
+
+- [ ] At least 3 scenarios completed successfully
+- [ ] Canvas and viewport captures show correct results
+- [ ] You can articulate what worked and what was challenging
 
 ---
 
-## Test Section 8: Inspection and Debugging
+## Part 5: Error Handling and Edge Cases
 
-**Goal:** Verify debugging and inspection tools work correctly.
+**Goal**: Verify the system handles problems gracefully.
 
-### Tests to Perform
+### Things to Try
 
-1. **Get Disconnected Inputs**
-   - Request all disconnected (required) inputs across the canvas
-   - Verify components with missing required inputs are listed
+- **Invalid component names**: What happens when you try to add a component that doesn't exist?
+- **Invalid IDs**: What happens when you reference a component that doesn't exist?
+- **Type mismatches**: What happens when you try an invalid connection?
+- **Out-of-range values**: What happens when you set a slider value outside its range?
+- **Empty operations**: What happens when you try to bulk-connect with an empty list?
+- **Protected components**: What happens when you try to modify Cordyceps infrastructure?
 
-2. **Get Components by Type**
-   - Filter components by type (e.g., "Script", "Slider")
-   - Verify only matching components are returned
+### What to Look For
 
-3. **Trace Data Flow Upstream**
-   - Pick a component with inputs connected
-   - Trace upstream to find all source components
-   - Verify the trace is accurate
-
-4. **Trace Data Flow Downstream**
-   - Trace downstream from a slider
-   - Verify all recipient components are found
-
-5. **Get Component Outputs**
-   - Request output values from a component with data
-   - Verify you receive preview data
-
-6. **Get Geometry Info**
-   - If you have geometry-producing components, request geometry info
-   - Verify you receive bounding boxes, validity, etc.
-
-7. **Get Debug Reports**
-   - If any script components have `out` or `Report` outputs with data, verify they're captured
-
-8. **Get/Clear Debug Log**
-   - Get recent debug log entries
-   - Clear the log
-   - Verify it's empty after clearing
-
-### Expected Behaviors
-- Inspection tools should not modify the document
-- Data previews should be truncated for large datasets
-- Trace should handle circular references gracefully
+- Error messages should be informative
+- Invalid operations should fail gracefully (not crash)
+- The system should remain usable after errors
 
 ---
 
-## Test Section 9: Document Operations
+## Test Summary Template
 
-**Goal:** Verify document-level operations work correctly.
-
-### Tests to Perform
-
-1. **Clear Document**
-   - Add several test components
-   - Clear the document
-   - Verify: test components are removed, Cordyceps infrastructure remains
-   - Check that the MCP connection still works after clearing
-
-2. **Save Document**
-   - Save the document to a test location (e.g., temp folder)
-   - Verify the file was created
-   - Verify the file path in document info
-
-3. **Solver Control**
-   - Disable the solver
-   - Verify components don't recompute
-   - Re-enable the solver
-   - Trigger a manual recompute
-
-4. **Create Snapshot**
-   - Create a named snapshot of the current state
-   - Make some changes
-   - Revert to the snapshot
-   - Verify the state was restored
-
-5. **Undo Protection (Fresh Session)**
-   - If testing on a fresh session with no prior MCP operations, call `undo()`
-   - Verify it returns an error: "Undo is not available until after MCP operations have been performed"
-   - This prevents undoing the creation of the Cordyceps component itself
-
-6. **Undo/Redo Basic Operations**
-   - Add a component (note: this creates an undoable action)
-   - Call `undo()` - verify it succeeds and returns undo/redo counts
-   - Verify the component is no longer on the canvas
-   - Call `redo()` - verify the component reappears
-   - Call `redo()` again - verify it returns "Nothing to redo"
-
-7. **Undo After Multiple Operations**
-   - Add a slider, add a circle, connect them
-   - Undo once - connection should be removed
-   - Undo again - circle should be removed
-   - Redo twice - both should be restored
-   - Verify final state matches original
-
-### Expected Behaviors
-- Clear should NEVER remove Cordyceps infrastructure
-- Save should work with .gh and .ghx extensions
-- Solver disable should prevent computation
-- Undo is blocked until at least one MCP operation has been performed
-- Undo/redo counts should reflect available actions
-
----
-
-## Test Section 10: Capture and Visualization
-
-**Goal:** Verify canvas and viewport capture work correctly.
-
-### Tests to Perform
-
-1. **Capture Canvas**
-   - Capture the Grasshopper canvas to an image
-   - Verify the file was created
-   - View the image to confirm it shows the definition
-
-2. **Capture Viewport**
-   - If there's geometry preview, capture the Rhino viewport
-   - Verify the file was created
-   - View the image to confirm it shows geometry
-
-3. **Capture Canvas Region**
-   - Capture a specific region by coordinates
-   - Verify only that region is captured
-
-4. **Get Available Views**
-   - List available Rhino views
-   - Verify standard views are listed (Perspective, Top, Front, etc.)
-
-### Expected Behaviors
-- Images should be valid PNG/JPG/BMP files
-- Capture should include component names and wires
-- Viewport capture should show Grasshopper preview geometry
-
----
-
-## Test Section 11: Infrastructure Protection (Critical)
-
-**Goal:** Verify you CANNOT accidentally destroy the MCP connection.
-
-### Tests to Perform
-
-1. **Cordyceps Invisibility**
-   - Get all components - verify Cordyceps is NOT listed
-   - Search for "Cordyceps" by nickname - verify it's NOT found
-   - Get all connections - verify NO connections to/from Cordyceps appear
-   - Get all groups - verify "Cordyceps MCP" group is NOT listed
-
-2. **Cannot Delete Cordyceps**
-   - If you somehow obtained the Cordyceps component ID, attempt to delete it
-   - Verify you receive "Component not found" error
-   - Verify the MCP connection still works
-
-3. **Cannot Modify Cordyceps**
-   - Attempt to move, rename, or modify the Cordyceps component
-   - All operations should fail with "not found"
-
-4. **Cannot Delete Cordyceps Group**
-   - If you obtained the group ID, attempt to delete it
-   - Should fail with "not found"
-
-5. **Cannot Disconnect Cordyceps**
-   - Attempt to disconnect wires from Cordyceps inputs
-   - Should fail with "not found"
-
-6. **Clear Document Preserves Infrastructure**
-   - Clear the document
-   - Verify you can still communicate with Cordyceps
-   - Verify the infrastructure group and connections remain
-
-### Expected Behaviors
-- ALL attempts to interact with infrastructure should fail silently ("not found")
-- The LLM should never see infrastructure component IDs
-- Document operations should preserve infrastructure
-
----
-
-## Test Section 12: Complex Scenarios
-
-**Goal:** Verify real-world usage patterns work correctly.
-
-### Scenario A: Build a Circle Pattern from Scratch
-
-1. Clear the document (if desired)
-2. Disable the solver (for faster construction)
-3. Add components:
-   - Number Slider for count (0 < 10 < 50)
-   - Number Slider for radius (0 < 5 < 20)
-   - Range component
-   - Circle component
-4. Connect:
-   - Count slider -> Range (Steps)
-   - Range -> Circle (Plane - may need Point component)
-   - Radius slider -> Circle (Radius)
-5. Enable the solver
-6. Verify the canvas status shows all components OK
-7. Capture the viewport to see the circles
-
-### Scenario B: Debug a Broken Definition
-
-1. Create a definition with an intentional error:
-   - Add a Division component
-   - Connect a slider set to 0 to the denominator
-2. Check canvas status - should show ERROR on Division
-3. Identify the error message
-4. Fix the issue by changing the slider value
-5. Verify the error is resolved
-
-### Scenario C: Parametric Model with Groups
-
-1. Create a "Parameters" group with input sliders
-2. Create a "Processing" group with computational components
-3. Create an "Output" group with visualization components
-4. Wire everything together
-5. Verify data flows through all groups
-6. Save the document
-7. Capture both canvas and viewport
-
-### Scenario D: Radial Sine Wave Cylinder Array (Advanced)
-
-**Goal:** Build a complex parametric model that tests multiple features working together.
-
-**Description:** Create an array of cylinders arranged in a circle around the origin on the XY plane. The heights of the cylinders vary according to a sine wave pattern, creating a wave-like effect around the circle.
-
-**Parameters to expose as sliders:**
-- Cylinder Count (integer, 6 to 36, default 12)
-- Array Radius (distance from origin, 5 to 50, default 20)
-- Cylinder Diameter (0.5 to 5, default 1)
-- Min Height (1 to 10, default 2)
-- Max Height (5 to 30, default 10)
-- Wave Frequency (number of complete waves around circle, 1 to 6, default 2)
-
-**Construction Steps:**
-
-1. **Setup**
-   - Clear the document
-   - Disable the solver
-   - Read `gh://docs/geometry-orientation` (cylinders extend along plane Z-axis)
-
-2. **Create Parameter Sliders** (stack vertically at x=50)
-   - "Count" slider: integer, min=6, max=36, default=12
-   - "ArrayRadius" slider: min=5, max=50, default=20
-   - "CylDiameter" slider: min=0.5, max=5, default=1
-   - "MinHeight" slider: min=1, max=10, default=2
-   - "MaxHeight" slider: min=5, max=30, default=10
-   - "WaveFreq" slider: integer, min=1, max=6, default=2
-
-3. **Build Radial Positions**
-   - Add Range component: 0 to 2*Pi, divided by Count
-   - Add Circle component at origin with ArrayRadius
-   - Use Divide Curve or evaluate circle at parameter values to get points
-   - These points define where cylinders will be placed
-
-4. **Calculate Sine Wave Heights**
-   - Multiply the range values (angles) by WaveFreq
-   - Apply Sin function to get values between -1 and 1
-   - Remap from [-1,1] to [MinHeight, MaxHeight]
-   - This gives varying heights around the circle
-
-5. **Create Cylinder Axes**
-   - At each point, create a vertical line (direction = Z-axis)
-   - Line length = calculated height for that position
-   - Use Plane Normal or similar to ensure cylinders point up (Z direction)
-
-6. **Generate Cylinders**
-   - Use Pipe or Cylinder component
-   - Connect the lines as axes
-   - Connect CylDiameter/2 as radius
-   - Cap the cylinders if using Pipe
-
-7. **Organize and Validate**
-   - Create groups: "Parameters", "Position Logic", "Height Logic", "Geometry"
-   - Enable solver
-   - Check canvas status - all should be OK
-   - Validate layout for overlaps
-
-8. **Capture Results**
-   - Capture the canvas to see the definition structure
-   - Capture the Perspective viewport to see the geometry
-   - Try adjusting sliders and re-capturing to verify parametric control
-
-**Validation Checklist:**
-- [ ] Changing Count updates number of cylinders
-- [ ] Changing ArrayRadius moves cylinders closer/further from origin
-- [ ] Changing CylDiameter affects cylinder thickness
-- [ ] Changing MinHeight/MaxHeight affects the height range
-- [ ] Changing WaveFreq changes the number of "peaks" around the circle
-- [ ] All cylinders point upward (not sideways)
-- [ ] Canvas has no errors or warnings
-- [ ] Definition is organized with logical groups
-
-**What This Tests:**
-- Multiple slider types (integer and float)
-- Configure slider range with `set_slider_properties` tool
-- Mathematical operations (Range, Sin, Remap)
-- Geometric operations (Circle, Points, Lines, Cylinders)
-- Data tree matching (multiple cylinders from lists)
-- Plane orientation (cylinders pointing correct direction)
-- Groups for organization
-- Capture tools for visualization
-- Complex wiring with bulk_connect
-
-### Expected Behaviors
-- Complex definitions should build without issues
-- Groups help organize large definitions
-- Debugging should identify root causes
-- Parametric models should respond to slider changes
-
----
-
-## Test Section 13: Error Handling
-
-**Goal:** Verify error messages are helpful and operations fail gracefully.
-
-### Tests to Perform
-
-1. **Invalid Component ID**
-   - Use a made-up GUID for get_component_info
-   - Verify error message mentions "not found"
-
-2. **Invalid Component Type**
-   - Try to add "NotARealComponent"
-   - Verify error message suggests alternatives
-
-3. **Invalid Connection**
-   - Try to connect incompatible types (e.g., Mesh output to Integer input)
-   - Verify validation catches this before attempting
-
-4. **Invalid Slider Range**
-   - Use `set_slider_properties` with min > max (e.g., min=10, max=5, value=7)
-   - Verify error explains that min must be <= max
-   - Try setting value outside range (e.g., min=0, max=10, value=20)
-   - Verify error explains the constraint
-
-5. **Invalid JSON**
-   - For bulk operations, send malformed JSON
-   - Verify error message identifies the JSON issue
-
-### Expected Behaviors
-- Errors should never crash the MCP server
-- Error messages should explain what went wrong
-- Suggestions for fixing should be provided when possible
-
----
-
-## End of Testing: Summary Instructions
-
-**IMPORTANT:** After completing all test sections, provide a BRIEF summary. Keep it concise - no more than 20 lines.
-
-### Required Summary Format
+After completing your testing, summarize your findings:
 
 ```
 ## Test Summary
 
-**Results:** X tests run, Y passed (Z%)
+**Date**: [date]
+**Sections Completed**: [1, 2, 3, 4, 5]
 
-**Failures:** (if any)
-- [Brief description of what failed and why]
+### What Works Well
+- [List capabilities that worked reliably]
 
-**Recommendations:** (if any)
-- [Concrete suggestions to make the MCP server easier for LLMs to use]
-- [Focus on friction points, confusing APIs, missing conveniences]
+### Issues Found
+- [Describe any problems, with reproduction steps if possible]
 
-**Verdict:** READY / NEEDS WORK / NOT USABLE
-```
+### Suggestions
+- [Ideas for improvement based on your testing experience]
 
-### What to Include in Recommendations
+### Overall Assessment
+[READY / NEEDS WORK / SIGNIFICANT ISSUES]
 
-Focus on things that would make the MCP server easier for an LLM to use:
-- Confusing parameter names or formats
-- Operations that required too many steps
-- Missing convenience methods (e.g., "add a connect_slider_to_radius shortcut")
-- Unclear error messages
-- Documentation gaps
-- Common patterns that should be built-in
-
-### Optional: Detailed Report
-
-If requested, or if significant issues were found, you may also generate the detailed report template below.
-
----
-
-## Test Report Template
-
-```markdown
-# Cordyceps MCP Test Report
-
-**Date:** [Current date]
-**Cordyceps Version:** [Get from get_document_info or component]
-**Tester:** [Your LLM model name and version]
-**Test Duration:** [Approximate time spent testing]
-
----
-
-## Executive Summary
-
-[3-5 sentences: overall quality, biggest issues, top improvements, recommendation]
-
----
-
-## Test Results by Section
-
-| # | Section | Status | Tests | Notes |
-|---|---------|--------|-------|-------|
-| 1 | Basic Connectivity | PASS/PARTIAL/FAIL | X/Y | [Brief note] |
-| 2 | Component Search | PASS/PARTIAL/FAIL | X/Y | [Brief note] |
-| 3 | Adding/Managing Components | PASS/PARTIAL/FAIL | X/Y | [Brief note] |
-| 4 | Wiring | PASS/PARTIAL/FAIL | X/Y | [Brief note] |
-| 5 | Setting Values | PASS/PARTIAL/FAIL | X/Y | [Brief note] |
-| 6 | Groups | PASS/PARTIAL/FAIL | X/Y | [Brief note] |
-| 7 | Script Components | PASS/PARTIAL/FAIL | X/Y | [Brief note] |
-| 8 | Inspection/Debugging | PASS/PARTIAL/FAIL | X/Y | [Brief note] |
-| 9 | Document Operations | PASS/PARTIAL/FAIL | X/Y | [Brief note] |
-| 10 | Capture/Visualization | PASS/PARTIAL/FAIL | X/Y | [Brief note] |
-| 11 | Infrastructure Protection | PASS/PARTIAL/FAIL | X/Y | [Brief note] |
-| 12 | Complex Scenarios | PASS/PARTIAL/FAIL | X/Y | [Brief note] |
-| 13 | Error Handling | PASS/PARTIAL/FAIL | X/Y | [Brief note] |
-
-**Overall: [X/13 sections passed] [Y total tests passed]**
-
----
-
-## Critical Issues (Must Fix Before Production)
-
-[If none, write "None found"]
-
-1. **[Issue Title]**
-   - Section: [Which test section]
-   - Operation: [What you tried to do]
-   - Expected: [What should happen]
-   - Actual: [What happened]
-   - Impact: [Why this is critical]
-
----
-
-## Major Issues (Should Fix Soon)
-
-[If none, write "None found"]
-
-1. **[Issue Title]**
-   - Section: [Which test section]
-   - Description: [What's wrong]
-   - Workaround: [If any]
-
----
-
-## Minor Issues (Fix When Convenient)
-
-[If none, write "None found"]
-
-1. [Brief description]
-2. [Brief description]
-
----
-
-## Friction Points & Feature Requests
-
-### High-Priority Improvements (Frequent/Painful Friction)
-
-1. **[Feature Request Title]**
-   - Problem: [What's difficult now]
-   - Suggestion: [How to improve]
-   - Benefit: [Why this helps]
-
-### Medium-Priority Improvements
-
-1. **[Feature Request Title]**
-   - Problem: [What's difficult now]
-   - Suggestion: [How to improve]
-
-### Low-Priority / Nice-to-Have
-
-1. [Brief suggestion]
-2. [Brief suggestion]
-
----
-
-## Documentation Feedback
-
-- [ ] Getting started guide was clear / unclear
-- [ ] Tool descriptions were helpful / confusing
-- [ ] Error messages were actionable / unhelpful
-- [ ] Missing documentation for: [list any gaps]
-
----
-
-## Final Assessment
-
-**Recommendation:** [READY FOR USE / NEEDS MINOR FIXES / NEEDS MAJOR WORK / NOT USABLE]
-
-**Confidence Level:** [HIGH / MEDIUM / LOW] - based on test coverage
-
-**Best Features:**
-1. [What works really well]
-2. [What works really well]
-
-**Biggest Opportunities:**
-1. [Most impactful improvement possible]
-2. [Second most impactful]
-
----
-
-*Report generated by [Tester] on [Date]*
+[Brief narrative about your testing experience and confidence level]
 ```
 
 ---
 
-## Notes for Testers
+## Tips for Effective Testing
 
-### Pacing
-- Don't rush through tests
-- Allow time for Grasshopper to update between operations
-- If something seems wrong, try the operation again
+1. **Use help liberally**: `action='help'` on any tool shows all available actions and parameters
 
-### Clean Up
-- Delete test components when done with a section
-- Use clear_document to reset between major test sections
-- Save important test files before clearing
+2. **Disable solver for bulk operations**: When adding multiple components or connections, disable the solver first, then re-enable
 
-### Reporting Quality Issues
-Even if a test "passes", note if:
-- The response was confusing
-- The operation was slower than expected
-- The error message could be improved
-- Documentation was unclear
-- A common operation requires too many steps
+3. **Verify visually**: Capture the canvas and viewport to confirm things look correct, not just that operations succeeded
 
-### Safety Reminders
-- Never attempt to guess or discover infrastructure IDs
-- If you accidentally find an infrastructure ID, do not attempt to use it
-- The infrastructure protection exists to keep the MCP connection stable
+4. **Test the happy path first**: Get basic operations working before exploring edge cases
 
----
+5. **Document as you go**: Note what you tried and what happened—this helps identify patterns
 
-## Appendix: Common Patterns
-
-### Pattern: Disable Solver During Bulk Operations
-```
-1. set_solver_enabled(false)
-2. Add multiple components
-3. Make multiple connections
-4. set_solver_enabled(true)
-5. recompute_solution()
-```
-
-### Pattern: Verify Component Added Successfully
-```
-1. Add component, capture returned ID
-2. Get component info using ID
-3. Verify position and type match expectations
-```
-
-### Pattern: Safe Delete
-```
-1. Get component info (verify it exists and is not critical)
-2. Delete component
-3. Verify it's no longer in component list
-```
+6. **Be creative**: The scenarios in Part 4 are suggestions. If you think of better tests for your use case, try them!

@@ -81,6 +81,10 @@ namespace Cordyceps.Resources
                 "MCP Server Testing Instructions",
                 "Comprehensive test instructions for validating Cordyceps MCP server functionality. Use when asked to test, validate, or debug the MCP connection.");
 
+            RegisterEmbeddedResource("gh://docs/rendering", "Knowledge.RenderingGuide.md",
+                "Rhino Rendering Pipeline",
+                "Complete workflow from Grasshopper geometry to rendered output: baking, materials, viewport control, camera positioning, and frame capture");
+
             // Pattern resources
             RegisterEmbeddedResource("gh://patterns/linear-array", "Knowledge.Patterns.LinearArray.md",
                 "Linear Array Pattern",

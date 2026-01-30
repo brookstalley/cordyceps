@@ -172,19 +172,27 @@ namespace Cordyceps.Core
             }
 
             // Search component server for matching proxy
-            var proxy = Instances.ComponentServer.ObjectProxies
-                .FirstOrDefault(p => p.Desc.Name.Equals(name, StringComparison.OrdinalIgnoreCase));
+            // Prefer non-deprecated components when multiple matches exist
+            var deprecationRegistry = DeprecationRegistry.Instance;
 
-            if (proxy != null)
+            var exactMatches = Instances.ComponentServer.ObjectProxies
+                .Where(p => p.Desc.Name.Equals(name, StringComparison.OrdinalIgnoreCase))
+                .OrderBy(p => (p.Obsolete || deprecationRegistry.IsDeprecated(p.Guid)) ? 1 : 0)
+                .ToList();
+
+            if (exactMatches.Count > 0)
             {
-                return proxy.CreateInstance() as IGH_DocumentObject;
+                return exactMatches[0].CreateInstance() as IGH_DocumentObject;
             }
 
-            // Try fuzzy match
-            proxy = Instances.ComponentServer.ObjectProxies
-                .FirstOrDefault(p => p.Desc.Name.IndexOf(name, StringComparison.OrdinalIgnoreCase) >= 0);
+            // Try fuzzy match - prefer non-deprecated components
+            var fuzzyMatches = Instances.ComponentServer.ObjectProxies
+                .Where(p => p.Desc.Name.IndexOf(name, StringComparison.OrdinalIgnoreCase) >= 0)
+                .OrderBy(p => (p.Obsolete || deprecationRegistry.IsDeprecated(p.Guid)) ? 1 : 0)
+                .ThenBy(p => p.Desc.Name.Length)  // Prefer shorter names (more exact matches)
+                .ToList();
 
-            return proxy?.CreateInstance() as IGH_DocumentObject;
+            return fuzzyMatches.Count > 0 ? fuzzyMatches[0].CreateInstance() as IGH_DocumentObject : null;
         }
 
         /// <summary>
@@ -193,41 +201,58 @@ namespace Cordyceps.Core
         public static List<ComponentInfo> SearchComponents(string query)
         {
             var results = new List<ComponentInfo>();
+            var deprecationRegistry = DeprecationRegistry.Instance;
 
             if (string.IsNullOrWhiteSpace(query))
             {
-                // Return all component names
-                foreach (var proxy in Instances.ComponentServer.ObjectProxies.Take(MAX_COMPONENTS_LIST))
+                // Return all component names, non-deprecated first
+                var proxies = Instances.ComponentServer.ObjectProxies
+                    .Select(p => new { Proxy = p, IsDeprecated = p.Obsolete || deprecationRegistry.IsDeprecated(p.Guid) })
+                    .OrderBy(x => x.IsDeprecated ? 1 : 0)  // Non-deprecated first
+                    .ThenBy(x => x.Proxy.Desc.Name)
+                    .Take(MAX_COMPONENTS_LIST);
+
+                foreach (var item in proxies)
                 {
+                    var upgradeInfo = deprecationRegistry.GetUpgradeInfo(item.Proxy.Guid);
                     results.Add(new ComponentInfo
                     {
-                        Name = proxy.Desc.Name,
-                        Description = proxy.Desc.Description,
-                        Category = proxy.Desc.Category,
-                        SubCategory = proxy.Desc.SubCategory,
-                        Guid = proxy.Guid.ToString()
+                        Name = item.Proxy.Desc.Name,
+                        Description = item.Proxy.Desc.Description,
+                        Category = item.Proxy.Desc.Category,
+                        SubCategory = item.Proxy.Desc.SubCategory,
+                        Guid = item.Proxy.Guid.ToString(),
+                        Deprecated = item.IsDeprecated,
+                        UpgradeTo = upgradeInfo?.ToName,
+                        UpgradeToGuid = upgradeInfo?.ToGuid.ToString()
                     });
                 }
             }
             else
             {
-                // Search for matching components
+                // Search for matching components, non-deprecated first
                 var normalizedQuery = query.ToLowerInvariant();
                 var matches = Instances.ComponentServer.ObjectProxies
                     .Where(p => p.Desc.Name.ToLowerInvariant().Contains(normalizedQuery)
                              || (p.Desc.Description?.ToLowerInvariant().Contains(normalizedQuery) ?? false))
-                    .OrderBy(p => p.Desc.Name.Length)
+                    .Select(p => new { Proxy = p, IsDeprecated = p.Obsolete || deprecationRegistry.IsDeprecated(p.Guid) })
+                    .OrderBy(x => x.IsDeprecated ? 1 : 0)  // Non-deprecated first
+                    .ThenBy(x => x.Proxy.Desc.Name.Length)  // Then by name length
                     .Take(MAX_SEARCH_RESULTS);
 
-                foreach (var proxy in matches)
+                foreach (var item in matches)
                 {
+                    var upgradeInfo = deprecationRegistry.GetUpgradeInfo(item.Proxy.Guid);
                     results.Add(new ComponentInfo
                     {
-                        Name = proxy.Desc.Name,
-                        Description = proxy.Desc.Description,
-                        Category = proxy.Desc.Category,
-                        SubCategory = proxy.Desc.SubCategory,
-                        Guid = proxy.Guid.ToString()
+                        Name = item.Proxy.Desc.Name,
+                        Description = item.Proxy.Desc.Description,
+                        Category = item.Proxy.Desc.Category,
+                        SubCategory = item.Proxy.Desc.SubCategory,
+                        Guid = item.Proxy.Guid.ToString(),
+                        Deprecated = item.IsDeprecated,
+                        UpgradeTo = upgradeInfo?.ToName,
+                        UpgradeToGuid = upgradeInfo?.ToGuid.ToString()
                     });
                 }
             }
@@ -297,8 +322,11 @@ namespace Cordyceps.Core
                     results.Add(match);
             }
 
-            // Sort: components before parameters (more commonly desired)
-            return results.OrderBy(m => m.Role == "parameter" ? 1 : 0).ToList();
+            // Sort: non-deprecated first, then components before parameters
+            return results
+                .OrderBy(m => m.Deprecated ? 1 : 0)  // Non-deprecated first
+                .ThenBy(m => m.Role == "parameter" ? 1 : 0)  // Components before parameters
+                .ToList();
         }
 
         /// <summary>
@@ -308,6 +336,17 @@ namespace Cordyceps.Core
         {
             if (proxy == null) return null;
 
+            // Check deprecation status from multiple sources
+            var deprecationRegistry = DeprecationRegistry.Instance;
+            bool isDeprecated = proxy.Obsolete;
+            if (!isDeprecated)
+            {
+                isDeprecated = deprecationRegistry.IsDeprecated(proxy.Guid);
+            }
+
+            // Get upgrade info if deprecated
+            var upgradeInfo = deprecationRegistry.GetUpgradeInfo(proxy.Guid);
+
             var match = new ComponentMatch
             {
                 Name = proxy.Desc.Name,
@@ -316,6 +355,9 @@ namespace Cordyceps.Core
                 SubCategory = proxy.Desc.SubCategory,
                 Guid = proxy.Guid.ToString(),
                 Role = GetRole(proxy.Desc.Category, proxy.Desc.SubCategory),
+                Deprecated = isDeprecated,
+                UpgradeTo = upgradeInfo?.ToName,
+                UpgradeToGuid = upgradeInfo?.ToGuid.ToString(),
                 Inputs = new List<ParameterInfo>(),
                 Outputs = new List<ParameterInfo>()
             };
@@ -326,6 +368,12 @@ namespace Cordyceps.Core
                 var instance = proxy.CreateInstance();
                 if (instance is IGH_Component comp)
                 {
+                    // Also check if type name contains OBSOLETE
+                    if (!match.Deprecated && instance.GetType().Name.Contains("OBSOLETE", StringComparison.OrdinalIgnoreCase))
+                    {
+                        match.Deprecated = true;
+                    }
+
                     foreach (var input in comp.Params.Input)
                     {
                         match.Inputs.Add(new ParameterInfo
@@ -412,13 +460,17 @@ namespace Cordyceps.Core
 
             if (matches.Count == 0)
             {
-                // Try fuzzy match as fallback
-                var proxy = Instances.ComponentServer.ObjectProxies
-                    .FirstOrDefault(p => p.Desc.Name.IndexOf(normalized, StringComparison.OrdinalIgnoreCase) >= 0);
+                // Try fuzzy match as fallback - prefer non-deprecated components
+                var deprecationRegistry = DeprecationRegistry.Instance;
+                var fuzzyMatches = Instances.ComponentServer.ObjectProxies
+                    .Where(p => p.Desc.Name.IndexOf(normalized, StringComparison.OrdinalIgnoreCase) >= 0)
+                    .OrderBy(p => (p.Obsolete || deprecationRegistry.IsDeprecated(p.Guid)) ? 1 : 0)
+                    .ThenBy(p => p.Desc.Name.Length)
+                    .ToList();
 
-                if (proxy != null)
+                if (fuzzyMatches.Count > 0)
                 {
-                    var component = proxy.CreateInstance() as IGH_DocumentObject;
+                    var component = fuzzyMatches[0].CreateInstance() as IGH_DocumentObject;
                     return (component, null);
                 }
 
@@ -447,6 +499,9 @@ namespace Cordyceps.Core
         public string Category { get; set; }
         public string SubCategory { get; set; }
         public string Guid { get; set; }
+        public bool Deprecated { get; set; }
+        public string UpgradeTo { get; set; }  // Name of replacement component if deprecated
+        public string UpgradeToGuid { get; set; }  // GUID of replacement component if deprecated
     }
 
     /// <summary>
@@ -460,6 +515,9 @@ namespace Cordyceps.Core
         public string SubCategory { get; set; }
         public string Guid { get; set; }
         public string Role { get; set; }  // "component", "parameter", or "input"
+        public bool Deprecated { get; set; }  // true if component is deprecated/obsolete
+        public string UpgradeTo { get; set; }  // Name of replacement component if deprecated
+        public string UpgradeToGuid { get; set; }  // GUID of replacement component if deprecated
         public List<ParameterInfo> Inputs { get; set; }
         public List<ParameterInfo> Outputs { get; set; }
     }

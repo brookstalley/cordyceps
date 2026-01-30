@@ -119,10 +119,10 @@ When creating script components, use these type names:
 
 Before connecting components:
 
-1. **Check output type** via `get_component_info` or `gh://component/{name}`
+1. **Check output type** via `gh_canvas(action='info', id='...')` or `gh_inspect(action='docs', type='...')`
 2. **Check input expected type** same way
 3. **Verify compatibility** using the tables above
-4. **Use `validate_connection`** to confirm before connecting
+4. **Use `gh_wire(action='validate', ...)`** to confirm before connecting
 
 ## Common Type Errors and Fixes
 
@@ -161,7 +161,7 @@ Check validity with:
 ## Best Practices
 
 1. **Be explicit about types** - Don't rely on implicit conversion
-2. **Check connections first** - Use `validate_connection`
+2. **Check connections first** - Use `gh_wire(action='validate', ...)`
 3. **Add conversion components** - Make data flow clear
 4. **Handle failures** - Some conversions return null; check for errors
 5. **Match list structures** - Type conversion applies per-item; tree mismatches compound problems

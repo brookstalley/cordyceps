@@ -5,6 +5,8 @@ using System.Linq;
 using Grasshopper;
 using Grasshopper.Kernel;
 using Newtonsoft.Json;
+using Rhino;
+using Rhino.Display;
 
 namespace Cordyceps.Core
 {
@@ -742,6 +744,162 @@ namespace Cordyceps.Core
                 guids.Add(guid);
             }
 
+            return true;
+        }
+
+        #endregion
+
+        #region Rhino Document Helpers
+
+        /// <summary>
+        /// Try to get the active Rhino document.
+        /// </summary>
+        /// <param name="doc">Output: the active Rhino document if successful</param>
+        /// <param name="error">Output: error message if failed</param>
+        /// <returns>True if document exists, false otherwise</returns>
+        public static bool TryGetRhinoDoc(out RhinoDoc doc, out string error)
+        {
+            doc = RhinoDoc.ActiveDoc;
+            if (doc == null)
+            {
+                error = "No active Rhino document";
+                return false;
+            }
+            error = null;
+            return true;
+        }
+
+        #endregion
+
+        #region Color Utilities
+
+        /// <summary>
+        /// Convert a System.Drawing.Color to hex string (#RRGGBB format).
+        /// </summary>
+        public static string ColorToHex(Color color)
+        {
+            return $"#{color.R:X2}{color.G:X2}{color.B:X2}";
+        }
+
+        /// <summary>
+        /// Convert a Rhino Color4f to hex string (#RRGGBB format).
+        /// </summary>
+        public static string ColorToHex(Color4f color)
+        {
+            return $"#{(int)(color.R * 255):X2}{(int)(color.G * 255):X2}{(int)(color.B * 255):X2}";
+        }
+
+        /// <summary>
+        /// Parse color from hex (#RRGGBB or RRGGBB), RGB (R,G,B), or named color (Red, Blue, etc.) format.
+        /// </summary>
+        /// <param name="colorStr">Color string to parse</param>
+        /// <param name="color">Output: parsed color if successful</param>
+        /// <returns>True if parsing succeeded, false otherwise</returns>
+        public static bool TryParseColor(string colorStr, out Color color)
+        {
+            color = Color.Black;
+
+            if (string.IsNullOrEmpty(colorStr))
+                return false;
+
+            // Try hex format: #RRGGBB or RRGGBB
+            var hexStr = colorStr;
+            if (hexStr.StartsWith("#"))
+                hexStr = hexStr.Substring(1);
+
+            if (hexStr.Length == 6)
+            {
+                try
+                {
+                    int r = Convert.ToInt32(hexStr.Substring(0, 2), 16);
+                    int g = Convert.ToInt32(hexStr.Substring(2, 2), 16);
+                    int b = Convert.ToInt32(hexStr.Substring(4, 2), 16);
+                    color = Color.FromArgb(r, g, b);
+                    return true;
+                }
+                catch
+                {
+                    // Fall through to try other formats
+                }
+            }
+
+            // Try RGB format: R,G,B
+            var parts = colorStr.Split(',');
+            if (parts.Length == 3)
+            {
+                if (int.TryParse(parts[0].Trim(), out int r) &&
+                    int.TryParse(parts[1].Trim(), out int g) &&
+                    int.TryParse(parts[2].Trim(), out int b))
+                {
+                    r = Math.Max(0, Math.Min(255, r));
+                    g = Math.Max(0, Math.Min(255, g));
+                    b = Math.Max(0, Math.Min(255, b));
+                    color = Color.FromArgb(r, g, b);
+                    return true;
+                }
+            }
+
+            // Try named color format (Red, Blue, Green, etc.)
+            try
+            {
+                var namedColor = Color.FromName(colorStr);
+                // Color.FromName returns a color with A=0,R=0,G=0,B=0 if the name is not recognized
+                // IsKnownColor will be true for valid named colors
+                if (namedColor.IsKnownColor)
+                {
+                    color = namedColor;
+                    return true;
+                }
+            }
+            catch
+            {
+                // Fall through
+            }
+
+            return false;
+        }
+
+        /// <summary>
+        /// Parse a boolean string value with a default fallback.
+        /// Accepts: "true", "false", "1", "0" (case-insensitive)
+        /// </summary>
+        /// <param name="value">String value to parse</param>
+        /// <param name="defaultValue">Default value if parsing fails</param>
+        /// <returns>Parsed boolean or default value</returns>
+        public static bool ParseBool(string value, bool defaultValue = false)
+        {
+            if (string.IsNullOrEmpty(value))
+                return defaultValue;
+
+            if (bool.TryParse(value, out bool result))
+                return result;
+
+            // Also accept "1"/"0"
+            if (value == "1") return true;
+            if (value == "0") return false;
+
+            return defaultValue;
+        }
+
+        /// <summary>
+        /// Try to parse a Point3d from a comma-separated string "x,y,z".
+        /// </summary>
+        /// <param name="value">String in "x,y,z" format</param>
+        /// <param name="result">Output: parsed Point3d if successful</param>
+        /// <returns>True if parsing succeeded, false otherwise</returns>
+        public static bool TryParsePoint3d(string value, out Rhino.Geometry.Point3d result)
+        {
+            result = Rhino.Geometry.Point3d.Unset;
+            if (string.IsNullOrEmpty(value)) return false;
+
+            var parts = value.Split(',');
+            if (parts.Length != 3) return false;
+
+            if (!double.TryParse(parts[0].Trim(), out var x)) return false;
+            if (!double.TryParse(parts[1].Trim(), out var y)) return false;
+            if (!double.TryParse(parts[2].Trim(), out var z)) return false;
+
+            result = new Rhino.Geometry.Point3d(x, y, z);
             return true;
         }
 

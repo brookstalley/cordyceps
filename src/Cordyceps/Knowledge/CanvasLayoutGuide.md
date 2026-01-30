@@ -83,14 +83,14 @@ Calculate next position: `next_x = previous.right + 150`
 
 ## Workflow
 
-1. `set_solver_enabled(false)`
+1. `gh_document(action='solver', enabled=false)`
 2. Add inputs at x=50, y=50/120/190... (70px vertical gaps, stacked)
 3. Add processing columns at x=300, 380, 460... (60-80px gaps)
-4. Wire with `bulk_connect`
-5. `set_solver_enabled(true)`
-6. `get_canvas_status()` then `validate_layout()`
-7. `add_to_group` for organization
+4. Wire with `gh_wire(action='connect', connections='[...]')`
+5. `gh_document(action='solver', enabled=true)`
+6. `gh_inspect(action='status')` then `gh_canvas(action='validate')`
+7. `gh_group(action='add', ids='[...]', name='...')` for organization
 
 ## Fixing Overlaps
 
-**Best approach**: Place components correctly initially using the spacing rules above. Use `validate_layout()` to detect any problems, then use `move_component()` to fix specific overlaps manually.
+**Best approach**: Place components correctly initially using the spacing rules above. Use `gh_canvas(action='validate')` to detect any problems, then use `gh_canvas(action='move')` to fix specific overlaps manually.

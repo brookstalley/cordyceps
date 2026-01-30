@@ -36,6 +36,7 @@ namespace Cordyceps
         private GrasshopperContext _context;
         private readonly List<ToolInfo> _tools = new List<ToolInfo>();
         private bool _disposed;
+        private DateTime _startTime;
 
         /// <summary>
         /// Whether the server is currently running
@@ -90,6 +91,7 @@ namespace Cordyceps
                 _listenerTask = Task.Run(() => ListenLoopAsync(_cts.Token), _cts.Token);
 
                 IsRunning = true;
+                _startTime = DateTime.UtcNow;
                 RhinoApp.WriteLine($"Cordyceps: MCP server started on http://127.0.0.1:{_port}/mcp");
             }
             catch (Exception ex)
@@ -119,7 +121,10 @@ namespace Cordyceps
                 _listener?.Close();
 
                 try { _listenerTask?.Wait(TimeSpan.FromSeconds(SHUTDOWN_TIMEOUT_SECONDS)); }
-                catch (AggregateException) { }
+                catch (AggregateException ex)
+                {
+                    Core.DebugLog.Debug($"Shutdown exception (expected): {ex.InnerException?.Message}");
+                }
             }
             catch (Exception ex)
             {
@@ -241,13 +246,14 @@ namespace Cordyceps
                 RhinoApp.WriteLine($"Cordyceps: {request.HttpMethod} {path} from {request.RemoteEndPoint}");
 
                 // Security: Validate Origin header (DNS rebinding protection)
-                if (!ValidateOrigin(request, response))
+                var validatedOrigin = ValidateOrigin(request, response, out bool isValid);
+                if (!isValid)
                     return;
 
                 // CORS preflight
                 if (request.HttpMethod == "OPTIONS")
                 {
-                    HandleCorsPreFlight(response);
+                    HandleCorsPreFlight(response, validatedOrigin);
                     return;
                 }
 
@@ -256,7 +262,7 @@ namespace Cordyceps
                 {
                     if (request.HttpMethod == "POST")
                     {
-                        await HandleMcpPostAsync(context);
+                        await HandleMcpPostAsync(context, validatedOrigin);
                     }
                     else
                     {
@@ -293,10 +299,12 @@ namespace Cordyceps
         }
 
         /// <summary>
-        /// Validate Origin header to prevent DNS rebinding attacks
+        /// Validate Origin header to prevent DNS rebinding attacks.
+        /// Returns the validated origin (or null if no origin header present).
         /// </summary>
-        private bool ValidateOrigin(HttpListenerRequest request, HttpListenerResponse response)
+        private string ValidateOrigin(HttpListenerRequest request, HttpListenerResponse response, out bool isValid)
         {
+            isValid = true;
             var origin = request.Headers["Origin"];
             if (!string.IsNullOrEmpty(origin))
             {
@@ -308,26 +316,30 @@ namespace Cordyceps
                         RhinoApp.WriteLine($"Cordyceps: Rejected request from non-localhost origin: {origin}");
                         response.StatusCode = 403;
                         response.Close();
-                        return false;
+                        isValid = false;
+                        return null;
                     }
+                    return origin; // Return the validated origin for CORS header
                 }
                 catch (UriFormatException)
                 {
                     RhinoApp.WriteLine($"Cordyceps: Rejected request with malformed origin: {origin}");
                     response.StatusCode = 403;
                     response.Close();
-                    return false;
+                    isValid = false;
+                    return null;
                 }
             }
-            return true;
+            return null; // No origin header present
         }
 
         /// <summary>
         /// Handle CORS preflight requests
         /// </summary>
-        private void HandleCorsPreFlight(HttpListenerResponse response)
+        private void HandleCorsPreFlight(HttpListenerResponse response, string origin)
         {
-            response.Headers.Add("Access-Control-Allow-Origin", "http://localhost");
+            // Echo back the validated origin, or use wildcard if no origin header
+            response.Headers.Add("Access-Control-Allow-Origin", origin ?? "*");
             response.Headers.Add("Access-Control-Allow-Methods", "POST, OPTIONS");
             response.Headers.Add("Access-Control-Allow-Headers", "Content-Type, Accept");
             response.Headers.Add("Access-Control-Max-Age", "86400");
@@ -342,7 +354,28 @@ namespace Cordyceps
         {
             response.StatusCode = 200;
             response.ContentType = "application/json";
-            var health = JsonSerializer.Serialize(new { status = "ok", server = "Cordyceps MCP", transport = "streamable-http" });
+
+            // Get active document name if available
+            string documentName = null;
+            try
+            {
+                var doc = Grasshopper.Instances.ActiveCanvas?.Document;
+                documentName = doc?.DisplayName;
+            }
+            catch { /* Ignore errors getting document name */ }
+
+            var uptimeSeconds = (int)(DateTime.UtcNow - _startTime).TotalSeconds;
+
+            var health = JsonSerializer.Serialize(new
+            {
+                status = "ok",
+                server = "Cordyceps MCP",
+                transport = "streamable-http",
+                toolCount = _tools.Count,
+                commandCount = CommandCount,
+                uptimeSeconds,
+                activeDocument = documentName
+            });
             var bytes = Encoding.UTF8.GetBytes(health);
             await response.OutputStream.WriteAsync(bytes, 0, bytes.Length);
             response.Close();
@@ -351,25 +384,35 @@ namespace Cordyceps
         /// <summary>
         /// Handle POST /mcp requests (Streamable HTTP transport)
         /// </summary>
-        private async Task HandleMcpPostAsync(HttpListenerContext context)
+        private async Task HandleMcpPostAsync(HttpListenerContext context, string origin)
         {
             var request = context.Request;
             var response = context.Response;
 
             try
             {
-                // Validate Accept header per MCP spec (must include both JSON and SSE)
+                // Validate Accept header - require application/json (SSE optional since we're stateless)
                 var accept = request.Headers["Accept"] ?? "";
-                if (!accept.Contains("application/json") || !accept.Contains("text/event-stream"))
+                if (!accept.Contains("application/json"))
                 {
-                    RhinoApp.WriteLine($"Cordyceps: Invalid Accept header: {accept}");
+                    RhinoApp.WriteLine($"Cordyceps: Invalid Accept header (must include application/json): {accept}");
                     response.StatusCode = 406; // Not Acceptable
                     response.Close();
                     return;
                 }
 
-                // Add CORS header for actual requests
-                response.Headers.Add("Access-Control-Allow-Origin", "http://localhost");
+                // Add CORS header for actual requests (echo validated origin)
+                response.Headers.Add("Access-Control-Allow-Origin", origin ?? "*");
+
+                // Check request body size limit (10MB) to prevent memory exhaustion
+                const long MAX_BODY_SIZE = 10 * 1024 * 1024;
+                if (request.ContentLength64 > MAX_BODY_SIZE)
+                {
+                    RhinoApp.WriteLine($"Cordyceps: Request body too large: {request.ContentLength64} bytes (max {MAX_BODY_SIZE})");
+                    response.StatusCode = 413; // Payload Too Large
+                    response.Close();
+                    return;
+                }
 
                 using var reader = new StreamReader(request.InputStream, Encoding.UTF8);
                 var json = await reader.ReadToEndAsync();
@@ -512,12 +555,25 @@ namespace Cordyceps
 
 READ FIRST: gh://docs/getting-started (use resources/read)
 
+UNIFIED TOOLS (use action='help' for details):
+- gh_canvas: add, delete, move, rename, find, search, list, info, bounds, validate, constant, bake
+- gh_wire: connect, disconnect, list, clear, validate
+- gh_adjust: get, set, config, preview, enable
+- gh_document: info, save, clear, solver, recompute, undo, redo, snapshot, revert, snapshots
+- gh_group: create, delete, add, remove, rename, color, move, list
+- gh_script: get, set, configure, info
+- gh_inspect: status, outputs, trace, disconnected, geometry, log, reports, categories, docs
+- gh_capture: canvas, viewport, region, views
+- rhino_scene: objects, select, deselect, set_layer, set_name, layers, layer_create, layer_set, layer_delete, hide, show, delete, script
+- rhino_render: display, camera, zoom, modes, render, settings, ground, sun, skylight
+- rhino_material: list, create, apply, delete
+- rhino_environment: list, current, set, create, delete
+
 Key points:
-- Disable solver during construction: set_solver_enabled(false)
-- Ambiguous names return error with matches; use GUID or Category/Name format
-- Check role field: component (processing), parameter (container), input (slider/toggle)
-- Spacing: 150px horizontal, 70px vertical between components
-- Always validate: get_canvas_status(), validate_layout()
+- Disable solver: gh_document(action='solver', enabled=false)
+- Ambiguous names: use GUID or Category/Name format
+- Spacing: 150px horizontal, 70px vertical
+- Validate: gh_inspect(action='status'), gh_canvas(action='validate')
 
 Resources: gh://docs/getting-started, gh://docs/data-trees, gh://component/{name}, gh://patterns/*
 ";
@@ -554,8 +610,8 @@ Resources: gh://docs/getting-started, gh://docs/data-trees, gh://component/{name
             if (tool == null)
                 throw new Exception($"Unknown tool: {name}");
 
-            // Create tool instance manually (all tool classes take GrasshopperContext, McpServer)
-            var instance = Activator.CreateInstance(tool.DeclaringType, _context, this);
+            // Create tool instance (all tool classes take GrasshopperContext)
+            var instance = Activator.CreateInstance(tool.DeclaringType, _context);
 
             // Build method arguments
             var methodParams = tool.Method.GetParameters();
@@ -575,9 +631,8 @@ Resources: gh://docs/getting-started, gh://docs/data-trees, gh://component/{name
                 }
                 else
                 {
-                    args[i] = param.ParameterType.IsValueType
-                        ? Activator.CreateInstance(param.ParameterType)
-                        : null;
+                    // Required parameter is missing - throw a clear error
+                    throw new Exception($"Missing required parameter: {param.Name}");
                 }
             }
 

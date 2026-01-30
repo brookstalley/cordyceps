@@ -63,3 +63,30 @@ Creates a 2D or 3D grid of geometry with controllable spacing.
 | Wrong Cross Reference mode | Diagonal line, not grid | Set to "Holistic" |
 | Confusing points vs cells | Off-by-one errors | 5×5 points = 4×4 cells |
 | Large grids (100×100) | Slow performance | Use mesh vertices instead |
+
+## Implementation with Cordyceps
+
+```
+# 1. Disable solver
+gh_document(action='solver', enabled=false)
+
+# 2. Add components using Option A (Rectangular Grid)
+gh_canvas(action='add', type='XY Plane', x=50, y=100)
+gh_canvas(action='add', type='Number Slider', x=50, y=170, nickname='X Count')
+gh_canvas(action='add', type='Number Slider', x=50, y=240, nickname='Y Count')
+gh_canvas(action='add', type='Number Slider', x=50, y=310, nickname='Cell Size')
+gh_canvas(action='add', type='Rectangular', x=350, y=200)
+
+# 3. Configure sliders
+gh_adjust(action='config', id='<x-count>', min=1, max=20, value=5)
+gh_adjust(action='config', id='<y-count>', min=1, max=20, value=5)
+gh_adjust(action='config', id='<cell-size>', min=1, max=50, value=10)
+
+# 4. Wire connections
+gh_wire(action='connect', connections='[...]')
+
+# 5. Enable solver and verify
+gh_document(action='solver', enabled=true)
+gh_inspect(action='status')
+gh_canvas(action='validate')
+```

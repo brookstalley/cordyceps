@@ -21,7 +21,7 @@
 
 *Claude Code (command line):*
 ```cmd
-claude mcp add --transport http http://127.0.0.1/mcp
+claude mcp add --transport http http://127.0.0.1:26929/mcp
 ```
 
 *Most others (config file):*
@@ -44,9 +44,10 @@ claude mcp add --transport http http://127.0.0.1/mcp
 
 ```python
 async with ClientSession(transport) as session:
-    slider = await session.call_tool('add_component', {'type': 'Number Slider', 'x': 50, 'y': 50})
-    circle = await session.call_tool('add_component', {'type': 'Curve/Circle', 'x': 200, 'y': 50})
-    await session.call_tool('connect_components', {
+    slider = await session.call_tool('gh_canvas', {'action': 'add', 'type': 'Number Slider', 'x': 50, 'y': 50})
+    circle = await session.call_tool('gh_canvas', {'action': 'add', 'type': 'Curve/Circle', 'x': 200, 'y': 50})
+    await session.call_tool('gh_wire', {
+        'action': 'connect',
         'sourceId': slider['id'], 'sourceParam': '0',
         'targetId': circle['id'], 'targetParam': 'R'
     })
@@ -56,31 +57,37 @@ async with ClientSession(transport) as session:
 
 Here's what happens when you give Claude this natural language prompt:
 
-> Create an array of cylinders radiating out from the origin on the XY plane, with settings for number of cylinders, length and diameter of the cylinders, and distance from origin. Then make copies of the whole array in Z, with additional settings for number of copies and distance between copies.
+> Let's make a GIF for the GitHub README that shows the full journey from parametric modeling to photorealistic render. The subject is a small collection of geometric forms — maybe five or six objects with varied shapes, scales, and proportions. Arrange them as a pleasing composition. The GIF shows three phases: building the geometry in Grasshopper with solver enabled and frequent captures, then baking and setting up a beautiful render in Rhino with previews disabled, and finally a smooth raytraced orbit. Use an outdoor environment and a variety of materials to make it visually rich.
 
-![Radial Cylinder Array Animation](images/cylinder_array_build.gif)
+![Cordyceps Showcase](images/cordyceps_showcase.gif)
 
-The AI interprets the request and builds the complete Grasshopper definition step by step—adding sliders for parameters, dividing a circle to get radial positions, creating direction vectors, generating line axes for each cylinder, piping those lines into solid cylinders, and copying the array in Z.
+The AI interprets the request and builds everything autonomously—creating parametric geometry in Grasshopper, baking to Rhino, applying PBR materials, configuring the render environment and lighting, and capturing a smooth orbiting animation.
 
 ## Tools
 
-**Canvas**: `add_component`, `delete_component`, `bulk_delete_components`, `move_component`, `search_components`, `get_all_components`
+Cordyceps provides **12 tools with 90 actions**—deliberately consolidated to minimize context window usage. Rather than exposing every operation as a separate tool (which would require the model to process dozens of tool definitions), related operations are grouped under a single tool with an `action` parameter. This keeps the tool list compact while preserving full functionality.
 
-**Wiring**: `connect_components`, `disconnect_components`, `bulk_connect`, `validate_connection`
+### Grasshopper Tools
 
-**Values**: `set_component_value`, `configure_value_list`, `add_constant`, `set_preview`, `set_enabled`, `bulk_set_preview`, `bulk_set_enabled`
+| Tool | Actions | Description |
+|------|---------|-------------|
+| `gh_canvas` | add, delete, move, rename, find, search, list, info, bounds, validate, constant, bake | Component operations |
+| `gh_wire` | connect, disconnect, list, clear, validate | Connection management |
+| `gh_adjust` | get, set, config, preview, enable | Values and component settings |
+| `gh_document` | info, save, clear, solver, recompute, undo, redo, snapshot, revert, snapshots | Document operations |
+| `gh_group` | create, delete, add, remove, rename, color, move, list | Visual groups |
+| `gh_script` | get, set, configure, info | Script components |
+| `gh_inspect` | status, outputs, trace, disconnected, geometry, log, reports, categories, docs | Inspection and debugging |
+| `gh_capture` | canvas, viewport, region, views | Screenshot operations |
 
-**Scripts**: `set_script_code`, `get_script_code`, `get_script_info`, `configure_script_component`
+### Rhino Tools
 
-**Groups**: `create_group`, `add_to_group`, `move_group`, `get_all_groups`
-
-**Inspection**: `get_canvas_status`, `get_disconnected_inputs`, `trace_data_flow`, `get_component_outputs`
-
-**Capture**: `capture_canvas`, `capture_viewport`, `capture_canvas_region`
-
-**Documents**: `save_document`, `clear_document`, `snapshot`, `revert_snapshot`, `undo`, `redo`
-
-**Execution**: `set_solver_enabled`, `recompute_solution`, `bake_geometry`, `execute_script`
+| Tool | Actions | Description |
+|------|---------|-------------|
+| `rhino_scene` | objects, select, deselect, set_layer, set_name, layers, layer_create, layer_set, layer_delete, hide, show, delete, script | Scene and layer management |
+| `rhino_render` | display, camera, zoom, modes, render, settings, ground, sun, skylight | Viewport, camera, and render settings |
+| `rhino_material` | list, library, instantiate, create, apply, delete | PBR materials |
+| `rhino_environment` | list, current, set, create, delete | Render environments |
 
 ## Resources
 
@@ -95,6 +102,7 @@ MCP resources provide documentation to clients. Source files are in [`src/Cordyc
 - `gh://docs/canvas-layout` — [CanvasLayoutGuide.md](src/Cordyceps/Knowledge/CanvasLayoutGuide.md) — Spacing and layout conventions
 - `gh://docs/geometry-orientation` — [GeometryOrientationGuide.md](src/Cordyceps/Knowledge/GeometryOrientationGuide.md) — Planes and orientation
 - `gh://docs/mcp-testing` — [McpTestingGuide.md](src/Cordyceps/Knowledge/McpTestingGuide.md) — Test and validate MCP server functionality
+- `gh://docs/rendering` — [RenderingGuide.md](src/Cordyceps/Knowledge/RenderingGuide.md) — Rhino rendering pipeline (bake, materials, viewport, capture)
 
 **Patterns:**
 - `gh://patterns/linear-array` — [LinearArray.md](src/Cordyceps/Knowledge/Patterns/LinearArray.md) — Copies along a line
@@ -107,7 +115,7 @@ MCP resources provide documentation to clients. Source files are in [`src/Cordyc
 
 To validate Cordyceps is working correctly, ask your AI assistant to "test the MCP server" or "help me test Grasshopper". It will read the comprehensive test instructions at `gh://docs/mcp-testing` and run through all functionality areas, reporting any issues found.
 
-Test coverage includes: component management, wiring, values, groups, scripts, inspection, document operations, and infrastructure protection.
+Test coverage includes: component management, wiring, values, groups, scripts, inspection, document operations, Rhino objects/layers/materials, render environments and settings, viewport control, and infrastructure protection.
 
 ## Troubleshooting
 
@@ -115,7 +123,7 @@ Test coverage includes: component management, wiring, values, groups, scripts, i
 |---------|----------|
 | Plugin won't load | Verify Rhino 8.21+. Unblock the .gha file (Windows) or clear quarantine (macOS). |
 | Can't connect | Ensure Cordyceps component is on canvas. Check the port. |
-| Component not found | Use `search_components` to find exact names. |
+| Component not found | Use `gh_canvas(action='search', query='...')` to find exact names. |
 
 ## Building
 
