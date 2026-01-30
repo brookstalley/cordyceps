@@ -105,11 +105,11 @@ namespace Cordyceps.Tools.Unified
             [Description("Material name")] string name = null,
             [Description("Built-in material type (Metal, Glass, Plastic, Paint, Gem, Plaster, Emission, etc.)")] string type = null,
             [Description("Base color as hex '#RRGGBB' or RGB '255,128,0'")] string color = null,
-            [Description("Surface roughness 0-1 (0=mirror, 1=matte)")] double roughness = 0.5,
+            [Description("Roughness 0-1 (polished=0.1, stone=0.7, matte=0.9)")] double roughness = 0.5,
             [Description("Metalness 0-1 (0=dielectric, 1=metal)")] double metallic = 0,
             [Description("Transparency 0-1 (0=opaque, 1=transparent)")] double transparency = 0,
             [Description("Emission color (for glowing materials)")] string emission = null,
-            [Description("Index of refraction (glass ~1.5)")] double ior = 1.0,
+            [Description("IOR (glass=1.5, water=1.33, diamond=2.42)")] double ior = 1.0,
             [Description("JSON array of object GUIDs")] string ids = null,
             [Description("Material name to apply")] string material = null)
         {
@@ -209,12 +209,12 @@ namespace Cordyceps.Tools.Unified
         {
             return typeName switch
             {
-                "Metal" => "Metallic materials with realistic reflections (gold, silver, copper, aluminum)",
-                "Glass" => "Transparent materials with refraction (windows, bottles, lenses)",
+                "Metal" => "Metallic materials (gold #FFD700, copper #B87333, silver #C0C0C0, aluminum #A9A9A9)",
+                "Glass" => "Transparent with refraction (ior=1.5 for standard glass)",
                 "Plastic" => "Non-metallic materials with varying glossiness",
                 "Paint" => "Painted surface materials with color and sheen",
                 "Gem" => "Gemstone materials with dispersion (diamonds, rubies, emeralds)",
-                "Plaster" => "Matte, diffuse materials (walls, ceilings)",
+                "Plaster" => "Matte diffuse (concrete #999999, stone #808080, sandstone #D2B48C)",
                 "Picture" => "Image-based materials for decals and textures",
                 "PhysicallyBased" => "Full PBR material with all parameters",
                 "Blend" => "Blend between two materials",

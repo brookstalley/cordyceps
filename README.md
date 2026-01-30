@@ -57,15 +57,15 @@ async with ClientSession(transport) as session:
 
 Here's what happens when you give Claude this natural language prompt:
 
-> Create an array of cylinders radiating out from the origin on the XY plane, with settings for number of cylinders, length and diameter of the cylinders, and distance from origin. Then make copies of the whole array in Z, with additional settings for number of copies and distance between copies.
+> Let's make a GIF for the GitHub README that shows the full journey from parametric modeling to photorealistic render. The subject is a small collection of geometric forms — maybe five or six objects with varied shapes, scales, and proportions. Arrange them as a pleasing composition. The GIF shows three phases: building the geometry in Grasshopper with solver enabled and frequent captures, then baking and setting up a beautiful render in Rhino with previews disabled, and finally a smooth raytraced orbit. Use an outdoor environment and a variety of materials to make it visually rich.
 
-![Radial Cylinder Array Animation](images/cylinder_array_build.gif)
+![Cordyceps Showcase](images/cordyceps_showcase.gif)
 
-The AI interprets the request and builds the complete Grasshopper definition step by step—adding sliders for parameters, dividing a circle to get radial positions, creating direction vectors, generating line axes for each cylinder, piping those lines into solid cylinders, and copying the array in Z.
+The AI interprets the request and builds everything autonomously—creating parametric geometry in Grasshopper, baking to Rhino, applying PBR materials, configuring the render environment and lighting, and capturing a smooth orbiting animation.
 
 ## Tools
 
-All tools use a unified action-based interface. Use `action='help'` on any tool to see available actions and parameters.
+Cordyceps provides **12 tools with 90 actions**—deliberately consolidated to minimize context window usage. Rather than exposing every operation as a separate tool (which would require the model to process dozens of tool definitions), related operations are grouped under a single tool with an `action` parameter. This keeps the tool list compact while preserving full functionality.
 
 ### Grasshopper Tools
 
@@ -86,7 +86,7 @@ All tools use a unified action-based interface. Use `action='help'` on any tool 
 |------|---------|-------------|
 | `rhino_scene` | objects, select, deselect, set_layer, set_name, layers, layer_create, layer_set, layer_delete, hide, show, delete, script | Scene and layer management |
 | `rhino_render` | display, camera, zoom, modes, render, settings, ground, sun, skylight | Viewport, camera, and render settings |
-| `rhino_material` | list, create, apply, delete | PBR materials |
+| `rhino_material` | list, library, instantiate, create, apply, delete | PBR materials |
 | `rhino_environment` | list, current, set, create, delete | Render environments |
 
 ## Resources

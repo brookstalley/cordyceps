@@ -138,14 +138,14 @@ namespace Cordyceps.Tools.Unified
             [Description("Material name for ground")] string material = null,
             // Sun parameters
             [Description("Enable sun (true/false)")] string sunEnabled = null,
-            [Description("Sun azimuth in degrees (0-360)")] string azimuth = null,
-            [Description("Sun altitude in degrees (-90 to 90)")] string sunAltitude = null,
+            [Description("Sun azimuth 0-360 (135/225=classic 3/4 lighting)")] string azimuth = null,
+            [Description("Sun altitude degrees (30-45=daylight, 10-20=dramatic)")] string sunAltitude = null,
             [Description("Sun intensity multiplier")] string intensity = null,
             [Description("Latitude for sun calculation")] string latitude = null,
             [Description("Longitude for sun calculation")] string longitude = null,
             [Description("DateTime for sun calculation")] string dateTime = null,
             // Skylight parameters
-            [Description("Enable skylight (true/false)")] string skylightEnabled = null,
+            [Description("Enable skylight (use WITH sun for realistic shadows)")] string skylightEnabled = null,
             [Description("Shadow intensity")] string shadowIntensity = null,
             [Description("Custom environment name")] string customEnvironment = null)
         {

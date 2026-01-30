@@ -12,6 +12,20 @@ Complete workflow from Grasshopper geometry → Rhino baking → materials → v
 6. **Wait for render** (`rhino_render(action='render', wait=200)` - for Raytraced mode)
 7. **Capture** (`gh_capture(action='viewport')`)
 
+## Realistic Rendering
+
+**Display modes**: Materials/lighting only work in Rendered (preview) or Raytraced (photorealistic). Use Raytraced + wait for quality output.
+
+**Lighting**: Always enable BOTH sun AND skylight. Skylight prevents black shadows. Sun: altitude 30-45° (daylight), azimuth 135°/225° (3/4 lighting).
+
+**Background**: Use gradient (#87CEEB top, #E8E8E8 bottom). Avoid white.
+
+**Ground**: Enable with shadowOnly=true or neutral material.
+
+**Materials**: Set roughness (0.1=polished, 0.7=stone, 0.9=matte) and IOR for glass (1.5). Use realistic colors (rocks=gray/brown).
+
+**Research**: Search "[material] PBR values" or "[scene] Rhino lighting" for specifics. Refs: [physicallybased.info](https://physicallybased.info/), [pixelandpoly.com/ior](https://pixelandpoly.com/ior.html)
+
 ## Key Tools
 
 ### Object Management (rhino_scene)
