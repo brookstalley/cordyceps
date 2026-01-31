@@ -182,6 +182,48 @@ namespace Cordyceps.Core
         }
 
         /// <summary>
+        /// Check if an object is a valid, active document object (not orphaned/phantom).
+        /// Filters out objects that may be left over from undo operations or other internal state.
+        /// </summary>
+        /// <param name="obj">The document object to check</param>
+        /// <param name="doc">The expected parent document</param>
+        /// <returns>True if the object is valid and active</returns>
+        public static bool IsActiveDocumentObject(IGH_DocumentObject obj, GH_Document doc)
+        {
+            if (obj == null) return false;
+            if (obj.Attributes == null) return false;
+
+            // Check if the object's document reference matches the current document
+            // OnPingDocument() returns null for orphaned objects
+            var objDoc = obj.OnPingDocument();
+            if (objDoc == null || objDoc != doc) return false;
+
+            return true;
+        }
+
+        /// <summary>
+        /// Get only the active, valid objects from a document, filtering out phantoms/orphans.
+        /// </summary>
+        /// <param name="doc">The Grasshopper document</param>
+        /// <param name="infraIds">Pre-computed set of Cordyceps infrastructure IDs to exclude</param>
+        /// <returns>Enumerable of active document objects</returns>
+        public static IEnumerable<IGH_DocumentObject> GetActiveObjects(GH_Document doc, HashSet<Guid> infraIds)
+        {
+            if (doc == null) yield break;
+
+            foreach (var obj in doc.Objects)
+            {
+                // Skip Cordyceps infrastructure
+                if (IsCordycepsInfrastructure(obj, infraIds)) continue;
+
+                // Skip orphaned/phantom objects
+                if (!IsActiveDocumentObject(obj, doc)) continue;
+
+                yield return obj;
+            }
+        }
+
+        /// <summary>
         /// Get the set of GUIDs for the Cordyceps component, all components directly connected to it,
         /// and any groups containing those components.
         /// These are internal infrastructure components that should be filtered from user-facing results.
@@ -485,62 +527,6 @@ namespace Cordyceps.Core
                 }
             }
             return result;
-        }
-
-        /// <summary>
-        /// Build parameter list with extended info (access, optional) for search results.
-        /// </summary>
-        public static List<object> BuildDetailedParameterList(IList<IGH_Param> parameters, bool isInput)
-        {
-            var result = new List<object>();
-            foreach (var param in parameters)
-            {
-                if (isInput)
-                {
-                    result.Add(new
-                    {
-                        name = param.Name,
-                        nickname = param.NickName,
-                        type = param.TypeName,
-                        access = param.Access.ToString(),
-                        optional = param.Optional
-                    });
-                }
-                else
-                {
-                    result.Add(new
-                    {
-                        name = param.Name,
-                        nickname = param.NickName,
-                        type = param.TypeName
-                    });
-                }
-            }
-            return result;
-        }
-
-        /// <summary>
-        /// Build a bounds info object from a RectangleF.
-        /// </summary>
-        public static object BuildBoundsObject(RectangleF bounds)
-        {
-            return new
-            {
-                x = bounds.X,
-                y = bounds.Y,
-                width = bounds.Width,
-                height = bounds.Height,
-                right = bounds.Right,
-                bottom = bounds.Bottom
-            };
-        }
-
-        /// <summary>
-        /// Build a pivot info object from a PointF.
-        /// </summary>
-        public static object BuildPivotObject(PointF pivot)
-        {
-            return new { x = pivot.X, y = pivot.Y };
         }
 
         /// <summary>

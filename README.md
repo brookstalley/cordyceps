@@ -90,13 +90,13 @@ The AI interprets the request and builds everything autonomously—creating para
 
 ## Tools
 
-Cordyceps provides **7 tools with 92 actions**—deliberately consolidated to minimize context window usage. Rather than exposing every operation as a separate tool (which would require the model to process dozens of tool definitions), related operations are grouped under a single tool with an `action` parameter. This keeps the tool list compact while preserving full functionality.
+Cordyceps provides **7 tools with 100 actions**—deliberately consolidated to minimize context window usage. Rather than exposing every operation as a separate tool (which would require the model to process dozens of tool definitions), related operations are grouped under a single tool with an `action` parameter. This keeps the tool list compact while preserving full functionality.
 
 ### Grasshopper Tools
 
 | Tool | Actions | Description |
 |------|---------|-------------|
-| `gh_canvas` | add, delete, move, rename, find, search, list, info, bounds, validate, constant, bake, zoom, view, get, set, config, preview, enable, group_* | Components, values, groups |
+| `gh_canvas` | add, delete, move, rename, find, search, list, info, bounds, validate, constant, bake, zoom, view, get, set, config, preview, enable, group_*, zoomable | Components, values, groups, variable parameters |
 | `gh_wire` | connect, disconnect, list, clear, validate | Connection management |
 | `gh_document` | info, save, clear, solver, recompute, undo, redo, snapshot, revert, snapshots, capture_* | Document operations and capture |
 | `gh_script` | get, set, configure, info | Script components |

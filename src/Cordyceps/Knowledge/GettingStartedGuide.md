@@ -7,7 +7,7 @@ Grasshopper is a visual dataflow graph for parametric 3D design. Components on a
 Use `action='help'` on any tool to see all available actions and parameters.
 
 **Grasshopper Tools:**
-- `gh_canvas` - Components, values, groups: add, delete, move, find, search, list, bake, zoom/view, get/set values, group management
+- `gh_canvas` - Components, values, groups: add, delete, move, find, search, list, bake, zoom/view, get/set values, group management, zoomable parameter management
 - `gh_wire` - Connect, disconnect, list, validate wires
 - `gh_document` - Info, save, clear, solver control, snapshots, capture canvas/viewport
 - `gh_script` - Get/set script code, configure parameters
@@ -33,6 +33,10 @@ Use `action='help'` on any tool to see all available actions and parameters.
 **Groups:**
 - `gh_canvas(action='group_create', name='...', ids='[...]', color='#FF6B6B')`
 - `gh_canvas(action='group_list')` — list all groups
+
+**Variable Parameters (ZUI):**
+- `gh_canvas(action='zoomable', id='...', operation='list')` — list available zoomable params
+- `gh_canvas(action='zoomable', id='...', operation='add', param='...')` — add input/output
 
 **Capture:**
 - `gh_document(action='capture_canvas')` — Grasshopper canvas
@@ -68,16 +72,6 @@ Three roles (check `role` field):
 - Inputs: Stack sliders at x≈50, y=50/120/190...
 
 Use `gh_canvas(action='validate')` to check overlaps. See `gh://docs/canvas-layout` for details.
-
-## Common Errors
-
-1. Solver enabled during bulk ops → partial errors, slow
-2. Wrong role → Circle parameter vs Circle component
-3. Tree mismatch → use grafting. See `gh://docs/data-trees`
-4. Geometry wrong direction → extends along plane Z-axis. See `gh://docs/geometry-orientation`
-5. Using deprecated components → check `deprecated` field
-
-See `gh://docs/common-errors` for detailed error solutions.
 
 ## Resources
 

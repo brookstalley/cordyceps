@@ -38,7 +38,7 @@ The project targets .NET 8.0 and outputs a Grasshopper plugin (`.gha` file). Deb
 Each tool class is marked with `[McpServerToolType]` and contains a single method marked with `[McpServerTool]`. The method name is converted to snake_case for the MCP tool name (e.g., `GhCanvas` -> `gh_canvas`). Each tool uses an `action` parameter to dispatch to different operations.
 
 **Grasshopper Tools (5):**
-- **GhCanvasTool** (`gh_canvas`) - Components, values, groups: add, delete, move, find, search, list, bake, get/set values, group management
+- **GhCanvasTool** (`gh_canvas`) - Components, values, groups: add, delete, move, find, search, list, bake, get/set values, group management, zoomable parameter management
 - **GhWireTool** (`gh_wire`) - Connect/disconnect components, bulk wiring, validate connections
 - **GhDocumentTool** (`gh_document`) - Save, clear documents; snapshots; solver control; capture canvas/viewport
 - **GhScriptTool** (`gh_script`) - Configure C#/Python script components
