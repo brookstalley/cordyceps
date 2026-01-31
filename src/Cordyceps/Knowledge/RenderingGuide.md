@@ -10,7 +10,7 @@ Complete workflow from Grasshopper geometry → Rhino baking → materials → v
 4. **Set display mode** (`rhino_render(action='display', mode='Rendered')` or `Raytraced`)
 5. **Position camera** (`rhino_render(action='camera')`, `rhino_render(action='zoom')`)
 6. **Wait for render** (`rhino_render(action='render', wait=200)` - for Raytraced mode)
-7. **Capture** (`gh_capture(action='viewport')`)
+7. **Capture** (`gh_document(action='capture_viewport')`)
 
 ## Realistic Rendering
 
@@ -61,15 +61,15 @@ Complete workflow from Grasshopper geometry → Rhino baking → materials → v
 - `rhino_render(action='sun', sunEnabled='true', azimuth='180', sunAltitude='45')` - sun position
 - `rhino_render(action='skylight', skylightEnabled='true')` - ambient lighting
 
-### Materials (rhino_material)
+### Materials (rhino_render)
 
 **IMPORTANT**: Materials only render in **Raytraced** or **Rendered** display modes. Raytraced provides physically accurate rendering; Rendered gives faster preview quality.
 
 **List & Inspect:**
-- `rhino_material(action='list')` - list all materials in the document
-- `rhino_material(action='library')` - list available built-in material types
+- `rhino_render(action='material_list')` - list all materials in the document
+- `rhino_render(action='material_library')` - list available built-in material types
 
-**Built-in Material Types** (use with `instantiate`):
+**Built-in Material Types** (use with `material_instantiate`):
 | Type | Description |
 |------|-------------|
 | Metal | Metallic materials - gold, silver, copper, aluminum |
@@ -85,40 +85,40 @@ Complete workflow from Grasshopper geometry → Rhino baking → materials → v
 | Picture | Image-based materials for decals |
 
 **Create Materials:**
-- `rhino_material(action='instantiate', type='Metal', name='Copper', color='#B87333')` - create from built-in type
-- `rhino_material(action='create', name='Red Metal', color='#FF0000', metallic=1, roughness=0.3)` - create custom PBR material
+- `rhino_render(action='material_instantiate', type='Metal', name='Copper', color='#B87333')` - create from built-in type
+- `rhino_render(action='material_create', name='Red Metal', color='#FF0000', metallic=1, roughness=0.3)` - create custom PBR material
 
 **Apply & Delete:**
-- `rhino_material(action='apply', ids='[...]', material='Copper')` - apply to objects
-- `rhino_material(action='delete', name='Copper')` - delete material
+- `rhino_render(action='material_apply', ids='[...]', material='Copper')` - apply to objects
+- `rhino_render(action='material_delete', name='Copper')` - delete material
 
 **Workflow Example:**
 ```
 # 1. Create materials from built-in types
-rhino_material(action='instantiate', type='Metal', name='Gold', color='#FFD700')
-rhino_material(action='instantiate', type='Glass', name='Clear Glass')
+rhino_render(action='material_instantiate', type='Metal', name='Gold', color='#FFD700')
+rhino_render(action='material_instantiate', type='Glass', name='Clear Glass')
 
 # 2. Apply to baked geometry
-rhino_material(action='apply', ids='["guid1"]', material='Gold')
-rhino_material(action='apply', ids='["guid2"]', material='Clear Glass')
+rhino_render(action='material_apply', ids='["guid1"]', material='Gold')
+rhino_render(action='material_apply', ids='["guid2"]', material='Clear Glass')
 
 # 3. Set Raytraced mode to see materials
 rhino_render(action='display', mode='Raytraced')
 rhino_render(action='render', wait=200)  # Wait for render passes
 ```
 
-### Environments (rhino_environment)
-- `rhino_environment(action='list')` - list render environments
-- `rhino_environment(action='current')` - get current environment for each usage
-- `rhino_environment(action='set', environment='Studio', usage='all')` - set environment
-- `rhino_environment(action='create', name='Blue Sky', color='#87CEEB')` - create solid color environment
+### Environments (rhino_render)
+- `rhino_render(action='env_list')` - list render environments
+- `rhino_render(action='env_current')` - get current environment for each usage
+- `rhino_render(action='env_set', environment='Studio', usage='all')` - set environment
+- `rhino_render(action='env_create', name='Blue Sky', color='#87CEEB')` - create solid color environment
 
-### Capture (gh_capture)
-- `gh_capture(action='viewport')` - capture to temp file
-- `gh_capture(action='viewport', path='/path/to/file.png', width=1920, height=1080)` - custom size
-- `gh_capture(action='viewport', view='Top')` - specific view
-- `gh_capture(action='viewport', transparent=true)` - transparent background (PNG only)
-- `gh_capture(action='views')` - list available views
+### Capture (gh_document)
+- `gh_document(action='capture_viewport')` - capture to temp file
+- `gh_document(action='capture_viewport', path='/path/to/file.png', width=1920, height=1080)` - custom size
+- `gh_document(action='capture_viewport', view='Top')` - specific view
+- `gh_document(action='capture_viewport', transparent=true)` - transparent background (PNG only)
+- `gh_document(action='capture_views')` - list available views
 
 ## Camera Orbit Pattern
 
@@ -132,7 +132,7 @@ No orbit tool provided - LLM calculates positions. Steps:
    - `newZ = location.z` (keep same height)
 3. `rhino_render(action='camera', location='newX,newY,newZ')`
 4. `rhino_render(action='render', wait=200)` (if Raytraced)
-5. `gh_capture(action='viewport', path='frame_001.png')`
+5. `gh_document(action='capture_viewport', path='frame_001.png')`
 6. Repeat for all frames
 
 ## Example: Basic Scene Setup
@@ -161,7 +161,7 @@ for i in range(36):
     newY = target.y + distance * sin(angle)
 
     rhino_render(action='camera', location=f'{newX},{newY},{location.z}')
-    gh_capture(action='viewport', path=f'frame_{i:03d}.png', width=1920, height=1080)
+    gh_document(action='capture_viewport', path=f'frame_{i:03d}.png', width=1920, height=1080)
 
 # 6. Assemble GIF externally
 # ffmpeg -framerate 10 -i frame_%03d.png -loop 0 orbit.gif

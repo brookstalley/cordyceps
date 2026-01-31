@@ -59,8 +59,8 @@ gh_canvas(action='add', type='Unit X', x=400, y=80)
 gh_canvas(action='add', type='Move', x=550, y=80)
 
 # 3. Configure sliders
-gh_adjust(action='config', id='<count-id>', min=2, max=50, value=10)
-gh_adjust(action='config', id='<spacing-id>', min=1, max=100, value=10)
+gh_canvas(action='config', id='<count-id>', min=2, max=50, value=10)
+gh_canvas(action='config', id='<spacing-id>', min=1, max=100, value=10)
 
 # 4. Wire connections
 gh_wire(action='connect', connections='[...]')

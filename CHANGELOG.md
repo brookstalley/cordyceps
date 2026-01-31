@@ -4,6 +4,53 @@ All notable changes to Cordyceps will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [1.4.0] - 2026-01-30
+
+### Added
+
+**DebugLevel Input Parameter**
+- New `DebugLevel` integer input on the Cordyceps component (default: 0)
+- Level 0: Only logs server start URL and stop messages to Rhino command history
+- Level 1+: Logs all request/response traffic and detailed debugging info
+- All messages are still captured internally and retrievable via `gh_inspect(action='log')` regardless of level
+
+### Changed
+
+**Tool Consolidation (12 → 7 tools)**
+
+Further reduced tool count to minimize context window usage:
+
+- Merged `gh_adjust` → `gh_canvas` (value operations: get, set, config, preview, enable)
+- Merged `gh_group` → `gh_canvas` (group operations: group_create, group_delete, group_add, group_remove, group_list, group_rename, group_color, group_move)
+- Merged `gh_capture` → `gh_document` (capture operations: capture_canvas, capture_viewport, capture_region, capture_views)
+- Merged `rhino_material` → `rhino_render` (material operations: material_list, material_library, material_instantiate, material_create, material_apply, material_delete)
+- Merged `rhino_environment` → `rhino_render` (environment operations: env_list, env_current, env_set, env_create, env_delete)
+
+**Resulting 7 Tools:**
+- `gh_canvas` - Components, values, groups (27 actions)
+- `gh_wire` - Connections (5 actions)
+- `gh_document` - Document operations and capture (14 actions)
+- `gh_script` - Script components (4 actions)
+- `gh_inspect` - Inspection and debugging (9 actions)
+- `rhino_scene` - Objects and layers (13 actions)
+- `rhino_render` - Viewport, materials, environments (20 actions)
+
+**Knowledge Base**
+- Refactored GettingStartedGuide to hub model (reduced from 218 to 88 lines)
+- Updated RenderingGuide with new tool names
+
+### Breaking Changes
+
+**Tool names changed:** `gh_adjust`, `gh_group`, `gh_capture`, `rhino_material`, `rhino_environment` no longer exist. Their functionality is now available through actions on the remaining tools.
+
+| Old Tool | New Location |
+|----------|--------------|
+| `gh_adjust(action='get')` | `gh_canvas(action='get')` |
+| `gh_group(action='create')` | `gh_canvas(action='group_create')` |
+| `gh_capture(action='canvas')` | `gh_document(action='capture_canvas')` |
+| `rhino_material(action='create')` | `rhino_render(action='material_create')` |
+| `rhino_environment(action='set')` | `rhino_render(action='env_set')` |
+
 ## [1.3.0] - 2026-01-30
 
 ### Added

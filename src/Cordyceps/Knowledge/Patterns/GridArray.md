@@ -78,9 +78,9 @@ gh_canvas(action='add', type='Number Slider', x=50, y=310, nickname='Cell Size')
 gh_canvas(action='add', type='Rectangular', x=350, y=200)
 
 # 3. Configure sliders
-gh_adjust(action='config', id='<x-count>', min=1, max=20, value=5)
-gh_adjust(action='config', id='<y-count>', min=1, max=20, value=5)
-gh_adjust(action='config', id='<cell-size>', min=1, max=50, value=10)
+gh_canvas(action='config', id='<x-count>', min=1, max=20, value=5)
+gh_canvas(action='config', id='<y-count>', min=1, max=20, value=5)
+gh_canvas(action='config', id='<cell-size>', min=1, max=50, value=10)
 
 # 4. Wire connections
 gh_wire(action='connect', connections='[...]')

@@ -6,7 +6,7 @@
 ```
 Number Slider → [component expecting Number]
 ```
-Configuration: `gh_adjust(action='config', id='...', min=0, max=1, value=0.5)` for range 0-1, default 0.5
+Configuration: `gh_canvas(action='config', id='...', min=0, max=1, value=0.5)` for range 0-1, default 0.5
 
 ### Integer Input
 ```

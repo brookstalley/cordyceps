@@ -37,21 +37,16 @@ The project targets .NET 8.0 and outputs a Grasshopper plugin (`.gha` file). Deb
 
 Each tool class is marked with `[McpServerToolType]` and contains a single method marked with `[McpServerTool]`. The method name is converted to snake_case for the MCP tool name (e.g., `GhCanvas` -> `gh_canvas`). Each tool uses an `action` parameter to dispatch to different operations.
 
-**Grasshopper Tools:**
-- **GhCanvasTool** (`gh_canvas`) - Add, delete, move, rename, find, search, list, bake components
+**Grasshopper Tools (5):**
+- **GhCanvasTool** (`gh_canvas`) - Components, values, groups: add, delete, move, find, search, list, bake, get/set values, group management
 - **GhWireTool** (`gh_wire`) - Connect/disconnect components, bulk wiring, validate connections
-- **GhAdjustTool** (`gh_adjust`) - Get/set values, configure sliders, toggle preview/enabled
-- **GhDocumentTool** (`gh_document`) - Save, clear documents; manage snapshots; solver control
-- **GhGroupTool** (`gh_group`) - Create/manage visual groups on the canvas
+- **GhDocumentTool** (`gh_document`) - Save, clear documents; snapshots; solver control; capture canvas/viewport
 - **GhScriptTool** (`gh_script`) - Configure C#/Python script components
 - **GhInspectTool** (`gh_inspect`) - Get component status, trace data flow, retrieve debug output
-- **GhCaptureTool** (`gh_capture`) - Capture canvas and viewport images
 
-**Rhino Tools:**
+**Rhino Tools (2):**
 - **RhinoSceneTool** (`rhino_scene`) - Object management, selection, layers (full CRUD), visibility
-- **RhinoRenderTool** (`rhino_render`) - Display modes, camera, render settings, sun, skylight, ground plane
-- **RhinoMaterialTool** (`rhino_material`) - Create/apply/delete PBR materials
-- **RhinoEnvironmentTool** (`rhino_environment`) - Manage render environments
+- **RhinoRenderTool** (`rhino_render`) - Display modes, camera, render settings, materials, environments
 
 ### Adding New Tools
 

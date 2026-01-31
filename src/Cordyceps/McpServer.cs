@@ -65,7 +65,7 @@ namespace Cordyceps
         {
             if (IsRunning)
             {
-                RhinoApp.WriteLine("Cordyceps: MCP server already running");
+                Core.DebugLog.WriteLine("MCP server already running", "INFO", 1);
                 return;
             }
 
@@ -79,7 +79,7 @@ namespace Cordyceps
 
                 // Discover tools from assembly
                 DiscoverTools();
-                RhinoApp.WriteLine($"Cordyceps: Discovered {_tools.Count} tools");
+                Core.DebugLog.WriteLine($"Discovered {_tools.Count} tools", "INFO", 1);
 
                 // Create and start HttpListener (bind to both IPv4 and IPv6)
                 _listener = new HttpListener();
@@ -92,12 +92,12 @@ namespace Cordyceps
 
                 IsRunning = true;
                 _startTime = DateTime.UtcNow;
-                RhinoApp.WriteLine($"Cordyceps: MCP server started on http://127.0.0.1:{_port}/mcp");
+                Core.DebugLog.WriteLine($"MCP server started on http://127.0.0.1:{_port}/mcp", "INFO", 0);
             }
             catch (Exception ex)
             {
-                RhinoApp.WriteLine($"Cordyceps: Failed to start MCP server: {ex.Message}");
-                RhinoApp.WriteLine($"Cordyceps: Stack trace: {ex.StackTrace}");
+                Core.DebugLog.WriteLine($"Failed to start MCP server: {ex.Message}", "ERROR", 0);
+                Core.DebugLog.WriteLine($"Stack trace: {ex.StackTrace}", "ERROR", 1);
                 _cts?.Dispose();
                 _cts = null;
                 _listener?.Close();
@@ -112,7 +112,7 @@ namespace Cordyceps
         {
             if (!IsRunning) return;
 
-            RhinoApp.WriteLine("Cordyceps: Stopping MCP server...");
+            Core.DebugLog.WriteLine("Stopping MCP server...", "INFO", 1);
 
             try
             {
@@ -123,12 +123,12 @@ namespace Cordyceps
                 try { _listenerTask?.Wait(TimeSpan.FromSeconds(SHUTDOWN_TIMEOUT_SECONDS)); }
                 catch (AggregateException ex)
                 {
-                    Core.DebugLog.Debug($"Shutdown exception (expected): {ex.InnerException?.Message}");
+                    Core.DebugLog.WriteLine($"Shutdown exception (expected): {ex.InnerException?.Message}", "DEBUG", 1);
                 }
             }
             catch (Exception ex)
             {
-                RhinoApp.WriteLine($"Cordyceps: Error stopping server: {ex.Message}");
+                Core.DebugLog.WriteLine($"Error stopping server: {ex.Message}", "ERROR", 0);
             }
             finally
             {
@@ -138,7 +138,7 @@ namespace Cordyceps
                 _listenerTask = null;
                 _context = null;
                 IsRunning = false;
-                RhinoApp.WriteLine("Cordyceps: MCP server stopped");
+                Core.DebugLog.WriteLine("MCP server stopped", "INFO", 0);
             }
         }
 
@@ -227,7 +227,7 @@ namespace Cordyceps
                 catch (Exception ex)
                 {
                     if (!ct.IsCancellationRequested)
-                        RhinoApp.WriteLine($"Cordyceps: Listener error: {ex.Message}");
+                        Core.DebugLog.WriteLine($"Listener error: {ex.Message}", "ERROR", 1);
                 }
             }
         }
@@ -243,7 +243,7 @@ namespace Cordyceps
             try
             {
                 var path = request.Url?.AbsolutePath ?? "/";
-                RhinoApp.WriteLine($"Cordyceps: {request.HttpMethod} {path} from {request.RemoteEndPoint}");
+                Core.DebugLog.WriteLine($"{request.HttpMethod} {path} from {request.RemoteEndPoint}", "INFO", 1);
 
                 // Security: Validate Origin header (DNS rebinding protection)
                 var validatedOrigin = ValidateOrigin(request, response, out bool isValid);
@@ -285,7 +285,7 @@ namespace Cordyceps
             }
             catch (Exception ex)
             {
-                RhinoApp.WriteLine($"Cordyceps: Request error: {ex.Message}");
+                Core.DebugLog.WriteLine($"Request error: {ex.Message}", "ERROR", 1);
                 try
                 {
                     response.StatusCode = 500;
@@ -293,7 +293,7 @@ namespace Cordyceps
                 }
                 catch (Exception closeEx)
                 {
-                    Core.DebugLog.Warn($"Failed to close error response: {closeEx.Message}");
+                    Core.DebugLog.WriteLine($"Failed to close error response: {closeEx.Message}", "WARN", 1);
                 }
             }
         }
@@ -313,7 +313,7 @@ namespace Cordyceps
                     var originUri = new Uri(origin);
                     if (originUri.Host != "127.0.0.1" && originUri.Host != "localhost")
                     {
-                        RhinoApp.WriteLine($"Cordyceps: Rejected request from non-localhost origin: {origin}");
+                        Core.DebugLog.WriteLine($"Rejected request from non-localhost origin: {origin}", "WARN", 1);
                         response.StatusCode = 403;
                         response.Close();
                         isValid = false;
@@ -323,7 +323,7 @@ namespace Cordyceps
                 }
                 catch (UriFormatException)
                 {
-                    RhinoApp.WriteLine($"Cordyceps: Rejected request with malformed origin: {origin}");
+                    Core.DebugLog.WriteLine($"Rejected request with malformed origin: {origin}", "WARN", 1);
                     response.StatusCode = 403;
                     response.Close();
                     isValid = false;
@@ -395,7 +395,7 @@ namespace Cordyceps
                 var accept = request.Headers["Accept"] ?? "";
                 if (!accept.Contains("application/json"))
                 {
-                    RhinoApp.WriteLine($"Cordyceps: Invalid Accept header (must include application/json): {accept}");
+                    Core.DebugLog.WriteLine($"Invalid Accept header (must include application/json): {accept}", "WARN", 1);
                     response.StatusCode = 406; // Not Acceptable
                     response.Close();
                     return;
@@ -408,7 +408,7 @@ namespace Cordyceps
                 const long MAX_BODY_SIZE = 10 * 1024 * 1024;
                 if (request.ContentLength64 > MAX_BODY_SIZE)
                 {
-                    RhinoApp.WriteLine($"Cordyceps: Request body too large: {request.ContentLength64} bytes (max {MAX_BODY_SIZE})");
+                    Core.DebugLog.WriteLine($"Request body too large: {request.ContentLength64} bytes (max {MAX_BODY_SIZE})", "WARN", 1);
                     response.StatusCode = 413; // Payload Too Large
                     response.Close();
                     return;
@@ -417,7 +417,7 @@ namespace Cordyceps
                 using var reader = new StreamReader(request.InputStream, Encoding.UTF8);
                 var json = await reader.ReadToEndAsync();
 
-                RhinoApp.WriteLine($"Cordyceps: Received: {json.Substring(0, Math.Min(LOG_TRUNCATE_LENGTH, json.Length))}...");
+                Core.DebugLog.WriteLine($"Received: {json.Substring(0, Math.Min(LOG_TRUNCATE_LENGTH, json.Length))}...", "INFO", 1);
 
                 using var doc = JsonDocument.Parse(json);
                 var root = doc.RootElement;
@@ -446,7 +446,7 @@ namespace Cordyceps
                 // Notifications return 202 Accepted with empty body (per MCP Streamable HTTP spec)
                 if (isNotification)
                 {
-                    RhinoApp.WriteLine($"Cordyceps: Notification '{method}' processed");
+                    Core.DebugLog.WriteLine($"Notification '{method}' processed", "INFO", 1);
                     response.StatusCode = 202;  // Accepted
                     response.Close();
                     return;
@@ -483,7 +483,7 @@ namespace Cordyceps
                     DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull
                 });
 
-                RhinoApp.WriteLine($"Cordyceps: Responding: {responseJson.Substring(0, Math.Min(LOG_TRUNCATE_LENGTH, responseJson.Length))}...");
+                Core.DebugLog.WriteLine($"Responding: {responseJson.Substring(0, Math.Min(LOG_TRUNCATE_LENGTH, responseJson.Length))}...", "INFO", 1);
 
                 // Send response via HTTP
                 var bytes = Encoding.UTF8.GetBytes(responseJson);
@@ -492,7 +492,7 @@ namespace Cordyceps
             }
             catch (Exception ex)
             {
-                RhinoApp.WriteLine($"Cordyceps: JSON-RPC error: {ex.Message}");
+                Core.DebugLog.WriteLine($"JSON-RPC error: {ex.Message}", "ERROR", 1);
                 response.StatusCode = 400;
             }
             finally
@@ -556,18 +556,13 @@ namespace Cordyceps
 READ FIRST: gh://docs/getting-started (use resources/read)
 
 UNIFIED TOOLS (use action='help' for details):
-- gh_canvas: add, delete, move, rename, find, search, list, info, bounds, validate, constant, bake
+- gh_canvas: add, delete, move, rename, find, search, list, info, bounds, validate, constant, bake, zoom, view, get, set, config, preview, enable, group_create, group_delete, group_add, group_remove, group_list, group_rename, group_color, group_move
 - gh_wire: connect, disconnect, list, clear, validate
-- gh_adjust: get, set, config, preview, enable
-- gh_document: info, save, clear, solver, recompute, undo, redo, snapshot, revert, snapshots
-- gh_group: create, delete, add, remove, rename, color, move, list
+- gh_document: info, save, clear, solver, recompute, undo, redo, snapshot, revert, snapshots, capture_canvas, capture_viewport, capture_region, capture_views
 - gh_script: get, set, configure, info
 - gh_inspect: status, outputs, trace, disconnected, geometry, log, reports, categories, docs
-- gh_capture: canvas, viewport, region, views
 - rhino_scene: objects, select, deselect, set_layer, set_name, layers, layer_create, layer_set, layer_delete, hide, show, delete, script
-- rhino_render: display, camera, zoom, modes, render, settings, ground, sun, skylight
-- rhino_material: list, create, apply, delete
-- rhino_environment: list, current, set, create, delete
+- rhino_render: display, camera, zoom, modes, render, settings, ground, sun, skylight, material_list, material_library, material_instantiate, material_create, material_apply, material_delete, env_list, env_current, env_set, env_create, env_delete
 
 Key points:
 - Disable solver: gh_document(action='solver', enabled=false)
