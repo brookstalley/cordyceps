@@ -15,7 +15,11 @@
 
 * You may need to unblock the file before running. Windows: right click Cordyceps.gha -> properties -> Unblock. 
 
-**Start**: Drop the Cordyceps component on your canvas (*Params → Util → Cordyceps*). The server starts on port 26929 by default; change Port input if required.
+**Start**: Drop the Cordyceps component on your canvas (*Params → Util → Cordyceps*). The server starts on port 26929 by default.
+
+Component inputs:
+- **Port** (default 26929): HTTP port for the MCP server
+- **DebugLevel** (default 0): Logging verbosity. 0 = server start/stop only, 1+ = request/response details
 
 **Connect**: Configure your MCP client:
 
@@ -65,7 +69,7 @@ The AI interprets the request and builds everything autonomously—creating para
 
 ## Tools
 
-Cordyceps provides **8 tools with 92 actions**—deliberately consolidated to minimize context window usage. Rather than exposing every operation as a separate tool (which would require the model to process dozens of tool definitions), related operations are grouped under a single tool with an `action` parameter. This keeps the tool list compact while preserving full functionality.
+Cordyceps provides **7 tools with 92 actions**—deliberately consolidated to minimize context window usage. Rather than exposing every operation as a separate tool (which would require the model to process dozens of tool definitions), related operations are grouped under a single tool with an `action` parameter. This keeps the tool list compact while preserving full functionality.
 
 ### Grasshopper Tools
 
@@ -119,6 +123,7 @@ Test coverage includes: component management, wiring, values, groups, scripts, i
 | Plugin won't load | Verify Rhino 8.21+. Unblock the .gha file (Windows) or clear quarantine (macOS). |
 | Can't connect | Ensure Cordyceps component is on canvas. Check the port. |
 | Component not found | Use `gh_canvas(action='search', query='...')` to find exact names. |
+| No command output | Set DebugLevel input to 1 to see request/response traffic in Rhino command history. |
 
 ## Building
 

@@ -42,6 +42,8 @@ namespace Cordyceps
         {
             pManager.AddIntegerParameter("HttpPort", "P",
                 "Port for MCP HTTP server", GH_ParamAccess.item, 26929);
+            pManager.AddIntegerParameter("DebugLevel", "D",
+                "Logging verbosity: 0=server start/stop only, 1+=request/response details", GH_ParamAccess.item, 0);
         }
 
         /// <summary>
@@ -63,7 +65,12 @@ namespace Cordyceps
         protected override void SolveInstance(IGH_DataAccess DA)
         {
             int port = 26929;
+            int debugLevel = 0;
             if (!DA.GetData(0, ref port)) return;
+            DA.GetData(1, ref debugLevel);
+
+            // Set global debug level for logging
+            DebugLog.DebugLevel = debugLevel;
 
             bool isBlocked = false;
             McpServer myServer = null;
@@ -82,7 +89,7 @@ namespace Cordyceps
                     // If we were previously using a different port, release it
                     if (_myPort != 0 && _myPort != port)
                     {
-                        RhinoApp.WriteLine($"Cordyceps: Port changed from {_myPort} to {port}, restarting server...");
+                        DebugLog.WriteLine($"Port changed from {_myPort} to {port}, restarting server...", "INFO", 1);
                         StopServer(_myPort);
                     }
 

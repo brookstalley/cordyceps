@@ -13,6 +13,12 @@ namespace Cordyceps.Core
         private static readonly Queue<LogEntry> _entries = new Queue<LogEntry>();
         private const int MaxEntries = 500;
 
+        /// <summary>
+        /// Current debug level. Messages with level > DebugLevel are not written to Rhino command history.
+        /// Level 0: Server start/stop/URL only. Level 1+: Request/response details.
+        /// </summary>
+        public static int DebugLevel { get; set; } = 0;
+
         public class LogEntry
         {
             public DateTime Timestamp { get; set; }
@@ -21,9 +27,10 @@ namespace Cordyceps.Core
         }
 
         /// <summary>
-        /// Write a debug message (also writes to Rhino command line)
+        /// Write a debug message with specified verbosity level.
+        /// Only writes to Rhino command line if messageLevel &lt;= DebugLevel.
         /// </summary>
-        public static void WriteLine(string message, string level = "INFO")
+        public static void WriteLine(string message, string level = "INFO", int messageLevel = 1)
         {
             var entry = new LogEntry
             {
@@ -41,8 +48,11 @@ namespace Cordyceps.Core
                 }
             }
 
-            // Also write to Rhino command line for real-time viewing
-            RhinoApp.WriteLine($"Cordyceps [{level}]: {message}");
+            // Only write to Rhino command line if message level is within configured debug level
+            if (messageLevel <= DebugLevel)
+            {
+                RhinoApp.WriteLine($"Cordyceps [{level}]: {message}");
+            }
         }
 
         /// <summary>

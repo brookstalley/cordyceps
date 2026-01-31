@@ -6,6 +6,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [1.4.0] - 2026-01-30
 
+### Added
+
+**DebugLevel Input Parameter**
+- New `DebugLevel` integer input on the Cordyceps component (default: 0)
+- Level 0: Only logs server start URL and stop messages to Rhino command history
+- Level 1+: Logs all request/response traffic and detailed debugging info
+- All messages are still captured internally and retrievable via `gh_inspect(action='log')` regardless of level
+
 ### Changed
 
 **Tool Consolidation (12 → 7 tools)**

@@ -89,7 +89,7 @@ Calculate next position: `next_x = previous.right + 150`
 4. Wire with `gh_wire(action='connect', connections='[...]')`
 5. `gh_document(action='solver', enabled=true)`
 6. `gh_inspect(action='status')` then `gh_canvas(action='validate')`
-7. `gh_group(action='add', ids='[...]', name='...')` for organization
+7. `gh_canvas(action='group_create', ids='[...]', name='...')` for organization
 
 ## Fixing Overlaps
 
