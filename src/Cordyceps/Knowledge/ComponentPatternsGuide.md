@@ -81,7 +81,7 @@ Cap Holes → Solid Brep
 ```
 List A → Merge (D1)
 List B → Merge (D2)
-List C → Merge (D3)  // Add more inputs with manage_zoomable_inputs
+List C → Merge (D3)  // Add more inputs with gh_canvas(action='zoomable', id='...', operation='add')
 Merge → Combined output
 ```
 
