@@ -5,7 +5,7 @@
 ## Requirements
 
 - **Rhino 8.21+** (requires .NET 8)
-- **MCP client with Streamable HTTP**: Claude Code, Cursor, VS Code Copilot, or any compatible client
+- **MCP client**: Claude Desktop, Claude Code, Cursor, VS Code Copilot, or any compatible client
 
 ## Quick Start
 
@@ -23,16 +23,37 @@ Component inputs:
 
 **Connect**: Configure your MCP client:
 
-*Claude Code (command line):*
-```cmd
-claude mcp add --transport http http://127.0.0.1:26929/mcp
-```
+*Claude Desktop:*
 
-*Most others (config file):*
+Claude Desktop uses stdio transport, so it needs the `mcp-remote` bridge. Requires [Node.js](https://nodejs.org/).
+
+Add to your config file:
+- macOS: `~/Library/Application Support/Claude/claude_desktop_config.json`
+- Windows: `%APPDATA%\Claude\claude_desktop_config.json`
+
 ```json
 {
   "mcpServers": {
-    "grasshopper": {
+    "cordyceps": {
+      "command": "npx",
+      "args": ["-y", "mcp-remote", "http://127.0.0.1:26929/mcp"]
+    }
+  }
+}
+```
+
+Restart Claude Desktop after saving.
+
+*Claude Code (command line):*
+```cmd
+claude mcp add --transport http cordyceps http://127.0.0.1:26929/mcp
+```
+
+*Other HTTP clients (Cursor, VS Code, etc.):*
+```json
+{
+  "mcpServers": {
+    "cordyceps": {
       "type": "streamable-http",
       "url": "http://127.0.0.1:26929/mcp"
     }
@@ -122,6 +143,7 @@ Test coverage includes: component management, wiring, values, groups, scripts, i
 |---------|----------|
 | Plugin won't load | Verify Rhino 8.21+. Unblock the .gha file (Windows) or clear quarantine (macOS). |
 | Can't connect | Ensure Cordyceps component is on canvas. Check the port. |
+| Claude Desktop can't connect | Ensure Node.js is installed (`node --version`). Check Rhino is running with Cordyceps. Restart Claude Desktop after config changes. |
 | Component not found | Use `gh_canvas(action='search', query='...')` to find exact names. |
 | No command output | Set DebugLevel input to 1 to see request/response traffic in Rhino command history. |
 
