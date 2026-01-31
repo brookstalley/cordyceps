@@ -4,6 +4,16 @@ All notable changes to Cordyceps will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [Unreleased]
+
+### Added
+
+- **Zoomable parameter management** - New `gh_canvas(action='zoomable')` action for managing variable-count parameters (ZUI components like Merge, Addition, etc.). Supports adding, removing, and listing zoomable inputs/outputs.
+
+### Fixed
+
+- **Phantom objects in find/list actions** - Fixed bug where orphaned objects from undo history could appear in component queries. Added `IsActiveDocumentObject()` and `GetActiveObjects()` helpers to filter objects by verifying their document reference matches the current document.
+
 ## [1.4.1] - 2026-01-31
 
 ### Added

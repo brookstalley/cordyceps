@@ -7,7 +7,7 @@ Grasshopper is a visual dataflow graph for parametric 3D design. Components on a
 Use `action='help'` on any tool to see all available actions and parameters.
 
 **Grasshopper Tools:**
-- `gh_canvas` - Components, values, groups: add, delete, move, find, search, list, bake, zoom/view, get/set values, group management
+- `gh_canvas` - Components, values, groups: add, delete, move, find, search, list, bake, zoom/view, get/set values, group management, zoomable parameter management
 - `gh_wire` - Connect, disconnect, list, validate wires
 - `gh_document` - Info, save, clear, solver control, snapshots, capture canvas/viewport
 - `gh_script` - Get/set script code, configure parameters
@@ -33,6 +33,10 @@ Use `action='help'` on any tool to see all available actions and parameters.
 **Groups:**
 - `gh_canvas(action='group_create', name='...', ids='[...]', color='#FF6B6B')`
 - `gh_canvas(action='group_list')` — list all groups
+
+**Variable Parameters (ZUI):**
+- `gh_canvas(action='zoomable', id='...', operation='list')` — list available zoomable params
+- `gh_canvas(action='zoomable', id='...', operation='add', param='...')` — add input/output
 
 **Capture:**
 - `gh_document(action='capture_canvas')` — Grasshopper canvas

@@ -90,7 +90,7 @@ The AI interprets the request and builds everything autonomously—creating para
 
 ## Tools
 
-Cordyceps provides **7 tools with 93 actions**—deliberately consolidated to minimize context window usage. Rather than exposing every operation as a separate tool (which would require the model to process dozens of tool definitions), related operations are grouped under a single tool with an `action` parameter. This keeps the tool list compact while preserving full functionality.
+Cordyceps provides **7 tools with 100 actions**—deliberately consolidated to minimize context window usage. Rather than exposing every operation as a separate tool (which would require the model to process dozens of tool definitions), related operations are grouped under a single tool with an `action` parameter. This keeps the tool list compact while preserving full functionality.
 
 ### Grasshopper Tools
 
