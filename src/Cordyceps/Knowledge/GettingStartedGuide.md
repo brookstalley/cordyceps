@@ -77,11 +77,14 @@ Use `gh_canvas(action='validate')` to check overlaps. See `gh://docs/canvas-layo
 4. Geometry wrong direction → extends along plane Z-axis. See `gh://docs/geometry-orientation`
 5. Using deprecated components → check `deprecated` field
 
+See `gh://docs/common-errors` for detailed error solutions.
+
 ## Resources
 
 - `gh://docs/data-trees` — essential for list/tree operations
 - `gh://docs/canvas-layout` — spacing details
 - `gh://docs/geometry-orientation` — plane axes for oriented geometry
+- `gh://docs/common-errors` — error→fix quick reference
 - `gh://docs/rendering` — bake → materials → viewport → capture
 - `gh://docs/mcp-testing` — test instructions
 - `gh://component/{name}` — component inputs/outputs

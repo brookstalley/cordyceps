@@ -85,6 +85,10 @@ namespace Cordyceps.Resources
                 "Rhino Rendering Pipeline",
                 "Complete workflow from Grasshopper geometry to rendered output: baking, materials, viewport control, camera positioning, and frame capture");
 
+            RegisterEmbeddedResource("gh://docs/common-errors", "Knowledge.CommonErrorsGuide.md",
+                "Common Errors and Solutions",
+                "Quick reference for resolving frequent issues: component not found, connection failed, data tree mismatch, solver errors, and more");
+
             // Pattern resources
             RegisterEmbeddedResource("gh://patterns/linear-array", "Knowledge.Patterns.LinearArray.md",
                 "Linear Array Pattern",

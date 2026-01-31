@@ -222,19 +222,24 @@ namespace Cordyceps
         }
 
         /// <summary>
-        /// Expire the component to refresh outputs (refreshes all active instances)
+        /// Expire the component to refresh outputs (refreshes all active instances).
+        /// Called from HTTP worker threads - uses fire-and-forget UI thread invocation
+        /// to avoid potential deadlock if UI thread is waiting on _lock.
         /// </summary>
         public static void RefreshComponent()
         {
+            // Collect instances under lock, then invoke UI thread update outside lock
+            // to prevent deadlock if UI thread is waiting for _lock
             List<CordycepsComponent> instances;
             lock (_lock)
             {
                 instances = new List<CordycepsComponent>(_portOwners.Values);
             }
 
-            foreach (var instance in instances)
+            // Fire-and-forget: queue UI thread work without blocking
+            RhinoApp.InvokeOnUiThread(new Action(() =>
             {
-                RhinoApp.InvokeOnUiThread(new Action(() =>
+                foreach (var instance in instances)
                 {
                     try
                     {
@@ -244,8 +249,8 @@ namespace Cordyceps
                     {
                         DebugLog.Warn($"RefreshComponent failed: {ex.Message}");
                     }
-                }));
-            }
+                }
+            }));
         }
 
         /// <summary>

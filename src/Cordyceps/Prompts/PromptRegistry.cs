@@ -59,34 +59,34 @@ Follow these steps to create parametric geometry with adjustable inputs:
 
 ## Step 1: Disable Solver
 ```
-set_solver_enabled(enabled: false)
+gh_document(action='solver', enabled='false')
 ```
 This prevents recomputation after each step.
 
 ## Step 2: Create Input Parameters
 Add Number Sliders for each parameter you need:
 ```
-add_component(type: ""Number Slider"", x: 50, y: 50)
-set_component_value(id: [slider_id], value: ""0<50<100"")
-rename_component(id: [slider_id], nickname: ""Parameter1"")
+gh_canvas(action='add', type='Number Slider', x=50, y=50)
+gh_canvas(action='config', id=[slider_id], min=0, max=100, value=50)
+gh_canvas(action='rename', id=[slider_id], nickname='Parameter1')
 ```
 
 ## Step 3: Create Geometry Component
 Based on your geometry type, add the appropriate component:
-- Circle: `add_component(type: ""Circle"", x: 300, y: 50)`
-- Box: `add_component(type: ""Box"", x: 300, y: 50)`
-- Curve: `add_component(type: ""Interpolate"", x: 300, y: 50)`
+- Circle: `gh_canvas(action='add', type='Circle', x=300, y=50)`
+- Box: `gh_canvas(action='add', type='Box', x=300, y=50)`
+- Curve: `gh_canvas(action='add', type='Interpolate', x=300, y=50)`
 
 ## Step 4: Create Connections
 Connect sliders to geometry inputs:
 ```
-connect_components(sourceId: [slider_id], sourceParam: ""0"", targetId: [geometry_id], targetParam: ""Radius"")
+gh_wire(action='connect', sourceId=[slider_id], sourceParam='0', targetId=[geometry_id], targetParam='Radius')
 ```
 
 ## Step 5: Enable Solver and Verify
 ```
-set_solver_enabled(enabled: true)
-get_canvas_status()
+gh_document(action='solver', enabled='true')
+gh_inspect(action='status')
 ```
 
 Check for any errors or warnings in the status output."
@@ -106,27 +106,27 @@ Data tree mismatches are the most common source of Grasshopper errors. Follow th
 
 ## Step 1: Identify Problem Components
 ```
-get_canvas_status()
+gh_inspect(action='status')
 ```
 Look for components with ERROR or WARNING status.
 
 ## Step 2: Check Component Outputs
 For each problem component, examine its output structure:
 ```
-get_component_outputs(id: [component_id])
+gh_inspect(action='outputs', id=[component_id])
 ```
 Note the `branchCount` and `dataCount` for each output.
 
 ## Step 3: Trace Upstream
 Find what's feeding the problem component:
 ```
-trace_data_flow(id: [component_id], direction: ""upstream"")
+gh_inspect(action='trace', id=[component_id], direction='upstream')
 ```
 
 ## Step 4: Compare Tree Structures
 For each upstream component:
 ```
-get_component_outputs(id: [upstream_id])
+gh_inspect(action='outputs', id=[upstream_id])
 ```
 Compare branch counts. Mismatched branch counts cause cross-reference behavior.
 
@@ -147,8 +147,8 @@ Compare branch counts. Mismatched branch counts cause cross-reference behavior.
 ## Step 6: Verify Fix
 After making changes:
 ```
-get_canvas_status()
-get_component_outputs(id: [component_id])
+gh_inspect(action='status')
+gh_inspect(action='outputs', id=[component_id])
 ```"
             });
 
@@ -165,24 +165,25 @@ get_component_outputs(id: [component_id])
 
 ## Step 1: Add Script Component
 ```
-add_component(type: ""{language} Script"", x: 200, y: 100)
+gh_canvas(action='add', type='{language} Script', x=200, y=100)
 ```
 
 ## Step 2: Configure Inputs and Outputs
 
-Use configure_script_component with explicit type hints:
+Use gh_script with configure action and explicit type hints:
 
 ```
-configure_script_component(
-    id: [script_id],
-    inputs: ""[
-        {{\""name\"": \""points\"", \""type\"": \""Point3d\"", \""access\"": \""list\""}},
-        {{\""name\"": \""radius\"", \""type\"": \""double\"", \""access\"": \""item\""}}
-    ]"",
-    outputs: ""[
-        {{\""name\"": \""circles\"", \""type\"": \""Circle\""}}
-    ]"",
-    fullSource: ""[your code here]""
+gh_script(
+    action='configure',
+    id=[script_id],
+    inputs='[
+        {{""name"": ""points"", ""type"": ""Point3d"", ""access"": ""list""}},
+        {{""name"": ""radius"", ""type"": ""double"", ""access"": ""item""}}
+    ]',
+    outputs='[
+        {{""name"": ""circles"", ""type"": ""Circle""}}
+    ]',
+    code='[your code here]'
 )
 ```
 
@@ -223,20 +224,20 @@ for pt in points:
 
 ## Step 4: Set the Code
 ```
-set_script_code(id: [script_id], code: ""[your code]"")
+gh_script(action='set', id=[script_id], code='[your code]')
 ```
 
 ## Step 5: Connect Inputs and Verify
 ```
-connect_components(sourceId: [data_source], sourceParam: ""0"", targetId: [script_id], targetParam: ""points"")
-get_canvas_status()
-get_debug_reports()
+gh_wire(action='connect', sourceId=[data_source], sourceParam='0', targetId=[script_id], targetParam='points')
+gh_inspect(action='status')
+gh_inspect(action='reports')
 ```
 
 ## Debugging Tips:
-- Check `get_debug_reports()` for script output
+- Check `gh_inspect(action='reports')` for script output
 - Use `Report` or `out` parameter for debug messages
-- Verify types with `get_component_info(id: [script_id])`"
+- Verify types with `gh_canvas(action='info', id=[script_id])`"
             });
 
             RegisterPrompt(new PromptDefinition
@@ -248,8 +249,8 @@ get_debug_reports()
 
 ## Step 1: Get Current Status
 ```
-get_canvas_status()
-get_all_components()
+gh_inspect(action='status')
+gh_canvas(action='list')
 ```
 Count the total components and identify complex areas.
 
@@ -269,8 +270,8 @@ Look for:
 ## Step 3: Analyze Data Flow
 For suspected slow components:
 ```
-trace_data_flow(id: [component_id], direction: ""upstream"")
-get_component_outputs(id: [component_id])
+gh_inspect(action='trace', id=[component_id], direction='upstream')
+gh_inspect(action='outputs', id=[component_id])
 ```
 
 Check if data structures are unnecessarily complex.
@@ -284,9 +285,9 @@ Check if data structures are unnecessarily complex.
 
 ### Use Solver Management
 ```
-set_solver_enabled(enabled: false)
+gh_document(action='solver', enabled='false')
 // Make multiple changes
-set_solver_enabled(enabled: true)
+gh_document(action='solver', enabled='true')
 ```
 
 ### Consider Data Caching
@@ -299,8 +300,8 @@ Add Data Dam components after expensive operations to cache results.
 ## Step 5: Verify Improvements
 After optimizations:
 ```
-recompute_solution()
-get_canvas_status()
+gh_document(action='recompute')
+gh_inspect(action='status')
 ```
 
 Compare component status before and after changes."
@@ -323,13 +324,13 @@ Before building, analyze what you need following this structured approach:
 ## Step 1: Read Layout Guide
 First, read the layout best practices:
 ```
-Read resource: gh://docs/canvas-layout
+resources/read: gh://docs/canvas-layout
 ```
 
 ## Step 2: Check for Patterns
 Search for a matching pattern:
 ```
-suggest_pattern(description: ""{goal}"")
+gh_canvas(action='search', query='{goal}')
 ```
 If a pattern is found, read the pattern resource for detailed guidance.
 
@@ -387,7 +388,7 @@ INPUTS        MATH         SEQUENCES     TRANSFORM     OUTPUT
 ## Step 7: Build with Solver Disabled
 
 ```
-set_solver_enabled(false)
+gh_document(action='solver', enabled='false')
 ```
 
 Add components in left-to-right order:
@@ -395,30 +396,30 @@ Add components in left-to-right order:
 2. Add constants below inputs
 3. Add processing components in middle columns
 4. Add output geometry on right
-5. Wire all connections using bulk_connect
+5. Wire all connections using gh_wire with connections array for bulk
 6. Enable solver and verify
 
 ```
-set_solver_enabled(true)
-get_canvas_status()
+gh_document(action='solver', enabled='true')
+gh_inspect(action='status')
 ```
 
 ## Step 8: Validate and Organize
 
 ```
-validate_layout()
+gh_canvas(action='validate')
 ```
 
-If there are overlaps, use:
+If there are overlaps, adjust positions with:
 ```
-auto_space_components(mode: ""horizontal"", spacing: 100)
+gh_canvas(action='move', id=[id], x=[new_x], y=[new_y])
 ```
 
 Then organize with groups:
 ```
-add_to_group(componentIds: [...], groupName: ""Inputs"", color: ""#4CAF50"")
-add_to_group(componentIds: [...], groupName: ""Processing"", color: ""#2196F3"")
-add_to_group(componentIds: [...], groupName: ""Output"", color: ""#FF9800"")
+gh_canvas(action='group_create', name='Inputs', ids='[...]', color='#4CAF50')
+gh_canvas(action='group_create', name='Processing', ids='[...]', color='#2196F3')
+gh_canvas(action='group_create', name='Output', ids='[...]', color='#FF9800')
 ```
 
 ## Common Mistakes to Avoid
@@ -426,8 +427,8 @@ add_to_group(componentIds: [...], groupName: ""Output"", color: ""#FF9800"")
 1. **Sliders too close:** Leave 200px for slider width
 2. **Vertical cramping:** Use 70px vertical gaps
 3. **Forgetting constants:** 0, 1, 2, Pi often needed
-4. **Wrong component:** Check deprecation with search_components
-5. **Layout not validated:** Always run validate_layout() after building"
+4. **Wrong component:** Check deprecation with gh_canvas(action='search')
+5. **Layout not validated:** Always run gh_canvas(action='validate') after building"
             });
         }
 

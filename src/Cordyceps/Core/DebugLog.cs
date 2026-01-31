@@ -16,8 +16,14 @@ namespace Cordyceps.Core
         /// <summary>
         /// Current debug level. Messages with level > DebugLevel are not written to Rhino command history.
         /// Level 0: Server start/stop/URL only. Level 1+: Request/response details.
+        /// Uses volatile for thread-safe reads/writes across HTTP worker threads and UI thread.
         /// </summary>
-        public static int DebugLevel { get; set; } = 0;
+        private static volatile int _debugLevel = 0;
+        public static int DebugLevel
+        {
+            get => _debugLevel;
+            set => _debugLevel = value;
+        }
 
         public class LogEntry
         {
