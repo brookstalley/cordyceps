@@ -4,6 +4,25 @@ All notable changes to Cordyceps will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [1.4.1] - 2026-01-31
+
+### Added
+
+- **Common Errors Guide** (`gh://docs/common-errors`) - New resource with comprehensive error→solution reference
+
+### Fixed
+
+- **Deadlock prevention in RefreshComponent** - UI thread invocation now uses fire-and-forget pattern to avoid deadlock when UI thread is waiting on the component lock
+- **Document mutex for concurrent requests** - Added SemaphoreSlim to GrasshopperContext to prevent race conditions when multiple HTTP requests try to modify the document simultaneously
+- **Thread-safe DebugLevel property** - Added volatile modifier to prevent stale reads across HTTP worker and UI threads
+
+### Changed
+
+- **Prompt tool names updated** - All prompts now use unified tool names (gh_canvas, gh_wire, etc.) instead of deprecated individual tool names
+- **Server instructions clarified** - Added "VERIFY PERIODICALLY" guidance to help LLMs catch collateral errors in components they didn't directly modify
+- **Documentation cross-references** - Added links to common-errors guide from GettingStartedGuide and BestPracticesGuide
+- **Fixed tool count** - GettingStartedGuide now correctly says "7 tools" instead of "8 tools"
+
 ## [1.4.0] - 2026-01-30
 
 ### Added

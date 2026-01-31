@@ -568,9 +568,11 @@ Key points:
 - Disable solver: gh_document(action='solver', enabled=false)
 - Ambiguous names: use GUID or Category/Name format
 - Spacing: 150px horizontal, 70px vertical
-- Validate: gh_inspect(action='status'), gh_canvas(action='validate')
 
-Resources: gh://docs/getting-started, gh://docs/data-trees, gh://component/{name}, gh://patterns/*
+VERIFY PERIODICALLY: After completing a section of work, run gh_inspect(action='status')
+to catch errors in components you didn't directly modify. Changes can break downstream components.
+
+Resources: gh://docs/getting-started, gh://docs/data-trees, gh://docs/common-errors, gh://component/{name}, gh://patterns/*
 ";
         }
 

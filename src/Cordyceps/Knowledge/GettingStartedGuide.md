@@ -2,7 +2,7 @@
 
 Grasshopper is a visual dataflow graph for parametric 3D design. Components on a canvas connect via wires. Data flows left-to-right.
 
-## Unified Tools (8 tools)
+## Unified Tools (7 tools)
 
 Use `action='help'` on any tool to see all available actions and parameters.
 
