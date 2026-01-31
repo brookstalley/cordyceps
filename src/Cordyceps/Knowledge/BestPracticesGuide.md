@@ -85,6 +85,18 @@ Cache these with Data Dam:
 5. Use `gh_script(action='info', id='...')` to inspect existing scripts (source code, parameters, type hints)
 6. Use `gh_script(action='get', id='...')` for quick source code retrieval
 
+## Bake and Cleanup Pattern
+
+When baking geometry to Rhino for inspection or rendering, use a dedicated layer for easy cleanup:
+
+```
+gh_canvas(action='bake', id='...', layer='temp_preview')  // Auto-creates layer
+// ... inspect, render, capture ...
+rhino_scene(action='layer_delete', name='temp_preview', deleteObjects=true)  // Clean removal
+```
+
+Layers are auto-created if they don't exist. Using a consistent temp layer name makes cleanup a single command.
+
 ## Error Recovery
 
 | Error | Fix |
