@@ -73,16 +73,6 @@ Three roles (check `role` field):
 
 Use `gh_canvas(action='validate')` to check overlaps. See `gh://docs/canvas-layout` for details.
 
-## Common Errors
-
-1. Solver enabled during bulk ops → partial errors, slow
-2. Wrong role → Circle parameter vs Circle component
-3. Tree mismatch → use grafting. See `gh://docs/data-trees`
-4. Geometry wrong direction → extends along plane Z-axis. See `gh://docs/geometry-orientation`
-5. Using deprecated components → check `deprecated` field
-
-See `gh://docs/common-errors` for detailed error solutions.
-
 ## Resources
 
 - `gh://docs/data-trees` — essential for list/tree operations

@@ -152,33 +152,6 @@ See `gh://docs/data-trees` for comprehensive data tree guidance.
 2. Reduce scene complexity
 3. Use simpler materials or lower resolution
 
-## Best Practices to Avoid Errors
+---
 
-1. **Disable solver during bulk operations:**
-   ```
-   gh_document(action='solver', enabled='false')
-   // ... bulk operations ...
-   gh_document(action='solver', enabled='true')
-   ```
-
-2. **Validate before connecting:**
-   ```
-   gh_wire(action='validate', sourceId='...', targetId='...')
-   ```
-
-3. **Check status after changes:**
-   ```
-   gh_inspect(action='status')
-   ```
-
-4. **Search before adding:**
-   ```
-   gh_canvas(action='search', query='...')
-   ```
-
-5. **Use snapshots before risky operations:**
-   ```
-   gh_document(action='snapshot', name='before-changes')
-   // ... make changes ...
-   // If needed: gh_document(action='revert', name='before-changes')
-   ```
+For error prevention strategies, see `gh://docs/best-practices`.
