@@ -642,10 +642,9 @@ namespace Cordyceps.Tools.Unified
                 var infraIds = ToolHelpers.GetCordycepsInfrastructureIds(doc);
                 var matches = new List<Dictionary<string, object>>();
 
-                foreach (var obj in doc.Objects)
+                // Use GetActiveObjects to filter out phantom/orphaned objects
+                foreach (var obj in ToolHelpers.GetActiveObjects(doc, infraIds))
                 {
-                    if (ToolHelpers.IsCordycepsInfrastructure(obj, infraIds)) continue;
-
                     bool isMatch = exact
                         ? obj.NickName == nickname
                         : obj.NickName?.IndexOf(nickname, StringComparison.OrdinalIgnoreCase) >= 0;
@@ -720,9 +719,9 @@ namespace Cordyceps.Tools.Unified
                 }
 
                 var components = new List<object>();
-                foreach (var obj in doc.Objects)
+                // Use GetActiveObjects to filter out phantom/orphaned objects
+                foreach (var obj in ToolHelpers.GetActiveObjects(doc, infraIds))
                 {
-                    if (ToolHelpers.IsCordycepsInfrastructure(obj, infraIds)) continue;
                     if (groupMemberIds != null && !groupMemberIds.Contains(obj.InstanceGuid)) continue;
 
                     string objCategory = null, objName = null;
@@ -799,7 +798,9 @@ namespace Cordyceps.Tools.Unified
 
                 var overlaps = new List<object>();
                 var suggestions = new List<string>();
-                var components = doc.Objects.Where(c => !(c is GH_Group)).ToList();
+                var infraIds = ToolHelpers.GetCordycepsInfrastructureIds(doc);
+                // Use GetActiveObjects to filter out phantom/orphaned objects
+                var components = ToolHelpers.GetActiveObjects(doc, infraIds).Where(c => !(c is GH_Group)).ToList();
 
                 for (int i = 0; i < components.Count; i++)
                 {

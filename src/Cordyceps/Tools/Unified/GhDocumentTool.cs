@@ -243,7 +243,8 @@ namespace Cordyceps.Tools.Unified
                     return ToolHelpers.ErrorResponse(error);
 
                 var infraIds = ToolHelpers.GetCordycepsInfrastructureIds(doc);
-                var userObjects = doc.Objects.Where(o => !ToolHelpers.IsCordycepsInfrastructure(o, infraIds)).ToList();
+                // Use GetActiveObjects to filter out phantom/orphaned objects for accurate counts
+                var userObjects = ToolHelpers.GetActiveObjects(doc, infraIds).ToList();
 
                 return JsonConvert.SerializeObject(new
                 {
@@ -686,9 +687,9 @@ namespace Cordyceps.Tools.Unified
             float minX = float.MaxValue, minY = float.MaxValue, maxX = float.MinValue, maxY = float.MinValue;
             bool hasContent = false;
 
-            foreach (var obj in doc.Objects)
+            // Use GetActiveObjects to filter out phantom/orphaned objects
+            foreach (var obj in ToolHelpers.GetActiveObjects(doc, infraIds))
             {
-                if (ToolHelpers.IsCordycepsInfrastructure(obj, infraIds)) continue;
                 hasContent = true;
                 var b = obj.Attributes.Bounds;
                 minX = Math.Min(minX, b.Left);
