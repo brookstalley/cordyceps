@@ -93,3 +93,5 @@ Cache these with Data Dam:
 | "Connection failed" | Verify IDs exist, check params with `gh_canvas(action='info')` |
 | Solver error/loop | Check for cycles, disable solver, fix, re-enable |
 | Canvas unresponsive | `gh_document(action='solver', enabled=false)`, fix problem, re-enable |
+
+See `gh://docs/common-errors` for comprehensive error solutions.
