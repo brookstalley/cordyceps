@@ -530,62 +530,6 @@ namespace Cordyceps.Core
         }
 
         /// <summary>
-        /// Build parameter list with extended info (access, optional) for search results.
-        /// </summary>
-        public static List<object> BuildDetailedParameterList(IList<IGH_Param> parameters, bool isInput)
-        {
-            var result = new List<object>();
-            foreach (var param in parameters)
-            {
-                if (isInput)
-                {
-                    result.Add(new
-                    {
-                        name = param.Name,
-                        nickname = param.NickName,
-                        type = param.TypeName,
-                        access = param.Access.ToString(),
-                        optional = param.Optional
-                    });
-                }
-                else
-                {
-                    result.Add(new
-                    {
-                        name = param.Name,
-                        nickname = param.NickName,
-                        type = param.TypeName
-                    });
-                }
-            }
-            return result;
-        }
-
-        /// <summary>
-        /// Build a bounds info object from a RectangleF.
-        /// </summary>
-        public static object BuildBoundsObject(RectangleF bounds)
-        {
-            return new
-            {
-                x = bounds.X,
-                y = bounds.Y,
-                width = bounds.Width,
-                height = bounds.Height,
-                right = bounds.Right,
-                bottom = bounds.Bottom
-            };
-        }
-
-        /// <summary>
-        /// Build a pivot info object from a PointF.
-        /// </summary>
-        public static object BuildPivotObject(PointF pivot)
-        {
-            return new { x = pivot.X, y = pivot.Y };
-        }
-
-        /// <summary>
         /// Build a basic component info dictionary with common fields.
         /// </summary>
         /// <param name="obj">The document object</param>
