@@ -5,6 +5,7 @@ using System.Linq;
 using Cordyceps.Core;
 using Grasshopper;
 using Grasshopper.Kernel;
+using Grasshopper.Kernel.Parameters;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 
@@ -439,7 +440,8 @@ namespace Cordyceps.Tools.Unified
                 {
                     if (varParamComp.CanInsertParameter(GH_ParameterSide.Input, ghComponent.Params.Input.Count))
                     {
-                        var newParam = varParamComp.CreateParameter(GH_ParameterSide.Input, ghComponent.Params.Input.Count);
+                        // Create typed parameter based on the type definition
+                        var newParam = CreateTypedParameter(def.Type);
                         if (newParam != null)
                         {
                             newParam.Name = def.Name;
@@ -462,7 +464,8 @@ namespace Cordyceps.Tools.Unified
                 {
                     if (varParamComp.CanInsertParameter(GH_ParameterSide.Output, ghComponent.Params.Output.Count))
                     {
-                        var newParam = varParamComp.CreateParameter(GH_ParameterSide.Output, ghComponent.Params.Output.Count);
+                        // Create typed parameter based on the type definition
+                        var newParam = CreateTypedParameter(def.Type);
                         if (newParam != null)
                         {
                             newParam.Name = def.Name;
@@ -486,6 +489,121 @@ namespace Cordyceps.Tools.Unified
             public string Name { get; set; }
             public string Type { get; set; }
             public string Access { get; set; }
+        }
+
+        /// <summary>
+        /// Create a typed parameter instance based on type name
+        /// </summary>
+        private IGH_Param CreateTypedParameter(string typeName)
+        {
+            if (string.IsNullOrEmpty(typeName))
+                return new Param_GenericObject();
+
+            // Normalize type name (case-insensitive, trim whitespace)
+            var normalized = typeName.Trim().ToLowerInvariant();
+
+            // Map common type names to Grasshopper parameter types
+            switch (normalized)
+            {
+                // Numeric types
+                case "double":
+                case "number":
+                case "float":
+                    return new Param_Number();
+
+                case "int":
+                case "integer":
+                    return new Param_Integer();
+
+                case "bool":
+                case "boolean":
+                    return new Param_Boolean();
+
+                // String types
+                case "string":
+                case "text":
+                    return new Param_String();
+
+                // Geometric types - Points and Vectors
+                case "point":
+                case "point3d":
+                case "pt":
+                    return new Param_Point();
+
+                case "vector":
+                case "vector3d":
+                case "vec":
+                    return new Param_Vector();
+
+                case "plane":
+                    return new Param_Plane();
+
+                // Curves
+                case "curve":
+                case "crv":
+                    return new Param_Curve();
+
+                case "line":
+                case "ln":
+                    return new Param_Line();
+
+                case "circle":
+                case "circ":
+                    return new Param_Circle();
+
+                case "arc":
+                    return new Param_Arc();
+
+                case "polyline":
+                    return new Param_Curve(); // Polyline uses Param_Curve
+
+                // Surfaces
+                case "surface":
+                case "srf":
+                    return new Param_Surface();
+
+                case "brep":
+                    return new Param_Brep();
+
+                // Mesh
+                case "mesh":
+                case "msh":
+                    return new Param_Mesh();
+
+                // Box and other shapes
+                case "box":
+                    return new Param_Box();
+
+                case "rectangle":
+                case "rect":
+                    return new Param_Rectangle();
+
+                // Geometry (generic)
+                case "geometry":
+                case "geom":
+                    return new Param_Geometry();
+
+                // Color
+                case "color":
+                case "colour":
+                    return new Param_Colour();
+
+                // Interval and Domain
+                case "interval":
+                case "domain":
+                    return new Param_Interval();
+
+                // Transform
+                case "transform":
+                case "xform":
+                    return new Param_Transform();
+
+                // Generic/Object (fallback)
+                case "object":
+                case "generic":
+                default:
+                    return new Param_GenericObject();
+            }
         }
 
         #endregion
