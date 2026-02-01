@@ -177,8 +177,8 @@ namespace Cordyceps.Tools.Unified
 
                     if (!string.IsNullOrEmpty(azimuth))
                     {
-                        if (!double.TryParse(azimuth, out az))
-                            return ToolHelpers.ErrorResponse($"Invalid azimuth: {azimuth}");
+                        if (!double.TryParse(azimuth, out az) || az < 0 || az > 360)
+                            return ToolHelpers.ErrorResponse($"Invalid azimuth: {azimuth} (must be 0-360)");
                         modified.Add("azimuth");
                     }
 

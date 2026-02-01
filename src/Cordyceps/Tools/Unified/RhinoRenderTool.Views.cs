@@ -37,7 +37,6 @@ namespace Cordyceps.Tools.Unified
                     doc.NamedViews.Delete(existingIndex);
                 }
 
-                var namedView = new ViewInfo(vp);
                 var index = doc.NamedViews.Add(name, vp.Id);
 
                 return JsonConvert.SerializeObject(new
@@ -77,7 +76,7 @@ namespace Cordyceps.Tools.Unified
                 if (targetView == null)
                     return ToolHelpers.ErrorResponse($"View not found: {view ?? "active"}");
 
-                var restored = doc.NamedViews.Restore(index, targetView, true);
+                var restored = doc.NamedViews.Restore(index, targetView.ActiveViewport);
                 doc.Views.Redraw();
 
                 var vp = targetView.ActiveViewport;

@@ -152,7 +152,10 @@ namespace Cordyceps.Tools.Unified
                                     break;
                                 }
                             }
-                            catch { }
+                            catch (Exception ex)
+                            {
+                                DebugLog.Debug($"SetParameter('{paramName}') failed: {ex.Message}");
+                            }
                         }
 
                         if (!colorSet)
@@ -163,7 +166,10 @@ namespace Cordyceps.Tools.Unified
                                 if (sim != null)
                                     sim.DiffuseColor = baseColor;
                             }
-                            catch { }
+                            catch (Exception ex)
+                            {
+                                DebugLog.Debug($"Material simulation fallback failed: {ex.Message}");
+                            }
                         }
                     }
 
@@ -243,7 +249,10 @@ namespace Cordyceps.Tools.Unified
                             pbr.Emission = Color4f.FromArgb(1, emissionColor.R / 255f, emissionColor.G / 255f, emissionColor.B / 255f);
                     }
                 }
-                catch { }
+                catch (Exception ex)
+                {
+                    DebugLog.Debug($"PBR conversion failed (using basic material): {ex.Message}");
+                }
 
                 rhinoDoc.RenderMaterials.Add(renderMaterial);
 

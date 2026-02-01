@@ -42,7 +42,7 @@ namespace Cordyceps.Tools.Unified
         private static readonly UnifiedToolInfo ToolInfo = new UnifiedToolInfo
         {
             ToolName = "rhino_render",
-            Description = "Rhino viewport and render operations - display modes, camera, zoom",
+            Description = "Rhino rendering: viewport, camera, display modes, named views, lights, materials, environments, ground plane, sun/skylight",
             Actions = new Dictionary<string, ActionInfo>
             {
                 ["display"] = new ActionInfo
@@ -154,10 +154,10 @@ namespace Cordyceps.Tools.Unified
                 {
                     Name = "light_add",
                     Description = "Create a light in the scene",
-                    Required = new[] { "lightType", "lightLocation" },
-                    Optional = new[] { "lightTarget", "lightColor", "lightIntensity", "spotAngle", "name" },
-                    Example = "action='light_add', lightType='point', lightLocation='10,10,20', lightColor='#FFFFFF'",
-                    Tips = new[] { "lightType: point, spot, directional", "spot requires lightTarget" }
+                    Required = new[] { "type", "location" },
+                    Optional = new[] { "target", "color", "intensity", "spotAngle", "name" },
+                    Example = "action='light_add', type='point', location='10,10,20', color='#FFFFFF'",
+                    Tips = new[] { "type: point, spot, directional", "spot requires target", "location/target as 'x,y,z'" }
                 },
                 ["light_list"] = new ActionInfo
                 {
@@ -170,8 +170,8 @@ namespace Cordyceps.Tools.Unified
                     Name = "light_set",
                     Description = "Modify a light's properties",
                     Required = new[] { "ids" },
-                    Optional = new[] { "lightLocation", "lightTarget", "lightColor", "lightIntensity", "spotAngle", "lightEnabled" },
-                    Example = "action='light_set', ids='[\"abc\"]', lightIntensity='2.0'"
+                    Optional = new[] { "location", "target", "color", "intensity", "spotAngle", "enabled" },
+                    Example = "action='light_set', ids='[\"abc\"]', intensity='2.0'"
                 },
                 ["light_delete"] = new ActionInfo
                 {
@@ -318,14 +318,9 @@ namespace Cordyceps.Tools.Unified
             // Environment parameters
             [Description("Environment name or GUID")] string environment = null,
             [Description("Usage: 'background', 'lighting', 'reflection', 'all'")] string usage = "all",
-            // Light parameters
-            [Description("Light type: point, spot, directional")] string lightType = null,
-            [Description("Light location 'x,y,z'")] string lightLocation = null,
-            [Description("Light target 'x,y,z' (for spot/directional)")] string lightTarget = null,
-            [Description("Light color as hex '#RRGGBB'")] string lightColor = null,
-            [Description("Light intensity multiplier")] string lightIntensity = null,
+            // Light parameters (reuses: type, location, target, color, intensity from other actions)
             [Description("Spot light cone angle in degrees")] string spotAngle = null,
-            [Description("Enable/disable light (true/false)")] string lightEnabled = null)
+            [Description("Enable/disable (true/false)")] string enabled = null)
         {
             if (string.Equals(action, "help", StringComparison.OrdinalIgnoreCase))
                 return UnifiedToolHelpers.GenerateHelp(ToolInfo);
@@ -371,14 +366,9 @@ namespace Cordyceps.Tools.Unified
                 // Environment params
                 ("environment", environment),
                 ("usage", usage),
-                // Light params
-                ("lightType", lightType),
-                ("lightLocation", lightLocation),
-                ("lightTarget", lightTarget),
-                ("lightColor", lightColor),
-                ("lightIntensity", lightIntensity),
+                // Light params (type, location, target, color, intensity already included above)
                 ("spotAngle", spotAngle),
-                ("lightEnabled", lightEnabled)
+                ("enabled", enabled)
             );
 
             var validationError = UnifiedToolHelpers.ValidateAction(ToolInfo, action, providedParams);
@@ -406,10 +396,10 @@ namespace Cordyceps.Tools.Unified
                 "view_load" => ActionViewLoad(name, view),
                 "view_list" => ActionViewList(),
                 "view_delete" => ActionViewDelete(name),
-                // Light actions
-                "light_add" => ActionLightAdd(lightType, lightLocation, lightTarget, lightColor, lightIntensity, spotAngle, name),
+                // Light actions (reuse shared params: type, location, target, color, intensity)
+                "light_add" => ActionLightAdd(type, location, target, color, intensity, spotAngle, name),
                 "light_list" => ActionLightList(),
-                "light_set" => ActionLightSet(ids, lightLocation, lightTarget, lightColor, lightIntensity, spotAngle, lightEnabled),
+                "light_set" => ActionLightSet(ids, location, target, color, intensity, spotAngle, enabled),
                 "light_delete" => ActionLightDelete(ids),
                 // Material actions
                 "material_list" => ActionMaterialList(),
@@ -612,7 +602,7 @@ namespace Cordyceps.Tools.Unified
                     foreach (var guid in guids)
                     {
                         var obj = doc.Objects.FindId(guid);
-                        if (obj != null)
+                        if (obj?.Geometry != null)
                         {
                             bbox.Union(obj.Geometry.GetBoundingBox(true));
                             found++;

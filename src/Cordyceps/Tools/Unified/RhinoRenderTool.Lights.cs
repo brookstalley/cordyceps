@@ -278,23 +278,28 @@ namespace Cordyceps.Tools.Unified
                 if (!ToolHelpers.TryParseGuidArray(ids, out var guids, out var error))
                     return ToolHelpers.ErrorResponse(error);
 
-                int deletedCount = 0;
+                // Collect indices first, then delete in reverse order to avoid index shifting
+                var indicesToDelete = new List<int>();
                 foreach (var guid in guids)
                 {
-                    var lightObj = doc.Lights.FindId(guid);
-                    if (lightObj != null)
+                    for (int i = 0; i < doc.Lights.Count; i++)
                     {
-                        // Find the index of this light in the table
-                        for (int i = 0; i < doc.Lights.Count; i++)
+                        if (doc.Lights[i].Id == guid && !doc.Lights[i].IsDeleted)
                         {
-                            if (doc.Lights[i].Id == guid)
-                            {
-                                if (doc.Lights.Delete(i, true))
-                                    deletedCount++;
-                                break;
-                            }
+                            indicesToDelete.Add(i);
+                            break;
                         }
                     }
+                }
+
+                // Sort descending and delete from highest index first
+                indicesToDelete.Sort((a, b) => b.CompareTo(a));
+
+                int deletedCount = 0;
+                foreach (var idx in indicesToDelete)
+                {
+                    if (doc.Lights.Delete(idx, true))
+                        deletedCount++;
                 }
 
                 doc.Views.Redraw();

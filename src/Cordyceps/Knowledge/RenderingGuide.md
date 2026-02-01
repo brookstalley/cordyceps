@@ -71,11 +71,11 @@ Complete workflow from Grasshopper geometry → Rhino baking → materials → v
 - `rhino_render(action='skylight', skylightEnabled='true')` - ambient lighting
 
 ### Scene Lights (rhino_render)
-- `rhino_render(action='light_add', lightType='point', lightLocation='10,10,20')` - create point light
-- `rhino_render(action='light_add', lightType='spot', lightLocation='10,10,20', lightTarget='0,0,0', spotAngle='30')` - create spot light
-- `rhino_render(action='light_add', lightType='directional', lightLocation='100,100,100', lightTarget='0,0,0')` - create directional light
+- `rhino_render(action='light_add', type='point', location='10,10,20')` - create point light
+- `rhino_render(action='light_add', type='spot', location='10,10,20', target='0,0,0', spotAngle='30')` - create spot light
+- `rhino_render(action='light_add', type='directional', location='100,100,100', target='0,0,0')` - create directional light
 - `rhino_render(action='light_list')` - list all lights in scene
-- `rhino_render(action='light_set', ids='[...]', lightColor='#FFFF00', lightIntensity='2.0')` - modify light properties
+- `rhino_render(action='light_set', ids='[...]', color='#FFFF00', intensity='2.0')` - modify light properties
 - `rhino_render(action='light_delete', ids='[...]')` - delete lights
 
 **Light types:**
