@@ -90,7 +90,7 @@ The AI interprets the request and builds everything autonomously—creating para
 
 ## Tools
 
-Cordyceps provides **7 tools with 100 actions**—deliberately consolidated to minimize context window usage. Rather than exposing every operation as a separate tool (which would require the model to process dozens of tool definitions), related operations are grouped under a single tool with an `action` parameter. This keeps the tool list compact while preserving full functionality.
+Cordyceps provides **7 tools with 110 actions**—deliberately consolidated to minimize context window usage. Rather than exposing every operation as a separate tool (which would require the model to process dozens of tool definitions), related operations are grouped under a single tool with an `action` parameter. This keeps the tool list compact while preserving full functionality.
 
 ### Grasshopper Tools
 
@@ -106,8 +106,8 @@ Cordyceps provides **7 tools with 100 actions**—deliberately consolidated to m
 
 | Tool | Actions | Description |
 |------|---------|-------------|
-| `rhino_scene` | objects, select, deselect, set_layer, set_name, layers, layer_*, hide, show, delete, script | Scene and layer management |
-| `rhino_render` | display, camera, zoom, modes, render, settings, ground, sun, skylight, material_*, env_* | Viewport, render settings, materials, environments |
+| `rhino_scene` | objects, select, deselect, set_layer, set_name, set_color, bbox, layers, layer_*, hide, show, delete, script | Scene and layer management |
+| `rhino_render` | display, camera, zoom, modes, render, settings, ground, sun, skylight, view_*, light_*, material_*, env_* | Viewport, render settings, views, lights, materials, environments |
 
 ## Resources
 
