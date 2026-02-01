@@ -294,8 +294,8 @@ namespace Cordyceps.Tools.Unified
                     foreach (var obj in doc.Objects)
                     {
                         if (obj is GH_Group g && !infraIds.Contains(g.InstanceGuid) &&
-                            (g.NickName.Equals(groupSpec, StringComparison.OrdinalIgnoreCase) ||
-                             g.Name.Equals(groupSpec, StringComparison.OrdinalIgnoreCase)))
+                            (g.NickName?.Equals(groupSpec, StringComparison.OrdinalIgnoreCase) == true ||
+                             g.Name?.Equals(groupSpec, StringComparison.OrdinalIgnoreCase) == true))
                         {
                             targetGroup = g;
                             break;

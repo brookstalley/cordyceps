@@ -251,7 +251,7 @@ namespace Cordyceps.Tools.Unified
             if (!string.IsNullOrEmpty(ids))
             {
                 try { return JsonConvert.DeserializeObject<List<string>>(ids); }
-                catch { error = "Invalid ids JSON array"; return null; }
+                catch (Exception) { error = "Invalid ids JSON array"; return null; }
             }
             if (!string.IsNullOrEmpty(id))
                 return new List<string> { id };

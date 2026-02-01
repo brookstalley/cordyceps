@@ -707,6 +707,8 @@ namespace Cordyceps.Tools.Unified
                     return _context.ExecuteOnUiThread(() =>
                     {
                         var doc = RhinoDoc.ActiveDoc;
+                        if (doc == null)
+                            return JsonConvert.SerializeObject(new { success = false, error = "No active document" });
                         var targetView = GetView(doc, view);
                         var rtMode = targetView?.RealtimeDisplayMode;
                         return JsonConvert.SerializeObject(new
@@ -722,6 +724,7 @@ namespace Cordyceps.Tools.Unified
                 var status = _context.ExecuteOnUiThread<(int pass, bool complete)>(() =>
                 {
                     var doc = RhinoDoc.ActiveDoc;
+                    if (doc == null) return (0, false);
                     var targetView = GetView(doc, view);
                     var rtMode = targetView?.RealtimeDisplayMode;
                     if (rtMode == null) return (0, false);

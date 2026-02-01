@@ -187,6 +187,7 @@ namespace Cordyceps.Tools.Unified
                     if (lightObj == null) continue;
 
                     var light = lightObj.LightGeometry;
+                    if (light == null) continue;
                     bool changed = false;
 
                     if (!string.IsNullOrEmpty(location))

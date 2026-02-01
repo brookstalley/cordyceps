@@ -100,7 +100,7 @@ namespace Cordyceps.Tools.Unified
                     name = created.Name,
                     fullPath = created.FullPath,
                     color = ToolHelpers.ColorToHex(created.Color),
-                    isVisible = created.IsVisible
+                    visible = created.IsVisible
                 });
             });
         }
@@ -172,8 +172,8 @@ namespace Cordyceps.Tools.Unified
                     name = targetLayer.Name,
                     fullPath = targetLayer.FullPath,
                     color = ToolHelpers.ColorToHex(targetLayer.Color),
-                    isVisible = targetLayer.IsVisible,
-                    isLocked = targetLayer.IsLocked,
+                    visible = targetLayer.IsVisible,
+                    locked = targetLayer.IsLocked,
                     modified
                 });
             });

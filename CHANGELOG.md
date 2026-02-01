@@ -22,9 +22,21 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   - `rhino_render(action='light_set', ids='[...]', intensity='2.0')` - modify light properties
   - `rhino_render(action='light_delete', ids='[...]')` - delete lights
 
+### Changed
+
+- **Partial class refactoring** - Large tool files split into partial classes for maintainability:
+  - `GhCanvasTool` → Groups.cs, Values.cs, Zoomable.cs
+  - `RhinoRenderTool` → Lights.cs, Materials.cs, Settings.cs, Views.cs
+  - `RhinoSceneTool` → Layers.cs
+  - `GhDocumentTool` → Capture.cs
+
 ### Fixed
 
 - **Script component type hints** - `gh_script(action='configure')` now correctly applies type hints to component parameters. Previously all parameters remained as "Generic Data" regardless of the types specified. Supports common types: int, double, bool, string, Point3d, Vector3d, Curve, Mesh, Brep, and more. (Closes #7)
+- **Null reference in group operations** - Fixed potential null reference when matching groups by name/nickname in `gh_canvas` group actions
+- **Null document in render wait** - Fixed potential null reference in `rhino_render(action='render')` wait loop when no document is active
+- **Null light geometry** - Fixed potential null reference when modifying lights via `rhino_render(action='light_set')`
+- **Consistent layer response fields** - Standardized layer visibility/locked field names across all layer actions
 
 ## [1.4.2] - 2026-01-31
 
