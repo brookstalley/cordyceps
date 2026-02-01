@@ -34,6 +34,8 @@ Complete workflow from Grasshopper geometry → Rhino baking → materials → v
 - `rhino_scene(action='deselect')` - clear selection
 - `rhino_scene(action='set_layer', ids='[...]', layer='...')` - move objects to layer
 - `rhino_scene(action='set_name', ids='[...]', name='...')` - rename objects
+- `rhino_scene(action='set_color', ids='[...]', color='#FF0000')` - set object display color
+- `rhino_scene(action='bbox', ids='[...]')` - get combined bounding box (min, max, center, size)
 - `rhino_scene(action='hide', ids='[...]')` - hide objects
 - `rhino_scene(action='show', ids='[...]')` or `rhino_scene(action='show', all=true)` - show objects
 - `rhino_scene(action='delete', ids='[...]')` - permanent deletion
@@ -47,8 +49,15 @@ Complete workflow from Grasshopper geometry → Rhino baking → materials → v
 - `rhino_render(action='display', mode='Shaded')` - set display mode
 - `rhino_render(action='camera')` - get location, target, lens, distance
 - `rhino_render(action='camera', location='x,y,z', target='x,y,z', lens=50)` - set camera
+- `rhino_render(action='camera', preset='front')` - apply standard view (top, bottom, front, back, left, right, perspective, iso_nw, iso_ne, iso_sw, iso_se)
 - `rhino_render(action='zoom')` - zoom to fit all geometry
 - `rhino_render(action='zoom', ids='[...]')` - zoom to specific objects
+
+### Named Views (rhino_render)
+- `rhino_render(action='view_save', name='MyView')` - save current camera position as named view
+- `rhino_render(action='view_load', name='MyView')` - restore camera from named view
+- `rhino_render(action='view_list')` - list all named views
+- `rhino_render(action='view_delete', name='MyView')` - delete a named view
 
 ### Render Status (Raytraced mode)
 - `rhino_render(action='render')` - returns currentPass, maxPasses, isComplete, progress%
@@ -60,6 +69,19 @@ Complete workflow from Grasshopper geometry → Rhino baking → materials → v
 - `rhino_render(action='ground', groundEnabled='true', shadowOnly='true')` - ground plane
 - `rhino_render(action='sun', sunEnabled='true', azimuth='180', sunAltitude='45')` - sun position
 - `rhino_render(action='skylight', skylightEnabled='true')` - ambient lighting
+
+### Scene Lights (rhino_render)
+- `rhino_render(action='light_add', type='point', location='10,10,20')` - create point light
+- `rhino_render(action='light_add', type='spot', location='10,10,20', target='0,0,0', spotAngle='30')` - create spot light
+- `rhino_render(action='light_add', type='directional', location='100,100,100', target='0,0,0')` - create directional light
+- `rhino_render(action='light_list')` - list all lights in scene
+- `rhino_render(action='light_set', ids='[...]', color='#FFFF00', intensity='2.0')` - modify light properties
+- `rhino_render(action='light_delete', ids='[...]')` - delete lights
+
+**Light types:**
+- **point**: Emits light in all directions from a point (like a light bulb)
+- **spot**: Cone of light from a point toward a target (like a stage light)
+- **directional**: Parallel rays from a direction (like sunlight, but manually positioned)
 
 ### Materials (rhino_render)
 

@@ -14,7 +14,7 @@ namespace Cordyceps.Tools.Unified
     /// Unified Rhino scene tool - object management, layers, visibility
     /// </summary>
     [McpServerToolType]
-    public class RhinoSceneTool
+    public partial class RhinoSceneTool
     {
         private readonly GrasshopperContext _context;
 
@@ -113,6 +113,22 @@ namespace Cordyceps.Tools.Unified
                     Required = new[] { "ids" },
                     Example = "action='delete', ids='[\"abc\",\"def\"]'"
                 },
+                ["set_color"] = new ActionInfo
+                {
+                    Name = "set_color",
+                    Description = "Set the display color of objects",
+                    Required = new[] { "ids", "color" },
+                    Example = "action='set_color', ids='[\"abc\"]', color='#FF0000'",
+                    Tips = new[] { "Color as hex '#RRGGBB' or RGB 'R,G,B'" }
+                },
+                ["bbox"] = new ActionInfo
+                {
+                    Name = "bbox",
+                    Description = "Get the combined bounding box of objects",
+                    Required = new[] { "ids" },
+                    Example = "action='bbox', ids='[\"abc\",\"def\"]'",
+                    Tips = new[] { "Returns min, max, center, and size" }
+                },
                 ["script"] = new ActionInfo
                 {
                     Name = "script",
@@ -138,7 +154,7 @@ namespace Cordyceps.Tools.Unified
             _context = context;
         }
 
-        [McpServerTool, Description("Scene operations. Actions: objects|select|deselect|set_layer|set_name|layers|layer_create|layer_set|layer_delete|hide|show|delete|script|help")]
+        [McpServerTool, Description("Scene operations. Actions: objects|select|deselect|set_layer|set_name|set_color|bbox|layers|layer_create|layer_set|layer_delete|hide|show|delete|script|help")]
         public string RhinoScene(
             [Description("Action to perform")] string action,
             [Description("JSON array of object IDs")] string ids = null,
@@ -174,7 +190,7 @@ namespace Cordyceps.Tools.Unified
                 ("cmd", cmd),
                 ("limit", limit),
                 ("name", name),
-                ("color", color),
+                ("color", color),  // Used by layer_create, layer_set, and set_color
                 ("visible", visible),
                 ("parent", parent),
                 ("locked", locked),
@@ -201,6 +217,8 @@ namespace Cordyceps.Tools.Unified
                 "deselect" => ActionDeselect(),
                 "set_layer" => ActionSetLayer(ids, layer),
                 "set_name" => ActionSetName(ids, name),
+                "set_color" => ActionSetColor(ids, color),
+                "bbox" => ActionBbox(ids),
                 "layers" => ActionLayers(),
                 "layer_create" => ActionLayerCreate(name, color, visibleBool, parent),
                 "layer_set" => ActionLayerSet(name, color, visible, locked),
@@ -407,7 +425,7 @@ namespace Cordyceps.Tools.Unified
             });
         }
 
-        private string ActionLayers()
+        private string ActionSetColor(string ids, string color)
         {
             return _context.ExecuteOnUiThread(() =>
             {
@@ -415,22 +433,80 @@ namespace Cordyceps.Tools.Unified
                 if (doc == null)
                     return ToolHelpers.ErrorResponse("No active Rhino document");
 
-                var layers = doc.Layers
-                    .Where(l => !l.IsDeleted)
-                    .Select(l => new
-                    {
-                        name = l.Name,
-                        fullPath = l.FullPath,
-                        index = l.Index,
-                        visible = l.IsVisible,
-                        locked = l.IsLocked,
-                        color = $"#{l.Color.R:X2}{l.Color.G:X2}{l.Color.B:X2}",
-                        objectCount = doc.Objects.FindByLayer(l).Length
-                    }).ToList();
+                if (string.IsNullOrEmpty(color))
+                    return ToolHelpers.ErrorResponse("color is required");
 
-                return JsonConvert.SerializeObject(new { success = true, count = layers.Count, layers });
+                if (!ToolHelpers.TryParseColor(color, out var parsedColor))
+                    return ToolHelpers.ErrorResponse($"Invalid color format: {color}");
+
+                if (!ToolHelpers.TryParseGuidArray(ids, out var guids, out var error))
+                    return ToolHelpers.ErrorResponse(error);
+
+                int coloredCount = 0;
+                foreach (var guid in guids)
+                {
+                    var obj = doc.Objects.FindId(guid);
+                    if (obj == null) continue;
+
+                    var attrs = obj.Attributes.Duplicate();
+                    attrs.ColorSource = ObjectColorSource.ColorFromObject;
+                    attrs.ObjectColor = parsedColor;
+                    if (doc.Objects.ModifyAttributes(obj, attrs, true))
+                        coloredCount++;
+                }
+
+                doc.Views.Redraw();
+                return JsonConvert.SerializeObject(new { success = true, coloredCount, color = ToolHelpers.ColorToHex(parsedColor) });
             });
         }
+
+        private string ActionBbox(string ids)
+        {
+            return _context.ExecuteOnUiThread(() =>
+            {
+                var doc = RhinoDoc.ActiveDoc;
+                if (doc == null)
+                    return ToolHelpers.ErrorResponse("No active Rhino document");
+
+                if (!ToolHelpers.TryParseGuidArray(ids, out var guids, out var error))
+                    return ToolHelpers.ErrorResponse(error);
+
+                var bbox = BoundingBox.Empty;
+                int foundCount = 0;
+
+                foreach (var guid in guids)
+                {
+                    var obj = doc.Objects.FindId(guid);
+                    if (obj?.Geometry == null) continue;
+
+                    var objBbox = obj.Geometry.GetBoundingBox(true);
+                    if (objBbox.IsValid)
+                    {
+                        bbox.Union(objBbox);
+                        foundCount++;
+                    }
+                }
+
+                if (foundCount == 0 || !bbox.IsValid)
+                    return ToolHelpers.ErrorResponse("No valid objects found for bounding box calculation");
+
+                var center = bbox.Center;
+                var size = bbox.Max - bbox.Min;
+
+                return JsonConvert.SerializeObject(new
+                {
+                    success = true,
+                    objectCount = foundCount,
+                    min = new { x = bbox.Min.X, y = bbox.Min.Y, z = bbox.Min.Z },
+                    max = new { x = bbox.Max.X, y = bbox.Max.Y, z = bbox.Max.Z },
+                    center = new { x = center.X, y = center.Y, z = center.Z },
+                    size = new { x = size.X, y = size.Y, z = size.Z }
+                });
+            });
+        }
+
+        // Layer actions (ActionLayers, ActionLayerCreate, ActionLayerSet, ActionLayerDelete)
+        // are in RhinoSceneTool.Layers.cs
 
         private string ActionHide(string ids, bool selectedOnly)
         {
@@ -541,214 +617,6 @@ namespace Cordyceps.Tools.Unified
             {
                 bool result = RhinoApp.RunScript(cmd, false);
                 return JsonConvert.SerializeObject(new { success = result, cmd });
-            });
-        }
-
-        private string ActionLayerCreate(string name, string color, bool visible, string parent)
-        {
-            return _context.ExecuteOnUiThread(() =>
-            {
-                var doc = RhinoDoc.ActiveDoc;
-                if (doc == null)
-                    return ToolHelpers.ErrorResponse("No active Rhino document");
-
-                if (string.IsNullOrEmpty(name))
-                    return ToolHelpers.ErrorResponse("Layer name is required");
-
-                var existingIndex = doc.Layers.FindByFullPath(name, -1);
-                if (existingIndex >= 0)
-                {
-                    var existing = doc.Layers[existingIndex];
-                    return JsonConvert.SerializeObject(new
-                    {
-                        success = true,
-                        created = false,
-                        alreadyExists = true,
-                        index = existingIndex,
-                        name = existing.Name,
-                        fullPath = existing.FullPath
-                    });
-                }
-
-                var layer = new Layer { Name = name, IsVisible = visible };
-
-                if (!string.IsNullOrEmpty(color))
-                {
-                    if (ToolHelpers.TryParseColor(color, out var parsedColor))
-                        layer.Color = parsedColor;
-                    else
-                        return ToolHelpers.ErrorResponse($"Invalid color: {color}");
-                }
-
-                if (!string.IsNullOrEmpty(parent))
-                {
-                    var parentIndex = doc.Layers.FindByFullPath(parent, -1);
-                    if (parentIndex < 0)
-                    {
-                        var parentLayer = doc.Layers.FirstOrDefault(l =>
-                            l.Name.Equals(parent, StringComparison.OrdinalIgnoreCase));
-                        parentIndex = parentLayer?.Index ?? -1;
-                    }
-                    if (parentIndex < 0)
-                        return ToolHelpers.ErrorResponse($"Parent layer '{parent}' not found");
-                    layer.ParentLayerId = doc.Layers[parentIndex].Id;
-                }
-
-                var index = doc.Layers.Add(layer);
-                if (index < 0)
-                    return ToolHelpers.ErrorResponse("Failed to create layer");
-
-                var created = doc.Layers[index];
-                return JsonConvert.SerializeObject(new
-                {
-                    success = true,
-                    created = true,
-                    index,
-                    name = created.Name,
-                    fullPath = created.FullPath,
-                    color = ToolHelpers.ColorToHex(created.Color),
-                    isVisible = created.IsVisible
-                });
-            });
-        }
-
-        private string ActionLayerSet(string name, string color, string visible, string locked)
-        {
-            return _context.ExecuteOnUiThread(() =>
-            {
-                var doc = RhinoDoc.ActiveDoc;
-                if (doc == null)
-                    return ToolHelpers.ErrorResponse("No active Rhino document");
-
-                if (string.IsNullOrEmpty(name))
-                    return ToolHelpers.ErrorResponse("Layer name is required");
-
-                var layerIndex = doc.Layers.FindByFullPath(name, -1);
-                if (layerIndex < 0)
-                {
-                    var layer = doc.Layers.FirstOrDefault(l =>
-                        l.Name.Equals(name, StringComparison.OrdinalIgnoreCase));
-                    layerIndex = layer?.Index ?? -1;
-                }
-
-                if (layerIndex < 0)
-                    return ToolHelpers.ErrorResponse($"Layer '{name}' not found");
-
-                var targetLayer = doc.Layers[layerIndex];
-                var modified = new List<string>();
-
-                if (!string.IsNullOrEmpty(color))
-                {
-                    if (ToolHelpers.TryParseColor(color, out var parsedColor))
-                    {
-                        targetLayer.Color = parsedColor;
-                        modified.Add("color");
-                    }
-                    else
-                        return ToolHelpers.ErrorResponse($"Invalid color: {color}");
-                }
-
-                if (!string.IsNullOrEmpty(visible))
-                {
-                    if (bool.TryParse(visible, out var val))
-                    {
-                        targetLayer.IsVisible = val;
-                        modified.Add("visible");
-                    }
-                    else
-                        return ToolHelpers.ErrorResponse($"Invalid visible: {visible}");
-                }
-
-                if (!string.IsNullOrEmpty(locked))
-                {
-                    if (bool.TryParse(locked, out var val))
-                    {
-                        targetLayer.IsLocked = val;
-                        modified.Add("locked");
-                    }
-                    else
-                        return ToolHelpers.ErrorResponse($"Invalid locked: {locked}");
-                }
-
-                doc.Views.Redraw();
-
-                return JsonConvert.SerializeObject(new
-                {
-                    success = true,
-                    index = layerIndex,
-                    name = targetLayer.Name,
-                    fullPath = targetLayer.FullPath,
-                    color = ToolHelpers.ColorToHex(targetLayer.Color),
-                    isVisible = targetLayer.IsVisible,
-                    isLocked = targetLayer.IsLocked,
-                    modified
-                });
-            });
-        }
-
-        private string ActionLayerDelete(string name, bool deleteObjects)
-        {
-            return _context.ExecuteOnUiThread(() =>
-            {
-                var doc = RhinoDoc.ActiveDoc;
-                if (doc == null)
-                    return ToolHelpers.ErrorResponse("No active Rhino document");
-
-                if (string.IsNullOrEmpty(name))
-                    return ToolHelpers.ErrorResponse("Layer name is required");
-
-                var layerIndex = doc.Layers.FindByFullPath(name, -1);
-                if (layerIndex < 0)
-                {
-                    var layer = doc.Layers.FirstOrDefault(l =>
-                        l.Name.Equals(name, StringComparison.OrdinalIgnoreCase));
-                    layerIndex = layer?.Index ?? -1;
-                }
-
-                if (layerIndex < 0)
-                    return ToolHelpers.ErrorResponse($"Layer '{name}' not found");
-
-                var targetLayer = doc.Layers[layerIndex];
-                var layerName = targetLayer.Name;
-                var objectsOnLayer = doc.Objects.FindByLayer(targetLayer);
-
-                int objectsDeleted = 0, objectsMoved = 0;
-
-                if (deleteObjects)
-                {
-                    foreach (var obj in objectsOnLayer)
-                    {
-                        if (doc.Objects.Delete(obj, true))
-                            objectsDeleted++;
-                    }
-                }
-                else
-                {
-                    var defaultLayerIndex = doc.Layers.CurrentLayerIndex;
-                    if (defaultLayerIndex == layerIndex)
-                        defaultLayerIndex = doc.Layers.FirstOrDefault(l => l.Index != layerIndex && !l.IsDeleted)?.Index ?? 0;
-
-                    foreach (var obj in objectsOnLayer)
-                    {
-                        var attrs = obj.Attributes.Duplicate();
-                        attrs.LayerIndex = defaultLayerIndex;
-                        if (doc.Objects.ModifyAttributes(obj, attrs, true))
-                            objectsMoved++;
-                    }
-                }
-
-                var deleted = doc.Layers.Delete(layerIndex, true);
-                doc.Views.Redraw();
-
-                return JsonConvert.SerializeObject(new
-                {
-                    success = deleted,
-                    layerDeleted = deleted,
-                    layerName,
-                    objectsDeleted,
-                    objectsMoved,
-                    error = deleted ? null : "Failed to delete layer (may have child layers)"
-                });
             });
         }
 
