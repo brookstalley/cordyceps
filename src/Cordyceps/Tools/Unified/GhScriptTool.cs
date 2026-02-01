@@ -237,6 +237,12 @@ namespace Cordyceps.Tools.Unified
                                 }
                             }
 
+                            // Re-apply type hints AFTER source is set, because SetSource may reset them
+                            ReapplyTypeHints(ghComponent, inputDefs, outputDefs);
+
+                            // Call VariableParameterMaintenance to finalize parameter setup
+                            varParamComp.VariableParameterMaintenance();
+
                             ghComponent.ExpireSolution(true);
                             doc.NewSolution(false);
                         }
@@ -418,10 +424,51 @@ namespace Cordyceps.Tools.Unified
             }
         }
 
+        /// <summary>
+        /// Re-apply type hints to parameters after source has been set
+        /// SetSource may reset output type hints, so we need to reapply them
+        /// </summary>
+        private void ReapplyTypeHints(IGH_Component ghComponent, List<ParamDef> inputDefs, List<ParamDef> outputDefs)
+        {
+            DebugLog.Debug($"ReapplyTypeHints: {inputDefs.Count} inputs, {outputDefs.Count} outputs");
+
+            // Re-apply input type hints
+            for (int i = 0; i < inputDefs.Count && i < ghComponent.Params.Input.Count; i++)
+            {
+                var def = inputDefs[i];
+                var param = ghComponent.Params.Input[i];
+                if (!string.IsNullOrEmpty(def.Type))
+                {
+                    SetParameterTypeHint(param, def.Type);
+                }
+            }
+
+            // Re-apply output type hints (skip the first 'out' parameter if present)
+            // Output parameters start at index 1 (index 0 is 'out')
+            for (int i = 0; i < outputDefs.Count; i++)
+            {
+                var def = outputDefs[i];
+                // Output index is i+1 because index 0 is the built-in 'out' parameter
+                int paramIndex = i + 1;
+                if (paramIndex < ghComponent.Params.Output.Count)
+                {
+                    var param = ghComponent.Params.Output[paramIndex];
+                    if (!string.IsNullOrEmpty(def.Type))
+                    {
+                        DebugLog.Debug($"ReapplyTypeHints: Output '{param.Name}' -> type '{def.Type}'");
+                        SetParameterTypeHint(param, def.Type);
+                    }
+                }
+            }
+        }
+
         private bool ConfigureViaVariableParams(IGH_Component ghComponent, IGH_VariableParameterComponent varParamComp, List<ParamDef> inputDefs, List<ParamDef> outputDefs)
         {
             try
             {
+                DebugLog.Info($"ConfigureViaVariableParams: {inputDefs.Count} inputs, {outputDefs.Count} outputs");
+
+                // Remove existing inputs
                 while (ghComponent.Params.Input.Count > 0)
                 {
                     var param = ghComponent.Params.Input[ghComponent.Params.Input.Count - 1];
@@ -429,6 +476,7 @@ namespace Cordyceps.Tools.Unified
                     ghComponent.Params.UnregisterInputParameter(param);
                 }
 
+                // Remove outputs except first ('out')
                 while (ghComponent.Params.Output.Count > 1)
                 {
                     var param = ghComponent.Params.Output[ghComponent.Params.Output.Count - 1];
@@ -436,16 +484,25 @@ namespace Cordyceps.Tools.Unified
                     ghComponent.Params.UnregisterOutputParameter(param);
                 }
 
+                // Add inputs with type hints
                 foreach (var def in inputDefs)
                 {
                     if (varParamComp.CanInsertParameter(GH_ParameterSide.Input, ghComponent.Params.Input.Count))
                     {
-                        // Create typed parameter based on the type definition
-                        var newParam = CreateTypedParameter(def.Type);
+                        // Use CreateParameter to get the component's native parameter type
+                        var newParam = varParamComp.CreateParameter(GH_ParameterSide.Input, ghComponent.Params.Input.Count);
                         if (newParam != null)
                         {
                             newParam.Name = def.Name;
                             newParam.NickName = def.Name;
+
+                            // Set type hint BEFORE registering (for script components)
+                            if (!string.IsNullOrEmpty(def.Type))
+                            {
+                                SetParameterTypeHint(newParam, def.Type);
+                            }
+
+                            // Set access mode
                             if (!string.IsNullOrEmpty(def.Access))
                             {
                                 switch (def.Access.ToLowerInvariant())
@@ -455,33 +512,156 @@ namespace Cordyceps.Tools.Unified
                                     default: newParam.Access = GH_ParamAccess.item; break;
                                 }
                             }
+
                             ghComponent.Params.RegisterInputParam(newParam);
+                            DebugLog.Debug($"Added input '{def.Name}' type='{def.Type}' access='{def.Access}'");
                         }
                     }
                 }
 
+                // Add outputs with type hints
                 foreach (var def in outputDefs)
                 {
                     if (varParamComp.CanInsertParameter(GH_ParameterSide.Output, ghComponent.Params.Output.Count))
                     {
-                        // Create typed parameter based on the type definition
-                        var newParam = CreateTypedParameter(def.Type);
+                        var newParam = varParamComp.CreateParameter(GH_ParameterSide.Output, ghComponent.Params.Output.Count);
                         if (newParam != null)
                         {
                             newParam.Name = def.Name;
                             newParam.NickName = def.Name;
+
+                            // Set type hint for output too
+                            if (!string.IsNullOrEmpty(def.Type))
+                            {
+                                SetParameterTypeHint(newParam, def.Type);
+                            }
+
                             ghComponent.Params.RegisterOutputParam(newParam);
+                            DebugLog.Debug($"Added output '{def.Name}' type='{def.Type}'");
                         }
                     }
                 }
 
                 varParamComp.VariableParameterMaintenance();
+                DebugLog.Info($"ConfigureViaVariableParams complete: {ghComponent.Params.Input.Count} inputs, {ghComponent.Params.Output.Count} outputs");
                 return true;
             }
-            catch
+            catch (Exception ex)
             {
+                DebugLog.Error($"ConfigureViaVariableParams failed: {ex.Message}");
                 return false;
             }
+        }
+
+        /// <summary>
+        /// Set the TypeHint on a script parameter using Rhino 8's TypeHints.Select(Type) + IScriptParameter.Converter
+        /// </summary>
+        private void SetParameterTypeHint(IGH_Param param, string typeName)
+        {
+            if (param == null || string.IsNullOrEmpty(typeName)) return;
+
+            Type targetType = GetRhinoType(typeName);
+            if (targetType == null)
+            {
+                DebugLog.Warn($"Unknown type '{typeName}' for parameter '{param.Name}'");
+                return;
+            }
+
+            DebugLog.Debug($"SetParameterTypeHint: param='{param.Name}' paramType={param.GetType().Name} targetType={targetType.Name}");
+
+            try
+            {
+                // Step 1: Get TypeHints collection and select the converter
+                var typeHintsProp = param.GetType().GetProperty("TypeHints");
+                if (typeHintsProp == null)
+                {
+                    DebugLog.Warn($"Parameter '{param.Name}' has no TypeHints property (type: {param.GetType().FullName})");
+                    return;
+                }
+
+                var typeHints = typeHintsProp.GetValue(param);
+                if (typeHints == null)
+                {
+                    DebugLog.Warn($"TypeHints is null for '{param.Name}'");
+                    return;
+                }
+
+                var selectMethod = typeHints.GetType().GetMethod("Select", new[] { typeof(Type) });
+                if (selectMethod == null)
+                {
+                    DebugLog.Warn($"TypeHints.Select(Type) method not found for '{param.Name}'");
+                    return;
+                }
+
+                var converter = selectMethod.Invoke(typeHints, new object[] { targetType });
+                if (converter == null)
+                {
+                    DebugLog.Warn($"TypeHints.Select({targetType.Name}) returned null for '{param.Name}'");
+                    return;
+                }
+
+                // Step 2: Assign converter via IScriptParameter.Converter interface property
+                var scriptParamInterface = param.GetType().GetInterfaces()
+                    .FirstOrDefault(i => i.Name == "IScriptParameter" || i.FullName?.Contains("IScriptParameter") == true);
+
+                if (scriptParamInterface != null)
+                {
+                    var converterProp = scriptParamInterface.GetProperty("Converter");
+                    if (converterProp != null && converterProp.CanWrite)
+                    {
+                        converterProp.SetValue(param, converter);
+                        DebugLog.Debug($"Set '{param.Name}' type hint to {targetType.Name}");
+                        return;
+                    }
+                    else
+                    {
+                        DebugLog.Warn($"Converter property not writable for '{param.Name}'");
+                    }
+                }
+                else
+                {
+                    DebugLog.Warn($"IScriptParameter not found for '{param.Name}'");
+                }
+
+                DebugLog.Warn($"Could not assign type hint for '{param.Name}'");
+            }
+            catch (Exception ex)
+            {
+                DebugLog.Error($"SetParameterTypeHint failed for '{param.Name}': {ex.Message}");
+            }
+        }
+
+        /// <summary>
+        /// Get the .NET Type for a given type name
+        /// </summary>
+        private Type GetRhinoType(string typeName)
+        {
+            var normalized = typeName.ToLowerInvariant();
+            return normalized switch
+            {
+                "int" or "integer" => typeof(int),
+                "double" or "number" or "float" => typeof(double),
+                "bool" or "boolean" => typeof(bool),
+                "string" or "text" => typeof(string),
+                "point" or "point3d" or "pt" => typeof(Rhino.Geometry.Point3d),
+                "vector" or "vector3d" or "vec" => typeof(Rhino.Geometry.Vector3d),
+                "plane" => typeof(Rhino.Geometry.Plane),
+                "mesh" or "msh" => typeof(Rhino.Geometry.Mesh),
+                "brep" => typeof(Rhino.Geometry.Brep),
+                "curve" or "crv" => typeof(Rhino.Geometry.Curve),
+                "surface" or "srf" => typeof(Rhino.Geometry.Surface),
+                "line" or "ln" => typeof(Rhino.Geometry.Line),
+                "box" => typeof(Rhino.Geometry.Box),
+                "circle" or "circ" => typeof(Rhino.Geometry.Circle),
+                "arc" => typeof(Rhino.Geometry.Arc),
+                "transform" or "xform" => typeof(Rhino.Geometry.Transform),
+                "color" or "colour" => typeof(System.Drawing.Color),
+                "guid" => typeof(Guid),
+                "interval" or "domain" => typeof(Rhino.Geometry.Interval),
+                "rectangle" or "rect" => typeof(Rhino.Geometry.Rectangle3d),
+                "geometry" or "geom" => typeof(Rhino.Geometry.GeometryBase),
+                _ => null
+            };
         }
 
         private class ParamDef
