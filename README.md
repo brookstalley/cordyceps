@@ -1,20 +1,21 @@
 # Cordyceps
 
-**MCP server for Grasshopper.** Give AI agents direct control over your parametric design canvas and Rhino rendering tools.
+**MCP server for Grasshopper.** Give AI agents or scripts direct control over your parametric design canvas and Rhino rendering tools.
 
-[Model Context Protocol (MCP)](https://modelcontextprotocol.io/) enables AI assistants to control applications through a standardized interface.
+[Model Context Protocol (MCP)](https://modelcontextprotocol.io/) provides a standardized interface for controlling applications — whether from AI assistants or your own code.
 
 ## Features
 
-- **Build definitions with natural language** — describe what you want and watch it appear on the canvas
-- **Full Grasshopper control** — add components, create connections, configure values, manage groups
-- **Rhino integration** — bake geometry, manage layers, apply PBR materials, control rendering
-- **End-to-end automation** — from parametric modeling to raytraced renders, all via AI
+- **Full Grasshopper control** — add components, wire connections, set values, manage groups
+- **Rhino integration** — bake geometry, manage layers, apply PBR materials, render scenes
+- **Natural language** — describe what you want and let AI build it
+- **Direct scripting** — call tools from Python or any MCP client, no AI required
 
 ## Requirements
 
 - **Rhino 8.21+** (requires .NET 8)
-- **MCP client**: Claude Desktop, Claude Code, Cursor, VS Code Copilot, or any compatible client
+- **For AI use**: Claude Desktop, Claude Code, Cursor, VS Code, or any MCP-compatible assistant
+- **For scripting**: Any MCP client library ([Python](https://github.com/modelcontextprotocol/python-sdk), [TypeScript](https://github.com/modelcontextprotocol/typescript-sdk), etc.)
 
 ## Installation
 
@@ -90,6 +91,32 @@
 ![Cordyceps Showcase](images/cordyceps_showcase.gif)
 
 The AI builds everything autonomously — creating parametric geometry in Grasshopper, baking to Rhino, applying PBR materials, configuring the render environment and lighting, and capturing a smooth orbiting animation.
+
+## Scripting
+
+Call tools directly from Python or any MCP client library:
+
+```python
+from mcp import ClientSession
+
+async with ClientSession(transport) as session:
+    # Add a slider and circle
+    slider = await session.call_tool('gh_canvas', {
+        'action': 'add', 'type': 'Number Slider', 'x': 50, 'y': 50
+    })
+    circle = await session.call_tool('gh_canvas', {
+        'action': 'add', 'type': 'Curve/Circle', 'x': 200, 'y': 50
+    })
+
+    # Connect slider output to circle radius
+    await session.call_tool('gh_wire', {
+        'action': 'connect',
+        'sourceId': slider['id'], 'sourceParam': '0',
+        'targetId': circle['id'], 'targetParam': 'R'
+    })
+```
+
+See the [MCP Python SDK](https://github.com/modelcontextprotocol/python-sdk) for transport setup and client details.
 
 ## Tools
 
