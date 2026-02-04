@@ -1,141 +1,122 @@
 # Cordyceps
 
-**MCP server for Grasshopper.** Gives AI agents or scripts direct control over your parametric design canvas and select Rhino viewport + rendering tools.
+**MCP server for Grasshopper.** Give AI agents direct control over your parametric design canvas and Rhino rendering tools.
+
+[Model Context Protocol (MCP)](https://modelcontextprotocol.io/) enables AI assistants to control applications through a standardized interface.
+
+## Features
+
+- **Build definitions with natural language** — describe what you want and watch it appear on the canvas
+- **Full Grasshopper control** — add components, create connections, configure values, manage groups
+- **Rhino integration** — bake geometry, manage layers, apply PBR materials, control rendering
+- **End-to-end automation** — from parametric modeling to raytraced renders, all via AI
 
 ## Requirements
 
 - **Rhino 8.21+** (requires .NET 8)
 - **MCP client**: Claude Desktop, Claude Code, Cursor, VS Code Copilot, or any compatible client
 
-## Quick Start
+## Installation
 
-**[Download Cordyceps.gha](https://github.com/brookstalley/cordyceps/raw/main/releases/Cordyceps.gha)**
+1. **[Download Cordyceps.gha](https://github.com/brookstalley/cordyceps/raw/main/releases/Cordyceps.gha)**
 
-**Install**: Copy `Cordyceps.gha` to your Grasshopper components folder. In Grasshopper: *File → Special Folders → Components Folder*.
+2. Copy to your Grasshopper components folder:
+   *File → Special Folders → Components Folder*
 
-* You may need to unblock the file before running. Windows: right click Cordyceps.gha -> properties -> Unblock. 
-
-**Start**: Drop the Cordyceps component on your canvas (*Params → Util → Cordyceps*). The server starts on port 26929 by default.
-
-Component inputs:
-- **Port** (default 26929): HTTP port for the MCP server
-- **DebugLevel** (default 0): Logging verbosity. 0 = server start/stop only, 1+ = request/response details
-
-**Connect**: Configure your MCP client:
-
-*Claude Desktop:*
-
-Claude Desktop uses stdio transport, so it needs the `mcp-remote` bridge. Requires [Node.js](https://nodejs.org/).
-
-Add to your config file:
-- macOS: `~/Library/Application Support/Claude/claude_desktop_config.json`
-- Windows: `%APPDATA%\Claude\claude_desktop_config.json`
-
-```json
-{
-  "mcpServers": {
-    "cordyceps": {
-      "command": "npx",
-      "args": ["-y", "mcp-remote", "http://127.0.0.1:26929/mcp"]
-    }
-  }
-}
-```
-
-Restart Claude Desktop after saving.
-
-*Claude Code (command line):*
-```cmd
-claude mcp add --transport http cordyceps http://127.0.0.1:26929/mcp
-```
-
-*Other HTTP clients (Cursor, VS Code, etc.):*
-```json
-{
-  "mcpServers": {
-    "cordyceps": {
-      "type": "streamable-http",
-      "url": "http://127.0.0.1:26929/mcp"
-    }
-  }
-}
-```
+3. **Windows users**: Right-click the file → Properties → check "Unblock" → OK
 
 ## Usage
 
-**Natural language**: Tell an AI what you want—*"Create a radial array of cylinders with sliders for count and radius"*—and it builds the definition using MCP tools.
+1. Drop the **Cordyceps** component on your canvas (*Params → Util → Cordyceps*)
 
-**Scripting**: Call tools directly from Python or any MCP client:
+   The server starts on port 26929 by default. Optional inputs:
+   - **Port**: Change the HTTP port
+   - **DebugLevel**: Set to 1+ to see request/response traffic in Rhino
 
-```python
-async with ClientSession(transport) as session:
-    slider = await session.call_tool('gh_canvas', {'action': 'add', 'type': 'Number Slider', 'x': 50, 'y': 50})
-    circle = await session.call_tool('gh_canvas', {'action': 'add', 'type': 'Curve/Circle', 'x': 200, 'y': 50})
-    await session.call_tool('gh_wire', {
-        'action': 'connect',
-        'sourceId': slider['id'], 'sourceParam': '0',
-        'targetId': circle['id'], 'targetParam': 'R'
-    })
-```
+2. Configure your MCP client:
+
+   <details>
+   <summary><strong>Claude Desktop</strong></summary>
+
+   Claude Desktop uses stdio transport, so it needs the `mcp-remote` bridge. Requires [Node.js](https://nodejs.org/).
+
+   Add to your config file:
+   - macOS: `~/Library/Application Support/Claude/claude_desktop_config.json`
+   - Windows: `%APPDATA%\Claude\claude_desktop_config.json`
+
+   ```json
+   {
+     "mcpServers": {
+       "cordyceps": {
+         "command": "npx",
+         "args": ["-y", "mcp-remote", "http://127.0.0.1:26929/mcp"]
+       }
+     }
+   }
+   ```
+
+   Restart Claude Desktop after saving.
+   </details>
+
+   <details>
+   <summary><strong>Claude Code</strong></summary>
+
+   ```
+   claude mcp add --transport http cordyceps http://127.0.0.1:26929/mcp
+   ```
+   </details>
+
+   <details>
+   <summary><strong>Cursor, VS Code, and other HTTP clients</strong></summary>
+
+   ```json
+   {
+     "mcpServers": {
+       "cordyceps": {
+         "type": "streamable-http",
+         "url": "http://127.0.0.1:26929/mcp"
+       }
+     }
+   }
+   ```
+   </details>
+
+3. Start building — describe what you want in natural language
 
 ## Example
 
-Here's what happens when you give Claude this natural language prompt:
-
-> Make an animated GIF that shows the full journey from parametric modeling to photorealistic render. The subject is a small collection of geometric forms — maybe five or six objects with varied shapes, scales, and proportions. Arrange them as a pleasing composition. The GIF shows three phases: building the geometry in Grasshopper with solver enabled and frequent captures, then baking and setting up a beautiful render in Rhino with previews disabled, and finally a smooth raytraced orbit. Use an outdoor environment and a variety of materials to make it visually rich. The GIF must include both canvas and viewport in every frame.
+> Make an animated GIF that shows the full journey from parametric modeling to photorealistic render. The subject is a small collection of geometric forms — maybe five or six objects with varied shapes, scales, and proportions. Arrange them as a pleasing composition.
 
 ![Cordyceps Showcase](images/cordyceps_showcase.gif)
 
-The AI interprets the request and builds everything autonomously—creating parametric geometry in Grasshopper, baking to Rhino, applying PBR materials, configuring the render environment and lighting, and capturing a smooth orbiting animation.
+The AI builds everything autonomously — creating parametric geometry in Grasshopper, baking to Rhino, applying PBR materials, configuring the render environment and lighting, and capturing a smooth orbiting animation.
 
 ## Tools
 
-Cordyceps provides **7 tools with 110 actions**—deliberately consolidated to minimize context window usage. Rather than exposing every operation as a separate tool (which would require the model to process dozens of tool definitions), related operations are grouped under a single tool with an `action` parameter. This keeps the tool list compact while preserving full functionality.
+Cordyceps provides **7 tools with 110+ actions** — consolidated to minimize context window usage. Related operations are grouped under a single tool with an `action` parameter.
 
-### Grasshopper Tools
+### Grasshopper
 
-| Tool | Actions | Description |
-|------|---------|-------------|
-| `gh_canvas` | add, delete, move, rename, find, search, list, info, bounds, validate, constant, bake, zoom, view, get, set, config, preview, enable, group_*, zoomable | Components, values, groups, variable parameters |
-| `gh_wire` | connect, disconnect, list, clear, validate | Connection management |
-| `gh_document` | info, save, clear, solver, recompute, undo, redo, snapshot, revert, snapshots, capture_* | Document operations and capture |
-| `gh_script` | get, set, configure, info | Script components |
-| `gh_inspect` | status, outputs, trace, disconnected, geometry, log, reports, categories, docs | Inspection and debugging |
+| Tool | Description |
+|------|-------------|
+| `gh_canvas` | Components, values, groups, baking, variable parameters |
+| `gh_wire` | Connection management |
+| `gh_document` | Save, clear, undo/redo, snapshots, canvas capture |
+| `gh_script` | Script component configuration |
+| `gh_inspect` | Status, outputs, data tracing, debugging |
 
-### Rhino Tools
+### Rhino
 
-| Tool | Actions | Description |
-|------|---------|-------------|
-| `rhino_scene` | objects, select, deselect, set_layer, set_name, set_color, bbox, layers, layer_*, hide, show, delete, script | Scene and layer management |
-| `rhino_render` | display, camera, zoom, modes, render, settings, ground, sun, skylight, view_*, light_*, material_*, env_* | Viewport, render settings, views, lights, materials, environments |
+| Tool | Description |
+|------|-------------|
+| `rhino_scene` | Objects, layers, selection, visibility |
+| `rhino_render` | Viewport, camera, materials, lighting, environments, render |
 
-## Resources
+## Documentation
 
-MCP resources provide documentation to clients. Source files are in [`src/Cordyceps/Knowledge/`](src/Cordyceps/Knowledge/).
+Cordyceps exposes guides and patterns to MCP clients as resources. Your AI assistant can read these automatically when it needs guidance on data trees, type systems, component patterns, or rendering workflows.
 
-**Guides:**
-- `gh://docs/getting-started` — [GettingStartedGuide.md](src/Cordyceps/Knowledge/GettingStartedGuide.md) — Workflow and key concepts
-- `gh://docs/data-trees` — [DataTreesGuide.md](src/Cordyceps/Knowledge/DataTreesGuide.md) — Grasshopper's data tree system
-- `gh://docs/type-system` — [TypeSystemGuide.md](src/Cordyceps/Knowledge/TypeSystemGuide.md) — Type compatibility and coercion
-- `gh://docs/best-practices` — [BestPracticesGuide.md](src/Cordyceps/Knowledge/BestPracticesGuide.md) — Patterns and recommendations
-- `gh://docs/component-patterns` — [ComponentPatternsGuide.md](src/Cordyceps/Knowledge/ComponentPatternsGuide.md) — Common component combinations
-- `gh://docs/canvas-layout` — [CanvasLayoutGuide.md](src/Cordyceps/Knowledge/CanvasLayoutGuide.md) — Spacing and layout conventions
-- `gh://docs/geometry-orientation` — [GeometryOrientationGuide.md](src/Cordyceps/Knowledge/GeometryOrientationGuide.md) — Planes and orientation
-- `gh://docs/mcp-testing` — [McpTestingGuide.md](src/Cordyceps/Knowledge/McpTestingGuide.md) — Test and validate MCP server functionality
-- `gh://docs/rendering` — [RenderingGuide.md](src/Cordyceps/Knowledge/RenderingGuide.md) — Rhino rendering pipeline (bake, materials, viewport, capture)
-
-**Patterns:**
-- `gh://patterns/linear-array` — [LinearArray.md](src/Cordyceps/Knowledge/Patterns/LinearArray.md) — Copies along a line
-- `gh://patterns/grid-array` — [GridArray.md](src/Cordyceps/Knowledge/Patterns/GridArray.md) — 2D/3D grid of copies
-
-**Dynamic:**
-- `gh://component/{name}` — Documentation for any Grasshopper component
-
-## Testing
-
-To validate Cordyceps is working correctly, ask your AI assistant to "test the MCP server" or "help me test Grasshopper". It will read the comprehensive test instructions at `gh://docs/mcp-testing` and run through all functionality areas, reporting any issues found.
-
-Test coverage includes: component management, wiring, values, groups, scripts, inspection, document operations, Rhino objects/layers/materials, render environments and settings, viewport control, and infrastructure protection.
+Browse the documentation directly: [`src/Cordyceps/Knowledge/`](src/Cordyceps/Knowledge/)
 
 ## Troubleshooting
 
@@ -143,9 +124,9 @@ Test coverage includes: component management, wiring, values, groups, scripts, i
 |---------|----------|
 | Plugin won't load | Verify Rhino 8.21+. Unblock the .gha file (Windows) or clear quarantine (macOS). |
 | Can't connect | Ensure Cordyceps component is on canvas. Check the port. |
-| Claude Desktop can't connect | Ensure Node.js is installed (`node --version`). Check Rhino is running with Cordyceps. Restart Claude Desktop after config changes. |
+| Claude Desktop can't connect | Ensure Node.js is installed. Check Rhino is running with Cordyceps. Restart Claude Desktop after config changes. |
 | Component not found | Use `gh_canvas(action='search', query='...')` to find exact names. |
-| No command output | Set DebugLevel input to 1 to see request/response traffic in Rhino command history. |
+| No command output | Set DebugLevel input to 1 to see traffic in Rhino command history. |
 
 ## Building
 
@@ -153,10 +134,6 @@ Test coverage includes: component management, wiring, values, groups, scripts, i
 dotnet build src/Cordyceps/Cordyceps.csproj
 ```
 
-## Acknowledgments
+---
 
-Inspired by [grasshopper-mcp](https://github.com/alfredatnycu/grasshopper-mcp) by Alfred Chen.
-
-## License
-
-MIT
+[Changelog](CHANGELOG.md) · Inspired by [grasshopper-mcp](https://github.com/alfredatnycu/grasshopper-mcp) by Alfred Chen · MIT License
