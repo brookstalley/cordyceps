@@ -1,0 +1,24 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(git stash:*)",
+      "Bash(git checkout:*)",
+      "Bash(git pull:*)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(git push:*)",
+      "Bash(git branch:*)",
+      "WebSearch",
+      "WebFetch",
+      "WebFetch(domain:*)",
+      "WebFetch(domain:www.food4rhino.com)",
+      "WebFetch(domain:developer.rhino3d.com)",
+      "Bash(yak spec:*)",
+      "Bash(where:*)",
+      "Bash(ls:*)",
+      "Bash(cmd.exe /c \"where *\")",
+      "Bash(cmd.exe /c \"dir*\")",
+      "Bash(\"/c/Program Files/Rhino 8/System/Yak.exe *\")",
+    ]
+  }
+}
