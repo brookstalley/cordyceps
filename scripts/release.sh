@@ -8,10 +8,12 @@
 #   ./scripts/release.sh --dry-run # Show what would happen without making changes
 #
 # This script:
-#   1. Updates version in csproj and manifest.yml
-#   2. Builds the GHA
-#   3. Commits and pushes to GitHub with a version tag
-#   4. Builds and pushes the Yak package
+#   1. Verifies CHANGELOG.md has an entry for the new version
+#   2. Checks README.md for stale version references
+#   3. Updates version in csproj
+#   4. Builds the GHA
+#   5. Commits and pushes to GitHub with a version tag
+#   6. Builds and pushes the Yak package
 #
 # Prerequisites:
 #   - dotnet CLI
@@ -25,6 +27,8 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 CSPROJ="$PROJECT_ROOT/src/Cordyceps/Cordyceps.csproj"
 MANIFEST="$PROJECT_ROOT/manifest.yml"
+CHANGELOG="$PROJECT_ROOT/CHANGELOG.md"
+README="$PROJECT_ROOT/README.md"
 RELEASES_DIR="$PROJECT_ROOT/releases"
 DIST_DIR="$PROJECT_ROOT/dist"
 
@@ -111,35 +115,21 @@ ensure_yak_login() {
 
     log_info "Checking Yak authentication..."
 
-    # Try to get user info by attempting an operation that requires auth
-    # The 'yak search' command works without auth, but 'yak push' requires it
-    # We can check by looking for the token file or trying a test
-
     local token_found=false
 
     # Check for token file based on platform
     case "$PLATFORM" in
         mac)
-            # macOS: Yak stores token in ~/Documents/.mcneel/yak.yml
-            if [[ -f "$HOME/Documents/.mcneel/yak.yml" ]]; then
-                token_found=true
-            fi
-            # Also check alternate locations
-            if [[ -f "$HOME/.mcneel/yak.yml" ]]; then
+            if [[ -f "$HOME/Documents/.mcneel/yak.yml" ]] || [[ -f "$HOME/.mcneel/yak.yml" ]]; then
                 token_found=true
             fi
             ;;
         windows)
-            # Windows: check Documents\.mcneel and AppData
             local docs_path
             docs_path=$(cygpath -u "$USERPROFILE/Documents" 2>/dev/null || echo "$USERPROFILE/Documents")
-            if [[ -f "$docs_path/.mcneel/yak.yml" ]]; then
-                token_found=true
-            fi
-            # Also check AppData
             local appdata_path
             appdata_path=$(cygpath -u "$APPDATA" 2>/dev/null || echo "$APPDATA")
-            if [[ -f "$appdata_path/McNeel/yak.yml" ]]; then
+            if [[ -f "$docs_path/.mcneel/yak.yml" ]] || [[ -f "$appdata_path/McNeel/yak.yml" ]]; then
                 token_found=true
             fi
             ;;
@@ -199,7 +189,6 @@ get_current_version() {
 # Increment patch version (last number) - portable implementation
 increment_patch() {
     local version="$1"
-    # Split by dots, increment last part
     local prefix="${version%.*}"
     local last="${version##*.}"
     local new_last=$((last + 1))
@@ -222,11 +211,55 @@ sed_inplace() {
     local file="$2"
 
     if [[ "$PLATFORM" == "mac" ]]; then
-        # BSD sed requires an argument after -i
         sed -i '' "$pattern" "$file"
     else
-        # GNU sed (Linux, Git Bash on Windows)
         sed -i "$pattern" "$file"
+    fi
+}
+
+# Check CHANGELOG has entry for version
+check_changelog() {
+    local version="$1"
+    log_info "Checking CHANGELOG.md for version $version..."
+
+    if grep -q "## \[$version\]" "$CHANGELOG"; then
+        log_success "CHANGELOG.md has entry for $version"
+        return 0
+    else
+        log_error "CHANGELOG.md missing entry for version $version"
+        log_error "Please add a section: ## [$version] - $(date +%Y-%m-%d)"
+        log_error ""
+        log_error "Recent CHANGELOG entries:"
+        head -20 "$CHANGELOG" | tail -15
+        exit 1
+    fi
+}
+
+# Check README for potential issues
+check_readme() {
+    local version="$1"
+    log_info "Checking README.md..."
+
+    local issues=0
+
+    # Check for hardcoded old versions (common patterns)
+    if grep -qE "version.*[0-9]+\.[0-9]+\.[0-9]+" "$README" 2>/dev/null; then
+        local found_versions
+        found_versions=$(grep -oE "[0-9]+\.[0-9]+\.[0-9]+" "$README" | sort -u | head -5)
+        if [[ -n "$found_versions" ]]; then
+            log_warn "README contains version numbers - verify they're correct:"
+            echo "$found_versions" | while read v; do echo "  - $v"; done
+        fi
+    fi
+
+    # Check download link points to releases
+    if ! grep -q "releases/Cordyceps.gha" "$README"; then
+        log_warn "README may be missing download link to releases/Cordyceps.gha"
+        issues=$((issues + 1))
+    fi
+
+    if [[ $issues -eq 0 ]]; then
+        log_success "README.md looks good"
     fi
 }
 
@@ -240,8 +273,6 @@ update_csproj_version() {
         log_success "Updated csproj to version $version"
     fi
 }
-
-# Note: manifest.yml uses $version placeholder - version is passed to yak build
 
 # Build the GHA
 build_gha() {
@@ -264,7 +295,6 @@ prepare_dist() {
         mkdir -p "$DIST_DIR"
         cp "$RELEASES_DIR/Cordyceps.gha" "$DIST_DIR/"
         cp "$MANIFEST" "$DIST_DIR/"
-        # Copy icon for Yak package (referenced as icon.png in manifest)
         cp "$PROJECT_ROOT/src/Cordyceps/Resources/CordycepsIcon.png" "$DIST_DIR/icon.png"
         log_success "Distribution directory prepared"
     fi
@@ -279,7 +309,6 @@ build_yak() {
     else
         local original_dir="$(pwd)"
         cd "$DIST_DIR"
-        # Pass version from csproj - manifest.yml uses $version placeholder
         "$YAK" build --platform any --version "$version"
         cd "$original_dir"
         log_success "Yak package built"
@@ -294,7 +323,18 @@ git_commit_and_tag() {
     if [[ "$DRY_RUN" == true ]]; then
         log_info "[DRY-RUN] Would commit version bump and tag as v$version"
     else
+        # Add required files
         git add "$CSPROJ" "$RELEASES_DIR/Cordyceps.gha"
+
+        # Add CHANGELOG if it was modified
+        if git diff --cached --quiet "$CHANGELOG" 2>/dev/null || git diff --quiet "$CHANGELOG" 2>/dev/null; then
+            # Check if CHANGELOG has unstaged changes
+            if ! git diff --quiet "$CHANGELOG" 2>/dev/null; then
+                git add "$CHANGELOG"
+                log_info "Including CHANGELOG.md in commit"
+            fi
+        fi
+
         git commit -m "Release v$version
 
 🤖 Generated with [Claude Code](https://claude.com/claude-code)
@@ -329,7 +369,6 @@ yak_push() {
         return
     fi
 
-    # Find the built .yak file
     local yak_file
     yak_file=$(find "$DIST_DIR" -name "*.yak" 2>/dev/null | head -1)
 
@@ -403,6 +442,13 @@ main() {
     fi
 
     echo ""
+
+    # Pre-flight checks
+    log_info "Running pre-flight checks..."
+    check_changelog "$NEW_VERSION"
+    check_readme "$NEW_VERSION"
+    echo ""
+
     if [[ "$DRY_RUN" == true ]]; then
         log_warn "DRY RUN MODE - No changes will be made"
         echo ""

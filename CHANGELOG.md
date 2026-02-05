@@ -4,6 +4,27 @@ All notable changes to Cordyceps will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [1.4.5] - 2026-02-05
+
+### Changed
+
+- **README reorganization** - Improved structure and aesthetics:
+  - Added Features section highlighting key capabilities
+  - Added brief MCP explanation with link to modelcontextprotocol.io
+  - Separated Installation from Usage with cleaner flow
+  - Added Scripting section with Python example (MCP as protocol, not just for AI)
+  - Collapsible sections for client-specific configuration
+  - Simplified tool tables
+  - Consolidated footer with Changelog link
+  - Removed verbose resource URI listings
+
+- **Knowledge base optimization** - 49% token reduction (1648 → 835 lines):
+  - Converted verbose prose to tables throughout
+  - Removed redundant tool parameter listings (use `action='help'`)
+  - Eliminated basic Grasshopper knowledge LLMs already have
+  - Consolidated duplicate workflow instructions
+  - Optimized for LLM consumption, not human reading
+
 ## [1.4.4] - 2026-01-31
 
 ### Added
