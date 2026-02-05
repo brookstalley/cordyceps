@@ -21,30 +21,63 @@ namespace Cordyceps.Core
         /// <summary>
         /// Trigger a recompute that's safe inside cluster editors.
         /// On main canvas: normal NewSolution(true).
-        /// Inside a cluster: expires everything EXCEPT input hooks, then NewSolution(false).
-        /// This preserves the input hook volatile data (populated by the parent cluster).
+        /// Inside a cluster: expires only source objects (those with no non-hook upstream
+        /// connections), then NewSolution(false). ExpireSolution cascades downstream through
+        /// wires automatically, so all dependent objects get expired without needing to
+        /// touch every object in the document. Input hooks are never expired, preserving
+        /// their volatile data (populated by the parent cluster).
         /// </summary>
         public static void ClusterSafeRecompute(GH_Document doc)
         {
             if (doc.Owner != null)
             {
-                // Inside a cluster editor — protect input hooks
-                var inputHookIds = new HashSet<Guid>(
+                // Inside a cluster editor — only expire source objects, cascade handles the rest
+                var hookIds = new HashSet<Guid>(
                     doc.ClusterInputHooks().Select(h => h.InstanceGuid));
 
                 foreach (var obj in doc.Objects)
                 {
-                    if (inputHookIds.Contains(obj.InstanceGuid)) continue;
-                    if (obj is IGH_ActiveObject active)
+                    if (hookIds.Contains(obj.InstanceGuid)) continue;
+                    if (obj is IGH_ActiveObject active && !HasNonHookSources(obj, hookIds))
                         active.ExpireSolution(false);
                 }
 
-                doc.NewSolution(false); // Only recompute expired objects (hooks preserved)
+                doc.NewSolution(false);
             }
             else
             {
-                doc.NewSolution(true); // Normal full recompute
+                doc.NewSolution(true);
             }
+        }
+
+        /// <summary>
+        /// Check if a document object has any upstream source that is NOT an input hook.
+        /// Objects that return false are "source" objects in the cluster graph and need
+        /// explicit expiration — everything downstream will cascade from them.
+        /// </summary>
+        private static bool HasNonHookSources(IGH_DocumentObject obj, HashSet<Guid> hookIds)
+        {
+            IEnumerable<IGH_Param> inputs;
+            if (obj is IGH_Component comp)
+                inputs = comp.Params.Input;
+            else if (obj is IGH_Param param)
+                inputs = new[] { param };
+            else
+                return false;
+
+            foreach (var input in inputs)
+            {
+                foreach (var src in input.Sources)
+                {
+                    // Source is the hook itself (standalone param)
+                    if (hookIds.Contains(src.InstanceGuid)) continue;
+                    // Source's parent object is a hook
+                    var parent = src.Attributes?.GetTopLevel?.DocObject;
+                    if (parent != null && hookIds.Contains(parent.InstanceGuid)) continue;
+                    return true;
+                }
+            }
+            return false;
         }
 
         #endregion

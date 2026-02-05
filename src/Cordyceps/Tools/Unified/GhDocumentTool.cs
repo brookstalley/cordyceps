@@ -341,7 +341,16 @@ namespace Cordyceps.Tools.Unified
                 doc.Enabled = enabled;
 
                 if (enabled)
-                    ToolHelpers.ClusterSafeRecompute(doc);
+                {
+                    // Changes made while solver was disabled already expired affected
+                    // components (and cascaded downstream). In a cluster, NewSolution(false)
+                    // processes only those expired objects without touching input hooks.
+                    // On main canvas, NewSolution(true) for full recompute (original behavior).
+                    if (doc.Owner != null)
+                        doc.NewSolution(false);
+                    else
+                        doc.NewSolution(true);
+                }
 
                 return JsonConvert.SerializeObject(new
                 {
