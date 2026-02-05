@@ -37,6 +37,19 @@ namespace Cordyceps.Core
             return true;
         }
 
+        /// <summary>
+        /// Get the document that owns a component. For components inside clusters,
+        /// this returns the cluster's internal document, not the main canvas document.
+        /// Always use this when calling NewSolution() after modifying a specific component.
+        /// </summary>
+        /// <param name="obj">The document object</param>
+        /// <param name="fallback">Fallback document if OnPingDocument returns null</param>
+        /// <returns>The owning document</returns>
+        public static GH_Document GetOwnerDocument(IGH_DocumentObject obj, GH_Document fallback)
+        {
+            return obj?.OnPingDocument() ?? fallback;
+        }
+
         #endregion
 
         #region GUID Parsing

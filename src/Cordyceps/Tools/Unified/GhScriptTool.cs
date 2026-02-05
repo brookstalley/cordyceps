@@ -162,7 +162,7 @@ namespace Cordyceps.Tools.Unified
                     if (component is IGH_ActiveObject activeObj)
                         activeObj.ExpireSolution(true);
 
-                    doc.NewSolution(false);
+                    ToolHelpers.GetOwnerDocument(component, doc).NewSolution(false);
 
                     var inputs = new List<object>();
                     var outputs = new List<object>();
@@ -244,7 +244,7 @@ namespace Cordyceps.Tools.Unified
                             varParamComp.VariableParameterMaintenance();
 
                             ghComponent.ExpireSolution(true);
-                            doc.NewSolution(false);
+                            ToolHelpers.GetOwnerDocument(component, doc).NewSolution(false);
                         }
                     }
 
@@ -262,7 +262,7 @@ namespace Cordyceps.Tools.Unified
                             }
 
                             ghComponent.ExpireSolution(true);
-                            doc.NewSolution(false);
+                            ToolHelpers.GetOwnerDocument(component, doc).NewSolution(false);
                             configured = true;
                             message = $"Source set ({ghComponent.Params.Input.Count} inputs, {ghComponent.Params.Output.Count} outputs)";
                         }

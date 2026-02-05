@@ -144,6 +144,7 @@ namespace Cordyceps.Tools.Unified
 
                 var results = new List<object>();
                 int successCount = 0, failCount = 0;
+                IGH_DocumentObject lastTarget = null;
 
                 foreach (var conn in connectionList)
                 {
@@ -214,6 +215,7 @@ namespace Cordyceps.Tools.Unified
                     }
 
                     targetInput.AddSource(sourceOutput);
+                    lastTarget = tgtObj;
                     results.Add(new
                     {
                         success = true,
@@ -223,7 +225,7 @@ namespace Cordyceps.Tools.Unified
                     successCount++;
                 }
 
-                doc.NewSolution(true);
+                ToolHelpers.GetOwnerDocument(lastTarget, doc).NewSolution(true);
 
                 if (connectionList.Count == 1)
                     return JsonConvert.SerializeObject(results[0]);
@@ -251,7 +253,7 @@ namespace Cordyceps.Tools.Unified
                     return ToolHelpers.ErrorResponse($"Target input not found: {targetParam}");
 
                 targetInput.RemoveSource(sourceOutput);
-                doc.NewSolution(true);
+                ToolHelpers.GetOwnerDocument(srcObj, doc).NewSolution(true);
 
                 return JsonConvert.SerializeObject(new
                 {
@@ -352,7 +354,7 @@ namespace Cordyceps.Tools.Unified
                     }
                 }
 
-                if (clearedCount > 0) doc.NewSolution(true);
+                if (clearedCount > 0) ToolHelpers.GetOwnerDocument(component, doc).NewSolution(true);
 
                 return JsonConvert.SerializeObject(new
                 {

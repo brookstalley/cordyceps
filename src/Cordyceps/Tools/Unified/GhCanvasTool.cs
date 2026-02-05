@@ -523,6 +523,7 @@ namespace Cordyceps.Tools.Unified
                 var deletedIds = new List<string>();
                 int succeeded = 0, failed = 0;
 
+                IGH_DocumentObject lastDeleted = null;
                 foreach (var compId in idList)
                 {
                     if (!ToolHelpers.TryGetUnprotectedComponent(_context, compId, out var component, out var compError))
@@ -534,7 +535,9 @@ namespace Cordyceps.Tools.Unified
 
                     try
                     {
-                        doc.RemoveObject(component, true);
+                        var ownerDoc = ToolHelpers.GetOwnerDocument(component, doc);
+                        ownerDoc.RemoveObject(component, true);
+                        lastDeleted = component;
                         deletedIds.Add(compId);
                         results.Add(new { id = compId, success = true });
                         succeeded++;
@@ -546,7 +549,7 @@ namespace Cordyceps.Tools.Unified
                     }
                 }
 
-                if (succeeded > 0) doc.NewSolution(true);
+                if (succeeded > 0) ToolHelpers.GetOwnerDocument(lastDeleted, doc).NewSolution(true);
 
                 if (idList.Count == 1)
                 {

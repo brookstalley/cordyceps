@@ -4,6 +4,12 @@ All notable changes to Cordyceps will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [1.4.6] - 2026-02-05
+
+### Fixed
+
+- **Cluster document corruption** - Fixed critical bug where modifying components inside clusters (scripts, values, wires, etc.) would corrupt cluster inputs, turning them all to null. Operations now correctly use the component's owning document via `OnPingDocument()` rather than assuming the active canvas document. Affects: `gh_script`, `gh_canvas` (set, config, enable, delete, zoomable), `gh_wire` (connect, disconnect, clear).
+
 ## [1.4.5] - 2026-02-05
 
 ### Changed

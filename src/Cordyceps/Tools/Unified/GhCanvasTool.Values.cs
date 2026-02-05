@@ -97,7 +97,7 @@ namespace Cordyceps.Tools.Unified
                     return ToolHelpers.ErrorResponse($"Cannot set value on {component.GetType().Name}");
                 }
 
-                doc.NewSolution(true);
+                ToolHelpers.GetOwnerDocument(component, doc).NewSolution(true);
 
                 return JsonConvert.SerializeObject(new
                 {
@@ -124,7 +124,7 @@ namespace Cordyceps.Tools.Unified
                     if (!string.IsNullOrEmpty(value) && double.TryParse(value, out double val))
                         slider.SetSliderValue((decimal)val);
 
-                    doc.NewSolution(true);
+                    ToolHelpers.GetOwnerDocument(component, doc).NewSolution(true);
 
                     return JsonConvert.SerializeObject(new
                     {
@@ -154,7 +154,7 @@ namespace Cordyceps.Tools.Unified
                         if (valueList.ListItems.Count > 0)
                             valueList.SelectItem(0);
 
-                        doc.NewSolution(true);
+                        ToolHelpers.GetOwnerDocument(component, doc).NewSolution(true);
 
                         return JsonConvert.SerializeObject(new
                         {
@@ -222,6 +222,7 @@ namespace Cordyceps.Tools.Unified
                 if (idList == null) return ToolHelpers.ErrorResponse(error);
 
                 int changed = 0;
+                IGH_DocumentObject lastComp = null;
                 foreach (var compId in idList)
                 {
                     if (ToolHelpers.TryGetUnprotectedComponent(_context, compId, out var comp, out _))
@@ -230,11 +231,12 @@ namespace Cordyceps.Tools.Unified
                         {
                             active.Locked = !enabled;
                             changed++;
+                            lastComp = comp;
                         }
                     }
                 }
 
-                doc.NewSolution(true);
+                ToolHelpers.GetOwnerDocument(lastComp, doc).NewSolution(true);
 
                 return JsonConvert.SerializeObject(new
                 {
