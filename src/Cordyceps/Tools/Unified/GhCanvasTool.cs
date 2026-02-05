@@ -445,7 +445,8 @@ namespace Cordyceps.Tools.Unified
 
                     component.Attributes.Pivot = new PointF((float)x, (float)y);
                     doc.AddObject(component, false);
-                    doc.NewSolution(true);
+                    if (component is IGH_ActiveObject activeAdd)
+                        activeAdd.ExpireSolution(false);
 
                     var bounds = component.Attributes.Bounds;
                     int inputCount = 0, outputCount = 0;
@@ -549,7 +550,8 @@ namespace Cordyceps.Tools.Unified
                     }
                 }
 
-                if (succeeded > 0) ToolHelpers.GetOwnerDocument(lastDeleted, doc).NewSolution(true);
+                if (succeeded > 0 && lastDeleted is IGH_ActiveObject activeDel)
+                    activeDel.ExpireSolution(false);
 
                 if (idList.Count == 1)
                 {
@@ -875,7 +877,7 @@ namespace Cordyceps.Tools.Unified
                 panel.NickName = nickname ?? "";
 
                 doc.AddObject(panel, false);
-                doc.NewSolution(true);
+                panel.ExpireSolution(false);
 
                 return JsonConvert.SerializeObject(new
                 {

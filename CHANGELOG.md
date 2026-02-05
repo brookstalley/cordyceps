@@ -4,11 +4,19 @@ All notable changes to Cordyceps will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [1.4.7] - 2026-02-05
+
+### Fixed
+
+- **Cluster-safe solution expiration** - Replaced all `ExpireSolution(true)` and `NewSolution(true)` calls with `ExpireSolution(false)` across all tools. When the cluster editor is open, the active document is the cluster's internal document; triggering a solution on it causes the parent to recreate the cluster, orphaning the editor and severing all `GH_ClusterInputHook` connections. Using `ExpireSolution(false)` marks the component as needing recompute without triggering a destructive solution cycle. Affects: `gh_canvas` (set, config, enable, add, delete, constant, zoomable), `gh_wire` (connect, disconnect, clear), `gh_script` (set, configure).
+
+- **Surgical script parameter sync** - `gh_script(action='set')` no longer calls `SetParametersFromScript()`, which rebuilds all parameters from scratch and destroys cluster input hooks. Instead, uses LCS-based (longest common subsequence) diffing to identify unchanged parameters and only adds/removes what actually changed via `IGH_VariableParameterComponent`. Parameters whose names haven't changed retain all their connections.
+
 ## [1.4.6] - 2026-02-05
 
 ### Fixed
 
-- **Cluster document corruption** - Fixed critical bug where modifying components inside clusters (scripts, values, wires, etc.) would corrupt cluster inputs, turning them all to null. Operations now correctly use the component's owning document via `OnPingDocument()` rather than assuming the active canvas document. Affects: `gh_script`, `gh_canvas` (set, config, enable, delete, zoomable), `gh_wire` (connect, disconnect, clear).
+- **Cluster document corruption** - Fixed critical bug where modifying components inside clusters (scripts, values, wires, etc.) would corrupt cluster inputs, turning them all to null. Two issues fixed: (1) Operations now use the component's owning document via `OnPingDocument()` rather than assuming the active canvas document. (2) Changed `NewSolution(false)` to `NewSolution(true)` for incremental recomputation - the `false` parameter clears ALL volatile data including cluster input proxies. Affects: `gh_script`, `gh_canvas` (set, config, enable, delete, zoomable), `gh_wire` (connect, disconnect, clear).
 
 ## [1.4.5] - 2026-02-05
 

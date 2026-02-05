@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.ComponentModel;
 using System.Linq;
+using System.Text.RegularExpressions;
 using Cordyceps.Core;
 using Grasshopper;
 using Grasshopper.Kernel;
@@ -154,15 +155,23 @@ namespace Cordyceps.Tools.Unified
                 try
                 {
                     dynamic scriptComp = component;
+
                     scriptComp.SetSource(code);
 
-                    try { scriptComp.SetParametersFromScript(); }
-                    catch { }
+                    // Surgically sync params instead of SetParametersFromScript(),
+                    // which rebuilds all params and destroys cluster input hooks.
+                    try { SyncScriptParams(component, code); }
+                    catch (Exception paramEx)
+                    {
+                        DebugLog.Warn($"[ActionSet] SyncScriptParams failed: {paramEx.Message}");
+                    }
 
+                    // Only expire — don't trigger a full document solution.
+                    // Inside clusters, ExpireSolution(true) or NewSolution(true) on the
+                    // internal document causes the parent to recreate the cluster,
+                    // orphaning the editor and breaking all cluster input hooks.
                     if (component is IGH_ActiveObject activeObj)
-                        activeObj.ExpireSolution(true);
-
-                    ToolHelpers.GetOwnerDocument(component, doc).NewSolution(false);
+                        activeObj.ExpireSolution(false);
 
                     var inputs = new List<object>();
                     var outputs = new List<object>();
@@ -243,8 +252,7 @@ namespace Cordyceps.Tools.Unified
                             // Call VariableParameterMaintenance to finalize parameter setup
                             varParamComp.VariableParameterMaintenance();
 
-                            ghComponent.ExpireSolution(true);
-                            ToolHelpers.GetOwnerDocument(component, doc).NewSolution(false);
+                            ghComponent.ExpireSolution(false);
                         }
                     }
 
@@ -253,7 +261,7 @@ namespace Cordyceps.Tools.Unified
                         try
                         {
                             scriptComp.SetSource(code);
-                            try { scriptComp.SetParametersFromScript(); } catch { }
+                            try { SyncScriptParams(component, code); } catch { }
                             try { scriptComp.SyncParameters(); } catch { }
 
                             if (component is IGH_VariableParameterComponent vpComp2)
@@ -261,8 +269,7 @@ namespace Cordyceps.Tools.Unified
                                 try { vpComp2.VariableParameterMaintenance(); } catch { }
                             }
 
-                            ghComponent.ExpireSolution(true);
-                            ToolHelpers.GetOwnerDocument(component, doc).NewSolution(false);
+                            ghComponent.ExpireSolution(false);
                             configured = true;
                             message = $"Source set ({ghComponent.Params.Input.Count} inputs, {ghComponent.Params.Output.Count} outputs)";
                         }
@@ -364,6 +371,230 @@ namespace Cordyceps.Tools.Unified
         }
 
         #region Helper Methods
+
+        /// <summary>
+        /// Parse the C# RunScript signature to extract declared input/output parameter names.
+        /// Returns null if parsing isn't possible or applicable (Python scripts, unparseable code).
+        /// </summary>
+        private (List<string> inputs, List<string> outputs)? ParseScriptParams(IGH_DocumentObject component, string code)
+        {
+            if (string.IsNullOrEmpty(code))
+                return null;
+
+            var typeName = component.GetType().Name;
+
+            // Python scripts manage params via ZUI, not from code
+            if (typeName.Contains("Python"))
+                return null;
+
+            // For C# scripts, parse the RunScript signature
+            var match = Regex.Match(code, @"RunScript\s*\(([^)]*)\)");
+            if (!match.Success)
+                return null;
+
+            var signature = match.Groups[1].Value;
+            var codeInputs = new List<string>();
+            var codeOutputs = new List<string>();
+
+            var paramStrings = SplitSignatureParams(signature);
+
+            foreach (var paramStr in paramStrings)
+            {
+                var trimmed = paramStr.Trim();
+                if (string.IsNullOrEmpty(trimmed))
+                    continue;
+
+                var tokens = trimmed.Split(new[] { ' ', '\t' }, StringSplitOptions.RemoveEmptyEntries);
+                if (tokens.Length < 2)
+                    continue;
+
+                if (tokens[0] == "ref" || tokens[0] == "out")
+                    codeOutputs.Add(tokens[tokens.Length - 1]);
+                else
+                    codeInputs.Add(tokens[tokens.Length - 1]);
+            }
+
+            return (codeInputs, codeOutputs);
+        }
+
+        /// <summary>
+        /// Surgically sync component parameters to match what the code declares,
+        /// without calling SetParametersFromScript() which destroys all cluster input hooks.
+        /// Uses LCS (longest common subsequence) to identify which params are unchanged
+        /// and only removes/inserts the ones that actually differ.
+        /// </summary>
+        private void SyncScriptParams(IGH_DocumentObject component, string code)
+        {
+            var parsed = ParseScriptParams(component, code);
+            if (parsed == null)
+                return; // Can't parse or not applicable — leave params alone
+
+            if (!(component is IGH_Component ghComponent))
+                return;
+
+            if (!(component is IGH_VariableParameterComponent varParamComp))
+            {
+                DebugLog.Warn("[SyncScriptParams] Component is not IGH_VariableParameterComponent, cannot sync params");
+                return;
+            }
+
+            var (codeInputs, codeOutputs) = parsed.Value;
+
+            var existingInputs = ghComponent.Params.Input.Select(p => p.NickName).ToList();
+            // C# scripts have a built-in "out" output at index 0
+            var existingOutputs = ghComponent.Params.Output.Skip(1).Select(p => p.NickName).ToList();
+
+            bool inputsMatch = existingInputs.SequenceEqual(codeInputs, StringComparer.Ordinal);
+            bool outputsMatch = existingOutputs.SequenceEqual(codeOutputs, StringComparer.Ordinal);
+
+            if (inputsMatch && outputsMatch)
+            {
+                DebugLog.Info("[SyncScriptParams] Params unchanged, no sync needed (cluster-safe)");
+                return;
+            }
+
+            DebugLog.Info($"[SyncScriptParams] Syncing params — inputs: [{string.Join(",", existingInputs)}] -> [{string.Join(",", codeInputs)}], outputs: [{string.Join(",", existingOutputs)}] -> [{string.Join(",", codeOutputs)}]");
+
+            if (!inputsMatch)
+                SyncParamSide(ghComponent, varParamComp, GH_ParameterSide.Input, codeInputs, 0);
+
+            if (!outputsMatch)
+                SyncParamSide(ghComponent, varParamComp, GH_ParameterSide.Output, codeOutputs, 1);
+
+            varParamComp.VariableParameterMaintenance();
+            DebugLog.Info($"[SyncScriptParams] Done — {ghComponent.Params.Input.Count} inputs, {ghComponent.Params.Output.Count} outputs");
+        }
+
+        /// <summary>
+        /// Sync one side (input or output) of a component's params to match target names.
+        /// Uses LCS to maximize preserved connections: params whose names appear in both
+        /// the existing and target lists keep their connections intact.
+        /// </summary>
+        /// <param name="skipCount">Number of built-in params to skip (e.g., 1 for C# outputs to skip "out")</param>
+        private void SyncParamSide(IGH_Component ghComponent, IGH_VariableParameterComponent varParamComp,
+            GH_ParameterSide side, List<string> targetNames, int skipCount)
+        {
+            var paramList = side == GH_ParameterSide.Input ? ghComponent.Params.Input : ghComponent.Params.Output;
+            var existingNames = paramList.Skip(skipCount).Select(p => p.NickName).ToList();
+
+            // Find longest common subsequence — these params keep their connections
+            var matches = ComputeLCS(existingNames, targetNames);
+            var keepIndices = new HashSet<int>(matches.Select(m => m.existIdx));
+
+            // Step 1: Remove params not in LCS (iterate backwards to avoid index shift issues)
+            for (int i = existingNames.Count - 1; i >= 0; i--)
+            {
+                if (keepIndices.Contains(i))
+                    continue;
+
+                var param = paramList[i + skipCount];
+                DebugLog.Debug($"[SyncParamSide] Removing {side} '{param.NickName}' at index {i + skipCount}");
+                if (side == GH_ParameterSide.Input)
+                    ghComponent.Params.UnregisterInputParameter(param);
+                else
+                    ghComponent.Params.UnregisterOutputParameter(param);
+            }
+
+            // After removal, remaining custom params (past skipCount) are LCS elements in order.
+            // Step 2: Insert new params at the correct positions.
+            // Walk through target list left-to-right. For positions covered by LCS, the param
+            // is already in place. For other positions, insert a new param.
+            // Since we process left-to-right, actualIdx = t + skipCount accounts for
+            // all previous insertions automatically.
+            var lcsTargetIndices = new HashSet<int>(matches.Select(m => m.targetIdx));
+
+            for (int t = 0; t < targetNames.Count; t++)
+            {
+                if (lcsTargetIndices.Contains(t))
+                    continue; // Already in place from existing params
+
+                int actualIdx = t + skipCount;
+                if (!varParamComp.CanInsertParameter(side, actualIdx))
+                {
+                    DebugLog.Warn($"[SyncParamSide] Cannot insert {side} param at index {actualIdx}");
+                    continue;
+                }
+
+                var newParam = varParamComp.CreateParameter(side, actualIdx);
+                if (newParam == null)
+                {
+                    DebugLog.Warn($"[SyncParamSide] CreateParameter returned null for {side} at index {actualIdx}");
+                    continue;
+                }
+
+                newParam.Name = targetNames[t];
+                newParam.NickName = targetNames[t];
+
+                DebugLog.Debug($"[SyncParamSide] Inserting {side} '{targetNames[t]}' at index {actualIdx}");
+                if (side == GH_ParameterSide.Input)
+                    ghComponent.Params.RegisterInputParam(newParam, actualIdx);
+                else
+                    ghComponent.Params.RegisterOutputParam(newParam, actualIdx);
+            }
+        }
+
+        /// <summary>
+        /// Compute the Longest Common Subsequence of two string lists.
+        /// Returns pairs of (index in existing, index in target) for matched elements.
+        /// </summary>
+        private static List<(int existIdx, int targetIdx)> ComputeLCS(List<string> existing, List<string> target)
+        {
+            int m = existing.Count, n = target.Count;
+            var dp = new int[m + 1, n + 1];
+
+            for (int i = 1; i <= m; i++)
+                for (int j = 1; j <= n; j++)
+                    dp[i, j] = existing[i - 1] == target[j - 1]
+                        ? dp[i - 1, j - 1] + 1
+                        : Math.Max(dp[i - 1, j], dp[i, j - 1]);
+
+            // Backtrack to find matched pairs
+            var matches = new List<(int, int)>();
+            int x = m, y = n;
+            while (x > 0 && y > 0)
+            {
+                if (existing[x - 1] == target[y - 1])
+                {
+                    matches.Add((x - 1, y - 1));
+                    x--; y--;
+                }
+                else if (dp[x - 1, y] >= dp[x, y - 1])
+                    x--;
+                else
+                    y--;
+            }
+
+            matches.Reverse();
+            return matches;
+        }
+
+        /// <summary>
+        /// Split a C# method signature into individual parameter strings,
+        /// correctly handling generic types like List&lt;Point3d&gt;.
+        /// </summary>
+        private List<string> SplitSignatureParams(string signature)
+        {
+            var result = new List<string>();
+            int depth = 0;
+            int start = 0;
+
+            for (int i = 0; i < signature.Length; i++)
+            {
+                char c = signature[i];
+                if (c == '<') depth++;
+                else if (c == '>') depth--;
+                else if (c == ',' && depth == 0)
+                {
+                    result.Add(signature.Substring(start, i - start));
+                    start = i + 1;
+                }
+            }
+
+            if (start < signature.Length)
+                result.Add(signature.Substring(start));
+
+            return result;
+        }
 
         private bool IsScriptComponent(IGH_DocumentObject component)
         {

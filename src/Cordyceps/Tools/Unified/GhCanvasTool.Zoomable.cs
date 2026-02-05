@@ -106,8 +106,7 @@ namespace Cordyceps.Tools.Unified
                 ghComponent.Params.RegisterOutputParam(newParam);
 
             varParamComp.VariableParameterMaintenance();
-            ghComponent.ExpireSolution(true);
-            ToolHelpers.GetOwnerDocument(ghComponent, doc).NewSolution(false);
+            ghComponent.ExpireSolution(false);
 
             return JsonConvert.SerializeObject(new
             {
@@ -160,8 +159,7 @@ namespace Cordyceps.Tools.Unified
                 ghComponent.Params.UnregisterOutputParameter(param);
 
             varParamComp.VariableParameterMaintenance();
-            ghComponent.ExpireSolution(true);
-            ToolHelpers.GetOwnerDocument(ghComponent, doc).NewSolution(false);
+            ghComponent.ExpireSolution(false);
 
             return JsonConvert.SerializeObject(new
             {
@@ -247,8 +245,7 @@ namespace Cordyceps.Tools.Unified
                 }
 
                 varParamComp.VariableParameterMaintenance();
-                ghComponent.ExpireSolution(true);
-                ToolHelpers.GetOwnerDocument(ghComponent, doc).NewSolution(false);
+                ghComponent.ExpireSolution(false);
 
                 bool success = paramList.Count == targetCount;
                 return JsonConvert.SerializeObject(new

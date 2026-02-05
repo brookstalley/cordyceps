@@ -97,7 +97,8 @@ namespace Cordyceps.Tools.Unified
                     return ToolHelpers.ErrorResponse($"Cannot set value on {component.GetType().Name}");
                 }
 
-                ToolHelpers.GetOwnerDocument(component, doc).NewSolution(true);
+                if (component is IGH_ActiveObject activeValObj)
+                    activeValObj.ExpireSolution(false);
 
                 return JsonConvert.SerializeObject(new
                 {
@@ -124,7 +125,8 @@ namespace Cordyceps.Tools.Unified
                     if (!string.IsNullOrEmpty(value) && double.TryParse(value, out double val))
                         slider.SetSliderValue((decimal)val);
 
-                    ToolHelpers.GetOwnerDocument(component, doc).NewSolution(true);
+                    if (component is IGH_ActiveObject activeSlider)
+                        activeSlider.ExpireSolution(false);
 
                     return JsonConvert.SerializeObject(new
                     {
@@ -154,7 +156,8 @@ namespace Cordyceps.Tools.Unified
                         if (valueList.ListItems.Count > 0)
                             valueList.SelectItem(0);
 
-                        ToolHelpers.GetOwnerDocument(component, doc).NewSolution(true);
+                        if (component is IGH_ActiveObject activeVL)
+                            activeVL.ExpireSolution(false);
 
                         return JsonConvert.SerializeObject(new
                         {
@@ -236,7 +239,8 @@ namespace Cordyceps.Tools.Unified
                     }
                 }
 
-                ToolHelpers.GetOwnerDocument(lastComp, doc).NewSolution(true);
+                if (lastComp is IGH_ActiveObject activeEnable)
+                    activeEnable.ExpireSolution(false);
 
                 return JsonConvert.SerializeObject(new
                 {

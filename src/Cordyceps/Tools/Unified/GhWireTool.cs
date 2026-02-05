@@ -225,7 +225,8 @@ namespace Cordyceps.Tools.Unified
                     successCount++;
                 }
 
-                ToolHelpers.GetOwnerDocument(lastTarget, doc).NewSolution(true);
+                if (lastTarget is IGH_ActiveObject activeTarget)
+                    activeTarget.ExpireSolution(false);
 
                 if (connectionList.Count == 1)
                     return JsonConvert.SerializeObject(results[0]);
@@ -253,7 +254,8 @@ namespace Cordyceps.Tools.Unified
                     return ToolHelpers.ErrorResponse($"Target input not found: {targetParam}");
 
                 targetInput.RemoveSource(sourceOutput);
-                ToolHelpers.GetOwnerDocument(srcObj, doc).NewSolution(true);
+                if (tgtObj is IGH_ActiveObject activeDisc)
+                    activeDisc.ExpireSolution(false);
 
                 return JsonConvert.SerializeObject(new
                 {
@@ -354,7 +356,8 @@ namespace Cordyceps.Tools.Unified
                     }
                 }
 
-                if (clearedCount > 0) ToolHelpers.GetOwnerDocument(component, doc).NewSolution(true);
+                if (clearedCount > 0 && component is IGH_ActiveObject activeClear)
+                    activeClear.ExpireSolution(false);
 
                 return JsonConvert.SerializeObject(new
                 {
