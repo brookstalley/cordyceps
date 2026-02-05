@@ -1,88 +1,53 @@
-# Geometry Orientation in Grasshopper
-
-## Core Rule
+# Geometry Orientation
 
 **Most oriented geometry uses the plane's Z-axis as its primary direction.**
 
-- Cylinder: extends along Z-axis from origin
-- Cone: extends along Z-axis, tip at origin
-- Circle: lies flat in XY plane
-- Rectangle: lies flat in XY plane
-- Text 3D: faces along Z-axis
+## Orientation by Component
+
+| Component | Z-axis | XY plane |
+|-----------|--------|----------|
+| Cylinder | Extends along | — |
+| Cone | Extends along (tip at origin) | — |
+| Circle | — | Lies flat in |
+| Rectangle | — | Lies flat in |
+| Text 3D | Faces along | Lies flat in |
+| Extrude | Uses Vector input, not plane | — |
 
 ## Plane Construction
 
-A plane has Origin + X + Y + Z axes. Z is always computed as X × Y (cross product).
+Plane = Origin + X + Y + Z axes. Z = X × Y (cross product).
 
-| If you need... | Use this component | Set this as direction |
-|----------------|-------------------|----------------------|
-| Geometry pointing in direction D | `Plane Normal` | Normal = D |
-| Geometry pointing up (world Z) | `XY Plane` | (automatic) |
-| Full control of all axes | `Construct Plane` | Ensure X × Y = D |
+| Need | Use | Set |
+|------|-----|-----|
+| Geometry pointing direction D | Plane Normal | Normal = D |
+| Geometry pointing up (world Z) | XY Plane | (automatic) |
+| Full axis control | Construct Plane | Ensure X × Y = D |
 
-## Decision Tree: Creating Oriented Geometry
+## Decision Tree
 
 ```
-Q: Do you care about rotation around the direction axis?
-├─ NO → Use `Plane Normal` with direction as Normal input
-└─ YES → Use `Construct Plane` with specific X and Y axes
-         (Z = X × Y must equal your desired direction)
+Care about rotation around direction axis?
+├─ NO → Plane Normal (direction as Normal)
+└─ YES → Construct Plane (Z = X × Y must = direction)
 ```
 
-## Common Mistakes and Fixes
+## Common Mistake
 
-| Mistake | Result | Fix |
-|---------|--------|-----|
-| Using direction as X-axis in `Construct Plane` | Geometry perpendicular to intended direction | Use `Plane Normal` instead, or ensure Z = direction |
-| Forgetting Z = X × Y | Unexpected orientation | Verify: if you want Z pointing toward target, X and Y must be perpendicular to that direction |
+**Wrong**: Vector2Pt (toward target) → Construct Plane (X-axis) → Cylinder
+**Result**: Cylinders perpendicular to target
+
+**Right**: Vector2Pt (toward target) → Plane Normal (Normal) → Cylinder
+**Result**: Cylinders point toward target
 
 ## Patterns
 
-### Cylinders pointing toward a point
+| Goal | Pattern |
+|------|---------|
+| Cylinders toward point | Vector2Pt → Plane Normal → Cylinder |
+| Cylinders standing vertical | Points → XY Plane (Origin) → Cylinder |
+| Geometry on surface | Evaluate Surface → Frame output → Geometry |
 
-**Wrong:**
-```
-Vector2Pt (toward target) → Construct Plane (X-axis) → Cylinder
-Result: Cylinders perpendicular to target
-```
+## Verification
 
-**Right:**
-```
-Vector2Pt (toward target) → Plane Normal (Normal) → Cylinder
-Result: Cylinders point toward target
-```
-
-### Cylinders standing vertical
-
-```
-Points → XY Plane (Origin) → Cylinder
-Result: Cylinders extend upward (Z = world up)
-```
-
-### Geometry at angle to surface
-
-```
-Surface → Evaluate Surface → Frame output → [Geometry]
-Result: Geometry oriented to surface normal
-```
-
-## Verifying Orientation
-
-After creating geometry, use `gh_inspect(action='geometry', id='...')` and check bounding box:
-
-- Large extent in one axis = geometry extends along that axis
-- For cylinder pointing toward origin: long axis of bbox should point toward (0,0,0)
-
-**Quick check:** If bbox shows large Y extent but you expected large X extent, your plane orientation is wrong.
-
-## Component Quick Reference
-
-| Component | Direction axis | Flat surface |
-|-----------|---------------|--------------|
-| Cylinder | Z | - |
-| Cone | Z (tip at origin) | - |
-| Circle | - | XY |
-| Rectangle | - | XY |
-| Arc | - | XY |
-| Text 3D | Z (facing) | XY |
-| Extrude | Vector input (not plane) | - |
+`gh_inspect(action='geometry', id='...')` → check bounding box.
+Large extent in one axis = geometry extends along that axis.

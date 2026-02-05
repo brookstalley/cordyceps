@@ -1,85 +1,77 @@
 # Grasshopper via Cordyceps
 
-Grasshopper is a visual dataflow graph for parametric 3D design. Components on a canvas connect via wires. Data flows left-to-right.
+Visual dataflow graph for parametric 3D. Components on canvas connect via wires. Data flows left-to-right.
 
-## Unified Tools (7 tools)
+## Tools (7 total)
 
-Use `action='help'` on any tool to see all available actions and parameters.
+Use `action='help'` on any tool for parameters.
 
-**Grasshopper Tools:**
-- `gh_canvas` - Components, values, groups: add, delete, move, find, search, list, bake, zoom/view, get/set values, group management, zoomable parameter management
-- `gh_wire` - Connect, disconnect, list, validate wires
-- `gh_document` - Info, save, clear, solver control, snapshots, capture canvas/viewport
-- `gh_script` - Get/set script code, configure parameters
-- `gh_inspect` - Status, outputs, trace data flow, find disconnected
+**Grasshopper:**
+- `gh_canvas` — components, values, groups, bake, zoomable params
+- `gh_wire` — connect, disconnect, list, validate
+- `gh_document` — save, clear, solver, snapshots, capture
+- `gh_script` — get/set script code, configure params
+- `gh_inspect` — status, outputs, trace, disconnected
 
-**Rhino Tools:**
-- `rhino_scene` - Objects, selection, layers (CRUD), hide/show, delete
-- `rhino_render` - Display modes, camera, render status, materials, environments
+**Rhino:**
+- `rhino_scene` — objects, layers, selection, visibility
+- `rhino_render` — display, camera, materials, environments, render
 
-## Quick Reference
+## Workflow
 
-**Workflow:**
-1. `gh_document(action='solver', enabled=false)` — prevent partial recalculation
-2. Add components: `gh_canvas(action='add', type='...', x=..., y=...)`
-3. Wire: `gh_wire(action='connect', connections='[...]')`
-4. `gh_document(action='solver', enabled=true)` — run definition
-5. `gh_inspect(action='status')` — check for errors
+```
+gh_document(action='solver', enabled=false)
+gh_canvas(action='add', type='...', x=..., y=..., nickname='...')
+gh_wire(action='connect', connections='[{"source":"id1:0","target":"id2:R"}]')
+gh_document(action='solver', enabled=true)
+gh_inspect(action='status')
+```
 
-**Values:**
-- `gh_canvas(action='set', id='...', value='...')` — set slider/panel/toggle
-- `gh_canvas(action='config', id='...', min=..., max=...)` — configure slider range
+## Values
 
-**Groups:**
+- `gh_canvas(action='set', id='...', value='...')` — slider/panel/toggle
+- `gh_canvas(action='config', id='...', min=..., max=...)` — slider range
+
+## Groups
+
 - `gh_canvas(action='group_create', name='...', ids='[...]', color='#FF6B6B')`
-- `gh_canvas(action='group_list')` — list all groups
+- `gh_canvas(action='group_list')`
 
-**Variable Parameters (ZUI):**
-- `gh_canvas(action='zoomable', id='...', operation='list')` — list available zoomable params
-- `gh_canvas(action='zoomable', id='...', operation='add', param='...')` — add input/output
+## Variable Parameters (ZUI)
 
-**Capture:**
-- `gh_document(action='capture_canvas')` — Grasshopper canvas
-- `gh_document(action='capture_viewport')` — Rhino 3D viewport
+- `gh_canvas(action='zoomable', id='...', operation='list')`
+- `gh_canvas(action='zoomable', id='...', operation='add', param='...')`
 
-**Materials:**
-- `rhino_render(action='material_library')` — list built-in types
+## Capture
+
+- `gh_document(action='capture_canvas')` — GH canvas
+- `gh_document(action='capture_viewport')` — Rhino 3D view
+
+## Materials
+
+- `rhino_render(action='material_library')` — list types
 - `rhino_render(action='material_instantiate', type='Metal', name='Gold', color='#FFD700')`
 - `rhino_render(action='material_apply', ids='[...]', material='...')`
 
-**Environments:**
-- `rhino_render(action='env_list')` — list environments
-- `rhino_render(action='env_set', environment='...', usage='all')`
-
 ## Object Types
 
-Three roles (check `role` field):
-- **component**: Processing node with inputs/outputs (usually what you want)
-- **parameter**: Data container (Params category)
-- **input**: Interactive control (Params/Input)
+| Role | Description |
+|------|-------------|
+| component | Processing node with I/O (usually what you want) |
+| parameter | Data container (Params category) |
+| input | Interactive control (Params/Input) |
 
-**Ambiguous names**: "Circle" matches both Circle component (Curve/Primitive) and Circle parameter (Params/Geometry). On ambiguity, you get `ambiguous_name` error with matches. Resolve with GUID or `Category/Name` format.
-
-**Deprecated**: Always prefer `deprecated=false`. Results are sorted with non-deprecated first.
+**Ambiguous names**: "Circle" matches both component and parameter. Use `Category/Name` or GUID.
 
 ## Layout
 
-**Goal: Avoid backwards wires. Stack vertically.**
-
-**Spacing:**
-- Horizontal: 60-80px between columns
-- Vertical: 70px between stacked components
-- Inputs: Stack sliders at x≈50, y=50/120/190...
-
-Use `gh_canvas(action='validate')` to check overlaps. See `gh://docs/canvas-layout` for details.
+Avoid backwards wires. Stack inputs vertically at x=50. Processing columns at x=300, 380, 460...
+Use `gh_canvas(action='validate')` for overlaps. See `gh://docs/canvas-layout`.
 
 ## Resources
 
-- `gh://docs/data-trees` — essential for list/tree operations
-- `gh://docs/canvas-layout` — spacing details
-- `gh://docs/geometry-orientation` — plane axes for oriented geometry
-- `gh://docs/common-errors` — error→fix quick reference
-- `gh://docs/rendering` — bake → materials → viewport → capture
-- `gh://docs/mcp-testing` — test instructions
-- `gh://component/{name}` — component inputs/outputs
+- `gh://docs/data-trees` — essential for list/tree ops
+- `gh://docs/common-errors` — error→fix reference
+- `gh://docs/rendering` — bake→materials→viewport→capture
+- `gh://component/{name}` — component I/O docs
 - `gh://patterns/*` — linear-array, grid-array

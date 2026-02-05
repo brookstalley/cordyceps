@@ -1,97 +1,60 @@
-# Cordyceps MCP Server Testing Guide
-
-**Keywords:** test cordyceps, test mcp, test grasshopper, validate mcp
-
-## How to Test
+# MCP Server Testing
 
 Use `action='help'` on any tool to discover capabilities. For each area: try operations, verify results are correct (not just successful), test edge cases.
 
----
+## Part 1: Connection
 
-## Part 1: Connection and Fundamentals
-
-**Verify:**
-- Document info retrieval works
-- `action='help'` returns useful info for all 7 tools
-- Cordyceps component is invisible (not in listings, can't be modified/deleted)
-- Component search and documentation work
-
----
+- Document info works
+- `action='help'` returns info for all 7 tools
+- Cordyceps component is protected (invisible, can't modify/delete)
+- Component search and docs work
 
 ## Part 2: Grasshopper Core
 
-**Canvas**: Add/move/rename/delete components, validate layout overlaps
-
-**Wiring**: Connect/disconnect, bulk wiring, validate before connecting, list connections
-
-**Values**: Set slider/panel/toggle values, configure slider ranges, enable/disable components
-
-**Document**: Solver control (disable/enable), snapshots (save/restore), capture canvas
-
-**Groups**: Create with colors, add/remove members, move groups
-
-**Scripts**: Add C#/Python scripts, get/set code, configure parameters
-
-**Inspection**: Check status for errors, inspect outputs, trace data flow
-
----
+| Area | Test |
+|------|------|
+| Canvas | Add/move/rename/delete components, validate overlaps |
+| Wiring | Connect/disconnect, bulk wiring, validate before connecting |
+| Values | Set slider/panel/toggle, configure ranges, enable/disable |
+| Document | Solver control, snapshots save/restore, capture canvas |
+| Groups | Create with colors, add/remove members, move |
+| Scripts | Add C#/Python, get/set code, configure parameters |
+| Inspection | Check status, inspect outputs, trace data flow |
 
 ## Part 3: Rhino Integration
 
-**Objects**: Bake geometry, list/select/hide/show/delete objects
+| Area | Test |
+|------|------|
+| Objects | Bake geometry, list/select/hide/show/delete |
+| Layers | List, filter by layer, create/delete |
+| Viewport | Display modes, camera position/target, zoom |
+| Capture | Viewport to image, view and resolution options |
+| Rendering | Raytraced progress, wait for passes |
 
-**Layers**: List layers, filter objects by layer, create/delete layers
+## Part 4: End-to-End
 
-**Viewport**: Switch display modes, control camera position/target, zoom to fit
-
-**Capture**: Capture viewport to image, specify view and resolution
-
-**Rendering**: Check raytraced progress, wait for render passes
-
----
-
-## Part 4: End-to-End Scenarios
-
-### A: Parametric Circle Grid
-Create grid of circles with sliders for rows, columns, radius. Verify geometry updates when sliders change.
-
-### B: Bake and Render
-Create geometry in Grasshopper → bake to Rhino → set camera → capture rendered image.
-
-### C: Organized Definition
-Build a definition with groups (inputs, processing, outputs) using different colors. Capture canvas to verify.
-
-### D: Debug Broken Definition
-Create definition with intentional error. Use inspection tools to identify the problem.
-
----
+1. **Circle grid**: Sliders for rows/columns/radius → verify geometry updates
+2. **Bake + render**: GH geometry → bake → camera → capture
+3. **Organized definition**: Groups with colors → capture canvas
+4. **Debug broken**: Create error → use inspection to identify
 
 ## Part 5: Error Handling
 
-Test graceful failure:
-- Invalid component names
-- Non-existent IDs
-- Invalid connections
-- Out-of-range values
-- Protected component modification
+Test graceful failure: invalid names, bad IDs, invalid connections, out-of-range values, protected component modification. Errors should be informative; system should stay usable.
 
-Errors should be informative and system should remain usable.
-
----
-
-## Test Summary Template
+## Summary Template
 
 ```
 ## Test Summary
-**Date**: [date]
-**Sections Completed**: [1, 2, 3, 4, 5]
+Date: [date]
+Sections: [1,2,3,4,5]
 
-### What Works Well
-- [capabilities that worked]
+### Works Well
+- [list]
 
-### Issues Found
-- [problems with reproduction steps]
+### Issues
+- [with reproduction steps]
 
-### Overall Assessment
+### Assessment
 [READY / NEEDS WORK / SIGNIFICANT ISSUES]
 ```

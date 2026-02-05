@@ -1,109 +1,70 @@
-# Grasshopper Best Practices
+# Best Practices
 
-## Essential Practices
+## Essential Rules
 
-### 1. Disable Solver During Bulk Operations
+1. **Disable solver during bulk operations**
+   ```
+   gh_document(action='solver', enabled=false)
+   // ... add components, configure, connect ...
+   gh_document(action='solver', enabled=true)
+   ```
 
-```
-gh_document(action='solver', enabled=false)
-// Add components, configure, connect
-gh_document(action='solver', enabled=true)  // Single recompute
-```
+2. **Name components**: `gh_canvas(action='add', ..., nickname='Radius')` — enables `gh_canvas(action='find', nickname='...')`
 
-Each operation triggers full recompute. Disabling prevents dozens of unnecessary solves.
+3. **Validate before connecting**: `gh_wire(action='validate', ...)` — failed connections don't error, they just disconnect
 
-### 2. Name Your Components
+4. **Check status after changes**: `gh_inspect(action='status')` — shows errors, warnings, disconnected inputs
 
-```
-gh_canvas(action='add', type='Number Slider', x=100, y=200, nickname='InputRadius')
-```
-
-Benefits: readable `gh_canvas(action='list')`, understandable errors, `gh_canvas(action='find', nickname='...')` lookup.
-
-### 3. Validate Before Connecting
-
-```
-gh_wire(action='validate', sourceId='...', sourceParam='...', targetId='...', targetParam='...')
-// If valid, then connect
-```
-
-Failed connections don't error—they create disconnected inputs causing confusing downstream failures.
-
-### 4. Check Status After Changes
-
-```
-gh_inspect(action='status')
-```
-
-Shows errors (red), warnings (orange), disconnected inputs, runtime messages.
-
-### 5. Match Data Structures Before Connecting
-
-Check both inputs' tree structures. Add Graft/Flatten/Path Mapper if needed. See `gh://docs/data-trees`.
+5. **Match data structures**: Check tree structures before connecting. See `gh://docs/data-trees`.
 
 ## Anti-Patterns
 
-| Don't | Do Instead |
-|-------|------------|
-| Guess component names | `gh_canvas(action='search', query='...')` first |
-| Ignore orange warnings | Check `gh_inspect(action='status')` |
-| Chain without checking results | Verify `result.success` |
-| Flatten everything | Understand structure, use Graft/Shift Path |
-| Create cycles (A→B→C→A) | Design as DAG (directed acyclic graph) |
+| Don't | Do |
+|-------|-----|
+| Guess component names | `gh_canvas(action='search', query='...')` |
+| Ignore orange warnings | `gh_inspect(action='status')` |
+| Chain without checking | Verify `result.success` |
+| Flatten everything | Understand structure first |
+| Create cycles | Design as DAG |
 
 ## Naming Conventions
 
-| Component Type | Name After |
-|----------------|------------|
+| Type | Name After |
+|------|------------|
 | Sliders | What they control: "Radius", "Height" |
 | Panels | Data source: "Points from File" |
 | Scripts | Function: "Calculate Area" |
 | Groups | Purpose: "Geometry Generation" |
 
-## Expensive Operations
+## Expensive Operations (Cache with Data Dam)
 
-Cache these with Data Dam:
 - Boolean operations (Solid Union/Difference)
 - Mesh operations on dense meshes
 - Kangaroo simulations
 - Curve/surface intersections
 
-## Debugging Strategy
+## Debugging
 
-1. **Isolate**: Disconnect suspected components
-2. **Visualize**: Add Panels at each stage
-3. **Check structure**: `gh_inspect(action='outputs', id='...')` for branch/item counts
-4. **Trace upstream**: `gh_inspect(action='trace', id='...', direction='upstream')`
-5. **Read messages**: `gh_inspect(action='status')` runtime messages
+1. `gh_inspect(action='status')` — find errors/warnings
+2. `gh_inspect(action='outputs', id='...')` — check branch/item counts
+3. `gh_inspect(action='trace', id='...', direction='upstream')` — trace data flow
+4. Add Panel components to visualize intermediate data
 
-## Script Components
-
-1. Set input types explicitly via `gh_script(action='configure', ...)`
-2. Set access modes: Item for singles, List for collections
-3. Handle null inputs
-4. Use Report output for debugging
-5. Use `gh_script(action='info', id='...')` to inspect existing scripts (source code, parameters, type hints)
-6. Use `gh_script(action='get', id='...')` for quick source code retrieval
-
-## Bake and Cleanup Pattern
-
-When baking geometry to Rhino for inspection or rendering, use a dedicated layer for easy cleanup:
+## Bake and Cleanup
 
 ```
-gh_canvas(action='bake', id='...', layer='temp_preview')  // Auto-creates layer
-// ... inspect, render, capture ...
-rhino_scene(action='layer_delete', name='temp_preview', deleteObjects=true)  // Clean removal
+gh_canvas(action='bake', id='...', layer='temp_preview')
+// ... inspect, render ...
+rhino_scene(action='layer_delete', name='temp_preview', deleteObjects=true)
 ```
-
-Layers are auto-created if they don't exist. Using a consistent temp layer name makes cleanup a single command.
 
 ## Error Recovery
 
 | Error | Fix |
 |-------|-----|
-| "Component not found" | Check spelling, use `gh_canvas(action='search')`, use GUID |
-| "Connection failed" | Verify IDs exist, check params with `gh_canvas(action='info')` |
-| Solver error/loop | Check for cycles, disable solver, fix, re-enable |
-| Canvas unresponsive | `gh_document(action='solver', enabled=false)`, fix problem, re-enable |
+| "Component not found" | `gh_canvas(action='search')`, verify ID |
+| "Connection failed" | `gh_canvas(action='info', id='...')` to check params |
+| Solver loop | Disable solver, find cycle, fix, re-enable |
+| Canvas frozen | `gh_document(action='solver', enabled=false)`, fix, re-enable |
 
-See `gh://docs/common-errors` for comprehensive error solutions.
+See `gh://docs/common-errors` for comprehensive reference.

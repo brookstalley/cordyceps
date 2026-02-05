@@ -1,212 +1,90 @@
-# Rhino Rendering Pipeline via Cordyceps
+# Rendering Pipeline
 
-Complete workflow from Grasshopper geometry → Rhino baking → materials → viewport control → frame capture.
+Grasshopper geometry → Rhino baking → materials → viewport → capture.
 
-## Workflow Overview
+## Workflow
 
-1. **Create geometry** in Grasshopper (`gh_canvas(action='add')`, `gh_wire(action='connect')`)
-2. **Bake to Rhino** (`gh_canvas(action='bake')`) - converts GH preview to Rhino objects
-3. **Organize** with layers (`rhino_scene(action='layers')`)
-4. **Set display mode** (`rhino_render(action='display', mode='Rendered')` or `Raytraced`)
-5. **Position camera** (`rhino_render(action='camera')`, `rhino_render(action='zoom')`)
-6. **Wait for render** (`rhino_render(action='render', wait=200)` - for Raytraced mode)
-7. **Capture** (`gh_document(action='capture_viewport')`)
+1. Create geometry in GH (`gh_canvas`, `gh_wire`)
+2. Bake: `gh_canvas(action='bake', id='...', layer='...')`
+3. Display mode: `rhino_render(action='display', mode='Raytraced')`
+4. Camera: `rhino_render(action='camera', ...)` or `rhino_render(action='zoom')`
+5. Wait: `rhino_render(action='render', wait=200)`
+6. Capture: `gh_document(action='capture_viewport', path='...')`
 
-## Realistic Rendering
+## Realistic Rendering Tips
 
-**Display modes**: Materials/lighting only work in Rendered (preview) or Raytraced (photorealistic). Use Raytraced + wait for quality output.
+**Display modes**: Materials/lighting only work in `Rendered` (fast preview) or `Raytraced` (photorealistic).
 
-**Lighting**: Always enable BOTH sun AND skylight. Skylight prevents black shadows. Sun: altitude 30-45° (daylight), azimuth 135°/225° (3/4 lighting).
+**Lighting**: Enable BOTH sun AND skylight. Skylight prevents black shadows.
+- Sun: altitude 30-45° (daylight), azimuth 135°/225° (3/4 lighting)
+- `rhino_render(action='sun', sunEnabled=true, azimuth=180, sunAltitude=45)`
+- `rhino_render(action='skylight', skylightEnabled=true)`
 
-**Background**: Use gradient (#87CEEB top, #E8E8E8 bottom). Avoid white.
+**Background**: Use gradient. `rhino_render(action='settings', style='gradient', colorTop='#87CEEB', colorBottom='#E8E8E8')`
 
-**Ground**: Enable with shadowOnly=true or neutral material.
+**Ground plane**: `rhino_render(action='ground', groundEnabled=true, shadowOnly=true)`
 
-**Materials**: Set roughness (0.1=polished, 0.7=stone, 0.9=matte) and IOR for glass (1.5). Use realistic colors (rocks=gray/brown).
+**Materials**: Set roughness (0.1=polished, 0.9=matte). Use realistic colors.
 
-**Research**: Search "[material] PBR values" or "[scene] Rhino lighting" for specifics. Refs: [physicallybased.info](https://physicallybased.info/), [pixelandpoly.com/ior](https://pixelandpoly.com/ior.html)
+**References**: [physicallybased.info](https://physicallybased.info/), [pixelandpoly.com/ior](https://pixelandpoly.com/ior.html)
 
-## Key Tools
+## Key Actions
 
-### Object Management (rhino_scene)
-- `rhino_scene(action='objects')` - list Rhino objects, filter by layer/type
-- `rhino_scene(action='select', ids='[...]')` - select by GUID
-- `rhino_scene(action='deselect')` - clear selection
-- `rhino_scene(action='set_layer', ids='[...]', layer='...')` - move objects to layer
-- `rhino_scene(action='set_name', ids='[...]', name='...')` - rename objects
-- `rhino_scene(action='set_color', ids='[...]', color='#FF0000')` - set object display color
-- `rhino_scene(action='bbox', ids='[...]')` - get combined bounding box (min, max, center, size)
-- `rhino_scene(action='hide', ids='[...]')` - hide objects
-- `rhino_scene(action='show', ids='[...]')` or `rhino_scene(action='show', all=true)` - show objects
-- `rhino_scene(action='delete', ids='[...]')` - permanent deletion
-- `rhino_scene(action='layers')` - list all layers
-- `rhino_scene(action='layer_create', name='...', color='#FF0000')` - create layer
-- `rhino_scene(action='layer_set', name='...', visible='false')` - modify layer
-- `rhino_scene(action='layer_delete', name='...')` - delete layer
+Use `action='help'` on any tool for full parameter details.
 
-### Viewport Control (rhino_render)
-- `rhino_render(action='modes')` - list available display modes
-- `rhino_render(action='display', mode='Shaded')` - set display mode
-- `rhino_render(action='camera')` - get location, target, lens, distance
-- `rhino_render(action='camera', location='x,y,z', target='x,y,z', lens=50)` - set camera
-- `rhino_render(action='camera', preset='front')` - apply standard view (top, bottom, front, back, left, right, perspective, iso_nw, iso_ne, iso_sw, iso_se)
-- `rhino_render(action='zoom')` - zoom to fit all geometry
-- `rhino_render(action='zoom', ids='[...]')` - zoom to specific objects
+### rhino_scene
+`objects`, `select`, `deselect`, `set_layer`, `set_name`, `set_color`, `bbox`, `hide`, `show`, `delete`, `layers`, `layer_create`, `layer_set`, `layer_delete`
 
-### Named Views (rhino_render)
-- `rhino_render(action='view_save', name='MyView')` - save current camera position as named view
-- `rhino_render(action='view_load', name='MyView')` - restore camera from named view
-- `rhino_render(action='view_list')` - list all named views
-- `rhino_render(action='view_delete', name='MyView')` - delete a named view
+### rhino_render
+**Viewport**: `modes`, `display`, `camera`, `zoom`
+**Views**: `view_save`, `view_load`, `view_list`, `view_delete`
+**Render**: `render` (get status or wait for passes)
+**Settings**: `settings`, `ground`, `sun`, `skylight`
+**Lights**: `light_add`, `light_list`, `light_set`, `light_delete`
+**Materials**: `material_list`, `material_library`, `material_create`, `material_instantiate`, `material_apply`, `material_delete`
+**Environments**: `env_list`, `env_current`, `env_set`, `env_create`
 
-### Render Status (Raytraced mode)
-- `rhino_render(action='render')` - returns currentPass, maxPasses, isComplete, progress%
-- `rhino_render(action='render', wait=200, timeout=30)` - block until passes reached
+### gh_document
+`capture_viewport`, `capture_canvas`, `capture_views`
 
-### Render Settings (rhino_render)
-- `rhino_render(action='settings')` - get background style, colors
-- `rhino_render(action='settings', style='gradient', colorTop='#87CEEB', colorBottom='#FFFFFF')` - set background
-- `rhino_render(action='ground', groundEnabled='true', shadowOnly='true')` - ground plane
-- `rhino_render(action='sun', sunEnabled='true', azimuth='180', sunAltitude='45')` - sun position
-- `rhino_render(action='skylight', skylightEnabled='true')` - ambient lighting
+## Built-in Material Types
 
-### Scene Lights (rhino_render)
-- `rhino_render(action='light_add', type='point', location='10,10,20')` - create point light
-- `rhino_render(action='light_add', type='spot', location='10,10,20', target='0,0,0', spotAngle='30')` - create spot light
-- `rhino_render(action='light_add', type='directional', location='100,100,100', target='0,0,0')` - create directional light
-- `rhino_render(action='light_list')` - list all lights in scene
-- `rhino_render(action='light_set', ids='[...]', color='#FFFF00', intensity='2.0')` - modify light properties
-- `rhino_render(action='light_delete', ids='[...]')` - delete lights
+Use with `material_instantiate`:
 
-**Light types:**
-- **point**: Emits light in all directions from a point (like a light bulb)
-- **spot**: Cone of light from a point toward a target (like a stage light)
-- **directional**: Parallel rays from a direction (like sunlight, but manually positioned)
-
-### Materials (rhino_render)
-
-**IMPORTANT**: Materials only render in **Raytraced** or **Rendered** display modes. Raytraced provides physically accurate rendering; Rendered gives faster preview quality.
-
-**List & Inspect:**
-- `rhino_render(action='material_list')` - list all materials in the document
-- `rhino_render(action='material_library')` - list available built-in material types
-
-**Built-in Material Types** (use with `material_instantiate`):
-| Type | Description |
-|------|-------------|
-| Metal | Metallic materials - gold, silver, copper, aluminum |
-| Glass | Transparent with refraction - windows, bottles, lenses |
-| Plastic | Non-metallic with varying glossiness |
-| Paint | Painted surfaces with color and sheen |
-| Gem | Gemstones with dispersion - diamonds, rubies |
-| Plaster | Matte diffuse - walls, ceilings |
-| Emission | Light-emitting - screens, neon, glowing objects |
-| PhysicallyBased | Full PBR with all parameters |
-| Blend | Blend between two materials |
-| DoubleSided | Different materials on front/back faces |
-| Picture | Image-based materials for decals |
-
-**Create Materials:**
-- `rhino_render(action='material_instantiate', type='Metal', name='Copper', color='#B87333')` - create from built-in type
-- `rhino_render(action='material_create', name='Red Metal', color='#FF0000', metallic=1, roughness=0.3)` - create custom PBR material
-
-**Apply & Delete:**
-- `rhino_render(action='material_apply', ids='[...]', material='Copper')` - apply to objects
-- `rhino_render(action='material_delete', name='Copper')` - delete material
-
-**Workflow Example:**
-```
-# 1. Create materials from built-in types
-rhino_render(action='material_instantiate', type='Metal', name='Gold', color='#FFD700')
-rhino_render(action='material_instantiate', type='Glass', name='Clear Glass')
-
-# 2. Apply to baked geometry
-rhino_render(action='material_apply', ids='["guid1"]', material='Gold')
-rhino_render(action='material_apply', ids='["guid2"]', material='Clear Glass')
-
-# 3. Set Raytraced mode to see materials
-rhino_render(action='display', mode='Raytraced')
-rhino_render(action='render', wait=200)  # Wait for render passes
-```
-
-### Environments (rhino_render)
-- `rhino_render(action='env_list')` - list render environments
-- `rhino_render(action='env_current')` - get current environment for each usage
-- `rhino_render(action='env_set', environment='Studio', usage='all')` - set environment
-- `rhino_render(action='env_create', name='Blue Sky', color='#87CEEB')` - create solid color environment
-
-### Capture (gh_document)
-- `gh_document(action='capture_viewport')` - capture to temp file
-- `gh_document(action='capture_viewport', path='/path/to/file.png', width=1920, height=1080)` - custom size
-- `gh_document(action='capture_viewport', view='Top')` - specific view
-- `gh_document(action='capture_viewport', transparent=true)` - transparent background (PNG only)
-- `gh_document(action='capture_views')` - list available views
+| Type | Use For |
+|------|---------|
+| Metal | Gold, silver, copper, aluminum |
+| Glass | Windows, bottles (IOR ~1.5) |
+| Plastic | Non-metallic glossy |
+| Paint | Painted surfaces |
+| Gem | Diamonds, rubies (dispersion) |
+| Plaster | Matte walls |
+| Emission | Glowing, screens, neon |
 
 ## Camera Orbit Pattern
 
-No orbit tool provided - LLM calculates positions. Steps:
+No orbit tool - calculate positions:
 
-1. `rhino_render(action='camera')` → read location, target, distance
-2. Calculate new position:
-   - `angle` = frame_index * angle_step (e.g., 10°)
-   - `newX = target.x + distance * cos(angle)`
-   - `newY = target.y + distance * sin(angle)`
-   - `newZ = location.z` (keep same height)
-3. `rhino_render(action='camera', location='newX,newY,newZ')`
-4. `rhino_render(action='render', wait=200)` (if Raytraced)
-5. `gh_document(action='capture_viewport', path='frame_001.png')`
-6. Repeat for all frames
-
-## Example: Basic Scene Setup
-
-```
-# 1. Create geometry in Grasshopper
-gh_canvas(action='add', type='Cylinder', x=100, y=100) → cylinder_id
-gh_canvas(action='add', type='Box', x=200, y=100) → box_id
-# ... wire up with sliders for dimensions
-
-# 2. Bake geometry to Rhino
-gh_canvas(action='bake', id=cylinder_id, layer='Geometry', name='Cylinder')
-gh_canvas(action='bake', id=box_id, layer='Geometry', name='Box')
-
-# 3. Set up viewport
-rhino_render(action='display', mode='Rendered')
-rhino_render(action='zoom')
-
-# 4. Get camera for orbit calculations
-rhino_render(action='camera') → {location, target, distance}
-
-# 5. Capture frames
-for i in range(36):
-    angle = i * 10 * (pi/180)
-    newX = target.x + distance * cos(angle)
-    newY = target.y + distance * sin(angle)
-
-    rhino_render(action='camera', location=f'{newX},{newY},{location.z}')
-    gh_document(action='capture_viewport', path=f'frame_{i:03d}.png', width=1920, height=1080)
-
-# 6. Assemble GIF externally
-# ffmpeg -framerate 10 -i frame_%03d.png -loop 0 orbit.gif
-```
+1. Get current: `rhino_render(action='camera')` → location, target, distance
+2. For each frame:
+   - angle = frame * step (radians)
+   - newX = target.x + distance * cos(angle)
+   - newY = target.y + distance * sin(angle)
+   - `rhino_render(action='camera', location='newX,newY,z')`
+   - `rhino_render(action='render', wait=200)` if Raytraced
+   - `gh_document(action='capture_viewport', path='frame_NNN.png')`
 
 ## Display Mode Performance
 
-| Mode | Quality | Speed | Notes |
-|------|---------|-------|-------|
-| Wireframe | Low | Instant | Edges only |
-| Shaded | Medium | Instant | OpenGL shading |
-| Rendered | Medium-High | Fast | Material preview |
-| Ghosted | Low | Instant | Transparent view |
-| Arctic | Medium | Fast | White studio look |
-| **Raytraced** | **Highest** | **Slow** | Cycles ray tracing, progressive |
+| Mode | Quality | Speed |
+|------|---------|-------|
+| Wireframe | Low | Instant |
+| Shaded | Medium | Instant |
+| Rendered | Medium-High | Fast |
+| **Raytraced** | **Highest** | **Slow** |
 
-For Raytraced mode:
-- Use `rhino_render(action='render', wait=100)` for preview quality
-- Use `rhino_render(action='render', wait=500)` for final quality
-- Pass count affects render time significantly
+Raytraced: `wait=100` for preview, `wait=500` for final quality.
 
 ## Coordinate Format
 
-All Point3d values as comma-separated strings: `"x,y,z"`
-- Camera location: `"100.5,50.25,30.0"`
-- Target point: `"0,0,0"`
+All Point3d as comma-separated: `"x,y,z"` (e.g., `"100.5,50.25,30.0"`)
