@@ -86,7 +86,9 @@
 
 ## Example
 
-> Make an animated GIF that shows the full journey from parametric modeling to photorealistic render. The subject is a small collection of geometric forms — maybe five or six objects with varied shapes, scales, and proportions. Arrange them as a pleasing composition.
+```
+Make an animated GIF that shows the full journey from parametric modeling to photorealistic render. The subject is a small collection of geometric forms — maybe five or six objects with varied shapes, scales, and proportions. Arrange them as a pleasing composition.
+```
 
 ![Cordyceps Showcase](images/cordyceps_showcase.gif)
 
