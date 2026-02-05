@@ -568,6 +568,7 @@ Key points:
 - Disable solver: gh_document(action='solver', enabled=false)
 - Ambiguous names: use GUID or Category/Name format
 - Spacing: 150px horizontal, 70px vertical
+- CRITICAL: Inside a cluster editor, NEVER advise the user to press F5 or use Grasshopper's native recompute. It will destroy cluster inputs. Use gh_document(action='recompute') instead — it is cluster-safe.
 
 VERIFY PERIODICALLY: After completing a section of work, run gh_inspect(action='status')
 to catch errors in components you didn't directly modify. Changes can break downstream components.

@@ -16,6 +16,39 @@ namespace Cordyceps.Core
     /// </summary>
     public static class ToolHelpers
     {
+        #region Document Operations
+
+        /// <summary>
+        /// Trigger a recompute that's safe inside cluster editors.
+        /// On main canvas: normal NewSolution(true).
+        /// Inside a cluster: expires everything EXCEPT input hooks, then NewSolution(false).
+        /// This preserves the input hook volatile data (populated by the parent cluster).
+        /// </summary>
+        public static void ClusterSafeRecompute(GH_Document doc)
+        {
+            if (doc.Owner != null)
+            {
+                // Inside a cluster editor — protect input hooks
+                var inputHookIds = new HashSet<Guid>(
+                    doc.ClusterInputHooks().Select(h => h.InstanceGuid));
+
+                foreach (var obj in doc.Objects)
+                {
+                    if (inputHookIds.Contains(obj.InstanceGuid)) continue;
+                    if (obj is IGH_ActiveObject active)
+                        active.ExpireSolution(false);
+                }
+
+                doc.NewSolution(false); // Only recompute expired objects (hooks preserved)
+            }
+            else
+            {
+                doc.NewSolution(true); // Normal full recompute
+            }
+        }
+
+        #endregion
+
         #region Document Validation
 
         /// <summary>

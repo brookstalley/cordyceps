@@ -341,7 +341,7 @@ namespace Cordyceps.Tools.Unified
                 doc.Enabled = enabled;
 
                 if (enabled)
-                    doc.NewSolution(true);
+                    ToolHelpers.ClusterSafeRecompute(doc);
 
                 return JsonConvert.SerializeObject(new
                 {
@@ -358,7 +358,7 @@ namespace Cordyceps.Tools.Unified
                 if (!ToolHelpers.TryGetActiveDocument(_context, out var doc, out var error))
                     return ToolHelpers.ErrorResponse(error);
 
-                doc.NewSolution(true);
+                ToolHelpers.ClusterSafeRecompute(doc);
 
                 return JsonConvert.SerializeObject(new
                 {

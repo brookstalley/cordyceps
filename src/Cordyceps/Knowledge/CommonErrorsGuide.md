@@ -32,6 +32,15 @@ See `gh://docs/data-trees` for details.
 | Not responding / loop | Cyclic dependency | `gh_document(action='solver', enabled=false)`, fix cycle |
 | "Solver is disabled" | Not re-enabled | `gh_document(action='solver', enabled=true)` |
 
+## Cluster Editor Errors
+
+| Error | Cause | Fix |
+|-------|-------|-----|
+| All cluster inputs null after recompute | Native F5/recompute destroys input hooks | Use `gh_document(action='recompute')` instead — it is cluster-safe |
+| Cluster inputs lost after re-enabling solver | `NewSolution(true)` expires input hooks | Use `gh_document(action='solver', enabled=true)` — it is cluster-safe |
+
+**CRITICAL:** When working inside a cluster editor, NEVER use Grasshopper's native F5/recompute button — it will destroy all cluster input data (all inputs become null). This is a Grasshopper architectural limitation. Always use `gh_document(action='recompute')` which is cluster-safe. If inputs are lost, close and reopen the cluster editor to recover.
+
 ## Script Errors
 
 | Error | Cause | Fix |

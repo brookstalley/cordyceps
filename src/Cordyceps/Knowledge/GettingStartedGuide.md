@@ -68,6 +68,10 @@ gh_inspect(action='status')
 Avoid backwards wires. Stack inputs vertically at x=50. Processing columns at x=300, 380, 460...
 Use `gh_canvas(action='validate')` for overlaps. See `gh://docs/canvas-layout`.
 
+## Clusters
+
+When the cluster editor is open, `gh_document(action='recompute')` and `gh_document(action='solver', enabled=true)` are safe to use — they preserve cluster input data. Grasshopper's native recompute (F5) is NOT safe inside the cluster editor — it will null out all cluster inputs.
+
 ## Resources
 
 - `gh://docs/data-trees` — essential for list/tree ops
