@@ -38,7 +38,12 @@ namespace Cordyceps.Tools.Unified
                     Name = "set",
                     Description = "Set source code on a script component",
                     Required = new[] { "id", "code" },
-                    Example = "action='set', id='abc', code='print(x)'"
+                    Example = "action='set', id='abc', code='print(x)'",
+                    Tips = new[] {
+                        "Params matching by name keep their wires (LCS diffing)",
+                        "Renamed/removed params lose connections — reported in lostConnections",
+                        "Use gh_wire(action='connect', connections='<lostConnections>') to restore"
+                    }
                 },
                 ["configure"] = new ActionInfo
                 {
@@ -160,7 +165,12 @@ namespace Cordyceps.Tools.Unified
 
                     // Surgically sync params instead of SetParametersFromScript(),
                     // which rebuilds all params and destroys cluster input hooks.
-                    try { SyncScriptParams(component, code); }
+                    List<object> lostConnections = null;
+                    try
+                    {
+                        SyncScriptParams(component, code, out var lost);
+                        if (lost.Count > 0) lostConnections = lost;
+                    }
                     catch (Exception paramEx)
                     {
                         DebugLog.Warn($"[ActionSet] SyncScriptParams failed: {paramEx.Message}");
@@ -184,14 +194,24 @@ namespace Cordyceps.Tools.Unified
                             outputs.Add(new { name = param.Name, type = param.TypeName });
                     }
 
-                    return JsonConvert.SerializeObject(new
+                    var response = new Dictionary<string, object>
                     {
-                        success = true,
-                        id = component.InstanceGuid.ToString(),
-                        codeSet = true,
-                        inputs,
-                        outputs
-                    });
+                        ["success"] = true,
+                        ["id"] = component.InstanceGuid.ToString(),
+                        ["codeSet"] = true,
+                        ["inputs"] = inputs,
+                        ["outputs"] = outputs
+                    };
+
+                    if (lostConnections != null)
+                    {
+                        response["lostConnections"] = lostConnections;
+                        response["reconnectHint"] = "These connections were lost due to parameter changes. "
+                            + "To restore, pass the lostConnections array as 'connections' to gh_wire(action='connect'), "
+                            + "updating targetParam/sourceParam if params were renamed.";
+                    }
+
+                    return JsonConvert.SerializeObject(response);
                 }
                 catch (Exception ex)
                 {
@@ -261,7 +281,7 @@ namespace Cordyceps.Tools.Unified
                         try
                         {
                             scriptComp.SetSource(code);
-                            try { SyncScriptParams(component, code); } catch { }
+                            try { SyncScriptParams(component, code, out _); } catch { }
                             try { scriptComp.SyncParameters(); } catch { }
 
                             if (component is IGH_VariableParameterComponent vpComp2)
@@ -423,8 +443,10 @@ namespace Cordyceps.Tools.Unified
         /// Uses LCS (longest common subsequence) to identify which params are unchanged
         /// and only removes/inserts the ones that actually differ.
         /// </summary>
-        private void SyncScriptParams(IGH_DocumentObject component, string code)
+        private void SyncScriptParams(IGH_DocumentObject component, string code, out List<object> lostConnections)
         {
+            lostConnections = new List<object>();
+
             var parsed = ParseScriptParams(component, code);
             if (parsed == null)
                 return; // Can't parse or not applicable — leave params alone
@@ -456,10 +478,16 @@ namespace Cordyceps.Tools.Unified
             DebugLog.Info($"[SyncScriptParams] Syncing params — inputs: [{string.Join(",", existingInputs)}] -> [{string.Join(",", codeInputs)}], outputs: [{string.Join(",", existingOutputs)}] -> [{string.Join(",", codeOutputs)}]");
 
             if (!inputsMatch)
-                SyncParamSide(ghComponent, varParamComp, GH_ParameterSide.Input, codeInputs, 0);
+            {
+                SyncParamSide(ghComponent, varParamComp, GH_ParameterSide.Input, codeInputs, 0, out var inputLost);
+                lostConnections.AddRange(inputLost);
+            }
 
             if (!outputsMatch)
-                SyncParamSide(ghComponent, varParamComp, GH_ParameterSide.Output, codeOutputs, 1);
+            {
+                SyncParamSide(ghComponent, varParamComp, GH_ParameterSide.Output, codeOutputs, 1, out var outputLost);
+                lostConnections.AddRange(outputLost);
+            }
 
             varParamComp.VariableParameterMaintenance();
             DebugLog.Info($"[SyncScriptParams] Done — {ghComponent.Params.Input.Count} inputs, {ghComponent.Params.Output.Count} outputs");
@@ -471,9 +499,11 @@ namespace Cordyceps.Tools.Unified
         /// the existing and target lists keep their connections intact.
         /// </summary>
         /// <param name="skipCount">Number of built-in params to skip (e.g., 1 for C# outputs to skip "out")</param>
+        /// <param name="lostConnections">Connections on removed params, directly usable with gh_wire(action='connect')</param>
         private void SyncParamSide(IGH_Component ghComponent, IGH_VariableParameterComponent varParamComp,
-            GH_ParameterSide side, List<string> targetNames, int skipCount)
+            GH_ParameterSide side, List<string> targetNames, int skipCount, out List<object> lostConnections)
         {
+            lostConnections = new List<object>();
             var paramList = side == GH_ParameterSide.Input ? ghComponent.Params.Input : ghComponent.Params.Output;
             var existingNames = paramList.Skip(skipCount).Select(p => p.NickName).ToList();
 
@@ -488,6 +518,43 @@ namespace Cordyceps.Tools.Unified
                     continue;
 
                 var param = paramList[i + skipCount];
+
+                // Capture connections before removal
+                if (side == GH_ParameterSide.Input)
+                {
+                    foreach (var source in param.Sources)
+                    {
+                        var sourceObj = source.Attributes?.GetTopLevel?.DocObject;
+                        if (sourceObj == null) continue;
+                        lostConnections.Add(new
+                        {
+                            sourceId = sourceObj.InstanceGuid.ToString(),
+                            sourceParam = source.Name,
+                            targetId = ghComponent.InstanceGuid.ToString(),
+                            targetParam = param.NickName,
+                            removedParam = param.NickName,
+                            side = "input"
+                        });
+                    }
+                }
+                else
+                {
+                    foreach (var recipient in param.Recipients)
+                    {
+                        var targetObj = recipient.Attributes?.GetTopLevel?.DocObject;
+                        if (targetObj == null) continue;
+                        lostConnections.Add(new
+                        {
+                            sourceId = ghComponent.InstanceGuid.ToString(),
+                            sourceParam = param.NickName,
+                            targetId = targetObj.InstanceGuid.ToString(),
+                            targetParam = recipient.Name,
+                            removedParam = param.NickName,
+                            side = "output"
+                        });
+                    }
+                }
+
                 DebugLog.Debug($"[SyncParamSide] Removing {side} '{param.NickName}' at index {i + skipCount}");
                 if (side == GH_ParameterSide.Input)
                     ghComponent.Params.UnregisterInputParameter(param);

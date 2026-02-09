@@ -32,6 +32,10 @@ gh_inspect(action='status')
 - `gh_canvas(action='set', id='...', value='...')` — slider/panel/toggle
 - `gh_canvas(action='config', id='...', min=..., max=...)` — slider range
 
+## Scripts
+
+**Updating script code**: `gh_script(action='set')` preserves connections for params whose names survive unchanged. If params are renamed or removed, the response includes `lostConnections` — an array directly usable with `gh_wire(action='connect')` to restore wiring.
+
 ## Groups
 
 - `gh_canvas(action='group_create', name='...', ids='[...]', color='#FF6B6B')`

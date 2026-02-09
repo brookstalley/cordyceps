@@ -47,6 +47,7 @@ See `gh://docs/data-trees` for details.
 |-------|-------|-----|
 | "Compilation failed" | Syntax error | `gh_inspect(action='reports')` for details |
 | "Type not found" | Missing import | C#: `using Rhino.Geometry;` / Python: `import Rhino.Geometry as rg` |
+| Connections lost after `gh_script set` | Param renamed or removed | Check `lostConnections` in response, re-wire with `gh_wire(action='connect')` |
 
 ## Other Errors
 
