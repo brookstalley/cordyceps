@@ -33,6 +33,20 @@ The project targets .NET 8.0 and outputs a Grasshopper plugin (`.gha` file). Deb
 
 **Core/DebugLog.cs** - Centralized logging with Info, Warn, Error, Debug levels. Logs are retrievable via `gh_inspect(action='log')`.
 
+### User-Facing Documentation System
+
+AI agents discover Cordyceps through a layered documentation system. All of these are user-facing and must be kept in sync with code changes:
+
+**McpServer.cs `GetServerInstructions()`** - The first thing agents see on MCP initialize. Lists all tools with their actions, key points, and resource links. Must be updated when actions are added/removed/renamed.
+
+**Knowledge/ (Embedded Guides)** - Markdown guides served as MCP resources (`gh://docs/*`, `gh://patterns/*`). Covers getting started, data trees, type system, best practices, component patterns, canvas layout, geometry orientation, rendering, common errors, and MCP testing. Registered in `Resources/ResourceRegistry.cs`.
+
+**Tool Help Metadata (ActionInfo)** - Each tool class defines a `UnifiedToolInfo` with per-action metadata (description, required/optional params, example, tips). Accessed via `action='help'` on any tool. Must be updated when action signatures change.
+
+**Resources/ResourceRegistry.cs** - Maps `gh://` URIs to Knowledge/ files and provides dynamic `gh://component/{name}` documentation. Update when adding new guides.
+
+**Prompts/PromptRegistry.cs** - Workflow templates for multi-step operations (parametric geometry, debugging, script setup, optimization, planning). Update when workflows change.
+
 ### Tool Classes (in Tools/Unified/)
 
 Each tool class is marked with `[McpServerToolType]` and contains a single method marked with `[McpServerTool]`. The method name is converted to snake_case for the MCP tool name (e.g., `GhCanvas` -> `gh_canvas`). Each tool uses an `action` parameter to dispatch to different operations.
@@ -48,7 +62,7 @@ Each tool class is marked with `[McpServerToolType]` and contains a single metho
 - **RhinoSceneTool** (`rhino_scene`) - Object management, selection, layers (full CRUD), visibility
 - **RhinoRenderTool** (`rhino_render`) - Display modes, camera, render settings, materials, environments
 
-### Adding New Tools
+### Adding or Modifying Tools
 
 1. Create a method in an existing tool class (or create a new class with `[McpServerToolType]`)
 2. Add `[McpServerTool]` attribute to the method
@@ -70,6 +84,22 @@ public string MyNewTool(
     });
 }
 ```
+
+## Documentation Audit (MANDATORY)
+
+**Every change to Cordyceps must include an audit of user-facing documentation.** AI agents only know what we tell them — if a feature isn't documented in the right places, it doesn't exist to users.
+
+After any code change, check each of these and update as needed:
+
+| What | File(s) | When to update |
+|------|---------|----------------|
+| **Tool help metadata** | `ActionInfo` in the tool class | Action added, removed, renamed, or params changed |
+| **Server instructions** | `McpServer.cs` → `GetServerInstructions()` | Action added/removed, new tool, or key behavior change |
+| **Knowledge base guides** | `src/Cordyceps/Knowledge/*.md` | New concepts, changed workflows, new error patterns |
+| **Resource registry** | `Resources/ResourceRegistry.cs` | New guide added, URI scheme changed |
+| **Prompt templates** | `Prompts/PromptRegistry.cs` | Workflow steps changed, tool names changed |
+| **Common errors guide** | `Knowledge/CommonErrorsGuide.md` | New failure modes discovered or fixed |
+| **CHANGELOG.md** | Root | Every user-visible change |
 
 ## Key Patterns
 

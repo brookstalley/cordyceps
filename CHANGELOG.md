@@ -4,6 +4,12 @@ All notable changes to Cordyceps will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [1.4.8] - 2026-02-10
+
+### Changed
+
+- **Developer documentation** - Added mandatory documentation audit checklist to CLAUDE.md. Every code change must now verify that tool help metadata, server instructions, knowledge base guides, resource registry, prompt templates, and CHANGELOG are updated as needed. Also documented the full user-facing documentation system (Knowledge/, ResourceRegistry, PromptRegistry, server instructions) in the Architecture section.
+
 ## [1.4.7] - 2026-02-05
 
 ### Fixed
