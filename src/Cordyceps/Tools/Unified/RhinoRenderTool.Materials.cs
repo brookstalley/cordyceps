@@ -1,17 +1,34 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using Cordyceps.Core;
 using Newtonsoft.Json;
 using Rhino;
 using Rhino.Display;
 using Rhino.DocObjects;
+using Rhino.Geometry;
 using Rhino.Render;
 
 namespace Cordyceps.Tools.Unified
 {
     public partial class RhinoRenderTool
     {
+        // Map user-friendly slot names to internal PBR child slot names
+        private static readonly Dictionary<string, string> PbrSlotMap = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["base-color"] = "pbr-base-color",
+            ["roughness"] = "pbr-roughness",
+            ["metallic"] = "pbr-metallic",
+            ["bump"] = "pbr-bump",
+            ["opacity"] = "pbr-opacity",
+            ["emission"] = "pbr-emission",
+            ["displacement"] = "pbr-displacement",
+            ["ambient-occlusion"] = "pbr-ambient-occlusion",
+            ["clearcoat"] = "pbr-clearcoat",
+            ["clearcoat-roughness"] = "pbr-clearcoat-roughness"
+        };
+
         #region Material Actions
 
         private string ActionMaterialList()
@@ -44,6 +61,17 @@ namespace Cordyceps.Tools.Unified
                         materialInfo["ior"] = pbr.OpacityIOR;
                     }
 
+                    // Report which PBR slots have textures assigned
+                    var textureSlots = new List<string>();
+                    foreach (var kvp in PbrSlotMap)
+                    {
+                        var child = renderMaterial.FindChild(kvp.Value);
+                        if (child != null)
+                            textureSlots.Add(kvp.Key);
+                    }
+                    if (textureSlots.Count > 0)
+                        materialInfo["textures"] = textureSlots;
+
                     materials.Add(materialInfo);
                 }
 
@@ -53,6 +81,119 @@ namespace Cordyceps.Tools.Unified
                     count = materials.Count,
                     materials
                 });
+            });
+        }
+
+        private string ActionMaterialTexture(string name, string slot, string path, string repeat, double amount)
+        {
+            return _context.ExecuteOnUiThread(() =>
+            {
+                var rhinoDoc = RhinoDoc.ActiveDoc;
+                if (rhinoDoc == null)
+                    return ToolHelpers.ErrorResponse("No active Rhino document");
+
+                if (string.IsNullOrEmpty(name))
+                    return ToolHelpers.ErrorResponse("name is required");
+
+                if (string.IsNullOrEmpty(slot))
+                    return ToolHelpers.ErrorResponse("slot is required. Valid slots: " + string.Join(", ", PbrSlotMap.Keys));
+
+                if (!PbrSlotMap.TryGetValue(slot, out var internalSlot))
+                {
+                    return ToolHelpers.ErrorResponse($"Unknown slot: '{slot}'. Valid slots: {string.Join(", ", PbrSlotMap.Keys)}");
+                }
+
+                var renderMaterial = rhinoDoc.RenderMaterials.FirstOrDefault(m =>
+                    m.Name.Equals(name, StringComparison.OrdinalIgnoreCase));
+                if (renderMaterial == null)
+                    return ToolHelpers.ErrorResponse($"Material '{name}' not found. Use material_list to see available materials.");
+
+                bool isRemove = string.IsNullOrEmpty(path);
+
+                if (!isRemove && !File.Exists(path))
+                    return ToolHelpers.ErrorResponse($"Texture file not found: {path}");
+
+                // Parse UV repeat
+                double repeatU = 1.0, repeatV = 1.0;
+                if (!string.IsNullOrEmpty(repeat))
+                {
+                    var parts = repeat.Split(',');
+                    if (parts.Length == 2 &&
+                        double.TryParse(parts[0].Trim(), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var ru) &&
+                        double.TryParse(parts[1].Trim(), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var rv))
+                    {
+                        repeatU = ru;
+                        repeatV = rv;
+                    }
+                    else
+                    {
+                        return ToolHelpers.ErrorResponse($"Invalid repeat format: '{repeat}'. Expected 'u,v' (e.g., '4,4')");
+                    }
+                }
+
+                // Clamp amount to 0-100
+                amount = Math.Max(0, Math.Min(100, amount));
+
+                try
+                {
+                    renderMaterial.BeginChange(RenderContent.ChangeContexts.Program);
+
+                    if (isRemove)
+                    {
+                        // Remove the texture from this slot
+                        renderMaterial.SetChild(null, internalSlot);
+                        renderMaterial.SetChildSlotOn(internalSlot, false, RenderContent.ChangeContexts.Program);
+                        renderMaterial.EndChange();
+
+                        return JsonConvert.SerializeObject(new
+                        {
+                            success = true,
+                            material = renderMaterial.Name,
+                            slot,
+                            removed = true
+                        });
+                    }
+
+                    // Create a bitmap texture
+                    var bmtex = RenderContentType.NewContentFromTypeId(ContentUuids.BitmapTextureType) as RenderTexture;
+                    if (bmtex == null)
+                    {
+                        renderMaterial.EndChange();
+                        return ToolHelpers.ErrorResponse("Failed to create bitmap texture");
+                    }
+
+                    bmtex.BeginChange(RenderContent.ChangeContexts.Program);
+                    bmtex.SetParameter("filename", path);
+
+                    // Apply UV repeat
+                    if (repeatU != 1.0 || repeatV != 1.0)
+                    {
+                        bmtex.SetRepeat(new Vector3d(repeatU, repeatV, 1.0), RenderContent.ChangeContexts.Program);
+                    }
+
+                    bmtex.EndChange();
+
+                    // Assign the texture to the material slot
+                    renderMaterial.SetChild(bmtex, internalSlot);
+                    renderMaterial.SetChildSlotOn(internalSlot, true, RenderContent.ChangeContexts.Program);
+                    renderMaterial.SetChildSlotAmount(internalSlot, amount, RenderContent.ChangeContexts.Program);
+                    renderMaterial.EndChange();
+
+                    return JsonConvert.SerializeObject(new
+                    {
+                        success = true,
+                        material = renderMaterial.Name,
+                        slot,
+                        path,
+                        repeat = $"{repeatU},{repeatV}",
+                        amount
+                    });
+                }
+                catch (Exception ex)
+                {
+                    try { renderMaterial.EndChange(); } catch { }
+                    return ToolHelpers.ErrorResponse($"Failed to set texture: {ex.Message}");
+                }
             });
         }
 

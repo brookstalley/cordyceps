@@ -26,6 +26,8 @@ Grasshopper geometry → Rhino baking → materials → viewport → capture.
 
 **Materials**: Set roughness (0.1=polished, 0.9=matte). Use realistic colors.
 
+**Textured materials**: Use `material_texture` to assign image maps to PBR slots for photorealistic results.
+
 **References**: [physicallybased.info](https://physicallybased.info/), [pixelandpoly.com/ior](https://pixelandpoly.com/ior.html)
 
 ## Key Actions
@@ -41,7 +43,7 @@ Use `action='help'` on any tool for full parameter details.
 **Render**: `render` (get status or wait for passes)
 **Settings**: `settings`, `ground`, `sun`, `skylight`
 **Lights**: `light_add`, `light_list`, `light_set`, `light_delete`
-**Materials**: `material_list`, `material_library`, `material_create`, `material_instantiate`, `material_apply`, `material_delete`
+**Materials**: `material_list`, `material_library`, `material_instantiate`, `material_create`, `material_texture`, `material_apply`, `material_delete`
 **Environments**: `env_list`, `env_current`, `env_set`, `env_create`
 
 ### gh_document
@@ -60,6 +62,49 @@ Use with `material_instantiate`:
 | Gem | Diamonds, rubies (dispersion) |
 | Plaster | Matte walls |
 | Emission | Glowing, screens, neon |
+
+## Textured PBR Materials
+
+For photorealistic results, assign image textures to PBR material slots using `material_texture`.
+
+### Workflow
+
+All calls via `rhino_render`:
+
+```
+1. rhino_render(action='material_create', name='Grass', color='#4A7C2E', roughness=0.9)
+2. rhino_render(action='material_texture', name='Grass', slot='base-color', path='C:/textures/grass_albedo.jpg', repeat='8,8')
+3. rhino_render(action='material_texture', name='Grass', slot='roughness', path='C:/textures/grass_rough.jpg', repeat='8,8')
+4. rhino_render(action='material_texture', name='Grass', slot='bump', path='C:/textures/grass_normal.jpg', repeat='8,8', amount=50)
+5. rhino_render(action='material_apply', ids='[...]', material='Grass')
+```
+
+### PBR Texture Slots
+
+| Slot | Purpose |
+|------|---------|
+| `base-color` | Albedo/diffuse color map |
+| `roughness` | Surface roughness (white=rough) |
+| `metallic` | Metalness (white=metal) |
+| `bump` | Normal/bump map for surface detail |
+| `opacity` | Transparency (white=opaque) |
+| `emission` | Self-illumination map |
+| `displacement` | Geometry displacement |
+| `ambient-occlusion` | Crevice shadowing |
+| `clearcoat` | Clear lacquer layer |
+| `clearcoat-roughness` | Clearcoat roughness |
+
+### Parameters
+
+- **repeat**: UV tiling as `"u,v"`. Use `"4,4"` or higher for large surfaces.
+- **amount**: Slot influence 0-100 (default 100). Lower values blend with base property.
+- **Omit path** to remove a texture from a slot.
+
+### Tips
+
+- Use `material_list` to inspect which slots have textures assigned.
+- All common formats supported: .png, .jpg, .bmp, .tif, .exr, .hdr
+- Textures require absolute file paths.
 
 ## Camera Orbit Pattern
 

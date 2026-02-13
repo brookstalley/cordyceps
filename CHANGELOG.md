@@ -4,6 +4,13 @@ All notable changes to Cordyceps will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [Unreleased]
+
+### Added
+
+- **PBR texture maps** - New `rhino_render(action='material_texture')` action to assign image-based texture maps to PBR material slots (base-color, roughness, metallic, bump, opacity, emission, displacement, ambient-occlusion, clearcoat, clearcoat-roughness). Supports UV tiling via `repeat` parameter and slot influence via `amount`. Omit `path` to remove a texture from a slot.
+- **Material texture inspection** - `rhino_render(action='material_list')` now reports which PBR slots have textures assigned per material.
+
 ## [1.4.8] - 2026-02-10
 
 ### Changed

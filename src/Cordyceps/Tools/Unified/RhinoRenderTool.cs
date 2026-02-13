@@ -185,7 +185,8 @@ namespace Cordyceps.Tools.Unified
                 {
                     Name = "material_list",
                     Description = "List all materials in the document",
-                    Example = "action='material_list'"
+                    Example = "action='material_list'",
+                    Tips = new[] { "Shows which PBR slots have textures assigned per material" }
                 },
                 ["material_library"] = new ActionInfo
                 {
@@ -208,6 +209,19 @@ namespace Cordyceps.Tools.Unified
                     Required = new[] { "name", "color" },
                     Optional = new[] { "roughness", "metallic", "transparency", "emission", "ior" },
                     Example = "action='material_create', name='Red Metal', color='#FF0000', metallic=1"
+                },
+                ["material_texture"] = new ActionInfo
+                {
+                    Name = "material_texture",
+                    Description = "Set or remove a texture on a PBR material slot",
+                    Required = new[] { "name", "slot" },
+                    Optional = new[] { "path", "repeat", "amount" },
+                    Example = "action='material_texture', name='Grass', slot='base-color', path='C:/textures/grass.jpg', repeat='4,4'",
+                    Tips = new[] {
+                        "slots: base-color, roughness, metallic, bump, opacity, emission, displacement, ambient-occlusion, clearcoat, clearcoat-roughness",
+                        "Omit path to remove texture from slot",
+                        "repeat as 'u,v' (default '1,1'). amount 0-100 (default 100)"
+                    }
                 },
                 ["material_apply"] = new ActionInfo
                 {
@@ -271,7 +285,7 @@ namespace Cordyceps.Tools.Unified
             _context = context;
         }
 
-        [McpServerTool, Description("Render operations. Actions: display|camera|zoom|modes|render|settings|ground|sun|skylight|view_save|view_load|view_list|view_delete|light_add|light_list|light_set|light_delete|material_list|material_library|material_instantiate|material_create|material_apply|material_delete|env_list|env_current|env_set|env_create|env_delete|help")]
+        [McpServerTool, Description("Render operations. Actions: display|camera|zoom|modes|render|settings|ground|sun|skylight|view_save|view_load|view_list|view_delete|light_add|light_list|light_set|light_delete|material_list|material_library|material_instantiate|material_create|material_texture|material_apply|material_delete|env_list|env_current|env_set|env_create|env_delete|help")]
         public string RhinoRender(
             [Description("Action to perform")] string action,
             [Description("Display mode name")] string mode = null,
@@ -315,6 +329,11 @@ namespace Cordyceps.Tools.Unified
             [Description("Emission color")] string emission = null,
             [Description("IOR (glass=1.5)")] double ior = 1.0,
             [Description("Material name to apply")] string material = null,
+            // Texture parameters
+            [Description("File path for texture image")] string path = null,
+            [Description("UV repeat as 'u,v' (e.g., '4,4')")] string repeat = null,
+            [Description("Slot influence 0-100")] double amount = 100,
+            [Description("PBR slot name")] string slot = null,
             // Environment parameters
             [Description("Environment name or GUID")] string environment = null,
             [Description("Usage: 'background', 'lighting', 'reflection', 'all'")] string usage = "all",
@@ -363,6 +382,11 @@ namespace Cordyceps.Tools.Unified
                 ("transparency", transparency),
                 ("emission", emission),
                 ("ior", ior),
+                // Texture params
+                ("path", path),
+                ("repeat", repeat),
+                ("amount", amount),
+                ("slot", slot),
                 // Environment params
                 ("environment", environment),
                 ("usage", usage),
@@ -406,6 +430,7 @@ namespace Cordyceps.Tools.Unified
                 "material_library" => ActionMaterialLibrary(),
                 "material_instantiate" => ActionMaterialInstantiate(type, name, color),
                 "material_create" => ActionMaterialCreate(name, color, roughness, metallic, transparency, emission, ior),
+                "material_texture" => ActionMaterialTexture(name, slot, path, repeat, amount),
                 "material_apply" => ActionMaterialApply(ids, material),
                 "material_delete" => ActionMaterialDelete(name),
                 // Environment actions

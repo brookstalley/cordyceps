@@ -68,6 +68,11 @@
     <EmbeddedResource Include="Knowledge\CommonErrorsGuide.md" />
     <EmbeddedResource Include="Knowledge\Patterns\LinearArray.md" />
     <EmbeddedResource Include="Knowledge\Patterns\GridArray.md" />
+    <EmbeddedResource Include="Knowledge\Prompts\CreateParametricGeometry.md" />
+    <EmbeddedResource Include="Knowledge\Prompts\DebugDataMismatch.md" />
+    <EmbeddedResource Include="Knowledge\Prompts\SetupScriptComponent.md" />
+    <EmbeddedResource Include="Knowledge\Prompts\OptimizeCanvas.md" />
+    <EmbeddedResource Include="Knowledge\Prompts\PlanDefinition.md" />
   </ItemGroup>
 
   <!-- Post-build: Copy .gha to releases folder for Grasshopper to load -->
