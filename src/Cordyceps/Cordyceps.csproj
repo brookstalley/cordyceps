@@ -12,6 +12,10 @@
     <Configurations>Release</Configurations>
   </PropertyGroup>
 
+  <ItemGroup>
+    <InternalsVisibleTo Include="Cordyceps.Tests" />
+  </ItemGroup>
+
   <!-- Block Debug builds with a clear error message -->
   <Target Name="BlockDebugBuilds" BeforeTargets="Build" Condition=" '$(Configuration)' != 'Release' ">
     <Error Text="Only Release builds are supported. Use 'dotnet build' (defaults to Release) or 'dotnet build -c Release'." />

@@ -160,28 +160,21 @@ namespace Cordyceps.Tools.Unified
             // Capture parameters
             [Description("View name for viewport capture")] string view = null,
             [Description("Auto-fit content (true/false)")] string fit = null,
-            [Description("Padding around content")] string padding = null,
-            [Description("Output width")] string width = null,
-            [Description("Output height")] string height = null,
+            [Description("Padding around content")] int padding = 50,
+            [Description("Output width")] int width = 0,
+            [Description("Output height")] int height = 0,
             [Description("Transparent background (true/false)")] string transparent = null,
-            [Description("Region xMin")] string xMin = null,
-            [Description("Region yMin")] string yMin = null,
-            [Description("Region xMax")] string xMax = null,
-            [Description("Region yMax")] string yMax = null)
+            [Description("Region xMin")] double xMin = double.NaN,
+            [Description("Region yMin")] double yMin = double.NaN,
+            [Description("Region xMax")] double xMax = double.NaN,
+            [Description("Region yMax")] double yMax = double.NaN)
         {
             if (string.Equals(action, "help", StringComparison.OrdinalIgnoreCase))
                 return UnifiedToolHelpers.GenerateHelp(ToolInfo);
 
             // Parse capture parameters
             bool fitBool = ToolHelpers.ParseBool(fit, true);
-            int paddingInt = string.IsNullOrEmpty(padding) ? 50 : (int.TryParse(padding, out var p) ? p : 50);
-            int widthInt = string.IsNullOrEmpty(width) ? 0 : (int.TryParse(width, out var w) ? w : 0);
-            int heightInt = string.IsNullOrEmpty(height) ? 0 : (int.TryParse(height, out var h) ? h : 0);
             bool transparentBool = ToolHelpers.ParseBool(transparent, false);
-            float xMinF = string.IsNullOrEmpty(xMin) ? 0 : (float.TryParse(xMin, out var x1) ? x1 : 0);
-            float yMinF = string.IsNullOrEmpty(yMin) ? 0 : (float.TryParse(yMin, out var y1) ? y1 : 0);
-            float xMaxF = string.IsNullOrEmpty(xMax) ? 0 : (float.TryParse(xMax, out var x2) ? x2 : 0);
-            float yMaxF = string.IsNullOrEmpty(yMax) ? 0 : (float.TryParse(yMax, out var y2) ? y2 : 0);
 
             var providedParams = UnifiedToolHelpers.BuildParams(
                 ("path", path),
@@ -189,14 +182,14 @@ namespace Cordyceps.Tools.Unified
                 ("name", name),
                 ("view", view),
                 ("fit", fit),
-                ("padding", padding),
-                ("width", width),
-                ("height", height),
+                ("padding", padding != 50 ? (object)padding : null),
+                ("width", width != 0 ? (object)width : null),
+                ("height", height != 0 ? (object)height : null),
                 ("transparent", transparent),
-                ("xMin", xMin),
-                ("yMin", yMin),
-                ("xMax", xMax),
-                ("yMax", yMax)
+                ("xMin", double.IsNaN(xMin) ? null : (object)xMin),
+                ("yMin", double.IsNaN(yMin) ? null : (object)yMin),
+                ("xMax", double.IsNaN(xMax) ? null : (object)xMax),
+                ("yMax", double.IsNaN(yMax) ? null : (object)yMax)
             );
 
             var validationError = UnifiedToolHelpers.ValidateAction(ToolInfo, action, providedParams);
@@ -227,9 +220,9 @@ namespace Cordyceps.Tools.Unified
                 "revert" => ActionRevert(name),
                 "snapshots" => ActionListSnapshots(),
                 // Capture actions
-                "capture_canvas" => ActionCaptureCanvas(path, fitBool, paddingInt),
-                "capture_viewport" => ActionCaptureViewport(path, view, widthInt, heightInt, transparentBool),
-                "capture_region" => ActionCaptureRegion(path, xMinF, yMinF, xMaxF, yMaxF),
+                "capture_canvas" => ActionCaptureCanvas(path, fitBool, padding),
+                "capture_viewport" => ActionCaptureViewport(path, view, width, height, transparentBool),
+                "capture_region" => ActionCaptureRegion(path, (float)xMin, (float)yMin, (float)xMax, (float)yMax),
                 "capture_views" => ActionCaptureViews(),
                 _ => JsonConvert.SerializeObject(new { success = false, error = $"Unknown action: {action}" })
             };

@@ -12,7 +12,7 @@ namespace Cordyceps.Tools.Unified
     {
         #region Light Actions
 
-        private string ActionLightAdd(string lightType, string location, string target, string color, string intensity, string spotAngle, string name)
+        private string ActionLightAdd(string lightType, string location, string target, string color, double intensity, double spotAngle, string name)
         {
             return _context.ExecuteOnUiThread(() =>
             {
@@ -53,13 +53,10 @@ namespace Cordyceps.Tools.Unified
                         light.Direction = tgt - loc;
 
                         // Set spot angle if provided
-                        if (!string.IsNullOrEmpty(spotAngle))
+                        if (!double.IsNaN(spotAngle))
                         {
-                            if (double.TryParse(spotAngle, out var angle))
-                            {
-                                var radians = angle * Math.PI / 180.0;
-                                light.SpotAngleRadians = radians;
-                            }
+                            var radians = spotAngle * Math.PI / 180.0;
+                            light.SpotAngleRadians = radians;
                         }
                         break;
                     case "directional":
@@ -86,11 +83,8 @@ namespace Cordyceps.Tools.Unified
                 }
 
                 // Set intensity if provided
-                if (!string.IsNullOrEmpty(intensity))
-                {
-                    if (double.TryParse(intensity, out var val))
-                        light.Intensity = val;
-                }
+                if (!double.IsNaN(intensity))
+                    light.Intensity = intensity;
 
                 // Set name if provided
                 if (!string.IsNullOrEmpty(name))
@@ -167,7 +161,7 @@ namespace Cordyceps.Tools.Unified
             });
         }
 
-        private string ActionLightSet(string ids, string location, string target, string color, string intensity, string spotAngle, string enabled)
+        private string ActionLightSet(string ids, string location, string target, string color, double intensity, double spotAngle, string enabled)
         {
             return _context.ExecuteOnUiThread(() =>
             {
@@ -220,24 +214,18 @@ namespace Cordyceps.Tools.Unified
                         }
                     }
 
-                    if (!string.IsNullOrEmpty(intensity))
+                    if (!double.IsNaN(intensity))
                     {
-                        if (double.TryParse(intensity, out var val))
-                        {
-                            light.Intensity = val;
-                            changed = true;
-                            if (!modified.Contains("intensity")) modified.Add("intensity");
-                        }
+                        light.Intensity = intensity;
+                        changed = true;
+                        if (!modified.Contains("intensity")) modified.Add("intensity");
                     }
 
-                    if (!string.IsNullOrEmpty(spotAngle) && light.LightStyle == LightStyle.WorldSpot)
+                    if (!double.IsNaN(spotAngle) && light.LightStyle == LightStyle.WorldSpot)
                     {
-                        if (double.TryParse(spotAngle, out var angle))
-                        {
-                            light.SpotAngleRadians = angle * Math.PI / 180.0;
-                            changed = true;
-                            if (!modified.Contains("spotAngle")) modified.Add("spotAngle");
-                        }
+                        light.SpotAngleRadians = spotAngle * Math.PI / 180.0;
+                        changed = true;
+                        if (!modified.Contains("spotAngle")) modified.Add("spotAngle");
                     }
 
                     if (!string.IsNullOrEmpty(enabled))

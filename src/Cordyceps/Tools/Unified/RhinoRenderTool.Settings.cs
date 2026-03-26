@@ -77,7 +77,7 @@ namespace Cordyceps.Tools.Unified
             });
         }
 
-        private string ActionGround(string enabled, string altitude, string autoAltitude, string shadowOnly, string material)
+        private string ActionGround(string enabled, double altitude, string autoAltitude, string shadowOnly, string material)
         {
             return _context.ExecuteOnUiThread(() =>
             {
@@ -96,11 +96,9 @@ namespace Cordyceps.Tools.Unified
                     modified.Add("groundEnabled");
                 }
 
-                if (!string.IsNullOrEmpty(altitude))
+                if (!double.IsNaN(altitude))
                 {
-                    if (!double.TryParse(altitude, out var val))
-                        return ToolHelpers.ErrorResponse($"Invalid groundAltitude: {altitude}");
-                    gp.Altitude = val;
+                    gp.Altitude = altitude;
                     modified.Add("groundAltitude");
                 }
 
@@ -144,7 +142,7 @@ namespace Cordyceps.Tools.Unified
             });
         }
 
-        private string ActionSun(string enabled, string azimuth, string altitude, string intensity, string latitude, string longitude, string dateTime)
+        private string ActionSun(string enabled, double azimuth, double altitude, double intensity, double latitude, double longitude, string dateTime)
         {
             return _context.ExecuteOnUiThread(() =>
             {
@@ -163,29 +161,31 @@ namespace Cordyceps.Tools.Unified
                     modified.Add("sunEnabled");
                 }
 
-                if (!string.IsNullOrEmpty(intensity))
+                if (!double.IsNaN(intensity))
                 {
-                    if (!double.TryParse(intensity, out var val) || val < 0)
-                        return ToolHelpers.ErrorResponse($"Invalid intensity: {intensity}");
-                    sun.Intensity = val;
+                    if (intensity < 0)
+                        return ToolHelpers.ErrorResponse($"Invalid intensity: {intensity} (must be >= 0)");
+                    sun.Intensity = intensity;
                     modified.Add("intensity");
                 }
 
-                if (!string.IsNullOrEmpty(azimuth) || !string.IsNullOrEmpty(altitude))
+                if (!double.IsNaN(azimuth) || !double.IsNaN(altitude))
                 {
                     double az = sun.Azimuth, alt = sun.Altitude;
 
-                    if (!string.IsNullOrEmpty(azimuth))
+                    if (!double.IsNaN(azimuth))
                     {
-                        if (!double.TryParse(azimuth, out az) || az < 0 || az > 360)
+                        if (azimuth < 0 || azimuth > 360)
                             return ToolHelpers.ErrorResponse($"Invalid azimuth: {azimuth} (must be 0-360)");
+                        az = azimuth;
                         modified.Add("azimuth");
                     }
 
-                    if (!string.IsNullOrEmpty(altitude))
+                    if (!double.IsNaN(altitude))
                     {
-                        if (!double.TryParse(altitude, out alt) || alt < -90 || alt > 90)
+                        if (altitude < -90 || altitude > 90)
                             return ToolHelpers.ErrorResponse($"Invalid sunAltitude: {altitude}");
+                        alt = altitude;
                         modified.Add("sunAltitude");
                     }
 
@@ -195,19 +195,19 @@ namespace Cordyceps.Tools.Unified
                     modified.Add("manualControl");
                 }
 
-                if (!string.IsNullOrEmpty(latitude))
+                if (!double.IsNaN(latitude))
                 {
-                    if (!double.TryParse(latitude, out var val) || val < -90 || val > 90)
+                    if (latitude < -90 || latitude > 90)
                         return ToolHelpers.ErrorResponse($"Invalid latitude: {latitude}");
-                    sun.Latitude = val;
+                    sun.Latitude = latitude;
                     modified.Add("latitude");
                 }
 
-                if (!string.IsNullOrEmpty(longitude))
+                if (!double.IsNaN(longitude))
                 {
-                    if (!double.TryParse(longitude, out var val) || val < -180 || val > 180)
+                    if (longitude < -180 || longitude > 180)
                         return ToolHelpers.ErrorResponse($"Invalid longitude: {longitude}");
-                    sun.Longitude = val;
+                    sun.Longitude = longitude;
                     modified.Add("longitude");
                 }
 
@@ -234,7 +234,7 @@ namespace Cordyceps.Tools.Unified
             });
         }
 
-        private string ActionSkylight(string enabled, string shadowIntensity, string customEnvironment)
+        private string ActionSkylight(string enabled, double shadowIntensity, string customEnvironment)
         {
             return _context.ExecuteOnUiThread(() =>
             {
@@ -254,11 +254,11 @@ namespace Cordyceps.Tools.Unified
                     modified.Add("skylightEnabled");
                 }
 
-                if (!string.IsNullOrEmpty(shadowIntensity))
+                if (!double.IsNaN(shadowIntensity))
                 {
-                    if (!double.TryParse(shadowIntensity, out var val) || val < 0)
-                        return ToolHelpers.ErrorResponse($"Invalid shadowIntensity: {shadowIntensity}");
-                    skylight.ShadowIntensity = val;
+                    if (shadowIntensity < 0)
+                        return ToolHelpers.ErrorResponse($"Invalid shadowIntensity: {shadowIntensity} (must be >= 0)");
+                    skylight.ShadowIntensity = shadowIntensity;
                     modified.Add("shadowIntensity");
                 }
 

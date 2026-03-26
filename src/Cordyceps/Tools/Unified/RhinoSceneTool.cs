@@ -166,7 +166,7 @@ namespace Cordyceps.Tools.Unified
             [Description("Add to selection (true/false)")] string add = null,
             [Description("Show all hidden (true/false)")] string all = null,
             [Description("Rhino command script")] string cmd = null,
-            [Description("Max objects to return")] string limit = null,
+            [Description("Max objects to return")] int limit = 100,
             // Layer parameters
             [Description("Layer name for create/set/delete")] string name = null,
             [Description("Layer color as hex or RGB")] string color = null,
@@ -188,7 +188,7 @@ namespace Cordyceps.Tools.Unified
                 ("add", add),
                 ("all", all),
                 ("cmd", cmd),
-                ("limit", limit),
+                ("limit", limit != 100 ? (object)limit : null),
                 ("name", name),
                 ("color", color),  // Used by layer_create, layer_set, and set_color
                 ("visible", visible),
@@ -206,13 +206,12 @@ namespace Cordyceps.Tools.Unified
             bool includeHiddenBool = ToolHelpers.ParseBool(includeHidden, true);
             bool addBool = ToolHelpers.ParseBool(add, false);
             bool allBool = ToolHelpers.ParseBool(all, false);
-            int limitInt = string.IsNullOrEmpty(limit) ? 100 : (int.TryParse(limit, out var l) ? l : 100);
             bool visibleBool = ToolHelpers.ParseBool(visible, true);
             bool deleteObjectsBool = ToolHelpers.ParseBool(deleteObjects, false);
 
             return action.ToLowerInvariant() switch
             {
-                "objects" => ActionObjects(type, layer, objectName, selectedBool, includeHiddenBool, limitInt),
+                "objects" => ActionObjects(type, layer, objectName, selectedBool, includeHiddenBool, limit),
                 "select" => ActionSelect(ids, type, layer, addBool),
                 "deselect" => ActionDeselect(),
                 "set_layer" => ActionSetLayer(ids, layer),

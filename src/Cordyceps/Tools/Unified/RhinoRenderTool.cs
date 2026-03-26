@@ -171,7 +171,7 @@ namespace Cordyceps.Tools.Unified
                     Description = "Modify a light's properties",
                     Required = new[] { "ids" },
                     Optional = new[] { "location", "target", "color", "intensity", "spotAngle", "enabled" },
-                    Example = "action='light_set', ids='[\"abc\"]', intensity='2.0'"
+                    Example = "action='light_set', ids='[\"abc\"]', intensity=2.0"
                 },
                 ["light_delete"] = new ActionInfo
                 {
@@ -292,11 +292,11 @@ namespace Cordyceps.Tools.Unified
             [Description("View name")] string view = null,
             [Description("Camera location 'x,y,z'")] string location = null,
             [Description("Camera target 'x,y,z'")] string target = null,
-            [Description("35mm lens length")] string lens = null,
+            [Description("35mm lens length")] double lens = double.NaN,
             [Description("Standard view preset (top, bottom, front, back, left, right, perspective, iso_nw, iso_ne, iso_sw, iso_se)")] string preset = null,
             [Description("JSON array of object IDs")] string ids = null,
-            [Description("Min render passes to wait for")] string wait = null,
-            [Description("Timeout in seconds")] string timeout = null,
+            [Description("Min render passes to wait for")] int wait = 0,
+            [Description("Timeout in seconds")] int timeout = 30,
             // Settings parameters
             [Description("Background style: 'solid', 'gradient', 'environment'")] string style = null,
             [Description("Top/solid background color")] string colorTop = null,
@@ -304,20 +304,20 @@ namespace Cordyceps.Tools.Unified
             [Description("Transparent background (true/false)")] string transparent = null,
             // Ground plane parameters
             [Description("Enable ground plane (true/false)")] string groundEnabled = null,
-            [Description("Ground plane altitude in model units")] string groundAltitude = null,
+            [Description("Ground plane altitude in model units")] double groundAltitude = double.NaN,
             [Description("Auto-altitude (true/false)")] string autoAltitude = null,
             [Description("Shadow-only mode (true/false)")] string shadowOnly = null,
             // Sun parameters
             [Description("Enable sun (true/false)")] string sunEnabled = null,
-            [Description("Sun azimuth 0-360 (135/225=classic 3/4 lighting)")] string azimuth = null,
-            [Description("Sun altitude degrees (30-45=daylight, 10-20=dramatic)")] string sunAltitude = null,
-            [Description("Sun intensity multiplier")] string intensity = null,
-            [Description("Latitude for sun calculation")] string latitude = null,
-            [Description("Longitude for sun calculation")] string longitude = null,
+            [Description("Sun azimuth 0-360 (135/225=classic 3/4 lighting)")] double azimuth = double.NaN,
+            [Description("Sun altitude degrees (30-45=daylight, 10-20=dramatic)")] double sunAltitude = double.NaN,
+            [Description("Sun intensity multiplier")] double intensity = double.NaN,
+            [Description("Latitude for sun calculation")] double latitude = double.NaN,
+            [Description("Longitude for sun calculation")] double longitude = double.NaN,
             [Description("DateTime for sun calculation")] string dateTime = null,
             // Skylight parameters
             [Description("Enable skylight (use WITH sun for realistic shadows)")] string skylightEnabled = null,
-            [Description("Shadow intensity")] string shadowIntensity = null,
+            [Description("Shadow intensity")] double shadowIntensity = double.NaN,
             [Description("Custom environment name")] string customEnvironment = null,
             // Material parameters
             [Description("Material or object name")] string name = null,
@@ -338,7 +338,7 @@ namespace Cordyceps.Tools.Unified
             [Description("Environment name or GUID")] string environment = null,
             [Description("Usage: 'background', 'lighting', 'reflection', 'all'")] string usage = "all",
             // Light parameters (reuses: type, location, target, color, intensity from other actions)
-            [Description("Spot light cone angle in degrees")] string spotAngle = null,
+            [Description("Spot light cone angle in degrees")] double spotAngle = double.NaN,
             [Description("Enable/disable (true/false)")] string enabled = null)
         {
             if (string.Equals(action, "help", StringComparison.OrdinalIgnoreCase))
@@ -349,29 +349,29 @@ namespace Cordyceps.Tools.Unified
                 ("view", view),
                 ("location", location),
                 ("target", target),
-                ("lens", lens),
+                ("lens", double.IsNaN(lens) ? null : (object)lens),
                 ("preset", preset),
                 ("ids", ids),
-                ("wait", wait),
-                ("timeout", timeout),
+                ("wait", wait != 0 ? (object)wait : null),
+                ("timeout", timeout != 30 ? (object)timeout : null),
                 ("style", style),
                 ("colorTop", colorTop),
                 ("colorBottom", colorBottom),
                 ("transparent", transparent),
                 ("groundEnabled", groundEnabled),
-                ("groundAltitude", groundAltitude),
+                ("groundAltitude", double.IsNaN(groundAltitude) ? null : (object)groundAltitude),
                 ("autoAltitude", autoAltitude),
                 ("shadowOnly", shadowOnly),
                 ("material", material),
                 ("sunEnabled", sunEnabled),
-                ("azimuth", azimuth),
-                ("sunAltitude", sunAltitude),
-                ("intensity", intensity),
-                ("latitude", latitude),
-                ("longitude", longitude),
+                ("azimuth", double.IsNaN(azimuth) ? null : (object)azimuth),
+                ("sunAltitude", double.IsNaN(sunAltitude) ? null : (object)sunAltitude),
+                ("intensity", double.IsNaN(intensity) ? null : (object)intensity),
+                ("latitude", double.IsNaN(latitude) ? null : (object)latitude),
+                ("longitude", double.IsNaN(longitude) ? null : (object)longitude),
                 ("dateTime", dateTime),
                 ("skylightEnabled", skylightEnabled),
-                ("shadowIntensity", shadowIntensity),
+                ("shadowIntensity", double.IsNaN(shadowIntensity) ? null : (object)shadowIntensity),
                 ("customEnvironment", customEnvironment),
                 // Material params
                 ("name", name),
@@ -391,7 +391,7 @@ namespace Cordyceps.Tools.Unified
                 ("environment", environment),
                 ("usage", usage),
                 // Light params (type, location, target, color, intensity already included above)
-                ("spotAngle", spotAngle),
+                ("spotAngle", double.IsNaN(spotAngle) ? null : (object)spotAngle),
                 ("enabled", enabled)
             );
 
@@ -399,18 +399,13 @@ namespace Cordyceps.Tools.Unified
             if (validationError != null)
                 return validationError;
 
-            // Parse numeric parameters with defaults
-            double lensDbl = string.IsNullOrEmpty(lens) ? 0 : (double.TryParse(lens, out var l) ? l : 0);
-            int waitInt = string.IsNullOrEmpty(wait) ? 0 : (int.TryParse(wait, out var w) ? w : 0);
-            int timeoutInt = string.IsNullOrEmpty(timeout) ? 30 : (int.TryParse(timeout, out var t) ? t : 30);
-
             return action.ToLowerInvariant() switch
             {
                 "display" => ActionDisplay(mode, view),
-                "camera" => ActionCamera(location, target, lensDbl, view, preset),
+                "camera" => ActionCamera(location, target, lens, view, preset),
                 "zoom" => ActionZoom(ids, view),
                 "modes" => ActionModes(),
-                "render" => ActionRender(view, waitInt, timeoutInt),
+                "render" => ActionRender(view, wait, timeout),
                 "settings" => ActionSettings(style, colorTop, colorBottom, transparent),
                 "ground" => ActionGround(groundEnabled, groundAltitude, autoAltitude, shadowOnly, material),
                 "sun" => ActionSun(sunEnabled, azimuth, sunAltitude, intensity, latitude, longitude, dateTime),

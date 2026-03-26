@@ -201,14 +201,7 @@ namespace Cordyceps
             return sb.ToString();
         }
 
-        private static string GetJsonType(Type type)
-        {
-            if (type == typeof(string)) return "string";
-            if (type == typeof(int) || type == typeof(long) || type == typeof(double) || type == typeof(float))
-                return "number";
-            if (type == typeof(bool)) return "boolean";
-            return "string";
-        }
+        private static string GetJsonType(Type type) => Core.JsonTypeConverter.GetJsonType(type);
 
         /// <summary>
         /// Main HTTP listener loop
@@ -751,23 +744,7 @@ Resources: gh://docs/getting-started, gh://docs/data-trees, gh://docs/common-err
             };
         }
 
-        private static object ConvertJsonValue(JsonElement element, Type targetType)
-        {
-            if (targetType == typeof(string))
-                return element.GetString();
-            if (targetType == typeof(int))
-                return element.GetInt32();
-            if (targetType == typeof(long))
-                return element.GetInt64();
-            if (targetType == typeof(double))
-                return element.GetDouble();
-            if (targetType == typeof(bool))
-                return element.GetBoolean();
-            if (targetType == typeof(float))
-                return (float)element.GetDouble();
-
-            return element.GetString();
-        }
+        private static object ConvertJsonValue(JsonElement element, Type targetType) => Core.JsonTypeConverter.ConvertJsonValue(element, targetType);
 
         /// <summary>
         /// Record that a command was executed

@@ -113,7 +113,7 @@ namespace Cordyceps.Tools.Unified
             [Description("Component type filter")] string type = null,
             [Description("Trace direction (upstream/downstream)")] string direction = "upstream",
             [Description("Component name or GUID for docs")] string component = null,
-            [Description("Log entry limit")] string limit = null,
+            [Description("Log entry limit")] int limit = 100,
             [Description("Clear log after retrieval (true/false)")] string clear = null)
         {
             if (string.Equals(action, "help", StringComparison.OrdinalIgnoreCase))
@@ -125,7 +125,7 @@ namespace Cordyceps.Tools.Unified
                 ("type", type),
                 ("direction", direction),
                 ("component", component),
-                ("limit", limit),
+                ("limit", limit != 100 ? (object)limit : null),
                 ("clear", clear)
             );
 
@@ -133,8 +133,6 @@ namespace Cordyceps.Tools.Unified
             if (validationError != null)
                 return validationError;
 
-            // Parse optional parameters with defaults
-            int limitInt = string.IsNullOrEmpty(limit) ? 100 : (int.TryParse(limit, out var l) ? l : 100);
             bool clearBool = ToolHelpers.ParseBool(clear, false);
 
             return action.ToLowerInvariant() switch
@@ -144,7 +142,7 @@ namespace Cordyceps.Tools.Unified
                 "trace" => ActionTrace(id, direction),
                 "disconnected" => ActionDisconnected(type),
                 "geometry" => ActionGeometry(id),
-                "log" => ActionLog(limitInt, clearBool),
+                "log" => ActionLog(limit, clearBool),
                 "reports" => ActionReports(),
                 "categories" => ActionCategories(),
                 "docs" => ActionDocs(component),
