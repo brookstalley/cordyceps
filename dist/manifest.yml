@@ -1,0 +1,20 @@
+---
+name: cordyceps
+version: 1.4.9
+authors:
+- Brooks Talley
+description: >-
+  Grasshopper MCP Bridge - Enables AI assistants (Claude, etc.) to programmatically
+  control Grasshopper via the Model Context Protocol. Add components, create connections,
+  configure scripts, and manipulate the canvas through natural language. Also enables
+  direct control from Python and elsewhere using MCP primitives.
+url: https://github.com/brookstalley/cordyceps
+icon: icon.png
+keywords:
+- mcp
+- claude
+- ai
+- automation
+- llm
+- grasshopper
+- rhino
