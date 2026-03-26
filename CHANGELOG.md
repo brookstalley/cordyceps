@@ -6,6 +6,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+
+- **PBR texture maps** - New `rhino_render(action='material_texture')` action to assign image-based texture maps to PBR material slots (base-color, roughness, metallic, bump, opacity, emission, displacement, ambient-occlusion, clearcoat, clearcoat-roughness). Supports UV tiling via `repeat` parameter and slot influence via `amount`. Omit `path` to remove a texture from a slot.
+- **Material texture inspection** - `rhino_render(action='material_list')` now reports which PBR slots have textures assigned per material.
+
+## [1.4.9] - 2026-03-26
+
 ### Fixed
 
 - **Type marshaling** - MCP clients that send string-encoded numbers (e.g., `"300"` instead of `300`) no longer cause errors. `ConvertJsonValue` now performs cross-type coercion for all primitive types. Fixes #13.
@@ -14,11 +21,6 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 - **Accurate MCP schema types** - Numeric tool parameters (`lens`, `wait`, `timeout`, `azimuth`, `sunAltitude`, `intensity`, `latitude`, `longitude`, `groundAltitude`, `shadowIntensity`, `spotAngle`, `xMin`/`yMin`/`xMax`/`yMax`, `limit`, `padding`, `width`, `height`) are now declared with their proper numeric types instead of `string`. The MCP schema now reports `"type": "number"` or `"type": "integer"` for these parameters.
 - **JSON Schema integer distinction** - `GetJsonType` now maps `int`/`long` to `"integer"` (was `"number"`) per JSON Schema specification.
-
-### Added
-
-- **PBR texture maps** - New `rhino_render(action='material_texture')` action to assign image-based texture maps to PBR material slots (base-color, roughness, metallic, bump, opacity, emission, displacement, ambient-occlusion, clearcoat, clearcoat-roughness). Supports UV tiling via `repeat` parameter and slot influence via `amount`. Omit `path` to remove a texture from a slot.
-- **Material texture inspection** - `rhino_render(action='material_list')` now reports which PBR slots have textures assigned per material.
 
 ## [1.4.8] - 2026-02-10
 
