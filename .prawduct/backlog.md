@@ -96,7 +96,7 @@
   gate").
 
 - **[GHS-7K2P]** `gh_script(set)` silently drops the script component's language directive → "Can not determine input code language"
-  `effort: M · impact: L · area: gh-script · source: user · added: 2026-06-20 · status: shipped · stage: ready · reviewed: 2026-06-20 · closed-by: #16 · refs: incoming-bugs/script-component-language-lost-on-setsource.md`
+  `effort: M · impact: L · area: gh-script · source: user · added: 2026-06-20 · status: shipped · stage: ready · reviewed: 2026-06-20 · closed-by: #16 · refs: PR #16 (commit facde40)`
 
   `ActionSet`/`ActionConfigure` in `src/Cordyceps/Tools/Unified/GhScriptTool.cs` call
   `scriptComp.SetSource(code)` (`:164`, and `:260`/`:283` in configure), which overwrites the
@@ -108,7 +108,9 @@
 
   Hits anyone following cordyceps' own docs: `Knowledge/Prompts/SetupScriptComponent.md` and
   `Knowledge/ComponentPatternsGuide.md` both show directive-less Python bodies. Full root cause
-  and live-verified repro in `incoming-bugs/script-component-language-lost-on-setsource.md`.
+  and live-verified repro: see PR #16 / commit facde40 (the original
+  `incoming-bugs/script-component-language-lost-on-setsource.md` report was removed in the
+  2026-06-20 janitor pass and is preserved in git history).
 
   **Preferred fix:** before `SetSource`, auto-preserve/prepend the directive matching the
   component's current language (Python 3 / Python 2 / C#) when `code` doesn't already start

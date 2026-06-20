@@ -274,6 +274,17 @@ update_csproj_version() {
     fi
 }
 
+# Update version in the Yak manifest (copied into dist/ by prepare_dist)
+update_manifest_version() {
+    local version="$1"
+    if [[ "$DRY_RUN" == true ]]; then
+        log_info "[DRY-RUN] Would update $MANIFEST to version $version"
+    else
+        sed_inplace "s|^version: .*|version: $version|" "$MANIFEST"
+        log_success "Updated manifest to version $version"
+    fi
+}
+
 # Build the GHA
 build_gha() {
     log_info "Building Cordyceps..."
@@ -456,6 +467,7 @@ main() {
 
     # Execute release steps
     update_csproj_version "$NEW_VERSION"
+    update_manifest_version "$NEW_VERSION"
     build_gha
     prepare_dist
     build_yak "$NEW_VERSION"
