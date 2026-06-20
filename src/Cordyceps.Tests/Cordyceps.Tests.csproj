@@ -3,6 +3,9 @@
   <PropertyGroup>
     <TargetFramework>net8.0</TargetFramework>
     <IsPackable>false</IsPackable>
+    <!-- Run the net8.0 test host on a newer runtime when no .NET 8 runtime is installed.
+         Only affects test execution; the shipping plugin (Cordyceps.csproj) stays net8.0. -->
+    <RollForward>Major</RollForward>
   </PropertyGroup>
 
   <ItemGroup>
@@ -11,9 +14,10 @@
     <PackageReference Include="xunit.runner.visualstudio" Version="2.5.6" />
   </ItemGroup>
 
-  <!-- Link the source file directly to avoid pulling in Grasshopper runtime dependencies -->
+  <!-- Link source files directly to avoid pulling in Grasshopper runtime dependencies -->
   <ItemGroup>
     <Compile Include="..\Cordyceps\Core\JsonTypeConverter.cs" Link="JsonTypeConverter.cs" />
+    <Compile Include="..\Cordyceps\Core\ScriptDirective.cs" Link="ScriptDirective.cs" />
   </ItemGroup>
 
 </Project>

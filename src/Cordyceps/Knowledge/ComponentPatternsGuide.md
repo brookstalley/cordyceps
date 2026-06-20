@@ -79,6 +79,8 @@ circles = [rg.Circle(rg.Plane(pt, rg.Vector3d.ZAxis), radius) for pt in points]
 a = circles  # Output
 ```
 
+> Language is preserved automatically on `gh_script(set/configure)` — plain bodies (no `#! python 3` / `// #! csharp` first line) keep the component's existing language.
+
 ## Performance
 
 - **Data Dam**: Cache expensive operations (booleans, mesh ops, simulations)

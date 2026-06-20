@@ -64,8 +64,28 @@
 
 <!-- Items available to pick up. -->
 
+- **[TST-9Q4M]** Wire .NET/xUnit test evidence into the Prawduct gate
+  `effort: M · impact: M · area: tooling · source: critic · added: 2026-06-20 · status: open · stage: ready · related: GHS-7K2P`
+
+  `prawduct-hook test-evidence record` is pytest-only (runs `sys.executable -m pytest`), so it
+  cannot record evidence for this C#/.NET repo — every chunk gets a non-blocking
+  "no .test-evidence.json" Critic WARNING and the gate is unsound for this project.
+
+  The `project-state.yaml` `test_command:` option requires a `{junit_xml}` literal, but
+  `dotnet test` has no built-in junit logger; wiring this needs the `JunitXml.TestLogger` NuGet
+  package on `Cordyceps.Tests` plus a `test_command: dotnet test ... --logger
+  "junit;LogFilePath={junit_xml}"` (point at a script since `#`/operators in the command get
+  truncated).
+
+  Surfaced by the Critic while fixing GHS-7K2P.
+
+## Promoted
+
+<!-- Items currently being addressed in an active build plan. /backlog pick
+     skips these by default (work is already in flight). -->
+
 - **[GHS-7K2P]** `gh_script(set)` silently drops the script component's language directive → "Can not determine input code language"
-  `effort: M · impact: L · area: gh-script · source: user · added: 2026-06-20 · status: open · stage: ready · refs: incoming-bugs/script-component-language-lost-on-setsource.md`
+  `effort: M · impact: L · area: gh-script · source: user · added: 2026-06-20 · status: promoted · stage: ready · reviewed: 2026-06-20 · refs: incoming-bugs/script-component-language-lost-on-setsource.md`
 
   `ActionSet`/`ActionConfigure` in `src/Cordyceps/Tools/Unified/GhScriptTool.cs` call
   `scriptComp.SetSource(code)` (`:164`, and `:260`/`:283` in configure), which overwrites the
@@ -86,10 +106,8 @@
   help text. Touches the Documentation Contract boundary (server instructions, ActionInfo help,
   Knowledge guides — see CLAUDE.md Documentation Audit table).
 
-## Promoted
-
-<!-- Items currently being addressed in an active build plan. /backlog pick
-     skips these by default (work is already in flight). -->
+  **[2026-06-20] Promoted:** fix built on branch `fix/gh-script-language-directive`
+  (build-plan.md Chunk 01); Critic passed (0 blocking). Pending merge to main.
 
 ## Archive
 
