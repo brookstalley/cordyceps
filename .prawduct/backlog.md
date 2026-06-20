@@ -84,8 +84,12 @@
 <!-- Items currently being addressed in an active build plan. /backlog pick
      skips these by default (work is already in flight). -->
 
+## Archive
+
+<!-- Shipped and dropped items, kept for searchability. Never deleted. -->
+
 - **[GHS-7K2P]** `gh_script(set)` silently drops the script component's language directive → "Can not determine input code language"
-  `effort: M · impact: L · area: gh-script · source: user · added: 2026-06-20 · status: promoted · stage: ready · reviewed: 2026-06-20 · refs: incoming-bugs/script-component-language-lost-on-setsource.md`
+  `effort: M · impact: L · area: gh-script · source: user · added: 2026-06-20 · status: shipped · stage: ready · reviewed: 2026-06-20 · closed-by: #16 · refs: incoming-bugs/script-component-language-lost-on-setsource.md`
 
   `ActionSet`/`ActionConfigure` in `src/Cordyceps/Tools/Unified/GhScriptTool.cs` call
   `scriptComp.SetSource(code)` (`:164`, and `:260`/`:283` in configure), which overwrites the
@@ -109,6 +113,5 @@
   **[2026-06-20] Promoted:** fix built on branch `fix/gh-script-language-directive`
   (build-plan.md Chunk 01); Critic passed (0 blocking). Pending merge to main.
 
-## Archive
-
-<!-- Shipped and dropped items, kept for searchability. Never deleted. -->
+  **[2026-06-20] Shipped:** merged to main as squash commit facde40 (PR #16). gh_script(set/configure)
+  now preserves the script language directive via Core/ScriptDirective.cs; 28 unit tests; docs audited.

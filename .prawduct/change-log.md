@@ -41,7 +41,7 @@
 
 ## 2026-06-20: Fix gh_script dropping the script language directive (GHS-7K2P)
 
-<!-- prawduct: type=bugfix | chunks=01 | scope=gh-script-language -->
+<!-- prawduct: type=bugfix | chunks=01 | scope=gh-script-language | status=merged -->
 
 **Why:** `gh_script(set/configure)` replaced the whole script body via `SetSource`,
 stripping the Rhino 8 language directive (`#! python 3`, `// #! csharp`) when the new
