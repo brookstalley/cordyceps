@@ -64,6 +64,28 @@
 
 <!-- Items available to pick up. -->
 
+- **[GHS-7K2P]** `gh_script(set)` silently drops the script component's language directive → "Can not determine input code language"
+  `effort: M · impact: L · area: gh-script · source: user · added: 2026-06-20 · status: open · stage: ready · refs: incoming-bugs/script-component-language-lost-on-setsource.md`
+
+  `ActionSet`/`ActionConfigure` in `src/Cordyceps/Tools/Unified/GhScriptTool.cs` call
+  `scriptComp.SetSource(code)` (`:164`, and `:260`/`:283` in configure), which overwrites the
+  leading `#!` language directive that Rhino 8's unified `ScriptComponent` uses to infer the
+  script language. If the caller's `code` lacks the directive, the component loses its language
+  association and emits no geometry, failing at solve time with a runtime error on `out`:
+  "Can not determine input code language". Manifests only at solve time — `set` returns
+  `success: true`.
+
+  Hits anyone following cordyceps' own docs: `Knowledge/Prompts/SetupScriptComponent.md` and
+  `Knowledge/ComponentPatternsGuide.md` both show directive-less Python bodies. Full root cause
+  and live-verified repro in `incoming-bugs/script-component-language-lost-on-setsource.md`.
+
+  **Preferred fix:** before `SetSource`, auto-preserve/prepend the directive matching the
+  component's current language (Python 3 / Python 2 / C#) when `code` doesn't already start
+  with a recognized `#!` directive — backward compatible. Also fix the docs/templates to show
+  `#! python 3` / `#! csharp` as line 1, and mention the directive requirement in `gh_script`
+  help text. Touches the Documentation Contract boundary (server instructions, ActionInfo help,
+  Knowledge guides — see CLAUDE.md Documentation Audit table).
+
 ## Promoted
 
 <!-- Items currently being addressed in an active build plan. /backlog pick
