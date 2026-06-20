@@ -355,7 +355,10 @@ namespace Cordyceps
                 var doc = Grasshopper.Instances.ActiveCanvas?.Document;
                 documentName = doc?.DisplayName;
             }
-            catch { /* Ignore errors getting document name */ }
+            catch (Exception ex) // prawduct:allow prawduct/broad-except -- best-effort status read; the health endpoint must still report if the document name is unavailable
+            {
+                Core.DebugLog.Debug($"Could not read active document name for status: {ex.Message}");
+            }
 
             var uptimeSeconds = (int)(DateTime.UtcNow - _startTime).TotalSeconds;
 
@@ -643,7 +646,9 @@ Resources: gh://docs/getting-started, gh://docs/data-trees, gh://docs/common-err
             }
             catch (Exception ex) // prawduct:allow prawduct/broad-except -- tool-invocation boundary: any tool-body failure must become a structured {success:false} result, not a JSON-RPC protocol error (project error-handling contract)
             {
-                Core.DebugLog.WriteLine($"Tool '{name}' threw: {ex.Message}", "ERROR", 1);
+                // Log the full exception (type + stack) operator-side for root-causing; the client
+                // payload stays message-only via FormatExceptionResult.
+                Core.DebugLog.WriteLine($"Tool '{name}' threw: {ex}", "ERROR", 1);
                 var errorText = Core.McpResultFormatter.FormatExceptionResult(ex);
                 return new
                 {

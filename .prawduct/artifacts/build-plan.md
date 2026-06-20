@@ -79,9 +79,22 @@
 
 ## Status
 
-- [x] Chunk 01 — DOC-8M3T: sync GetServerInstructions + MCP-4R2K change-log entry
-- [x] Chunk 02 — TST-6W7H: link RequestValidator + UnifiedToolHelpers, add tests
-- [x] Chunk 03 — CQ-2X8B: unify proxy-instantiation, remove dead ExecuteOnUiThreadAsync
+<!-- views_enabled: these checkboxes are a DERIVED VIEW. They stay [ ] on an unmerged
+     branch and flip to [x] only via `regen-views` from change-log `status=shipped` tags
+     at merge time. Live in-flight progress is tracked in the **Context** prose below,
+     not by hand-flipping these boxes. (Critic 2026-06-20, WARNING — view↔tag drift.) -->
+
+- [ ] Chunk 01 — DOC-8M3T: sync GetServerInstructions + MCP-4R2K change-log entry
+- [ ] Chunk 02 — TST-6W7H: link RequestValidator + UnifiedToolHelpers, add tests
+- [ ] Chunk 03 — CQ-2X8B: unify proxy-instantiation, remove dead ExecuteOnUiThreadAsync
 - [ ] Chunk 04 — CQ-5J9N: broad-catch / silent-swallow sweep (cumulative-final)
 
-**Context:** Chunks 01-03 complete. Ch03: new `ToolHelpers.WithProxyComponent(proxy, Action<IGH_Component>)` unifies the proxy-instantiate + IGH_Component-guard scaffold; `GhInspectTool.ActionDocs` and `ComponentRegistry.CreateComponentMatch` route through it (each keeps its divergent projection). The helper's catch now logs (was 2 silent `catch {}`) and carries a broad-except waiver. Removed dead `GrasshopperContext.ExecuteOnUiThreadAsync` + orphaned `System.Threading.Tasks` using. Main project builds clean (0 warn/0 err); suite 137/137 (behavior preserved). Descoped (recorded in plan): BuildParameterList re-route (not a drop-in), dead-default-arm removal (switch-expression arms are required), full 7× dispatch-preamble consolidation (low impact / high churn on PRIMARY surface). Next: chunk Critic, then Chunk 04 (CQ-5J9N sweep, cumulative-final).
+**Context:** All four chunks' code complete (awaiting cumulative Critic = PR gate).
+
+- **Ch03 (CQ-2X8B):** `ToolHelpers.WithProxyComponent` unifies the proxy-instantiate scaffold; `GhInspectTool.ActionDocs` + `ComponentRegistry.CreateComponentMatch` route through it. Dead `ExecuteOnUiThreadAsync` + orphaned using removed. Chunk Critic ran (final mode, 0 blocking / 2 warning / 3 note). Descoped (recorded above): BuildParameterList re-route, default-arm removal, full dispatch-preamble consolidation.
+- **Ch03 Critic resolutions:** WARNING (view↔tag drift) → Status checkboxes reverted to derived-view `[ ]`. WARNING (stack trace) → folded into Ch04. NOTE (proxy failure → success:true) → backlog item to file. NOTE (tag hygiene) → merge-time. NOTE (verify-chunk-refs) → confirmed false-positive.
+- **Ch04 (CQ-5J9N):** Eliminated **all 12 remaining silent swallows** (the 2 in the proxy blocks were already fixed by Ch03) — each now logs via `DebugLog` with context **or** is narrowed to the expected exception type: GhScriptTool param-sync trio + source-probe cascade + ParseParamDefs; `UnifiedToolHelpers.GetParam` narrowed to `FormatException/InvalidCastException/OverflowException/JsonException` (kept host-free so it stays test-linkable); `McpServer` status doc-name (waived best-effort); `DeprecationRegistry` ×4; `ToolHelpers` color parsers (hex narrowed to `FormatException`, named logged). **WARNING 2 fixed:** the tool-boundary catch now logs `ex` (full type + stack) operator-side while the client payload stays message-only. Grep confirms zero bare/empty `catch` remain. Main build clean (0/0); suite 137/137.
+  - **Broad-catch waiver scope (explicit decision, not a silent drop):** added `prawduct:allow` waivers to the genuine non-tool-boundary supervisors I touched (`WithProxyComponent`, status doc-name read). Did **not** add ~30 inline waivers to the tool-action `catch (Exception)` blocks that already log + return `{success:false,error}`: those implement the **documented `project-preferences.md` error-handling contract** ("catch at the tool boundary … rather than throwing across the MCP boundary"), which is **Critic-enforced** (preferences table) — so they are policy-sanctioned, not defects; narrowing them would re-break the MCP error contract MCP-4R2K just fixed. Rationale recorded so the decision is reviewable.
+  - **Doc audit:** no new *user-facing* error pattern (added logging is operator-side observability, surfaced via `gh_inspect(action='log')`); CommonErrorsGuide unchanged. No root CHANGELOG entry (internal code-quality, consistent with TST-9Q4M precedent).
+
+Next: commit Ch04, run `/prawduct:critic cumulative` (PR gate), file backlog items, reflection.

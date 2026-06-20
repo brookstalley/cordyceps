@@ -168,8 +168,10 @@ namespace Cordyceps.Core
                 var json = JsonConvert.SerializeObject(value);
                 return JsonConvert.DeserializeObject<T>(json);
             }
-            catch
+            catch (Exception ex) when (ex is FormatException or InvalidCastException or OverflowException or JsonException)
             {
+                // Expected when the supplied value can't be coerced to T (bad string, wrong shape,
+                // out-of-range); fall back to the default. Unexpected exceptions propagate.
                 return defaultValue;
             }
         }

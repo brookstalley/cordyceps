@@ -903,9 +903,9 @@ namespace Cordyceps.Core
                     color = Color.FromArgb(r, g, b);
                     return true;
                 }
-                catch
+                catch (FormatException)
                 {
-                    // Fall through to try other formats
+                    // Not valid hex digits; fall through to try RGB / named formats.
                 }
             }
 
@@ -937,9 +937,9 @@ namespace Cordyceps.Core
                     return true;
                 }
             }
-            catch
+            catch (Exception ex)
             {
-                // Fall through
+                DebugLog.Debug($"TryParseColor: named-color lookup for '{colorStr}' threw: {ex.Message}");
             }
 
             return false;
