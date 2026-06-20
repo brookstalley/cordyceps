@@ -41,7 +41,7 @@
 
 ## 2026-06-20: Janitor maintenance pass
 
-<!-- prawduct: type=maintenance | chunks=01,02,03 | scope=janitor-2026-06-20 -->
+<!-- prawduct: type=maintenance | chunks=01,02,03 | scope=janitor-2026-06-20 | status=merged -->
 
 **Why:** periodic `/prawduct:janitor` survey + user-approved cleanup. Fixed release-metadata
 drift (tracked `manifest.yml` was stale at 1.4.0 while shipping 1.4.9) and closed the gap that
@@ -55,7 +55,7 @@ user-facing (dev tooling + release plumbing), so no root CHANGELOG entry.
 
 ## 2026-06-20: Wire .NET/xUnit test evidence into the Prawduct gate (TST-9Q4M)
 
-<!-- prawduct: type=tooling | chunks=01 | scope=gate-soundness -->
+<!-- prawduct: type=tooling | chunks=01 | scope=gate-soundness | status=merged -->
 
 **Why:** `prawduct-hook test-evidence record` defaulted to pytest and could not run this
 C#/xUnit repo, so no `.test-evidence.json` was ever produced and the freshness/Critic/PR
