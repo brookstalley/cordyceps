@@ -69,8 +69,12 @@
 <!-- Items currently being addressed in an active build plan. /backlog pick
      skips these by default (work is already in flight). -->
 
+## Archive
+
+<!-- Shipped and dropped items, kept for searchability. Never deleted. -->
+
 - **[TST-9Q4M]** Wire .NET/xUnit test evidence into the Prawduct gate
-  `effort: M · impact: M · area: tooling · source: critic · added: 2026-06-20 · status: promoted · stage: ready · reviewed: 2026-06-20 · related: GHS-7K2P`
+  `effort: M · impact: M · area: tooling · source: critic · added: 2026-06-20 · status: shipped · stage: ready · reviewed: 2026-06-20 · closed-by: 63cdd58 · related: GHS-7K2P`
 
   `prawduct-hook test-evidence record` is pytest-only (runs `sys.executable -m pytest`), so it
   cannot record evidence for this C#/.NET repo — every chunk gets a non-blocking
@@ -88,9 +92,8 @@
   Critic clean (0 blocking); gate verified end-to-end (test-evidence record → 53/0, test-status
   current). Pending merge to main.
 
-## Archive
-
-<!-- Shipped and dropped items, kept for searchability. Never deleted. -->
+  **[2026-06-20] Shipped:** closed-by 63cdd58 ("Wire .NET/xUnit test evidence into the Prawduct
+  gate").
 
 - **[GHS-7K2P]** `gh_script(set)` silently drops the script component's language directive → "Can not determine input code language"
   `effort: M · impact: L · area: gh-script · source: user · added: 2026-06-20 · status: shipped · stage: ready · reviewed: 2026-06-20 · closed-by: #16 · refs: incoming-bugs/script-component-language-lost-on-setsource.md`
