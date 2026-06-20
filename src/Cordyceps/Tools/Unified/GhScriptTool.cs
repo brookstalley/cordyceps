@@ -42,7 +42,8 @@ namespace Cordyceps.Tools.Unified
                     Tips = new[] {
                         "Params matching by name keep their wires (LCS diffing)",
                         "Renamed/removed params lose connections — reported in lostConnections",
-                        "Use gh_wire(action='connect', connections='<lostConnections>') to restore"
+                        "Use gh_wire(action='connect', connections='<lostConnections>') to restore",
+                        "Script language is preserved automatically; start code with '#! python 3' or '// #! csharp' to set it explicitly"
                     }
                 },
                 ["configure"] = new ActionInfo
@@ -52,7 +53,7 @@ namespace Cordyceps.Tools.Unified
                     Required = new[] { "id" },
                     Optional = new[] { "inputs", "outputs", "code" },
                     Example = "action='configure', id='abc', inputs='[{\"name\":\"x\",\"type\":\"double\"}]', code='...'",
-                    Tips = new[] { "inputs: [{name, type, access}]", "outputs: [{name, type}]", "types: int, double, bool, string, Point3d, etc." }
+                    Tips = new[] { "inputs: [{name, type, access}]", "outputs: [{name, type}]", "types: int, double, bool, string, Point3d, etc.", "Script language is preserved automatically; start code with '#! python 3' or '// #! csharp' to set it explicitly" }
                 },
                 ["info"] = new ActionInfo
                 {
@@ -161,7 +162,7 @@ namespace Cordyceps.Tools.Unified
                 {
                     dynamic scriptComp = component;
 
-                    scriptComp.SetSource(code);
+                    scriptComp.SetSource(PreserveLanguageDirective(component, code));
 
                     // Surgically sync params instead of SetParametersFromScript(),
                     // which rebuilds all params and destroys cluster input hooks.
@@ -257,7 +258,7 @@ namespace Cordyceps.Tools.Unified
                             {
                                 try
                                 {
-                                    scriptComp.SetSource(code);
+                                    scriptComp.SetSource(PreserveLanguageDirective(component, code));
                                     message += ", source set";
                                 }
                                 catch (Exception srcEx)
@@ -280,7 +281,7 @@ namespace Cordyceps.Tools.Unified
                     {
                         try
                         {
-                            scriptComp.SetSource(code);
+                            scriptComp.SetSource(PreserveLanguageDirective(component, code));
                             try { SyncScriptParams(component, code, out _); } catch { }
                             try { scriptComp.SyncParameters(); } catch { }
 
@@ -701,6 +702,16 @@ namespace Cordyceps.Tools.Unified
 
             return null;
         }
+
+        /// <summary>
+        /// Preserve the script component's Rhino 8 language directive (e.g. "#! python 3",
+        /// "// #! csharp") when <paramref name="code"/> omits it. SetSource() replaces the whole
+        /// body, so a directive-less body would otherwise strip the component's language and
+        /// cause "Can not determine input code language" at solve time. A directive already
+        /// present in <paramref name="code"/> is respected as-is.
+        /// </summary>
+        private string PreserveLanguageDirective(IGH_DocumentObject component, string code)
+            => ScriptDirective.Preserve(TryGetScriptSource(component), code);
 
         private List<ParamDef> ParseParamDefs(string json)
         {

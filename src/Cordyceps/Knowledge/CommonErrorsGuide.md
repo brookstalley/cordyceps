@@ -48,6 +48,7 @@ See `gh://docs/data-trees` for details.
 | "Compilation failed" | Syntax error | `gh_inspect(action='reports')` for details |
 | "Type not found" | Missing import | C#: `using Rhino.Geometry;` / Python: `import Rhino.Geometry as rg` |
 | Connections lost after `gh_script set` | Param renamed or removed | Check `lostConnections` in response, re-wire with `gh_wire(action='connect')` |
+| "Can not determine input code language" | Script body set without the line-1 language directive | Auto-handled: `gh_script(set/configure)` preserves the component's directive. If it persists (directive already lost), prepend `#! python 3` (or `// #! csharp`) as the first line of `code` |
 
 ## Type Marshaling
 

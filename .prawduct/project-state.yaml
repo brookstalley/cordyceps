@@ -15,43 +15,88 @@ classification:
   # Product domain. Values: utility, social, marketplace, productivity, b2b,
   # content, automation, developer-tool, education, health, finance,
   # entertainment, communication. May be multiple for hybrid products.
-  domain: null
+  domain: [developer-tool, automation]
 
   # Structural characteristics — architectural facts that determine what KINDS
   # of artifacts a product needs. These are a small, stable set (6) that drive
   # artifact generation. null = not applicable.
   structural:
     # User-facing interface. modality: screen|terminal|voice|spatial|minimal; platform: mobile|web|desktop|cross-platform
-    has_human_interface: null
+    has_human_interface:
+      modality: minimal        # a single Grasshopper canvas component (Port/DebugLevel inputs, status outputs)
+      platform: desktop        # runs inside Rhino 8 / Grasshopper
     # Runs without user interaction. trigger: scheduled|event-driven|always-on
-    runs_unattended: null
+    runs_unattended:
+      trigger: always-on       # in-process HTTP/SSE server listens while the component is placed and serves requests without a human watching
     # Exposes or consumes APIs. consumers: internal|external|both
-    exposes_programmatic_interface: null
+    exposes_programmatic_interface:
+      consumers: external      # MCP / JSON-RPC over HTTP+SSE (default port 26929) — the defining trait
     # Multiple distinct user types. parties: [list of distinct user types]
     has_multiple_party_types: null
     # Handles sensitive information. categories: [PII, financial, health, etc.]; regulatory: [list]
     handles_sensitive_data: null
     # Multiple processes or services communicating at runtime. topology: monolith-with-workers|client-server|microservices|pipeline
-    multi_process_distributed: null
+    multi_process_distributed:
+      topology: client-server  # external MCP client process <-> in-process server inside Rhino; single server process per placed component
 
   # Domain-specific characteristics — what makes THIS product unique in its domain.
   # Dynamically identified, not from a predefined list.
   # Each: { characteristic: string, implications: [string] }
-  domain_characteristics: []
+  domain_characteristics:
+    - characteristic: "All Grasshopper/Rhino access must run on the UI thread"
+      implications:
+        - "Every document operation is marshaled through GrasshopperContext.ExecuteOnUiThread()"
+        - "Tool methods must not touch the live document off-thread"
+    - characteristic: "The tool surface is self-documenting for AI consumers"
+      implications:
+        - "Server instructions, action='help' metadata, gh:// resources, and prompt templates must stay in sync with code (CLAUDE.md Documentation Audit)"
+        - "An undocumented feature effectively does not exist to agents"
+    - characteristic: "Unified action-dispatch tools (7 tools, each dispatching on an 'action' param)"
+      implications:
+        - "Keeps the agent-visible tool list small and navigable"
+        - "Adding/removing/renaming an action changes the external contract"
+    - characteristic: "Hosted inside the Rhino 8 / Grasshopper plugin runtime (.gha)"
+      implications:
+        - "No standalone process; lifecycle tied to the component on the canvas"
+        - "Cluster-editor solution semantics (ExpireSolution vs NewSolution) are recurring hazards"
 
   # Risk and complexity profile.
   risk_profile:
     # Overall risk: low, medium, high.
     # Drives discovery depth (low: 5-8 questions, medium: 8-15, high: 15-25).
-    overall: null
+    overall: medium
     # Specific risk factors identified during classification.
     # Each: { factor, level (low/medium/high), rationale }
-    factors: []
+    factors:
+      - factor: "External API contract (MCP tool names, actions, params) consumed by AI agents"
+        level: medium
+        rationale: "Breaking changes silently break users' agent workflows; contract stability across releases matters"
+      - factor: "Published distribution (yak registry + GitHub release .gha)"
+        level: medium
+        rationale: "Real installed user base; regressions ship to users"
+      - factor: "UI-thread and cluster-editor solution semantics"
+        level: medium
+        rationale: "Subtle Grasshopper host behaviors cause non-obvious failures (see CHANGELOG 1.4.6/1.4.7)"
+      - factor: "Local desktop tool — no sensitive data, no money, no regulatory exposure"
+        level: low
+        rationale: "Blast radius limited to the user's design document, which can be re-run"
 
   # Prior art surfaced during discovery (via web search or domain knowledge).
   # Informational — informs scope decisions, not a gate.
+  # (From domain knowledge during reconciliation; no live web search this pass.)
   # Each: { name, url (optional), relevance, relationship (alternative|complement|reference) }
-  prior_art: []
+  prior_art:
+    - name: "Model Context Protocol (MCP)"
+      url: "https://modelcontextprotocol.io/"
+      relevance: "The protocol Cordyceps implements; defines the tools/resources/prompts contract"
+      relationship: reference
+    - name: "Rhino.Compute / Hops"
+      url: "https://www.rhino3d.com/compute/"
+      relevance: "Existing remote/programmatic Grasshopper execution; solves headless compute rather than interactive canvas control"
+      relationship: alternative
+    - name: "Grasshopper Python/C# scripting & RhinoScriptSyntax"
+      relevance: "Native in-canvas scripting; Cordyceps complements it by letting an external agent build and wire the canvas itself"
+      relationship: complement
 
 # =============================================================================
 # PRODUCT DEFINITION
@@ -60,10 +105,14 @@ classification:
 
 product_definition:
   # One-sentence description of what this product is and why it exists.
-  vision: null
+  vision: "Let AI assistants and scripts drive Grasshopper and Rhino directly over MCP — building, wiring, and configuring the parametric canvas and managing Rhino scene/rendering — so parametric design can be described in natural language or automated programmatically."
 
   # Measurable success criteria. What does "this worked" look like?
-  goals: []
+  goals:
+    - "An MCP client (AI or script) can build a working Grasshopper definition end to end: add components, wire them, set values/scripts, bake and inspect results"
+    - "Agents self-serve the API through embedded docs (server instructions, action='help', gh:// resources, prompts) without external hand-holding"
+    - "Tool contracts stay stable across releases; breaking changes are deliberate and documented"
+    - "Operations are safe inside the Grasshopper host — UI-thread correct and cluster-editor safe"
 
   # Who uses this product and what they need.
   users:
@@ -73,18 +122,64 @@ product_definition:
     #   technical_level: none | basic | intermediate | advanced
     #   primary_needs: [string]
     #   constraints: [string]
-    personas: []
+    personas:
+      - name: "AI-assisted parametric designer"
+        description: "Uses an MCP-capable assistant (Claude Desktop/Code, Cursor, VS Code) to build and modify Grasshopper definitions in natural language"
+        technical_level: intermediate
+        primary_needs:
+          - "Describe intent and have the canvas built correctly"
+          - "Clear feedback when something fails (runtime reports, logs, data-flow tracing)"
+        constraints:
+          - "Knows Grasshopper/Rhino concepts but may not read C#"
+      - name: "Developer / scripter"
+        description: "Calls the MCP tools directly from Python/TypeScript or any MCP client, with no AI in the loop"
+        technical_level: advanced
+        primary_needs:
+          - "Stable, predictable tool/action contracts"
+          - "Programmatic control over components, wiring, scripts, and Rhino scene/render"
+        constraints:
+          - "Depends on contract stability across plugin versions"
 
   # Core user flows (UI), operations (API), or pipeline stages (automation).
   # Each: { name, description, steps (optional), priority (must-have/nice-to-have) }
-  core_flows: []
+  core_flows:
+    - name: "Build canvas (gh_canvas)"
+      description: "Add/find/move/delete components and params, get/set values, manage groups, manage zoomable params, bake"
+      priority: must-have
+    - name: "Wire components (gh_wire)"
+      description: "Connect/disconnect, bulk wiring, validate connections"
+      priority: must-have
+    - name: "Configure scripts (gh_script)"
+      description: "Set up C#/Python script components: inputs, outputs, body"
+      priority: must-have
+    - name: "Inspect & debug (gh_inspect)"
+      description: "Component status, data-flow tracing, runtime reports, debug-log retrieval"
+      priority: must-have
+    - name: "Document control (gh_document)"
+      description: "Save/clear documents, snapshots, solver control, canvas/viewport capture"
+      priority: must-have
+    - name: "Rhino scene management (rhino_scene)"
+      description: "Objects, selection, layers (full CRUD), visibility"
+      priority: must-have
+    - name: "Rhino rendering (rhino_render)"
+      description: "Display modes, camera, render settings, PBR materials/textures, environments"
+      priority: must-have
 
   # Scope decisions.
   scope:
-    v1: []                # Must have for initial release
-    accommodate: []       # Design for but don't build yet
+    v1:                   # Already shipped (current capability as of v1.4.9)
+      - "7 MCP tools (gh_canvas, gh_wire, gh_script, gh_inspect, gh_document, rhino_scene, rhino_render)"
+      - "HTTP/SSE MCP server with reflection-based tool discovery"
+      - "Embedded documentation system (server instructions, action help, gh:// resources, prompt templates)"
+    accommodate:          # Design for but don't build yet
+      - "Additional Grasshopper/Rhino capabilities exposed as new actions on existing tools"
+      - "Deprecation registry for evolving the contract without hard breaks"
     later: []             # Not needed for v1 to be useful
-    never: []             # Explicitly out of scope. Each: { item, rationale }
+    never:                # Explicitly out of scope. Each: { item, rationale }
+      - item: "Bundling or forking a specific AI assistant"
+        rationale: "Cordyceps is transport-agnostic MCP; any MCP client works"
+      - item: "Handling user PII / financial / regulated data"
+        rationale: "Out of domain; operates on local design documents only"
 
   # Product identity.
   product_identity:
@@ -92,17 +187,17 @@ product_definition:
     personality: null     # Brand personality, mood (null for internal tools)
     visual_preferences: null  # Look/feel preferences (null for non-visual products)
 
-  platform: null          # Where this runs (web, mobile, CLI, etc.)
+  platform: "Grasshopper plugin (.gha) for Rhino 8.21+ on .NET 8 (Windows & macOS); MCP over HTTP+SSE, default port 26929"
 
   # Non-functional requirements, calibrated to risk.
   nonfunctional:
-    performance: null
-    scalability: null
-    uptime: null
-    cost_constraints: null
+    performance: "Interactive latency for canvas operations; must never block or hang the Rhino UI thread"
+    scalability: "Single-user, single-document; one server instance per placed component"
+    uptime: "Runs while Rhino is open and the component is on the canvas; not a long-running service"
+    cost_constraints: "No hosting cost — runs locally inside Rhino; free/open distribution"
 
   regulatory: []          # Each: { regulation, applicability, impact }
-  cost_estimates: []      # Each: { item, estimated_monthly_cost, notes }
+  cost_estimates: []      # Each: { item, estimated_monthly_cost, notes } — none; runs locally
 
 # =============================================================================
 # TECHNICAL DECISIONS
@@ -111,11 +206,43 @@ product_definition:
 # Each: { decision, rationale, alternatives_considered, date }
 
 technical_decisions:
-  architecture: []
-  technology: []
+  architecture:
+    - decision: "In-process HTTP/SSE MCP server hosted by the Grasshopper component"
+      rationale: "Must share the Rhino/Grasshopper process to access the live document; lifecycle is tied to the canvas component"
+      alternatives_considered: "Out-of-process server with RPC into Rhino — rejected: IPC complexity, no native document access"
+      date: 2026-06-20
+    - decision: "All document access marshaled to the UI thread via GrasshopperContext.ExecuteOnUiThread()"
+      rationale: "Grasshopper/Rhino APIs are not thread-safe; off-thread access corrupts state or crashes Rhino"
+      alternatives_considered: "Direct access from request threads — rejected: unsafe"
+      date: 2026-06-20
+    - decision: "Unified action-dispatch tools (7 classes, each dispatching on an 'action' param) with reflection-based discovery via [McpServerToolType]/[McpServerTool]"
+      rationale: "Keeps the agent-visible tool list small and navigable; one class per domain area"
+      alternatives_considered: "One MCP tool per operation — rejected: too many tools, harder for agents to navigate"
+      date: 2026-06-20
+    - decision: "Layered self-documentation (server instructions, action='help', gh:// resources, prompt templates)"
+      rationale: "Agents only know what the server tells them; documentation is part of the product surface"
+      alternatives_considered: "External docs only — rejected: agents cannot discover capabilities at runtime"
+      date: 2026-06-20
+  technology:
+    - decision: ".NET 8 / C# with Newtonsoft.Json; xUnit for tests"
+      rationale: "Rhino 8 targets .NET 8; Newtonsoft is the established JSON library for the Grasshopper SDK"
+      alternatives_considered: "System.Text.Json — used in type-conversion/tests, but Newtonsoft kept for SDK compatibility"
+      date: 2026-06-20
+    - decision: "Distribute as a .gha via the yak registry and a GitHub release"
+      rationale: "Standard Grasshopper/Rhino plugin distribution channels"
+      alternatives_considered: "Manual-only install — kept as fallback"
+      date: 2026-06-20
   data_model: []
-  integrations: []
-  operational: []
+  integrations:
+    - decision: "Model Context Protocol (HTTP+SSE transport) as the external interface"
+      rationale: "Standard protocol; interoperates with Claude Desktop/Code, Cursor, VS Code, and any MCP client"
+      alternatives_considered: "Custom REST API — rejected: would not interoperate with MCP assistants"
+      date: 2026-06-20
+  operational:
+    - decision: "Release via yak build/push; version bumped in csproj, CHANGELOG.md, and manifest.yml"
+      rationale: "Documented in the CLAUDE.md Publishing section"
+      alternatives_considered: null
+      date: 2026-06-20
 
 # =============================================================================
 # DESIGN DECISIONS
@@ -127,10 +254,10 @@ technical_decisions:
 design_decisions:
   information_architecture: []
   interaction_patterns: []
-  accessibility_approach: null
-  error_handling_approach: null
-  observability_approach: null    # Signal types, correlation context, sensitive data filtering, operational model
-  infrastructure_dependencies: null  # External services (DB, queue, auth, APIs), mock boundaries, integration test strategy
+  accessibility_approach: "Minimal — the only human-facing surface is one Grasshopper canvas component; platform (Rhino/Grasshopper) accessibility defaults apply. Agent-facing output is plain JSON/text."
+  error_handling_approach: "Tool methods catch at the boundary and return JSON { success: false, error } rather than throwing across the MCP boundary; runtime issues surface via gh_inspect (reports/log). Recoverable tool errors are returned to the caller; host-level failures are logged via Core.DebugLog."
+  observability_approach: "Centralized Core.DebugLog (Info/Warn/Error/Debug), retrievable by agents via gh_inspect(action='log'). The component's DebugLevel input raises request/response verbosity. No metrics/tracing — single-user local tool."
+  infrastructure_dependencies: "Depends on the Rhino 8 / Grasshopper host runtime (Grasshopper SDK, RhinoCommon). No external DB/queue/auth. The 'real infrastructure' is the live Grasshopper document; the xUnit test project (Cordyceps.Tests) covers host-independent logic (e.g. type marshaling), while document-touching behavior is verified live in Rhino."
   visual_direction: null
 
 # =============================================================================
@@ -153,12 +280,24 @@ open_questions: []
 # Drives vocabulary, explanation depth, and involvement calibration.
 
 user_expertise:
-  product_thinking: null      # none | basic | intermediate | advanced
-  technical_depth: null
-  design_sensibility: null
-  domain_knowledge: null
-  operational_awareness: null
-  evidence: []                # Each: { dimension, signal, inferred_from }
+  product_thinking: advanced      # none | basic | intermediate | advanced
+  technical_depth: advanced
+  design_sensibility: intermediate
+  domain_knowledge: advanced
+  operational_awareness: advanced
+  evidence:                       # Each: { dimension, signal, inferred_from }
+    - dimension: technical_depth
+      signal: "Solo author of a C#/.NET Grasshopper plugin implementing the MCP protocol with reflection-based tool discovery, UI-thread marshaling, and cluster-safe solution semantics"
+      inferred_from: "codebase + CHANGELOG"
+    - dimension: domain_knowledge
+      signal: "Deep Grasshopper/Rhino SDK knowledge (cluster editor hooks, ExpireSolution vs NewSolution, variable parameter components)"
+      inferred_from: "CHANGELOG 1.4.6/1.4.7 and the incoming bug report"
+    - dimension: product_thinking
+      signal: "Layered agent-facing documentation system and a mandatory documentation-audit discipline in CLAUDE.md"
+      inferred_from: "CLAUDE.md + Knowledge/ guides"
+    - dimension: operational_awareness
+      signal: "Defined yak release process; type-marshaling fixes driven by real MCP client behavior"
+      inferred_from: "CLAUDE.md Publishing + CHANGELOG 1.4.9"
 
 # =============================================================================
 # BUILD PREFERENCES
@@ -167,9 +306,9 @@ user_expertise:
 # tooling). Optional — only when the user expresses preferences.
 
 build_preferences:
-  file_path: null             # Path to project-preferences.md (relative to .prawduct/)
-  last_updated: null
-  source: null                # discovery | inferred | iteration
+  file_path: artifacts/project-preferences.md   # Path to project-preferences.md (relative to .prawduct/)
+  last_updated: 2026-06-20
+  source: discovery           # discovery | inferred | iteration
 
 # =============================================================================
 # HEALTH CHECK
@@ -200,7 +339,7 @@ artifact_manifest:
 # Runtime tracking during building. Updated after each chunk.
 
 build_state:
-  source_root: null           # Where source code lives (e.g., "src/")
+  source_root: "src/"         # Where source code lives (e.g., "src/")
 
 # =============================================================================
 # ACTIVE BUILD PLAN (optional)

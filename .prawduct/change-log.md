@@ -38,3 +38,15 @@
      With `views_enabled: true`, the Status checkboxes in build-plan.md are a
      derived view. Don't hand-edit them — add/update a tagged entry here and
      run `prawduct-hook regen-views`. -->
+
+## 2026-06-20: Fix gh_script dropping the script language directive (GHS-7K2P)
+
+<!-- prawduct: type=bugfix | chunks=01 | scope=gh-script-language -->
+
+**Why:** `gh_script(set/configure)` replaced the whole script body via `SetSource`,
+stripping the Rhino 8 language directive (`#! python 3`, `// #! csharp`) when the new
+body omitted it — causing "Can not determine input code language" at solve time and no
+geometry, which bit anyone following the plain-body examples in the docs. The
+component's existing directive is now preserved automatically (a directive in the new
+code is respected as-is). New pure helper `Core/ScriptDirective.cs` with 28 unit tests;
+docs audited (CommonErrorsGuide, gh_script help, templates, root CHANGELOG).

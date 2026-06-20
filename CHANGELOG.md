@@ -11,6 +11,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - **PBR texture maps** - New `rhino_render(action='material_texture')` action to assign image-based texture maps to PBR material slots (base-color, roughness, metallic, bump, opacity, emission, displacement, ambient-occlusion, clearcoat, clearcoat-roughness). Supports UV tiling via `repeat` parameter and slot influence via `amount`. Omit `path` to remove a texture from a slot.
 - **Material texture inspection** - `rhino_render(action='material_list')` now reports which PBR slots have textures assigned per material.
 
+### Fixed
+
+- **Script language preserved on `gh_script(set/configure)`** - Setting a script body without the Rhino 8 language directive (`#! python 3`, `// #! csharp`) no longer strips the component's language. Previously this caused "Can not determine input code language" at solve time and the component emitted no geometry — which bit anyone following the plain-body examples in the docs. The component's existing directive is now preserved automatically; a directive included in the new code is respected as-is.
+
 ## [1.4.9] - 2026-03-26
 
 ### Fixed
