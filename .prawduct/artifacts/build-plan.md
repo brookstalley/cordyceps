@@ -80,8 +80,8 @@
 ## Status
 
 - [x] Chunk 01 — DOC-8M3T: sync GetServerInstructions + MCP-4R2K change-log entry
-- [ ] Chunk 02 — TST-6W7H: link RequestValidator + UnifiedToolHelpers, add tests
+- [x] Chunk 02 — TST-6W7H: link RequestValidator + UnifiedToolHelpers, add tests
 - [ ] Chunk 03 — CQ-2X8B: unify proxy-instantiation, remove dead ExecuteOnUiThreadAsync
 - [ ] Chunk 04 — CQ-5J9N: broad-catch / silent-swallow sweep (cumulative-final)
 
-**Context:** Chunk 01 complete. `GetServerInstructions()` now lists all 11 previously-missing actions (gh_canvas `zoomable`; rhino_scene `set_color`,`bbox`; rhino_render 4 view + 4 light actions) in code-order; MCP-4R2K prawduct change-log entry added. Build green (68/68). Next: Chunk 02 (TST-6W7H).
+**Context:** Chunks 01-02 complete. Ch01: `GetServerInstructions()` synced (+11 actions). Ch02: linked `RequestValidator` + `UnifiedToolHelpers` into the test project; added `RequestValidatorTests.cs` (~45 cases) + `UnifiedToolHelpersTests.cs` (~24 cases incl. `GetParam` conversion-failure→default at :171, `ValidateAction` contract, `GenerateHelp` omission rules). Suite 68→137, all green. Next: Chunk 03 (CQ-2X8B refactor).

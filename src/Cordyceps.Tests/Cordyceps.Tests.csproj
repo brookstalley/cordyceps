@@ -24,6 +24,8 @@
     <Compile Include="..\Cordyceps\Core\JsonTypeConverter.cs" Link="JsonTypeConverter.cs" />
     <Compile Include="..\Cordyceps\Core\ScriptDirective.cs" Link="ScriptDirective.cs" />
     <Compile Include="..\Cordyceps\Core\McpResultFormatter.cs" Link="McpResultFormatter.cs" />
+    <Compile Include="..\Cordyceps\Core\RequestValidator.cs" Link="RequestValidator.cs" />
+    <Compile Include="..\Cordyceps\Core\UnifiedToolHelpers.cs" Link="UnifiedToolHelpers.cs" />
   </ItemGroup>
 
 </Project>
