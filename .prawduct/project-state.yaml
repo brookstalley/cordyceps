@@ -411,6 +411,11 @@ coverage_required: false
 #   Whitespace-separated test trees for the coverage verifier (default:
 #   `tests`). One verifier run unions discovery across all of them.
 
+# This repo is C#/xUnit, not pytest. Run the real suite with the JunitXml.TestLogger
+# (added to Cordyceps.Tests.csproj) so the hook gets a JUnit XML report. The `;` is
+# intra-token under shlex (no shell), and there is no `#`, so the scalar reader is safe.
+test_command: dotnet test src/Cordyceps.Tests/Cordyceps.Tests.csproj -c Release --logger junit;LogFilePath={junit_xml}
+
 # =============================================================================
 # OPERATOR VERIFICATION (opt-in, v1.4+)
 # =============================================================================

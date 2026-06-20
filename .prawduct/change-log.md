@@ -39,6 +39,18 @@
      derived view. Don't hand-edit them — add/update a tagged entry here and
      run `prawduct-hook regen-views`. -->
 
+## 2026-06-20: Wire .NET/xUnit test evidence into the Prawduct gate (TST-9Q4M)
+
+<!-- prawduct: type=tooling | chunks=01 | scope=gate-soundness -->
+
+**Why:** `prawduct-hook test-evidence record` defaulted to pytest and could not run this
+C#/xUnit repo, so no `.test-evidence.json` was ever produced and the freshness/Critic/PR
+gates were unsound (every code chunk warned "no test evidence"). Added the
+`JunitXml.TestLogger` package to `Cordyceps.Tests` and declared `test_command` in
+project-state.yaml so the hook runs the real xUnit suite and records exact counts.
+Verified end-to-end: `test-evidence record` → 53 passed / 0 failed @ HEAD; `test-status`
+→ current. No user-facing change (dev tooling), so no root CHANGELOG entry.
+
 ## 2026-06-20: Fix gh_script dropping the script language directive (GHS-7K2P)
 
 <!-- prawduct: type=bugfix | chunks=01 | scope=gh-script-language | status=merged -->
