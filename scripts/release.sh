@@ -334,8 +334,8 @@ git_commit_and_tag() {
     if [[ "$DRY_RUN" == true ]]; then
         log_info "[DRY-RUN] Would commit version bump and tag as v$version"
     else
-        # Add required files
-        git add "$CSPROJ" "$RELEASES_DIR/Cordyceps.gha"
+        # Add required files (manifest bumped by update_manifest_version must be committed too)
+        git add "$CSPROJ" "$MANIFEST" "$RELEASES_DIR/Cordyceps.gha"
 
         # Add CHANGELOG if it was modified
         if git diff --cached --quiet "$CHANGELOG" 2>/dev/null || git diff --quiet "$CHANGELOG" 2>/dev/null; then

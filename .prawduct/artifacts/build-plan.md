@@ -50,8 +50,8 @@ Pure removals of verified-unreferenced/shipped artifacts. No production code.
 - [ ] Critic (final) clean; backlog reconciled (file CI follow-up if deferred — n/a, building it).
 
 ## Status
-- [x] Chunk 01: Repo hygiene & obsolescence cleanup — guide + resolved bug report deleted; stray `output/`/`memory/` removed; merged local branch + stale remote branch deleted.
-- [x] Chunk 02: Manifest & doc drift fixes — manifest.yml → 1.4.9; `release.sh` now bumps the manifest (verified via syntax check + isolated sed test); CLAUDE.md lists `ToolHelpers`.
-- [x] Chunk 03: Build/test CI workflow — `.github/workflows/dotnet-ci.yml` runs `dotnet build -c Release` + `dotnet test -c Release` on push(main)/PR; YAML valid; commands verified locally (53/53). CI execution confirmed on first push.
+- [ ] Chunk 01: Repo hygiene & obsolescence cleanup — guide + resolved bug report deleted; stray `output/`/`memory/` removed; merged local branch + stale remote branch deleted.
+- [ ] Chunk 02: Manifest & doc drift fixes — manifest.yml → 1.4.9; `release.sh` now bumps the manifest (verified via syntax check + isolated sed test); CLAUDE.md lists `ToolHelpers`.
+- [ ] Chunk 03: Build/test CI workflow — `.github/workflows/dotnet-ci.yml` runs `dotnet build -c Release` + `dotnet test -c Release` on push(main)/PR; YAML valid; commands verified locally (53/53). CI execution confirmed on first push.
 
 **Context:** All three chunks complete on `chore/janitor-2026-06-20`. Build 0/0, 53/53 tests pass, test-evidence recorded (current). No compiled C# changed. Awaiting Critic (final), then backlog reconciliation + (optional) PR.
