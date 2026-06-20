@@ -41,4 +41,4 @@
 
 - [x] Chunk 01 — Error contract at the MCP boundary
 
-**Context:** Implemented + verified. `dotnet test` green (68 passed, was 53; +15 formatter tests); Release plugin build clean; test evidence recorded @ 67e8100. Docs audited (CHANGELOG + McpTestingGuide updated). Next: commit, Critic, reflection.
+**Context:** COMPLETE. Committed @ `905825c` on `fix/mcp-error-contract`. `dotnet test` green (68 passed, was 53; +15 formatter tests); Release plugin build clean; test evidence recorded @ `905825c`. Docs audited (CHANGELOG + McpTestingGuide). Critic (verify-resolutions chain): 0 blocking / 0 warning / 1 note (test-evidence sha lag — resolved). Reflection captured. Backlog MCP-4R2K = promoted. Next: PR (on request) or pick the next item (DOC-8M3T overlaps this file).
