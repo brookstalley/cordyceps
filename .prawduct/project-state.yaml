@@ -1,0 +1,323 @@
+# Project State — Cordyceps
+#
+# Single source of truth for all project decisions.
+# Read at session start to understand where things stand.
+#
+# Fields start as null and are filled during discovery.
+# Partially-populated state is normal throughout discovery.
+
+# =============================================================================
+# CLASSIFICATION
+# =============================================================================
+# Populated during discovery. Confirmed with the user before planning.
+
+classification:
+  # Product domain. Values: utility, social, marketplace, productivity, b2b,
+  # content, automation, developer-tool, education, health, finance,
+  # entertainment, communication. May be multiple for hybrid products.
+  domain: null
+
+  # Structural characteristics — architectural facts that determine what KINDS
+  # of artifacts a product needs. These are a small, stable set (6) that drive
+  # artifact generation. null = not applicable.
+  structural:
+    # User-facing interface. modality: screen|terminal|voice|spatial|minimal; platform: mobile|web|desktop|cross-platform
+    has_human_interface: null
+    # Runs without user interaction. trigger: scheduled|event-driven|always-on
+    runs_unattended: null
+    # Exposes or consumes APIs. consumers: internal|external|both
+    exposes_programmatic_interface: null
+    # Multiple distinct user types. parties: [list of distinct user types]
+    has_multiple_party_types: null
+    # Handles sensitive information. categories: [PII, financial, health, etc.]; regulatory: [list]
+    handles_sensitive_data: null
+    # Multiple processes or services communicating at runtime. topology: monolith-with-workers|client-server|microservices|pipeline
+    multi_process_distributed: null
+
+  # Domain-specific characteristics — what makes THIS product unique in its domain.
+  # Dynamically identified, not from a predefined list.
+  # Each: { characteristic: string, implications: [string] }
+  domain_characteristics: []
+
+  # Risk and complexity profile.
+  risk_profile:
+    # Overall risk: low, medium, high.
+    # Drives discovery depth (low: 5-8 questions, medium: 8-15, high: 15-25).
+    overall: null
+    # Specific risk factors identified during classification.
+    # Each: { factor, level (low/medium/high), rationale }
+    factors: []
+
+  # Prior art surfaced during discovery (via web search or domain knowledge).
+  # Informational — informs scope decisions, not a gate.
+  # Each: { name, url (optional), relevance, relationship (alternative|complement|reference) }
+  prior_art: []
+
+# =============================================================================
+# PRODUCT DEFINITION
+# =============================================================================
+# Populated during discovery and definition.
+
+product_definition:
+  # One-sentence description of what this product is and why it exists.
+  vision: null
+
+  # Measurable success criteria. What does "this worked" look like?
+  goals: []
+
+  # Who uses this product and what they need.
+  users:
+    # Each persona:
+    #   name: string
+    #   description: string
+    #   technical_level: none | basic | intermediate | advanced
+    #   primary_needs: [string]
+    #   constraints: [string]
+    personas: []
+
+  # Core user flows (UI), operations (API), or pipeline stages (automation).
+  # Each: { name, description, steps (optional), priority (must-have/nice-to-have) }
+  core_flows: []
+
+  # Scope decisions.
+  scope:
+    v1: []                # Must have for initial release
+    accommodate: []       # Design for but don't build yet
+    later: []             # Not needed for v1 to be useful
+    never: []             # Explicitly out of scope. Each: { item, rationale }
+
+  # Product identity.
+  product_identity:
+    name: "Cordyceps"
+    personality: null     # Brand personality, mood (null for internal tools)
+    visual_preferences: null  # Look/feel preferences (null for non-visual products)
+
+  platform: null          # Where this runs (web, mobile, CLI, etc.)
+
+  # Non-functional requirements, calibrated to risk.
+  nonfunctional:
+    performance: null
+    scalability: null
+    uptime: null
+    cost_constraints: null
+
+  regulatory: []          # Each: { regulation, applicability, impact }
+  cost_estimates: []      # Each: { item, estimated_monthly_cost, notes }
+
+# =============================================================================
+# TECHNICAL DECISIONS
+# =============================================================================
+# Every entry includes rationale.
+# Each: { decision, rationale, alternatives_considered, date }
+
+technical_decisions:
+  architecture: []
+  technology: []
+  data_model: []
+  integrations: []
+  operational: []
+
+# =============================================================================
+# DESIGN DECISIONS
+# =============================================================================
+# UX, IA, and design decisions. Some fields (like error_handling_approach) apply
+# to all products; others (like visual_direction) only apply to products with a UI.
+# Each: { decision, rationale, date }
+
+design_decisions:
+  information_architecture: []
+  interaction_patterns: []
+  accessibility_approach: null
+  error_handling_approach: null
+  observability_approach: null    # Signal types, correlation context, sensitive data filtering, operational model
+  infrastructure_dependencies: null  # External services (DB, queue, auth, APIs), mock boundaries, integration test strategy
+  visual_direction: null
+
+# =============================================================================
+# OPEN QUESTIONS
+# =============================================================================
+# Unresolved decisions. Normal during discovery, shrinks toward zero
+# before artifact generation.
+# Each:
+#   question: string
+#   blocking: string (what can't proceed)
+#   waiting_on: "user" | "research"
+#   priority: high | medium | low
+
+open_questions: []
+
+# =============================================================================
+# USER EXPERTISE PROFILE
+# =============================================================================
+# Inferred from conversation signals, never self-assessed.
+# Drives vocabulary, explanation depth, and involvement calibration.
+
+user_expertise:
+  product_thinking: null      # none | basic | intermediate | advanced
+  technical_depth: null
+  design_sensibility: null
+  domain_knowledge: null
+  operational_awareness: null
+  evidence: []                # Each: { dimension, signal, inferred_from }
+
+# =============================================================================
+# BUILD PREFERENCES
+# =============================================================================
+# Developer preferences captured during discovery (testing approach, code style,
+# tooling). Optional — only when the user expresses preferences.
+
+build_preferences:
+  file_path: null             # Path to project-preferences.md (relative to .prawduct/)
+  last_updated: null
+  source: null                # discovery | inferred | iteration
+
+# =============================================================================
+# HEALTH CHECK
+# =============================================================================
+# Tracks periodic health check state. Health checks are triggered by
+# accumulating staleness signals, not by a fixed cadence.
+
+health_check:
+  last_full_check: null
+  last_check_findings: null
+
+# =============================================================================
+# ARTIFACT MANIFEST
+# =============================================================================
+# Tracks generated artifacts and their relationships.
+
+artifact_manifest:
+  # Each:
+  #   name: string
+  #   file_path: string (relative to project root)
+  #   version: integer
+  #   depends_on: [artifact names]
+  artifacts: []
+
+# =============================================================================
+# BUILD STATE
+# =============================================================================
+# Runtime tracking during building. Updated after each chunk.
+
+build_state:
+  source_root: null           # Where source code lives (e.g., "src/")
+
+# =============================================================================
+# ACTIVE BUILD PLAN (optional)
+# =============================================================================
+# Names the in-progress build plan when it isn't the conventional
+# `artifacts/build-plan.md` — scope-named plans (`artifacts/build-plan-<scope>.md`)
+# keep release-pending plans distinct under gitflow. The value is a path
+# relative to `.prawduct/` (a repo-relative `.prawduct/...` spelling is
+# tolerated). The Critic gate, plan-aware mode inference, regen-views, and
+# chunk-ref verification all resolve the plan through this pointer; unset →
+# `artifacts/build-plan.md`. A pointer to a file that doesn't exist means
+# governance sees NO active plan — the session briefing warns loudly until
+# it's fixed (STH-5P2W).
+#
+# active_build_plan: artifacts/build-plan-my-scope.md
+
+# =============================================================================
+# DERIVED VIEWS (enabled by default, v1.4+)
+# =============================================================================
+# When true (default), three derived views are regenerated from change-log.md
+# tagged entries (see that file for the tag format):
+#   * build-plan `## Status` block (checkboxes from `status=shipped` tags)
+#   * `.prawduct/release-notes.md` (from `release=` tags)
+#   * `scope_rollups:` block below (from `scope=` tags)
+# Run `prawduct-hook regen-views` to apply.
+# Set to `false` to opt out — Status becomes hand-edited and the other views
+# are not produced.
+
+views_enabled: true
+
+# Scope rollups — derived view, populated by regen-views when views_enabled is
+# true. Lists chunks (and releases) shipped under each scope rollup tag.
+# Do not hand-edit — overwritten on next regen.
+scope_rollups: {}
+
+# =============================================================================
+# COVERAGE EVIDENCE (opt-in, v1.4+)
+# =============================================================================
+# When true, the Critic requires every changed file the verifier can judge to
+# appear in `.test-evidence.json`'s `changes_referenced` list (files it can't
+# judge — non-code, symbol-less, deleted — are declared in `changes_unjudged`
+# and reported, not gated) and scales severity language to the declared
+# `coverage_level` (`referenced` floor vs. `executed` real). The reference
+# verifier at `bin/test-reference-verify` emits the floor; products with
+# non-trivial coverage concerns should plug in a stronger verifier. See
+# `/prawduct:building` "Coverage Evidence".
+# Default off in v1.4 — schema is checked but content is not enforced.
+
+coverage_required: false
+
+# =============================================================================
+# TEST EXECUTION (optional, gate-soundness)
+# =============================================================================
+# `prawduct-hook test-evidence record` defaults to running
+# `sys.executable -m pytest` from the repo root and grepping a single `tests/`
+# dir. When the repo's real shape differs (uv/venv-managed interpreter, no
+# root pytest config, monorepo test trees), declare it — don't wrap it:
+#
+# test_command: uv run pytest --junit-xml={junit_xml} -q
+#   The canonical suite invocation (the exact command CI runs), shlex-split
+#   and run from the repo root. Must contain the `{junit_xml}` literal — the
+#   hook substitutes its report path there. Shell operators (&&, |, FOO=1)
+#   are not supported; point the command at a script for compound runs.
+#   Caveat: the value is read by a YAML-comment-aware scalar reader, so a
+#   literal `#` anywhere in the command truncates it — wrap such invocations
+#   in a script too.
+#
+# tests_dirs: engine/tests server/tests
+#   Whitespace-separated test trees for the coverage verifier (default:
+#   `tests`). One verifier run unions discovery across all of them.
+
+# =============================================================================
+# OPERATOR VERIFICATION (opt-in, v1.4+)
+# =============================================================================
+# When true, `/pr create` BLOCKS if `.prawduct/operator-verification.md`
+# has any entry with `**Status:** pending`. The queue records pre-merge
+# human-verification items for visual / live-integration changes that
+# automated tests can't fully cover. Drain via
+# `prawduct-hook verify-operator-verification <VRF-id>` or
+# override per-PR with `/pr create --accept-pending-verification "rationale"`.
+# Default off in v1.4 — opt-in by setting `operator_verification_required: true`.
+
+operator_verification_required: false
+
+# =============================================================================
+# BACKLOG (structured backlog resolution conditions, v1.7+)
+# =============================================================================
+# The shared "answer store" (committed) that backlog sync probes consult to
+# know whether a migration nudge is still needed. The per-clone nag log lives
+# in .prawduct/.advisories.json; these committed facts auto-resolve a
+# teammate's advisory on next sync (see post-sync-advisory-spec.md §3.5, §7.1).
+#
+#   backlog_format_version  — set to 2 once `/backlog migrate` has converted
+#                             items to the [PFX-XXXX] structured format. Unset
+#                             (or absent) means legacy/unmigrated; the
+#                             `legacy-backlog-format` probe may nudge.
+#   backlog_prefixes        — OPTIONAL declared prefix vocabulary for /backlog
+#                             validation (e.g. [STH, CRT, SYN]). Emergent by
+#                             default; declare only if you want validation.
+#
+# Reserved for deferred backlog probes (v1.7 ships only legacy-backlog-format):
+#   backlog_external_imports — list of external backlog files already audited
+#                              via `/backlog import` (resolves external-detected).
+#   backlog_last_groomed_at  — ISO-8601 of the last /backlog list|pick (resolves
+#                              overdue-grooming).
+
+# backlog_format_version:
+# backlog_prefixes: []
+# backlog_external_imports: []
+# backlog_last_groomed_at:
+
+# =============================================================================
+# CHANGE LOG
+# =============================================================================
+# Change log is in .prawduct/change-log.md (separate file to reduce merge conflicts).
+# See that file for format and instructions.
+
+# Distribution mode — set by /prawduct:migrate (v2.0.0 plugin cutover).
+# `plugin` tells the legacy file-sync hook to stand down (Chunk 8).
+distribution: plugin

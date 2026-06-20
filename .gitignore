@@ -34,3 +34,28 @@ Thumbs.db
 ehthumbs.db
 Desktop.ini
 *.sln
+
+# Prawduct session files
+.claude/settings.local.json
+.prawduct/.critic-active
+.prawduct/.critic-findings.json
+.prawduct/.governance-ledger.jsonl
+.prawduct/.test-evidence.json
+.prawduct/.pr-reviews/
+.prawduct/.session-git-baseline
+.prawduct/.session-handoff.md
+.prawduct/.session-reflected
+.prawduct/.session-start
+.prawduct/.subagent-briefing.md
+.prawduct/.gates-waived
+.prawduct/.advisories.json
+.prawduct/reflections.md
+__pycache__/
+
+# Prawduct plugin version marker (per-repo last-seen)
+.prawduct/.prawduct-version
+
+# Prawduct durable artifacts are tracked governance state — override the broad
+# `artifacts/` build-output rule above, which would otherwise swallow them.
+!.prawduct/artifacts/
+!.prawduct/artifacts/**

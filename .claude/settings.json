@@ -19,5 +19,18 @@
       "Bash(find:*)",
       "Bash(wc:*)"
     ]
+  },
+  "extraKnownMarketplaces": {
+    "prawduct": {
+      "source": {
+        "source": "github",
+        "repo": "brookstalley/prawduct",
+        "ref": "main"
+      },
+      "autoUpdate": true
+    }
+  },
+  "enabledPlugins": {
+    "prawduct@prawduct": true
   }
 }
