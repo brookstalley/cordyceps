@@ -446,18 +446,13 @@ namespace Cordyceps.Tools.Unified
                 var inputs = new List<object>();
                 var outputs = new List<object>();
 
-                try
+                ToolHelpers.WithProxyComponent(proxy, comp =>
                 {
-                    var instance = proxy.CreateInstance();
-                    if (instance is IGH_Component comp)
-                    {
-                        foreach (var i in comp.Params.Input)
-                            inputs.Add(new { name = i.Name, type = i.TypeName, optional = i.Optional, description = i.Description });
-                        foreach (var o in comp.Params.Output)
-                            outputs.Add(new { name = o.Name, type = o.TypeName, description = o.Description });
-                    }
-                }
-                catch { }
+                    foreach (var i in comp.Params.Input)
+                        inputs.Add(new { name = i.Name, type = i.TypeName, optional = i.Optional, description = i.Description });
+                    foreach (var o in comp.Params.Output)
+                        outputs.Add(new { name = o.Name, type = o.TypeName, description = o.Description });
+                });
 
                 return JsonConvert.SerializeObject(new
                 {

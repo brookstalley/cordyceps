@@ -609,6 +609,27 @@ namespace Cordyceps.Core
         }
 
         /// <summary>
+        /// Instantiate a component proxy and invoke <paramref name="project"/> with the
+        /// resulting <see cref="IGH_Component"/> so callers can read its parameter metadata.
+        /// Centralizes the proxy-instantiation scaffold shared by component documentation and
+        /// search. On failure it logs and returns without invoking the callback — callers
+        /// degrade to whatever info they already have.
+        /// </summary>
+        public static void WithProxyComponent(IGH_ObjectProxy proxy, Action<IGH_Component> project)
+        {
+            try
+            {
+                var instance = proxy.CreateInstance();
+                if (instance is IGH_Component comp)
+                    project(comp);
+            }
+            catch (Exception ex) // prawduct:allow prawduct/broad-except -- foreign component-proxy instantiation can throw arbitrary plugin/reflection errors; log and degrade to basic info
+            {
+                DebugLog.Warn($"Failed to instantiate proxy '{proxy?.Desc?.Name}' ({proxy?.Guid}) for parameter enumeration: {ex.Message}");
+            }
+        }
+
+        /// <summary>
         /// Build a basic component info dictionary with common fields.
         /// </summary>
         /// <param name="obj">The document object</param>

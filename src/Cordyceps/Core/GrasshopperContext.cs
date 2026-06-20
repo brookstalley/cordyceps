@@ -1,6 +1,5 @@
 using System;
 using System.Threading;
-using System.Threading.Tasks;
 using Grasshopper;
 using Grasshopper.Kernel;
 using Rhino;
@@ -87,38 +86,6 @@ namespace Cordyceps.Core
                 {
                     throw exception;
                 }
-            }
-            finally
-            {
-                _documentMutex.Release();
-            }
-        }
-
-        /// <summary>
-        /// Execute an async action on the UI thread.
-        /// Acquires document mutex to prevent concurrent modifications.
-        /// </summary>
-        public async Task<T> ExecuteOnUiThreadAsync<T>(Func<T> action)
-        {
-            await _documentMutex.WaitAsync();
-            try
-            {
-                var tcs = new TaskCompletionSource<T>();
-
-                RhinoApp.InvokeOnUiThread(new Action(() =>
-                {
-                    try
-                    {
-                        var result = action();
-                        tcs.SetResult(result);
-                    }
-                    catch (Exception ex)
-                    {
-                        tcs.SetException(ex);
-                    }
-                }));
-
-                return await tcs.Task;
             }
             finally
             {

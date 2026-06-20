@@ -81,7 +81,7 @@
 
 - [x] Chunk 01 — DOC-8M3T: sync GetServerInstructions + MCP-4R2K change-log entry
 - [x] Chunk 02 — TST-6W7H: link RequestValidator + UnifiedToolHelpers, add tests
-- [ ] Chunk 03 — CQ-2X8B: unify proxy-instantiation, remove dead ExecuteOnUiThreadAsync
+- [x] Chunk 03 — CQ-2X8B: unify proxy-instantiation, remove dead ExecuteOnUiThreadAsync
 - [ ] Chunk 04 — CQ-5J9N: broad-catch / silent-swallow sweep (cumulative-final)
 
-**Context:** Chunks 01-02 complete. Ch01: `GetServerInstructions()` synced (+11 actions). Ch02: linked `RequestValidator` + `UnifiedToolHelpers` into the test project; added `RequestValidatorTests.cs` (~45 cases) + `UnifiedToolHelpersTests.cs` (~24 cases incl. `GetParam` conversion-failure→default at :171, `ValidateAction` contract, `GenerateHelp` omission rules). Suite 68→137, all green. Next: Chunk 03 (CQ-2X8B refactor).
+**Context:** Chunks 01-03 complete. Ch03: new `ToolHelpers.WithProxyComponent(proxy, Action<IGH_Component>)` unifies the proxy-instantiate + IGH_Component-guard scaffold; `GhInspectTool.ActionDocs` and `ComponentRegistry.CreateComponentMatch` route through it (each keeps its divergent projection). The helper's catch now logs (was 2 silent `catch {}`) and carries a broad-except waiver. Removed dead `GrasshopperContext.ExecuteOnUiThreadAsync` + orphaned `System.Threading.Tasks` using. Main project builds clean (0 warn/0 err); suite 137/137 (behavior preserved). Descoped (recorded in plan): BuildParameterList re-route (not a drop-in), dead-default-arm removal (switch-expression arms are required), full 7× dispatch-preamble consolidation (low impact / high churn on PRIMARY surface). Next: chunk Critic, then Chunk 04 (CQ-5J9N sweep, cumulative-final).
