@@ -64,8 +64,13 @@
 
 <!-- Items available to pick up. -->
 
+## Promoted
+
+<!-- Items currently being addressed in an active build plan. /backlog pick
+     skips these by default (work is already in flight). -->
+
 - **[TST-9Q4M]** Wire .NET/xUnit test evidence into the Prawduct gate
-  `effort: M · impact: M · area: tooling · source: critic · added: 2026-06-20 · status: open · stage: ready · related: GHS-7K2P`
+  `effort: M · impact: M · area: tooling · source: critic · added: 2026-06-20 · status: promoted · stage: ready · reviewed: 2026-06-20 · related: GHS-7K2P`
 
   `prawduct-hook test-evidence record` is pytest-only (runs `sys.executable -m pytest`), so it
   cannot record evidence for this C#/.NET repo — every chunk gets a non-blocking
@@ -79,10 +84,9 @@
 
   Surfaced by the Critic while fixing GHS-7K2P.
 
-## Promoted
-
-<!-- Items currently being addressed in an active build plan. /backlog pick
-     skips these by default (work is already in flight). -->
+  **[2026-06-20] Promoted:** built on branch `fix/dotnet-test-evidence` (commit 63cdd58);
+  Critic clean (0 blocking); gate verified end-to-end (test-evidence record → 53/0, test-status
+  current). Pending merge to main.
 
 ## Archive
 

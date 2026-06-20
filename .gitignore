@@ -59,3 +59,6 @@ __pycache__/
 # `artifacts/` build-output rule above, which would otherwise swallow them.
 !.prawduct/artifacts/
 !.prawduct/artifacts/**
+
+# Claude memory folder accidentally written to repo root; belongs in ~/.claude
+memory/
