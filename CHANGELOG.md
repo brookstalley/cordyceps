@@ -13,6 +13,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- **MCP error contract honored at the server boundary** - Tool results carrying `{"success": false, ...}` are now reported to MCP clients with the transport `isError` flag set to `true` (previously hardcoded `false`, so failures looked like successes). Additionally, an exception thrown inside any tool method is now returned as a normal tool result (`isError: true`, body `{"success": false, "error": "<message>"}`) instead of escaping as a JSON-RPC `-32603` protocol error — making error reporting uniform across all seven tools. Genuine protocol errors (unknown tool, missing required parameter) still surface as JSON-RPC errors.
 - **Script language preserved on `gh_script(set/configure)`** - Setting a script body without the Rhino 8 language directive (`#! python 3`, `// #! csharp`) no longer strips the component's language. Previously this caused "Can not determine input code language" at solve time and the component emitted no geometry — which bit anyone following the plain-body examples in the docs. The component's existing directive is now preserved automatically; a directive included in the new code is respected as-is.
 
 ## [1.4.9] - 2026-03-26

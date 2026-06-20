@@ -627,22 +627,38 @@ Resources: gh://docs/getting-started, gh://docs/data-trees, gh://docs/common-err
                 }
             }
 
-            // Invoke the tool method
-            var result = tool.Method.Invoke(instance, args);
-
-            // Handle async methods
-            if (result is Task task)
+            object result;
+            try
             {
-                await task;
-                var resultProperty = task.GetType().GetProperty("Result");
-                result = resultProperty?.GetValue(task);
+                // Invoke the tool method
+                result = tool.Method.Invoke(instance, args);
+
+                // Handle async methods
+                if (result is Task task)
+                {
+                    await task;
+                    var resultProperty = task.GetType().GetProperty("Result");
+                    result = resultProperty?.GetValue(task);
+                }
+            }
+            catch (Exception ex) // prawduct:allow prawduct/broad-except -- tool-invocation boundary: any tool-body failure must become a structured {success:false} result, not a JSON-RPC protocol error (project error-handling contract)
+            {
+                Core.DebugLog.WriteLine($"Tool '{name}' threw: {ex.Message}", "ERROR", 1);
+                var errorText = Core.McpResultFormatter.FormatExceptionResult(ex);
+                return new
+                {
+                    content = new[] { new { type = "text", text = errorText } },
+                    isError = true
+                };
             }
 
-            // Format as MCP tool result
+            // Format as MCP tool result. isError reflects the tool's own success flag
+            // (see Core.McpResultFormatter) so clients see a failed tool result as an error.
+            var resultText = result?.ToString() ?? "";
             return new
             {
-                content = new[] { new { type = "text", text = result?.ToString() ?? "" } },
-                isError = false
+                content = new[] { new { type = "text", text = resultText } },
+                isError = Core.McpResultFormatter.IsErrorResult(resultText)
             };
         }
 

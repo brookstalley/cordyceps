@@ -64,25 +64,6 @@
 
 <!-- Items available to pick up. -->
 
-- **[MCP-4R2K]** Honor the MCP error contract at the server boundary
-  `effort: M · impact: L · area: mcp-server · source: reflection · added: 2026-06-20 · status: open · stage: ready`
-
-  Two related defects in `src/Cordyceps/McpServer.cs` break the MCP error contract for tool calls:
-
-  (a) **Hardcoded `isError = false`** (~`:645`): tool results carrying `{"success": false, ...}` are
-  reported to MCP clients as non-errors. The `isError` flag should be derived from the parsed
-  `success` field of the tool's JSON payload so clients can distinguish failures.
-
-  (b) **Inconsistent exception handling across tools.** Most tool dispatch methods don't wrap their
-  action switch in try/catch, so a thrown exception escapes as a raw JSON-RPC `-32603` error (caught
-  at `McpServer.cs:433`) instead of the standard `{success:false, error}` tool payload. `GhScriptTool`
-  DOES wrap (~`:307`), so behavior is inconsistent across the 7 tools for the same failure class.
-
-  **Fix:** derive `isError` from the parsed `success` field, and apply consistent
-  try/catch-to-structured-error handling — either centrally at the server boundary or uniformly in
-  each tool. Doc-audit: behavior change to the error contract; check whether server instructions /
-  MCP testing guide describe error reporting.
-
 - **[DOC-8M3T]** GetServerInstructions() missing 11 live actions
   `effort: S · impact: M · area: documentation · source: reflection · added: 2026-06-20 · status: open · stage: ready`
 
@@ -159,6 +140,25 @@
 
 <!-- Items currently being addressed in an active build plan. /backlog pick
      skips these by default (work is already in flight). -->
+
+- **[MCP-4R2K]** Honor the MCP error contract at the server boundary
+  `effort: M · impact: L · area: mcp-server · source: reflection · added: 2026-06-20 · status: promoted · stage: ready · reviewed: 2026-06-20`
+
+  Two related defects in `src/Cordyceps/McpServer.cs` break the MCP error contract for tool calls:
+
+  (a) **Hardcoded `isError = false`** (~`:645`): tool results carrying `{"success": false, ...}` are
+  reported to MCP clients as non-errors. The `isError` flag should be derived from the parsed
+  `success` field of the tool's JSON payload so clients can distinguish failures.
+
+  (b) **Inconsistent exception handling across tools.** Most tool dispatch methods don't wrap their
+  action switch in try/catch, so a thrown exception escapes as a raw JSON-RPC `-32603` error (caught
+  at `McpServer.cs:433`) instead of the standard `{success:false, error}` tool payload. `GhScriptTool`
+  DOES wrap (~`:307`), so behavior is inconsistent across the 7 tools for the same failure class.
+
+  **Fix:** derive `isError` from the parsed `success` field, and apply consistent
+  try/catch-to-structured-error handling — either centrally at the server boundary or uniformly in
+  each tool. Doc-audit: behavior change to the error contract; check whether server instructions /
+  MCP testing guide describe error reporting.
 
 ## Archive
 
