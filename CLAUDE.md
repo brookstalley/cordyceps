@@ -31,6 +31,8 @@ The project targets .NET 8.0 and outputs a Grasshopper plugin (`.gha` file). Deb
 
 **Core/UnifiedToolHelpers.cs** - Shared utilities for the unified tool architecture including action dispatch, help generation, and standardized response formatting.
 
+**Core/ToolHelpers.cs** - Shared document/component utilities used across every tool: active-document and component resolution (by GUID or name), protected/infrastructure-id checks, cluster-safe recompute, component-info builders, JSON (de)serialization helpers, and `SuccessResponse`/`ErrorResponse` formatting.
+
 **Core/DebugLog.cs** - Centralized logging with Info, Warn, Error, Debug levels. Logs are retrievable via `gh_inspect(action='log')`.
 
 ### User-Facing Documentation System

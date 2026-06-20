@@ -39,6 +39,20 @@
      derived view. Don't hand-edit them — add/update a tagged entry here and
      run `prawduct-hook regen-views`. -->
 
+## 2026-06-20: Janitor maintenance pass
+
+<!-- prawduct: type=maintenance | chunks=01,02,03 | scope=janitor-2026-06-20 -->
+
+**Why:** periodic `/prawduct:janitor` survey + user-approved cleanup. Fixed release-metadata
+drift (tracked `manifest.yml` was stale at 1.4.0 while shipping 1.4.9) and closed the gap that
+let it drift — `scripts/release.sh` now bumps the manifest version, not just the csproj. Added
+the first build/test CI (`.github/workflows/dotnet-ci.yml`: `dotnet build`/`dotnet test` on
+push/PR) so the 53 xUnit tests run automatically. Removed obsolescence: a 402-line unreferenced
+`src/` planning doc that contradicted the HTTP+SSE implementation, the shipped GHS-7K2P bug
+report, stray `output/`/`memory/` dirs, and merged/stale branches. Documented
+`Core/ToolHelpers.cs` in CLAUDE.md. No compiled C# changed; build 0/0, 53/53 tests pass. Not
+user-facing (dev tooling + release plumbing), so no root CHANGELOG entry.
+
 ## 2026-06-20: Wire .NET/xUnit test evidence into the Prawduct gate (TST-9Q4M)
 
 <!-- prawduct: type=tooling | chunks=01 | scope=gate-soundness -->

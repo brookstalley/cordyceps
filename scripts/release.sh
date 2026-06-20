@@ -274,6 +274,17 @@ update_csproj_version() {
     fi
 }
 
+# Update version in the Yak manifest (copied into dist/ by prepare_dist)
+update_manifest_version() {
+    local version="$1"
+    if [[ "$DRY_RUN" == true ]]; then
+        log_info "[DRY-RUN] Would update $MANIFEST to version $version"
+    else
+        sed_inplace "s|^version: .*|version: $version|" "$MANIFEST"
+        log_success "Updated manifest to version $version"
+    fi
+}
+
 # Build the GHA
 build_gha() {
     log_info "Building Cordyceps..."
@@ -323,8 +334,8 @@ git_commit_and_tag() {
     if [[ "$DRY_RUN" == true ]]; then
         log_info "[DRY-RUN] Would commit version bump and tag as v$version"
     else
-        # Add required files
-        git add "$CSPROJ" "$RELEASES_DIR/Cordyceps.gha"
+        # Add required files (manifest bumped by update_manifest_version must be committed too)
+        git add "$CSPROJ" "$MANIFEST" "$RELEASES_DIR/Cordyceps.gha"
 
         # Add CHANGELOG if it was modified
         if git diff --cached --quiet "$CHANGELOG" 2>/dev/null || git diff --quiet "$CHANGELOG" 2>/dev/null; then
@@ -456,6 +467,7 @@ main() {
 
     # Execute release steps
     update_csproj_version "$NEW_VERSION"
+    update_manifest_version "$NEW_VERSION"
     build_gha
     prepare_dist
     build_yak "$NEW_VERSION"

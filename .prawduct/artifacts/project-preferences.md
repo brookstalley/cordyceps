@@ -37,7 +37,7 @@ Developer preferences for how code is written in this project. Captured during d
 - **Key libraries**: Newtonsoft.Json (SDK-compatible JSON serialization); Grasshopper 8 SDK / RhinoCommon (host APIs); System.Text.Json used only in type-conversion code and tests
 - **Dev commands**:
   - Build (Release required — Debug is blocked): `dotnet build src/Cordyceps/Cordyceps.csproj -c Release`
-  - Test: `dotnet test src/Cordyceps.Tests/Cordyceps.Tests.csproj`
+  - Test: `dotnet test src/Cordyceps.Tests/Cordyceps.Tests.csproj -c Release` (matches CI and `project-state.yaml` `test_command`)
   - Publish: `yak build` / `yak push` from `dist/` (see CLAUDE.md → Publishing)
 
 ## Workflow
