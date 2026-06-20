@@ -355,7 +355,10 @@ namespace Cordyceps
                 var doc = Grasshopper.Instances.ActiveCanvas?.Document;
                 documentName = doc?.DisplayName;
             }
-            catch { /* Ignore errors getting document name */ }
+            catch (Exception ex) // prawduct:allow prawduct/broad-except -- best-effort status read; the health endpoint must still report if the document name is unavailable
+            {
+                Core.DebugLog.Debug($"Could not read active document name for status: {ex.Message}");
+            }
 
             var uptimeSeconds = (int)(DateTime.UtcNow - _startTime).TotalSeconds;
 
@@ -549,13 +552,13 @@ namespace Cordyceps
 READ FIRST: gh://docs/getting-started (use resources/read)
 
 UNIFIED TOOLS (use action='help' for details):
-- gh_canvas: add, delete, move, rename, find, search, list, info, bounds, validate, constant, bake, zoom, view, get, set, config, preview, enable, group_create, group_delete, group_add, group_remove, group_list, group_rename, group_color, group_move
+- gh_canvas: add, delete, move, rename, find, search, list, info, bounds, validate, constant, bake, zoom, view, get, set, config, preview, enable, group_create, group_delete, group_add, group_remove, group_list, group_rename, group_color, group_move, zoomable
 - gh_wire: connect, disconnect, list, clear, validate
 - gh_document: info, save, clear, solver, recompute, undo, redo, snapshot, revert, snapshots, capture_canvas, capture_viewport, capture_region, capture_views
 - gh_script: get, set, configure, info
 - gh_inspect: status, outputs, trace, disconnected, geometry, log, reports, categories, docs
-- rhino_scene: objects, select, deselect, set_layer, set_name, layers, layer_create, layer_set, layer_delete, hide, show, delete, script
-- rhino_render: display, camera, zoom, modes, render, settings, ground, sun, skylight, material_list, material_library, material_instantiate, material_create, material_texture, material_apply, material_delete, env_list, env_current, env_set, env_create, env_delete
+- rhino_scene: objects, select, deselect, set_layer, set_name, layers, layer_create, layer_set, layer_delete, hide, show, delete, set_color, bbox, script
+- rhino_render: display, camera, zoom, modes, render, settings, ground, sun, skylight, view_save, view_load, view_list, view_delete, light_add, light_list, light_set, light_delete, material_list, material_library, material_instantiate, material_create, material_texture, material_apply, material_delete, env_list, env_current, env_set, env_create, env_delete
 
 Key points:
 - Disable solver: gh_document(action='solver', enabled=false)
@@ -627,22 +630,40 @@ Resources: gh://docs/getting-started, gh://docs/data-trees, gh://docs/common-err
                 }
             }
 
-            // Invoke the tool method
-            var result = tool.Method.Invoke(instance, args);
-
-            // Handle async methods
-            if (result is Task task)
+            object result;
+            try
             {
-                await task;
-                var resultProperty = task.GetType().GetProperty("Result");
-                result = resultProperty?.GetValue(task);
+                // Invoke the tool method
+                result = tool.Method.Invoke(instance, args);
+
+                // Handle async methods
+                if (result is Task task)
+                {
+                    await task;
+                    var resultProperty = task.GetType().GetProperty("Result");
+                    result = resultProperty?.GetValue(task);
+                }
+            }
+            catch (Exception ex) // prawduct:allow prawduct/broad-except -- tool-invocation boundary: any tool-body failure must become a structured {success:false} result, not a JSON-RPC protocol error (project error-handling contract)
+            {
+                // Log the full exception (type + stack) operator-side for root-causing; the client
+                // payload stays message-only via FormatExceptionResult.
+                Core.DebugLog.WriteLine($"Tool '{name}' threw: {ex}", "ERROR", 1);
+                var errorText = Core.McpResultFormatter.FormatExceptionResult(ex);
+                return new
+                {
+                    content = new[] { new { type = "text", text = errorText } },
+                    isError = true
+                };
             }
 
-            // Format as MCP tool result
+            // Format as MCP tool result. isError reflects the tool's own success flag
+            // (see Core.McpResultFormatter) so clients see a failed tool result as an error.
+            var resultText = result?.ToString() ?? "";
             return new
             {
-                content = new[] { new { type = "text", text = result?.ToString() ?? "" } },
-                isError = false
+                content = new[] { new { type = "text", text = resultText } },
+                isError = Core.McpResultFormatter.IsErrorResult(resultText)
             };
         }
 

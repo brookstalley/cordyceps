@@ -64,10 +64,144 @@
 
 <!-- Items available to pick up. -->
 
+- **[GHD-3K6F]** Finish or formally cut undo/redo
+  `effort: M · impact: L · area: gh-document · source: reflection · added: 2026-06-20 · status: open · stage: requirements`
+
+  `GhDocumentTool.cs:375` / `:384` (`ActionUndo` / `ActionRedo`) ship as disabled stubs returning an
+  error that points users to snapshots instead. Root cause: the GH undo system disposes the HTTP
+  response before it can be sent (a threading issue — undo runs and tears down the in-flight request).
+
+  **Decision needed before building** (hence `stage: requirements`): either
+  (a) implement correctly — capture the HTTP response off the UI thread so the undo operation can't
+      dispose it mid-flight; or
+  (b) formally descope — remove the stub actions and document snapshots as the supported mechanism.
+
+  Once the keep/cut call is made, advance to `ready` (option b) or `design` (option a). Doc-audit:
+  either path touches `gh_document` ActionInfo and server instructions.
+
+- **[CQ-7T4P]** gh_inspect(docs)/component search returns success:true with empty params when a proxy can't be instantiated
+  `effort: S · impact: S · area: code-quality · source: critic · added: 2026-06-20 · status: open · stage: ready · related: CQ-2X8B, CQ-5J9N`
+
+  Surfaced by the cumulative Critic on the CQ-2X8B refactor. `ToolHelpers.WithProxyComponent` (and
+  its callers `GhInspectTool.ActionDocs` + `ComponentRegistry.CreateComponentMatch`) now LOG when
+  `proxy.CreateInstance()` fails, but the tool result still returns `success: true` with an empty
+  inputs/outputs list — the caller can't distinguish "component genuinely has no params" from "we
+  failed to introspect it."
+
+  **Fix shape:** surface a result-level signal (e.g. a `"paramsUnavailable": true` flag or a `note`
+  field) when `WithProxyComponent`'s callback didn't run. This is a behavior change to the tool
+  response, so it was deliberately kept out of the behavior-preserving CQ-2X8B refactor. Builds on
+  the logging added by CQ-5J9N. Doc-audit: `gh_inspect` ActionInfo if the response shape changes.
+
+- **[RSC-2H9K]** Native place-raster-image / PictureFrame action (rhino_scene)
+  `effort: M · impact: M · area: rhino-scene · source: user · added: 2026-06-20 · status: open · stage: requirements`
+
+  External feature request filed today by the Puzzles project (print-and-cut puzzle generator,
+  Chunk 06) into `incoming-bugs/place-raster-image-picture-frame-action.md`. Wants a first-class
+  cordyceps action to place a raster image into the live Rhino scene as a PictureFrame object
+  (`RhinoDoc.Objects.AddPictureFrame`) at a caller-specified placement, returning the new object id —
+  to preview a cut layout over the printed artwork.
+
+  **Verified 2026-06-20:** no PictureFrame/AddPictureFrame support exists anywhere in the tree; the
+  only image-into-scene path today is a PBR material texture (`rhino_render material_texture`), which
+  isn't a placed PictureFrame.
+
+  `stage: requirements` because the action shape needs a design decision: which tool, and placement
+  params (plane / corner points vs. width+height, units). Full report in the incoming-bugs file.
+  Doc-audit on build: `rhino_scene` ActionInfo + server instructions.
+
 ## Promoted
 
 <!-- Items currently being addressed in an active build plan. /backlog pick
      skips these by default (work is already in flight). -->
+
+- **[MCP-4R2K]** Honor the MCP error contract at the server boundary
+  `effort: M · impact: L · area: mcp-server · source: reflection · added: 2026-06-20 · status: promoted · stage: ready · reviewed: 2026-06-20`
+
+  Two related defects in `src/Cordyceps/McpServer.cs` break the MCP error contract for tool calls:
+
+  (a) **Hardcoded `isError = false`** (~`:645`): tool results carrying `{"success": false, ...}` are
+  reported to MCP clients as non-errors. The `isError` flag should be derived from the parsed
+  `success` field of the tool's JSON payload so clients can distinguish failures.
+
+  (b) **Inconsistent exception handling across tools.** Most tool dispatch methods don't wrap their
+  action switch in try/catch, so a thrown exception escapes as a raw JSON-RPC `-32603` error (caught
+  at `McpServer.cs:433`) instead of the standard `{success:false, error}` tool payload. `GhScriptTool`
+  DOES wrap (~`:307`), so behavior is inconsistent across the 7 tools for the same failure class.
+
+  **Fix:** derive `isError` from the parsed `success` field, and apply consistent
+  try/catch-to-structured-error handling — either centrally at the server boundary or uniformly in
+  each tool. Doc-audit: behavior change to the error contract; check whether server instructions /
+  MCP testing guide describe error reporting.
+
+- **[DOC-8M3T]** GetServerInstructions() missing 11 live actions
+  `effort: S · impact: M · area: documentation · source: reflection · added: 2026-06-20 · status: promoted · stage: ready · reviewed: 2026-06-20`
+
+  `McpServer.cs` `GetServerInstructions()` (the first thing agents see on MCP initialize) lags the
+  code. Missing actions:
+  - `gh_canvas` missing `zoomable` (~`L552`)
+  - `rhino_scene` missing `set_color`, `bbox` (~`L557`)
+  - `rhino_render` missing `view_save`, `view_load`, `view_list`, `view_delete`, `light_add`,
+    `light_list`, `light_set`, `light_delete` (~`L558`)
+
+  All 11 actions exist in code, in per-tool `ActionInfo`, and in the Knowledge guides — only the
+  initialize-time listing is behind. Direct CLAUDE.md Documentation-Audit violation (server
+  instructions row). Pure omission — no phantom actions to remove. Quick, mechanical fix.
+
+  **[2026-06-20] Promoted:** picked into the active build plan (artifacts/build-plan.md), stacked on
+  MCP-4R2K on branch `fix/mcp-error-contract`; shipping as one PR with TST-6W7H, CQ-2X8B, CQ-5J9N.
+
+- **[TST-6W7H]** Link RequestValidator + UnifiedToolHelpers into the test project
+  `effort: S · impact: M · area: tooling · source: reflection · added: 2026-06-20 · status: promoted · stage: ready · reviewed: 2026-06-20 · related: TST-9Q4M`
+
+  Both `Core` classes are GH/Rhino-free and just aren't linked into `src/Cordyceps.Tests` yet (the
+  test csproj links source files individually to avoid pulling in the GH runtime). They are the
+  input-validation and action-dispatch contract every tool relies on, so they're high-value, low-cost
+  to cover.
+
+  **Fix:** add `RequestValidator` and `UnifiedToolHelpers` to the `<Compile Include>` list in the test
+  csproj, then write unit tests for `RequestValidator` (GUID / range / one-of / file-ext / etc.) and
+  for `UnifiedToolHelpers.ValidateAction` / `GetParam<T>` / `GenerateHelp`. Builds on the test-evidence
+  wiring shipped in TST-9Q4M.
+
+  **[2026-06-20] Promoted:** picked into the active build plan (artifacts/build-plan.md), stacked on
+  MCP-4R2K on branch `fix/mcp-error-contract`; shipping as one PR with DOC-8M3T, CQ-2X8B, CQ-5J9N.
+
+- **[CQ-5J9N]** Broad-catch / silent-swallow sweep
+  `effort: M · impact: M · area: code-quality · source: reflection · added: 2026-06-20 · status: promoted · stage: ready · reviewed: 2026-06-20`
+
+  ~40 `catch(Exception)` / empty catch blocks exist across the codebase with ZERO `prawduct:allow`
+  waivers. Most surface `ex.Message` (acceptable, but unwaivered); some swallow silently with no
+  logging:
+  - `GhScriptTool.cs:285-290` (SyncScriptParams / SyncParameters / VariableParameterMaintenance)
+  - `GhScriptTool.cs:688-700` (TryGetScriptSource)
+  - `GhInspectTool.cs:460` (proxy.CreateInstance)
+  - `McpServer.cs:358`
+
+  **Fix:** add `prawduct:allow` waivers where the broad catch is genuinely needed (with rationale),
+  add `Core.DebugLog` logging to the silent swallows, and narrow catch types where possible.
+
+  **[2026-06-20] Promoted:** picked into the active build plan (artifacts/build-plan.md), stacked on
+  MCP-4R2K on branch `fix/mcp-error-contract`; shipping as one PR with DOC-8M3T, TST-6W7H, CQ-2X8B.
+
+- **[CQ-2X8B]** Consolidate tool-class duplication
+  `effort: M · impact: L · area: code-quality · source: reflection · added: 2026-06-20 · status: promoted · stage: ready · reviewed: 2026-06-20 · related: CQ-5J9N`
+
+  Several pieces of duplicated / dead code across the tool layer:
+  - Proxy-instantiation + param enumeration duplicated between `GhInspectTool.cs:451-457` and
+    `ComponentRegistry.cs:368-389`, despite the existing `ToolHelpers.BuildParameterList`
+    (`ToolHelpers.cs:657`) that already does this.
+  - Repeated dispatch preamble across all 7 tool classes.
+  - Dead / unreachable "Unknown action" default switch arms (`ValidateAction` already rejects unknown
+    actions before dispatch reaches the switch).
+  - Unused `GrasshopperContext.ExecuteOnUiThreadAsync` (`GrasshopperContext.cs:101`).
+
+  **Fix:** route proxy/param enumeration through `ToolHelpers.BuildParameterList`, factor the shared
+  dispatch preamble, drop the dead default arms, and remove the unused async helper. Low user-facing
+  impact but reduces drift surface. Pairs well with CQ-5J9N (both touch the tool dispatch layer).
+
+  **[2026-06-20] Promoted:** picked into the active build plan (artifacts/build-plan.md), stacked on
+  MCP-4R2K on branch `fix/mcp-error-contract`; shipping as one PR with DOC-8M3T, TST-6W7H, CQ-5J9N.
 
 ## Archive
 

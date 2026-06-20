@@ -191,7 +191,8 @@ namespace Cordyceps.Tools.Unified
                 }
                 catch (Exception ex)
                 {
-                    try { renderMaterial.EndChange(); } catch { }
+                    try { renderMaterial.EndChange(); }
+                    catch (Exception endEx) { DebugLog.Debug($"EndChange during texture-error cleanup failed: {endEx.Message}"); }
                     return ToolHelpers.ErrorResponse($"Failed to set texture: {ex.Message}");
                 }
             });

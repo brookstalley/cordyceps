@@ -363,44 +363,36 @@ namespace Cordyceps.Core
             };
 
             // Try to get input/output details by creating a temporary instance
-            try
+            ToolHelpers.WithProxyComponent(proxy, comp =>
             {
-                var instance = proxy.CreateInstance();
-                if (instance is IGH_Component comp)
+                // Also check if type name contains OBSOLETE
+                if (!match.Deprecated && comp.GetType().Name.Contains("OBSOLETE", StringComparison.OrdinalIgnoreCase))
                 {
-                    // Also check if type name contains OBSOLETE
-                    if (!match.Deprecated && instance.GetType().Name.Contains("OBSOLETE", StringComparison.OrdinalIgnoreCase))
-                    {
-                        match.Deprecated = true;
-                    }
-
-                    foreach (var input in comp.Params.Input)
-                    {
-                        match.Inputs.Add(new ParameterInfo
-                        {
-                            Name = input.Name,
-                            Nickname = input.NickName,
-                            Type = input.TypeName,
-                            Access = input.Access.ToString().ToLower(),
-                            Optional = input.Optional
-                        });
-                    }
-
-                    foreach (var output in comp.Params.Output)
-                    {
-                        match.Outputs.Add(new ParameterInfo
-                        {
-                            Name = output.Name,
-                            Nickname = output.NickName,
-                            Type = output.TypeName
-                        });
-                    }
+                    match.Deprecated = true;
                 }
-            }
-            catch
-            {
-                // Ignore errors creating instances - still return basic info
-            }
+
+                foreach (var input in comp.Params.Input)
+                {
+                    match.Inputs.Add(new ParameterInfo
+                    {
+                        Name = input.Name,
+                        Nickname = input.NickName,
+                        Type = input.TypeName,
+                        Access = input.Access.ToString().ToLower(),
+                        Optional = input.Optional
+                    });
+                }
+
+                foreach (var output in comp.Params.Output)
+                {
+                    match.Outputs.Add(new ParameterInfo
+                    {
+                        Name = output.Name,
+                        Nickname = output.NickName,
+                        Type = output.TypeName
+                    });
+                }
+            });
 
             return match;
         }

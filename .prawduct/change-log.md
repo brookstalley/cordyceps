@@ -39,6 +39,38 @@
      derived view. Don't hand-edit them — add/update a tagged entry here and
      run `prawduct-hook regen-views`. -->
 
+## 2026-06-20: Backlog batch — docs sync, test coverage, code-quality cleanup
+
+<!-- prawduct: type=maintenance | chunks=01,02,03,04 | scope=backlog-batch-2026-06-20 | status=in-progress -->
+
+**Why:** four ready backlog items addressed as one stacked PR on `fix/mcp-error-contract`.
+(DOC-8M3T) `GetServerInstructions()` lagged the code by 11 live actions agents see on MCP
+initialize — synced in code-dispatch order (gh_canvas `zoomable`; rhino_scene `set_color`,`bbox`;
+rhino_render 4 view + 4 light actions). (TST-6W7H) the host-free `RequestValidator` +
+`UnifiedToolHelpers` contract classes had zero coverage — linked into the test project with ~69
+new unit cases (suite 68→137). (CQ-2X8B) duplicated proxy-instantiation unified behind
+`ToolHelpers.WithProxyComponent`; dead `GrasshopperContext.ExecuteOnUiThreadAsync` removed.
+(CQ-5J9N) every silent `catch` swallow in `src/Cordyceps/` now logs with context or is narrowed
+to the expected exception type, and the MCP tool-boundary catch logs the full exception (type +
+stack) operator-side. Internal quality + agent-facing docs; no shipped-plugin behavior change, so
+no root CHANGELOG entry. Pending merge.
+
+## 2026-06-20: Honor the MCP error contract at the server boundary (MCP-4R2K)
+
+<!-- prawduct: type=bugfix | scope=mcp-error-contract | status=in-progress -->
+
+**Why:** `McpServer.HandleToolCallAsync` hardcoded the transport `isError` flag to `false`, so
+tool results carrying `{"success": false}` were reported to MCP clients as successes; and
+tool-body exceptions escaped as raw JSON-RPC `-32603` protocol errors (only `GhScriptTool`
+caught them), so the 7 tools behaved inconsistently. Both are now routed through a new
+host-free `Core/McpResultFormatter` (`IsErrorResult` derives `isError` from the parsed
+`success` field; `FormatExceptionResult` converts any tool-body throw — unwrapping
+`TargetInvocationException` — into a `{success:false,error}` result with `isError:true`),
+applied uniformly at the boundary. 15 new unit tests (68 total). Broad boundary catch carries a
+`prawduct:allow` waiver. Committed `905825c`/`0a525d0` on `fix/mcp-error-contract`; pending merge
+(ships in this batch's PR). Root CHANGELOG `[Unreleased]` Fixed entry + `McpTestingGuide.md`
+contract line already added.
+
 ## 2026-06-20: Drop attribution trailer from release commits
 
 <!-- prawduct: type=chore | scope=release-attribution | status=merged -->

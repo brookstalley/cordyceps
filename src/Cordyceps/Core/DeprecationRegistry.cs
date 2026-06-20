@@ -128,6 +128,7 @@ namespace Cordyceps.Core
                 catch (ReflectionTypeLoadException)
                 {
                     // Some assemblies can't be fully loaded - skip them
+                    DebugLog.Debug($"Skipped partially-loadable assembly {assembly.GetName().Name} while scanning for upgrades");
                 }
                 catch (Exception ex)
                 {
@@ -167,8 +168,9 @@ namespace Cordyceps.Core
                 return assembly.GetReferencedAssemblies()
                     .Any(a => a.Name == "Grasshopper" || a.Name == "GH_IO");
             }
-            catch
+            catch (Exception ex)
             {
+                DebugLog.Debug($"ReferencesGrasshopper: could not read references of {assembly?.GetName().Name}: {ex.Message}");
                 return false;
             }
         }
@@ -184,8 +186,9 @@ namespace Cordyceps.Core
                     .FirstOrDefault(p => p.Guid == guid);
                 return proxy?.Desc?.Name ?? guid.ToString();
             }
-            catch
+            catch (Exception ex)
             {
+                DebugLog.Debug($"GetComponentName({guid}) failed: {ex.Message}");
                 return guid.ToString();
             }
         }
@@ -250,8 +253,9 @@ namespace Cordyceps.Core
                     .FirstOrDefault(p => p.Desc.Name.Equals(name, StringComparison.OrdinalIgnoreCase));
                 return proxy?.Guid;
             }
-            catch
+            catch (Exception ex)
             {
+                DebugLog.Debug($"GetComponentGuidByName('{name}') failed: {ex.Message}");
                 return null;
             }
         }

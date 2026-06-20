@@ -282,12 +282,17 @@ namespace Cordyceps.Tools.Unified
                         try
                         {
                             scriptComp.SetSource(PreserveLanguageDirective(component, code));
-                            try { SyncScriptParams(component, code, out _); } catch { }
-                            try { scriptComp.SyncParameters(); } catch { }
+                            // Best-effort param sync after SetSource: not all script-component types
+                            // expose every hook, so a failure here is non-fatal — log at Debug and continue.
+                            try { SyncScriptParams(component, code, out _); }
+                            catch (Exception syncEx) { DebugLog.Debug($"SyncScriptParams skipped: {syncEx.Message}"); }
+                            try { scriptComp.SyncParameters(); }
+                            catch (Exception syncEx) { DebugLog.Debug($"SyncParameters skipped: {syncEx.Message}"); }
 
                             if (component is IGH_VariableParameterComponent vpComp2)
                             {
-                                try { vpComp2.VariableParameterMaintenance(); } catch { }
+                                try { vpComp2.VariableParameterMaintenance(); }
+                                catch (Exception vpmEx) { DebugLog.Debug($"VariableParameterMaintenance skipped: {vpmEx.Message}"); }
                             }
 
                             ghComponent.ExpireSolution(false);
@@ -685,19 +690,26 @@ namespace Cordyceps.Tools.Unified
                     if (result is bool success && success)
                         return parameters[0] as string;
                 }
-                catch { }
+                catch (Exception ex) { DebugLog.Debug($"TryGetScriptSource: TryGetSource() invoke failed: {ex.Message}"); }
             }
 
-            try { dynamic sc = component; return sc.Source; } catch { }
-            try { dynamic sc = component; return sc.ScriptSource; } catch { }
-            try { dynamic sc = component; return sc.Code; } catch { }
+            // Best-effort probe cascade: try each known source-access member and fall through to the
+            // next when it's absent/throws. Debug-logged (off by default) so a probe miss is traceable
+            // without normal-run noise.
+            try { dynamic sc = component; return sc.Source; }
+            catch (Exception ex) { DebugLog.Debug($"TryGetScriptSource: dynamic .Source unavailable: {ex.Message}"); }
+            try { dynamic sc = component; return sc.ScriptSource; }
+            catch (Exception ex) { DebugLog.Debug($"TryGetScriptSource: dynamic .ScriptSource unavailable: {ex.Message}"); }
+            try { dynamic sc = component; return sc.Code; }
+            catch (Exception ex) { DebugLog.Debug($"TryGetScriptSource: dynamic .Code unavailable: {ex.Message}"); }
 
             var sourceProp = component.GetType().GetProperty("Source")
                 ?? component.GetType().GetProperty("ScriptSource")
                 ?? component.GetType().GetProperty("Code");
             if (sourceProp != null)
             {
-                try { return sourceProp.GetValue(component) as string; } catch { }
+                try { return sourceProp.GetValue(component) as string; }
+                catch (Exception ex) { DebugLog.Debug($"TryGetScriptSource: {sourceProp.Name} getter failed: {ex.Message}"); }
             }
 
             return null;
@@ -727,8 +739,9 @@ namespace Cordyceps.Tools.Unified
                     })
                     .ToList();
             }
-            catch
+            catch (Exception ex)
             {
+                DebugLog.Warn($"ParseParamDefs: invalid param-def JSON ignored ({ex.Message})");
                 return new List<ParamDef>();
             }
         }

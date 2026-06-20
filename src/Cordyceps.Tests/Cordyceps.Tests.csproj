@@ -12,6 +12,9 @@
     <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.8.0" />
     <PackageReference Include="xunit" Version="2.6.6" />
     <PackageReference Include="xunit.runner.visualstudio" Version="2.5.6" />
+    <!-- Matches Cordyceps.csproj; required by linked Core files that use Newtonsoft.Json
+         (McpResultFormatter.cs, UnifiedToolHelpers.cs). -->
+    <PackageReference Include="Newtonsoft.Json" Version="13.0.3" />
     <!-- JUnit XML output for the dotnet-test junit logger, consumed by
          `prawduct-hook test-evidence record` (the gate's evidence writer). -->
     <PackageReference Include="JunitXml.TestLogger" Version="8.0.0" />
@@ -21,6 +24,9 @@
   <ItemGroup>
     <Compile Include="..\Cordyceps\Core\JsonTypeConverter.cs" Link="JsonTypeConverter.cs" />
     <Compile Include="..\Cordyceps\Core\ScriptDirective.cs" Link="ScriptDirective.cs" />
+    <Compile Include="..\Cordyceps\Core\McpResultFormatter.cs" Link="McpResultFormatter.cs" />
+    <Compile Include="..\Cordyceps\Core\RequestValidator.cs" Link="RequestValidator.cs" />
+    <Compile Include="..\Cordyceps\Core\UnifiedToolHelpers.cs" Link="UnifiedToolHelpers.cs" />
   </ItemGroup>
 
 </Project>
