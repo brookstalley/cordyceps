@@ -41,7 +41,7 @@
 
 ## 2026-06-20: Backlog batch — docs sync, test coverage, code-quality cleanup
 
-<!-- prawduct: type=maintenance | chunks=01,02,03,04 | scope=backlog-batch-2026-06-20 | status=in-progress -->
+<!-- prawduct: type=maintenance | chunks=01,02,03,04 | scope=backlog-batch-2026-06-20 | status=merged -->
 
 **Why:** four ready backlog items addressed as one stacked PR on `fix/mcp-error-contract`.
 (DOC-8M3T) `GetServerInstructions()` lagged the code by 11 live actions agents see on MCP
@@ -53,11 +53,11 @@ new unit cases (suite 68→137). (CQ-2X8B) duplicated proxy-instantiation unifie
 (CQ-5J9N) every silent `catch` swallow in `src/Cordyceps/` now logs with context or is narrowed
 to the expected exception type, and the MCP tool-boundary catch logs the full exception (type +
 stack) operator-side. Internal quality + agent-facing docs; no shipped-plugin behavior change, so
-no root CHANGELOG entry. Pending merge.
+no root CHANGELOG entry. Merged to main via PR #18 (squash `f9e0663`).
 
 ## 2026-06-20: Honor the MCP error contract at the server boundary (MCP-4R2K)
 
-<!-- prawduct: type=bugfix | scope=mcp-error-contract | status=in-progress -->
+<!-- prawduct: type=bugfix | scope=mcp-error-contract | status=merged -->
 
 **Why:** `McpServer.HandleToolCallAsync` hardcoded the transport `isError` flag to `false`, so
 tool results carrying `{"success": false}` were reported to MCP clients as successes; and
@@ -67,8 +67,8 @@ host-free `Core/McpResultFormatter` (`IsErrorResult` derives `isError` from the 
 `success` field; `FormatExceptionResult` converts any tool-body throw — unwrapping
 `TargetInvocationException` — into a `{success:false,error}` result with `isError:true`),
 applied uniformly at the boundary. 15 new unit tests (68 total). Broad boundary catch carries a
-`prawduct:allow` waiver. Committed `905825c`/`0a525d0` on `fix/mcp-error-contract`; pending merge
-(ships in this batch's PR). Root CHANGELOG `[Unreleased]` Fixed entry + `McpTestingGuide.md`
+`prawduct:allow` waiver. Committed `905825c`/`0a525d0` on `fix/mcp-error-contract`; merged to main
+via PR #18 (squash `f9e0663`). Root CHANGELOG `[Unreleased]` Fixed entry + `McpTestingGuide.md`
 contract line already added.
 
 ## 2026-06-20: Drop attribution trailer from release commits

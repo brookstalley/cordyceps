@@ -64,21 +64,6 @@
 
 <!-- Items available to pick up. -->
 
-- **[GHD-3K6F]** Finish or formally cut undo/redo
-  `effort: M · impact: L · area: gh-document · source: reflection · added: 2026-06-20 · status: open · stage: requirements`
-
-  `GhDocumentTool.cs:375` / `:384` (`ActionUndo` / `ActionRedo`) ship as disabled stubs returning an
-  error that points users to snapshots instead. Root cause: the GH undo system disposes the HTTP
-  response before it can be sent (a threading issue — undo runs and tears down the in-flight request).
-
-  **Decision needed before building** (hence `stage: requirements`): either
-  (a) implement correctly — capture the HTTP response off the UI thread so the undo operation can't
-      dispose it mid-flight; or
-  (b) formally descope — remove the stub actions and document snapshots as the supported mechanism.
-
-  Once the keep/cut call is made, advance to `ready` (option b) or `design` (option a). Doc-audit:
-  either path touches `gh_document` ActionInfo and server instructions.
-
 - **[CQ-7T4P]** gh_inspect(docs)/component search returns success:true with empty params when a proxy can't be instantiated
   `effort: S · impact: S · area: code-quality · source: critic · added: 2026-06-20 · status: open · stage: ready · related: CQ-2X8B, CQ-5J9N`
 
@@ -115,8 +100,14 @@
 <!-- Items currently being addressed in an active build plan. /backlog pick
      skips these by default (work is already in flight). -->
 
+_(none currently in flight)_
+
+## Archive
+
+<!-- Shipped and dropped items, kept for searchability. Never deleted. -->
+
 - **[MCP-4R2K]** Honor the MCP error contract at the server boundary
-  `effort: M · impact: L · area: mcp-server · source: reflection · added: 2026-06-20 · status: promoted · stage: ready · reviewed: 2026-06-20`
+  `effort: M · impact: L · area: mcp-server · source: reflection · added: 2026-06-20 · status: shipped · stage: ready · reviewed: 2026-06-20 · closed-by: #18`
 
   Two related defects in `src/Cordyceps/McpServer.cs` break the MCP error contract for tool calls:
 
@@ -134,8 +125,13 @@
   each tool. Doc-audit: behavior change to the error contract; check whether server instructions /
   MCP testing guide describe error reporting.
 
+  **[2026-06-20] Promoted:** picked into the active build plan (artifacts/build-plan.md) on branch
+  `fix/mcp-error-contract`; shipping as one PR with DOC-8M3T, TST-6W7H, CQ-2X8B, CQ-5J9N.
+
+  **[2026-06-20] Shipped:** merged to main via PR #18 (squash f9e0663).
+
 - **[DOC-8M3T]** GetServerInstructions() missing 11 live actions
-  `effort: S · impact: M · area: documentation · source: reflection · added: 2026-06-20 · status: promoted · stage: ready · reviewed: 2026-06-20`
+  `effort: S · impact: M · area: documentation · source: reflection · added: 2026-06-20 · status: shipped · stage: ready · reviewed: 2026-06-20 · closed-by: #18`
 
   `McpServer.cs` `GetServerInstructions()` (the first thing agents see on MCP initialize) lags the
   code. Missing actions:
@@ -151,8 +147,10 @@
   **[2026-06-20] Promoted:** picked into the active build plan (artifacts/build-plan.md), stacked on
   MCP-4R2K on branch `fix/mcp-error-contract`; shipping as one PR with TST-6W7H, CQ-2X8B, CQ-5J9N.
 
+  **[2026-06-20] Shipped:** merged to main via PR #18 (squash f9e0663).
+
 - **[TST-6W7H]** Link RequestValidator + UnifiedToolHelpers into the test project
-  `effort: S · impact: M · area: tooling · source: reflection · added: 2026-06-20 · status: promoted · stage: ready · reviewed: 2026-06-20 · related: TST-9Q4M`
+  `effort: S · impact: M · area: tooling · source: reflection · added: 2026-06-20 · status: shipped · stage: ready · reviewed: 2026-06-20 · closed-by: #18 · related: TST-9Q4M`
 
   Both `Core` classes are GH/Rhino-free and just aren't linked into `src/Cordyceps.Tests` yet (the
   test csproj links source files individually to avoid pulling in the GH runtime). They are the
@@ -167,25 +165,10 @@
   **[2026-06-20] Promoted:** picked into the active build plan (artifacts/build-plan.md), stacked on
   MCP-4R2K on branch `fix/mcp-error-contract`; shipping as one PR with DOC-8M3T, CQ-2X8B, CQ-5J9N.
 
-- **[CQ-5J9N]** Broad-catch / silent-swallow sweep
-  `effort: M · impact: M · area: code-quality · source: reflection · added: 2026-06-20 · status: promoted · stage: ready · reviewed: 2026-06-20`
-
-  ~40 `catch(Exception)` / empty catch blocks exist across the codebase with ZERO `prawduct:allow`
-  waivers. Most surface `ex.Message` (acceptable, but unwaivered); some swallow silently with no
-  logging:
-  - `GhScriptTool.cs:285-290` (SyncScriptParams / SyncParameters / VariableParameterMaintenance)
-  - `GhScriptTool.cs:688-700` (TryGetScriptSource)
-  - `GhInspectTool.cs:460` (proxy.CreateInstance)
-  - `McpServer.cs:358`
-
-  **Fix:** add `prawduct:allow` waivers where the broad catch is genuinely needed (with rationale),
-  add `Core.DebugLog` logging to the silent swallows, and narrow catch types where possible.
-
-  **[2026-06-20] Promoted:** picked into the active build plan (artifacts/build-plan.md), stacked on
-  MCP-4R2K on branch `fix/mcp-error-contract`; shipping as one PR with DOC-8M3T, TST-6W7H, CQ-2X8B.
+  **[2026-06-20] Shipped:** merged to main via PR #18 (squash f9e0663).
 
 - **[CQ-2X8B]** Consolidate tool-class duplication
-  `effort: M · impact: L · area: code-quality · source: reflection · added: 2026-06-20 · status: promoted · stage: ready · reviewed: 2026-06-20 · related: CQ-5J9N`
+  `effort: M · impact: L · area: code-quality · source: reflection · added: 2026-06-20 · status: shipped · stage: ready · reviewed: 2026-06-20 · closed-by: #18 · related: CQ-5J9N`
 
   Several pieces of duplicated / dead code across the tool layer:
   - Proxy-instantiation + param enumeration duplicated between `GhInspectTool.cs:451-457` and
@@ -203,9 +186,46 @@
   **[2026-06-20] Promoted:** picked into the active build plan (artifacts/build-plan.md), stacked on
   MCP-4R2K on branch `fix/mcp-error-contract`; shipping as one PR with DOC-8M3T, TST-6W7H, CQ-5J9N.
 
-## Archive
+  **[2026-06-20] Shipped:** merged to main via PR #18 (squash f9e0663).
 
-<!-- Shipped and dropped items, kept for searchability. Never deleted. -->
+- **[CQ-5J9N]** Broad-catch / silent-swallow sweep
+  `effort: M · impact: M · area: code-quality · source: reflection · added: 2026-06-20 · status: shipped · stage: ready · reviewed: 2026-06-20 · closed-by: #18`
+
+  ~40 `catch(Exception)` / empty catch blocks exist across the codebase with ZERO `prawduct:allow`
+  waivers. Most surface `ex.Message` (acceptable, but unwaivered); some swallow silently with no
+  logging:
+  - `GhScriptTool.cs:285-290` (SyncScriptParams / SyncParameters / VariableParameterMaintenance)
+  - `GhScriptTool.cs:688-700` (TryGetScriptSource)
+  - `GhInspectTool.cs:460` (proxy.CreateInstance)
+  - `McpServer.cs:358`
+
+  **Fix:** add `prawduct:allow` waivers where the broad catch is genuinely needed (with rationale),
+  add `Core.DebugLog` logging to the silent swallows, and narrow catch types where possible.
+
+  **[2026-06-20] Promoted:** picked into the active build plan (artifacts/build-plan.md), stacked on
+  MCP-4R2K on branch `fix/mcp-error-contract`; shipping as one PR with DOC-8M3T, TST-6W7H, CQ-2X8B.
+
+  **[2026-06-20] Shipped:** merged to main via PR #18 (squash f9e0663).
+
+- **[GHD-3K6F]** Finish or formally cut undo/redo
+  `effort: M · impact: L · area: gh-document · source: reflection · added: 2026-06-20 · status: dropped · stage: requirements · reviewed: 2026-06-20`
+
+  `GhDocumentTool.cs:375` / `:384` (`ActionUndo` / `ActionRedo`) ship as disabled stubs returning an
+  error that points users to snapshots instead. Root cause: the GH undo system disposes the HTTP
+  response before it can be sent (a threading issue — undo runs and tears down the in-flight request).
+
+  **Decision needed before building** (hence `stage: requirements`): either
+  (a) implement correctly — capture the HTTP response off the UI thread so the undo operation can't
+      dispose it mid-flight; or
+  (b) formally descope — remove the stub actions and document snapshots as the supported mechanism.
+
+  Once the keep/cut call is made, advance to `ready` (option b) or `design` (option a). Doc-audit:
+  either path touches `gh_document` ActionInfo and server instructions.
+
+  **[2026-06-20] Dropped (cut):** user decision — undo/redo is formally cut. Snapshots remain the
+  supported mechanism. The disabled stub actions in `GhDocumentTool.cs` still exist, returning an
+  error that points to snapshots; only this backlog tracking item is dropped — the stub code was
+  deliberately NOT removed.
 
 - **[TST-9Q4M]** Wire .NET/xUnit test evidence into the Prawduct gate
   `effort: M · impact: M · area: tooling · source: critic · added: 2026-06-20 · status: shipped · stage: ready · reviewed: 2026-06-20 · closed-by: 63cdd58 · related: GHS-7K2P`
