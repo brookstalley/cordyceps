@@ -64,63 +64,6 @@
 
 <!-- Items available to pick up. -->
 
-- **[DOC-8M3T]** GetServerInstructions() missing 11 live actions
-  `effort: S · impact: M · area: documentation · source: reflection · added: 2026-06-20 · status: open · stage: ready`
-
-  `McpServer.cs` `GetServerInstructions()` (the first thing agents see on MCP initialize) lags the
-  code. Missing actions:
-  - `gh_canvas` missing `zoomable` (~`L552`)
-  - `rhino_scene` missing `set_color`, `bbox` (~`L557`)
-  - `rhino_render` missing `view_save`, `view_load`, `view_list`, `view_delete`, `light_add`,
-    `light_list`, `light_set`, `light_delete` (~`L558`)
-
-  All 11 actions exist in code, in per-tool `ActionInfo`, and in the Knowledge guides — only the
-  initialize-time listing is behind. Direct CLAUDE.md Documentation-Audit violation (server
-  instructions row). Pure omission — no phantom actions to remove. Quick, mechanical fix.
-
-- **[TST-6W7H]** Link RequestValidator + UnifiedToolHelpers into the test project
-  `effort: S · impact: M · area: tooling · source: reflection · added: 2026-06-20 · status: open · stage: ready · related: TST-9Q4M`
-
-  Both `Core` classes are GH/Rhino-free and just aren't linked into `src/Cordyceps.Tests` yet (the
-  test csproj links source files individually to avoid pulling in the GH runtime). They are the
-  input-validation and action-dispatch contract every tool relies on, so they're high-value, low-cost
-  to cover.
-
-  **Fix:** add `RequestValidator` and `UnifiedToolHelpers` to the `<Compile Include>` list in the test
-  csproj, then write unit tests for `RequestValidator` (GUID / range / one-of / file-ext / etc.) and
-  for `UnifiedToolHelpers.ValidateAction` / `GetParam<T>` / `GenerateHelp`. Builds on the test-evidence
-  wiring shipped in TST-9Q4M.
-
-- **[CQ-5J9N]** Broad-catch / silent-swallow sweep
-  `effort: M · impact: M · area: code-quality · source: reflection · added: 2026-06-20 · status: open · stage: ready`
-
-  ~40 `catch(Exception)` / empty catch blocks exist across the codebase with ZERO `prawduct:allow`
-  waivers. Most surface `ex.Message` (acceptable, but unwaivered); some swallow silently with no
-  logging:
-  - `GhScriptTool.cs:285-290` (SyncScriptParams / SyncParameters / VariableParameterMaintenance)
-  - `GhScriptTool.cs:688-700` (TryGetScriptSource)
-  - `GhInspectTool.cs:460` (proxy.CreateInstance)
-  - `McpServer.cs:358`
-
-  **Fix:** add `prawduct:allow` waivers where the broad catch is genuinely needed (with rationale),
-  add `Core.DebugLog` logging to the silent swallows, and narrow catch types where possible.
-
-- **[CQ-2X8B]** Consolidate tool-class duplication
-  `effort: M · impact: L · area: code-quality · source: reflection · added: 2026-06-20 · status: open · stage: ready · related: CQ-5J9N`
-
-  Several pieces of duplicated / dead code across the tool layer:
-  - Proxy-instantiation + param enumeration duplicated between `GhInspectTool.cs:451-457` and
-    `ComponentRegistry.cs:368-389`, despite the existing `ToolHelpers.BuildParameterList`
-    (`ToolHelpers.cs:657`) that already does this.
-  - Repeated dispatch preamble across all 7 tool classes.
-  - Dead / unreachable "Unknown action" default switch arms (`ValidateAction` already rejects unknown
-    actions before dispatch reaches the switch).
-  - Unused `GrasshopperContext.ExecuteOnUiThreadAsync` (`GrasshopperContext.cs:101`).
-
-  **Fix:** route proxy/param enumeration through `ToolHelpers.BuildParameterList`, factor the shared
-  dispatch preamble, drop the dead default arms, and remove the unused async helper. Low user-facing
-  impact but reduces drift surface. Pairs well with CQ-5J9N (both touch the tool dispatch layer).
-
 - **[GHD-3K6F]** Finish or formally cut undo/redo
   `effort: M · impact: L · area: gh-document · source: reflection · added: 2026-06-20 · status: open · stage: requirements`
 
@@ -159,6 +102,75 @@
   try/catch-to-structured-error handling — either centrally at the server boundary or uniformly in
   each tool. Doc-audit: behavior change to the error contract; check whether server instructions /
   MCP testing guide describe error reporting.
+
+- **[DOC-8M3T]** GetServerInstructions() missing 11 live actions
+  `effort: S · impact: M · area: documentation · source: reflection · added: 2026-06-20 · status: promoted · stage: ready · reviewed: 2026-06-20`
+
+  `McpServer.cs` `GetServerInstructions()` (the first thing agents see on MCP initialize) lags the
+  code. Missing actions:
+  - `gh_canvas` missing `zoomable` (~`L552`)
+  - `rhino_scene` missing `set_color`, `bbox` (~`L557`)
+  - `rhino_render` missing `view_save`, `view_load`, `view_list`, `view_delete`, `light_add`,
+    `light_list`, `light_set`, `light_delete` (~`L558`)
+
+  All 11 actions exist in code, in per-tool `ActionInfo`, and in the Knowledge guides — only the
+  initialize-time listing is behind. Direct CLAUDE.md Documentation-Audit violation (server
+  instructions row). Pure omission — no phantom actions to remove. Quick, mechanical fix.
+
+  **[2026-06-20] Promoted:** picked into the active build plan (artifacts/build-plan.md), stacked on
+  MCP-4R2K on branch `fix/mcp-error-contract`; shipping as one PR with TST-6W7H, CQ-2X8B, CQ-5J9N.
+
+- **[TST-6W7H]** Link RequestValidator + UnifiedToolHelpers into the test project
+  `effort: S · impact: M · area: tooling · source: reflection · added: 2026-06-20 · status: promoted · stage: ready · reviewed: 2026-06-20 · related: TST-9Q4M`
+
+  Both `Core` classes are GH/Rhino-free and just aren't linked into `src/Cordyceps.Tests` yet (the
+  test csproj links source files individually to avoid pulling in the GH runtime). They are the
+  input-validation and action-dispatch contract every tool relies on, so they're high-value, low-cost
+  to cover.
+
+  **Fix:** add `RequestValidator` and `UnifiedToolHelpers` to the `<Compile Include>` list in the test
+  csproj, then write unit tests for `RequestValidator` (GUID / range / one-of / file-ext / etc.) and
+  for `UnifiedToolHelpers.ValidateAction` / `GetParam<T>` / `GenerateHelp`. Builds on the test-evidence
+  wiring shipped in TST-9Q4M.
+
+  **[2026-06-20] Promoted:** picked into the active build plan (artifacts/build-plan.md), stacked on
+  MCP-4R2K on branch `fix/mcp-error-contract`; shipping as one PR with DOC-8M3T, CQ-2X8B, CQ-5J9N.
+
+- **[CQ-5J9N]** Broad-catch / silent-swallow sweep
+  `effort: M · impact: M · area: code-quality · source: reflection · added: 2026-06-20 · status: promoted · stage: ready · reviewed: 2026-06-20`
+
+  ~40 `catch(Exception)` / empty catch blocks exist across the codebase with ZERO `prawduct:allow`
+  waivers. Most surface `ex.Message` (acceptable, but unwaivered); some swallow silently with no
+  logging:
+  - `GhScriptTool.cs:285-290` (SyncScriptParams / SyncParameters / VariableParameterMaintenance)
+  - `GhScriptTool.cs:688-700` (TryGetScriptSource)
+  - `GhInspectTool.cs:460` (proxy.CreateInstance)
+  - `McpServer.cs:358`
+
+  **Fix:** add `prawduct:allow` waivers where the broad catch is genuinely needed (with rationale),
+  add `Core.DebugLog` logging to the silent swallows, and narrow catch types where possible.
+
+  **[2026-06-20] Promoted:** picked into the active build plan (artifacts/build-plan.md), stacked on
+  MCP-4R2K on branch `fix/mcp-error-contract`; shipping as one PR with DOC-8M3T, TST-6W7H, CQ-2X8B.
+
+- **[CQ-2X8B]** Consolidate tool-class duplication
+  `effort: M · impact: L · area: code-quality · source: reflection · added: 2026-06-20 · status: promoted · stage: ready · reviewed: 2026-06-20 · related: CQ-5J9N`
+
+  Several pieces of duplicated / dead code across the tool layer:
+  - Proxy-instantiation + param enumeration duplicated between `GhInspectTool.cs:451-457` and
+    `ComponentRegistry.cs:368-389`, despite the existing `ToolHelpers.BuildParameterList`
+    (`ToolHelpers.cs:657`) that already does this.
+  - Repeated dispatch preamble across all 7 tool classes.
+  - Dead / unreachable "Unknown action" default switch arms (`ValidateAction` already rejects unknown
+    actions before dispatch reaches the switch).
+  - Unused `GrasshopperContext.ExecuteOnUiThreadAsync` (`GrasshopperContext.cs:101`).
+
+  **Fix:** route proxy/param enumeration through `ToolHelpers.BuildParameterList`, factor the shared
+  dispatch preamble, drop the dead default arms, and remove the unused async helper. Low user-facing
+  impact but reduces drift surface. Pairs well with CQ-5J9N (both touch the tool dispatch layer).
+
+  **[2026-06-20] Promoted:** picked into the active build plan (artifacts/build-plan.md), stacked on
+  MCP-4R2K on branch `fix/mcp-error-contract`; shipping as one PR with DOC-8M3T, TST-6W7H, CQ-5J9N.
 
 ## Archive
 

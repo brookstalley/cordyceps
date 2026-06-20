@@ -39,6 +39,22 @@
      derived view. Don't hand-edit them — add/update a tagged entry here and
      run `prawduct-hook regen-views`. -->
 
+## 2026-06-20: Honor the MCP error contract at the server boundary (MCP-4R2K)
+
+<!-- prawduct: type=bugfix | scope=mcp-error-contract | status=in-progress -->
+
+**Why:** `McpServer.HandleToolCallAsync` hardcoded the transport `isError` flag to `false`, so
+tool results carrying `{"success": false}` were reported to MCP clients as successes; and
+tool-body exceptions escaped as raw JSON-RPC `-32603` protocol errors (only `GhScriptTool`
+caught them), so the 7 tools behaved inconsistently. Both are now routed through a new
+host-free `Core/McpResultFormatter` (`IsErrorResult` derives `isError` from the parsed
+`success` field; `FormatExceptionResult` converts any tool-body throw — unwrapping
+`TargetInvocationException` — into a `{success:false,error}` result with `isError:true`),
+applied uniformly at the boundary. 15 new unit tests (68 total). Broad boundary catch carries a
+`prawduct:allow` waiver. Committed `905825c`/`0a525d0` on `fix/mcp-error-contract`; pending merge
+(ships in this batch's PR). Root CHANGELOG `[Unreleased]` Fixed entry + `McpTestingGuide.md`
+contract line already added.
+
 ## 2026-06-20: Drop attribution trailer from release commits
 
 <!-- prawduct: type=chore | scope=release-attribution | status=merged -->
