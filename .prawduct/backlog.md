@@ -79,6 +79,37 @@
   Once the keep/cut call is made, advance to `ready` (option b) or `design` (option a). Doc-audit:
   either path touches `gh_document` ActionInfo and server instructions.
 
+- **[CQ-7T4P]** gh_inspect(docs)/component search returns success:true with empty params when a proxy can't be instantiated
+  `effort: S · impact: S · area: code-quality · source: critic · added: 2026-06-20 · status: open · stage: ready · related: CQ-2X8B, CQ-5J9N`
+
+  Surfaced by the cumulative Critic on the CQ-2X8B refactor. `ToolHelpers.WithProxyComponent` (and
+  its callers `GhInspectTool.ActionDocs` + `ComponentRegistry.CreateComponentMatch`) now LOG when
+  `proxy.CreateInstance()` fails, but the tool result still returns `success: true` with an empty
+  inputs/outputs list — the caller can't distinguish "component genuinely has no params" from "we
+  failed to introspect it."
+
+  **Fix shape:** surface a result-level signal (e.g. a `"paramsUnavailable": true` flag or a `note`
+  field) when `WithProxyComponent`'s callback didn't run. This is a behavior change to the tool
+  response, so it was deliberately kept out of the behavior-preserving CQ-2X8B refactor. Builds on
+  the logging added by CQ-5J9N. Doc-audit: `gh_inspect` ActionInfo if the response shape changes.
+
+- **[RSC-2H9K]** Native place-raster-image / PictureFrame action (rhino_scene)
+  `effort: M · impact: M · area: rhino-scene · source: user · added: 2026-06-20 · status: open · stage: requirements`
+
+  External feature request filed today by the Puzzles project (print-and-cut puzzle generator,
+  Chunk 06) into `incoming-bugs/place-raster-image-picture-frame-action.md`. Wants a first-class
+  cordyceps action to place a raster image into the live Rhino scene as a PictureFrame object
+  (`RhinoDoc.Objects.AddPictureFrame`) at a caller-specified placement, returning the new object id —
+  to preview a cut layout over the printed artwork.
+
+  **Verified 2026-06-20:** no PictureFrame/AddPictureFrame support exists anywhere in the tree; the
+  only image-into-scene path today is a PBR material texture (`rhino_render material_texture`), which
+  isn't a placed PictureFrame.
+
+  `stage: requirements` because the action shape needs a design decision: which tool, and placement
+  params (plane / corner points vs. width+height, units). Full report in the incoming-bugs file.
+  Doc-audit on build: `rhino_scene` ActionInfo + server instructions.
+
 ## Promoted
 
 <!-- Items currently being addressed in an active build plan. /backlog pick

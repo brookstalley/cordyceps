@@ -12,7 +12,8 @@
     <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.8.0" />
     <PackageReference Include="xunit" Version="2.6.6" />
     <PackageReference Include="xunit.runner.visualstudio" Version="2.5.6" />
-    <!-- Matches Cordyceps.csproj; required by the linked Core/McpResultFormatter.cs. -->
+    <!-- Matches Cordyceps.csproj; required by linked Core files that use Newtonsoft.Json
+         (McpResultFormatter.cs, UnifiedToolHelpers.cs). -->
     <PackageReference Include="Newtonsoft.Json" Version="13.0.3" />
     <!-- JUnit XML output for the dotnet-test junit logger, consumed by
          `prawduct-hook test-evidence record` (the gate's evidence writer). -->
