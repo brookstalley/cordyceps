@@ -39,6 +39,15 @@
      derived view. Don't hand-edit them — add/update a tagged entry here and
      run `prawduct-hook regen-views`. -->
 
+## 2026-06-20: Drop attribution trailer from release commits
+
+<!-- prawduct: type=chore | scope=release-attribution | status=merged -->
+
+**Why:** `scripts/release.sh` `git_commit_and_tag` hard-coded a `🤖 Generated with …` +
+`Co-Authored-By: Claude …` trailer on every `Release vX.Y.Z` commit, contradicting the
+project's `Commit attribution: none` preference. Removed both lines so release commits carry a
+plain `Release vX.Y.Z` message. Release tooling only; no shipped-plugin change.
+
 ## 2026-06-20: Janitor maintenance pass
 
 <!-- prawduct: type=maintenance | chunks=01,02,03 | scope=janitor-2026-06-20 | status=merged -->

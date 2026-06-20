@@ -346,11 +346,7 @@ git_commit_and_tag() {
             fi
         fi
 
-        git commit -m "Release v$version
-
-🤖 Generated with [Claude Code](https://claude.com/claude-code)
-
-Co-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>"
+        git commit -m "Release v$version"
 
         git tag -a "v$version" -m "Release v$version"
         log_success "Committed and tagged as v$version"
