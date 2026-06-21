@@ -52,3 +52,15 @@ root `manifest.yml`, and `CHANGELOG.md`. The root `manifest.yml` is the yak sour
 `scripts/release.sh` → `prepare_dist` copies into the (gitignored) `dist/`. It silently drifted to
 1.4.0 while shipping 1.4.9 because `release.sh` only bumped the csproj — fixed by adding
 `update_manifest_version` to the script (2026-06-20 janitor).
+
+## Build-plan chunk headings must be `### Chunk NN: title`, refs repo-root-relative
+
+`prawduct-hook verify-chunk-refs` derives each chunk id from the `## Status` checkbox line by
+taking the text after `Chunk ` up to the first `:` — so the Status line **and** the chunk heading
+must both be `Chunk NN: <title>` (colon right after the number). A `## Chunk 01 — title` (em-dash,
+no colon) makes the hook treat the whole title as the id and report `chunk '01 — …' not found`,
+silently disabling the per-chunk ref gate. Then, within the matched chunk section, the hook checks
+every backticked token that looks like a file path and resolves it **relative to repo root** — so
+write `src/Cordyceps/Core/Foo.cs`, not `Core/Foo.cs`, and avoid backticked slash-containing
+non-paths like `` `"true"/"false"` `` (split them: `` `true`/`false` ``). This recurred: CQ-7T4P
+hit the same exit-1 as a NOTE, RSC-2H9K as a WARNING. Use the canonical format from the start.

@@ -64,8 +64,15 @@
 
 <!-- Items available to pick up. -->
 
+_(none currently open)_
+
+## Promoted
+
+<!-- Items currently being addressed in an active build plan. /backlog pick
+     skips these by default (work is already in flight). -->
+
 - **[RSC-2H9K]** Native place-raster-image / PictureFrame action (rhino_scene)
-  `effort: M · impact: M · area: rhino-scene · source: user · added: 2026-06-20 · status: open · stage: ready · reviewed: 2026-06-21 · refs: docs/place-image-action.md`
+  `effort: M · impact: M · area: rhino-scene · source: user · added: 2026-06-20 · status: promoted · stage: ready · reviewed: 2026-06-21 · refs: docs/place-image-action.md`
 
   External feature request filed today by the Puzzles project (print-and-cut puzzle generator,
   Chunk 06) into `incoming-bugs/place-raster-image-picture-frame-action.md`. Wants a first-class
@@ -88,13 +95,6 @@
   `AddPictureFrame(Plane, path, asMesh, width, height, selfIllumination, embedBitmap)` verified via
   reflection (no ObjectAttributes overload → set layer/name post-add). Buildable; needs a build-time
   `verify-api` step on the implementing chunk.
-
-## Promoted
-
-<!-- Items currently being addressed in an active build plan. /backlog pick
-     skips these by default (work is already in flight). -->
-
-_(none currently in flight)_
 
 ## Archive
 

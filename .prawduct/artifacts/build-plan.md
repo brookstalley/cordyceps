@@ -65,4 +65,4 @@ Reflected on the actual Rhino 8 RhinoCommon (`8.0.23304.9001`, the version `Cord
 
 - [ ] Chunk 01: place_image — action + PlaceImageValidation helper + doc audit
 
-**Context:** Plan written; verify-api done (RhinoCommon reflection confirmed all three foreign APIs). Next: implement `PlaceImageValidation` + tests, then the handler + wiring, then doc audit, then build/test/Critic.
+**Context:** Chunk 01 complete on `feature/place-image-action` (commits `ceab6e0` feature + `9a04cd6` build-plan format fix). verify-api confirmed; `PlaceImageValidation` + 12 tests; `ActionPlaceImage` handler + `FindOrCreateLayer` extraction; full doc audit. Release build 0/0, 149 tests pass, evidence recorded. Chunk-mode Critic: 0 blocking, 1 WARNING (verify-chunk-refs format) — resolved (gate now exits 0). `verify-chunk-refs` green. Reflection + learning captured. Backlog RSC-2H9K → promoted. **Remaining before ship:** live Rhino operator verification; `final`/`cumulative` Critic (the PR gate) — to run when the user chooses PR vs direct-to-main. Boxes stay `[ ]` until merge (views_enabled).
