@@ -47,10 +47,20 @@ verify steps inside their chunks, so they're resolved before code, not after.
 - [ ] Chunk 09: Trace and resolve flagged correctness bugs
 - [ ] Chunk 10: Documentation and consistency cleanup
 
-Context: Not started. Stages are independent and dependency-ordered; build top to bottom.
-`/clear` after each stage's merge. Each chunk: build → `/prawduct:critic chunk` → commit.
-Each stage's LAST chunk is `Type: cumulative-final` — its review IS the `/prawduct:critic
-cumulative` PR gate (commit the chunk first, then run cumulative once).
+Context: **Stage 1 in progress on branch `fix/ops-safety-stage1`.**
+- **Chunk 01 — done on branch (not merged).** Bounded `Core/DocumentLock` (host-free, 7 unit
+  tests) + re-entrancy guard via `RhinoApp.InvokeRequired` in `GrasshopperContext`. verify-api
+  confirmed `InvokeAndWait` has no timeout/cancellation (notes in `api-notes-rhinocommon.md`), so
+  the timeout bounds waiters not the holder; the timeout→structured-error mapping needed NO
+  `McpServer` change (existing `FormatExceptionResult` already unwraps + shapes it). Critic `final`:
+  no BLOCKING, 1 WARNING (live-in-Rhino verification — deferred to operator queue `VRF-001`, agent
+  has no headless Rhino), 4 backlog-grade NOTES. 156/156 tests pass. **Box stays `[ ]` (views
+  derive from change-log at merge).**
+- **Next:** Chunk 02 (lifecycle: bind failure, drain, teardown race).
+
+Stages are independent and dependency-ordered; build top to bottom. `/clear` after each stage's
+merge. Each chunk: build → `/prawduct:critic chunk` → commit. Each stage's LAST chunk is
+`Type: cumulative-final` — its review IS the `/prawduct:critic cumulative` PR gate.
 
 ## Scaffolding
 
