@@ -35,7 +35,9 @@ Grasshopper geometry → Rhino baking → materials → viewport → capture.
 Use `action='help'` on any tool for full parameter details.
 
 ### rhino_scene
-`objects`, `select`, `deselect`, `set_layer`, `set_name`, `set_color`, `bbox`, `hide`, `show`, `delete`, `layers`, `layer_create`, `layer_set`, `layer_delete`
+`objects`, `select`, `deselect`, `set_layer`, `set_name`, `set_color`, `bbox`, `place_image`, `hide`, `show`, `delete`, `layers`, `layer_create`, `layer_set`, `layer_delete`
+
+`place_image` puts a raster image into the scene as a real Rhino PictureFrame object at a given origin/size/rotation — use it (not a PBR `material_texture`) when you need the image as a placeable, selectable document object (e.g. previewing a layout over printed artwork). `replace=true` with a `name` keeps repeated parametric calls idempotent.
 
 ### rhino_render
 **Viewport**: `modes`, `display`, `camera`, `zoom`

@@ -39,6 +39,24 @@
      derived view. Don't hand-edit them — add/update a tagged entry here and
      run `prawduct-hook regen-views`. -->
 
+## 2026-06-21: Place raster images as PictureFrame objects — rhino_scene(place_image) (RSC-2H9K)
+
+<!-- prawduct: type=feature | chunks=01 | scope=place-image | status=in-progress -->
+
+**Why:** External feature request from the Puzzles print-and-cut generator (Chunk 06, deferred on
+this): preview a cut layout *over* printed artwork by placing the image as a real Rhino object. No
+prior path existed — `rhino_render material_texture` is a PBR texture, not a placed object. New
+`rhino_scene(action='place_image')` places a Rhino PictureFrame at a caller-specified
+origin/size/optional Z-rotation on an auto-created layer and returns the new object id;
+`replace=true`+`name` makes repeated parametric calls idempotent. Foreign API
+`AddPictureFrame(Plane, path, asMesh, width, height, selfIllumination, embedBitmap)` re-verified by
+reflection on Rhino 8 RhinoCommon (no `ObjectAttributes` overload → layer/name set post-add). New
+host-free `Core/PlaceImageValidation.cs` (path-exists + positive-dimension checks) with 12 unit
+tests; the find-or-create-layer block shared with `set_layer` was extracted to one helper. Doc
+audit: server instructions, `rhino_scene` ActionInfo (`place_image`), root CHANGELOG. Release build
+0/0; 149 tests pass. Per project-preferences, the document-touching handler is verified live in
+Rhino, not by host-free unit tests.
+
 ## 2026-06-21: Flag failed component introspection in gh_inspect docs (CQ-7T4P)
 
 <!-- prawduct: type=bugfix | chunks=01 | scope=cq-7t4p | status=merged -->

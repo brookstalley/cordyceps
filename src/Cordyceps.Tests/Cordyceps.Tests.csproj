@@ -27,6 +27,7 @@
     <Compile Include="..\Cordyceps\Core\McpResultFormatter.cs" Link="McpResultFormatter.cs" />
     <Compile Include="..\Cordyceps\Core\RequestValidator.cs" Link="RequestValidator.cs" />
     <Compile Include="..\Cordyceps\Core\UnifiedToolHelpers.cs" Link="UnifiedToolHelpers.cs" />
+    <Compile Include="..\Cordyceps\Core\PlaceImageValidation.cs" Link="PlaceImageValidation.cs" />
   </ItemGroup>
 
 </Project>

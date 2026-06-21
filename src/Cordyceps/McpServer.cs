@@ -557,7 +557,7 @@ UNIFIED TOOLS (use action='help' for details):
 - gh_document: info, save, clear, solver, recompute, undo, redo, snapshot, revert, snapshots, capture_canvas, capture_viewport, capture_region, capture_views
 - gh_script: get, set, configure, info
 - gh_inspect: status, outputs, trace, disconnected, geometry, log, reports, categories, docs
-- rhino_scene: objects, select, deselect, set_layer, set_name, layers, layer_create, layer_set, layer_delete, hide, show, delete, set_color, bbox, script
+- rhino_scene: objects, select, deselect, set_layer, set_name, layers, layer_create, layer_set, layer_delete, hide, show, delete, set_color, bbox, place_image, script
 - rhino_render: display, camera, zoom, modes, render, settings, ground, sun, skylight, view_save, view_load, view_list, view_delete, light_add, light_list, light_set, light_delete, material_list, material_library, material_instantiate, material_create, material_texture, material_apply, material_delete, env_list, env_current, env_set, env_create, env_delete
 
 Key points:

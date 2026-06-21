@@ -129,6 +129,23 @@ namespace Cordyceps.Tools.Unified
                     Example = "action='bbox', ids='[\"abc\",\"def\"]'",
                     Tips = new[] { "Returns min, max, center, and size" }
                 },
+                ["place_image"] = new ActionInfo
+                {
+                    Name = "place_image",
+                    Description = "Place a raster image into the scene as a PictureFrame object",
+                    Required = new[] { "path", "x", "y", "z", "width", "height" },
+                    Optional = new[] { "rotation", "layer", "name", "replace", "selfIllumination", "embedBitmap", "asMesh" },
+                    Example = "action='place_image', path='/tmp/art.png', x=0, y=0, z=0, width=200, height=150",
+                    Tips = new[]
+                    {
+                        "path must be an absolute path to an existing image (png/jpg/...)",
+                        "width/height are model units along the plane's X/Y; both must be > 0",
+                        "rotation is in-plane about Z in degrees (default 0); placement is flat on world-XY",
+                        "layer auto-creates if missing; defaults to the current layer",
+                        "replace=true with a 'name' deletes prior same-named objects on the target layer first (idempotent re-placement); returns 'replaced' count",
+                        "selfIllumination (default true) keeps the picture visible without scene lights"
+                    }
+                },
                 ["script"] = new ActionInfo
                 {
                     Name = "script",
@@ -154,7 +171,7 @@ namespace Cordyceps.Tools.Unified
             _context = context;
         }
 
-        [McpServerTool, Description("Scene operations. Actions: objects|select|deselect|set_layer|set_name|set_color|bbox|layers|layer_create|layer_set|layer_delete|hide|show|delete|script|help")]
+        [McpServerTool, Description("Scene operations. Actions: objects|select|deselect|set_layer|set_name|set_color|bbox|layers|layer_create|layer_set|layer_delete|hide|show|delete|place_image|script|help")]
         public string RhinoScene(
             [Description("Action to perform")] string action,
             [Description("JSON array of object IDs")] string ids = null,
@@ -173,7 +190,19 @@ namespace Cordyceps.Tools.Unified
             [Description("Layer visibility (true/false)")] string visible = null,
             [Description("Parent layer name")] string parent = null,
             [Description("Layer locked state (true/false)")] string locked = null,
-            [Description("Delete objects on layer (true/false)")] string deleteObjects = null)
+            [Description("Delete objects on layer (true/false)")] string deleteObjects = null,
+            // place_image parameters
+            [Description("Absolute path to the image file (place_image)")] string path = null,
+            [Description("Placement origin X in model units (place_image)")] double x = double.NaN,
+            [Description("Placement origin Y in model units (place_image)")] double y = double.NaN,
+            [Description("Placement origin Z in model units (place_image)")] double z = double.NaN,
+            [Description("Picture width along plane X, model units, >0 (place_image)")] double width = double.NaN,
+            [Description("Picture height along plane Y, model units, >0 (place_image)")] double height = double.NaN,
+            [Description("In-plane rotation about Z in degrees (place_image, default 0)")] double rotation = 0,
+            [Description("Replace existing same-named objects on the target layer (place_image, true/false)")] string replace = null,
+            [Description("Picture is self-lit, visible without scene lights (place_image, default true)")] string selfIllumination = null,
+            [Description("Embed the bitmap in the .3dm vs link to the file (place_image, default false)")] string embedBitmap = null,
+            [Description("Mesh-backed vs surface-backed picture (place_image, default false)")] string asMesh = null)
         {
             if (string.Equals(action, "help", StringComparison.OrdinalIgnoreCase))
                 return UnifiedToolHelpers.GenerateHelp(ToolInfo);
@@ -194,7 +223,19 @@ namespace Cordyceps.Tools.Unified
                 ("visible", visible),
                 ("parent", parent),
                 ("locked", locked),
-                ("deleteObjects", deleteObjects)
+                ("deleteObjects", deleteObjects),
+                // place_image params
+                ("path", path),
+                ("x", double.IsNaN(x) ? null : (object)x),
+                ("y", double.IsNaN(y) ? null : (object)y),
+                ("z", double.IsNaN(z) ? null : (object)z),
+                ("width", double.IsNaN(width) ? null : (object)width),
+                ("height", double.IsNaN(height) ? null : (object)height),
+                ("rotation", rotation != 0 ? (object)rotation : null),
+                ("replace", replace),
+                ("selfIllumination", selfIllumination),
+                ("embedBitmap", embedBitmap),
+                ("asMesh", asMesh)
             );
 
             var validationError = UnifiedToolHelpers.ValidateAction(ToolInfo, action, providedParams);
@@ -208,6 +249,10 @@ namespace Cordyceps.Tools.Unified
             bool allBool = ToolHelpers.ParseBool(all, false);
             bool visibleBool = ToolHelpers.ParseBool(visible, true);
             bool deleteObjectsBool = ToolHelpers.ParseBool(deleteObjects, false);
+            bool replaceBool = ToolHelpers.ParseBool(replace, false);
+            bool selfIlluminationBool = ToolHelpers.ParseBool(selfIllumination, true);
+            bool embedBitmapBool = ToolHelpers.ParseBool(embedBitmap, false);
+            bool asMeshBool = ToolHelpers.ParseBool(asMesh, false);
 
             return action.ToLowerInvariant() switch
             {
@@ -225,6 +270,7 @@ namespace Cordyceps.Tools.Unified
                 "hide" => ActionHide(ids, selectedBool),
                 "show" => ActionShow(ids, allBool),
                 "delete" => ActionDelete(ids),
+                "place_image" => ActionPlaceImage(path, x, y, z, width, height, rotation, layer, name, replaceBool, selfIlluminationBool, embedBitmapBool, asMeshBool),
                 "script" => ActionScript(cmd),
                 _ => JsonConvert.SerializeObject(new { success = false, error = $"Unknown action: {action}" })
             };
@@ -361,20 +407,10 @@ namespace Cordyceps.Tools.Unified
                 if (!ToolHelpers.TryParseGuidArray(ids, out var guids, out var error))
                     return ToolHelpers.ErrorResponse(error);
 
-                // Find or create layer
-                var layerIndex = doc.Layers.FindByFullPath(layer, -1);
+                // Find or create layer (shared with place_image)
+                var layerIndex = FindOrCreateLayer(doc, layer);
                 if (layerIndex < 0)
-                {
-                    var newLayer = doc.Layers.FirstOrDefault(l =>
-                        l.Name.Equals(layer, StringComparison.OrdinalIgnoreCase));
-                    layerIndex = newLayer?.Index ?? -1;
-                }
-                if (layerIndex < 0)
-                {
-                    layerIndex = doc.Layers.Add(layer, System.Drawing.Color.Black);
-                    if (layerIndex < 0)
-                        return ToolHelpers.ErrorResponse($"Failed to create layer '{layer}'");
-                }
+                    return ToolHelpers.ErrorResponse($"Failed to create layer '{layer}'");
 
                 int movedCount = 0;
                 foreach (var guid in guids)

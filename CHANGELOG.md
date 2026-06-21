@@ -8,6 +8,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- **Place raster images** - New `rhino_scene(action='place_image')` action places an image file into the scene as a real Rhino PictureFrame object at a caller-specified origin (`x`/`y`/`z`), size (`width`/`height`, model units), and optional in-plane `rotation` (degrees, flat on world-XY). Auto-creates the target `layer`, sets the object `name`, and returns the new object id. Pass `replace=true` with a `name` to delete prior same-named objects on that layer first, making repeated parametric calls idempotent (returns a `replaced` count). Optional `selfIllumination` (default true), `embedBitmap`, and `asMesh` flags control appearance and storage.
 - **PBR texture maps** - New `rhino_render(action='material_texture')` action to assign image-based texture maps to PBR material slots (base-color, roughness, metallic, bump, opacity, emission, displacement, ambient-occlusion, clearcoat, clearcoat-roughness). Supports UV tiling via `repeat` parameter and slot influence via `amount`. Omit `path` to remove a texture from a slot.
 - **Material texture inspection** - `rhino_render(action='material_list')` now reports which PBR slots have textures assigned per material.
 
