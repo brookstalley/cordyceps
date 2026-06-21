@@ -79,7 +79,7 @@
   the logging added by CQ-5J9N. Doc-audit: `gh_inspect` ActionInfo if the response shape changes.
 
 - **[RSC-2H9K]** Native place-raster-image / PictureFrame action (rhino_scene)
-  `effort: M · impact: M · area: rhino-scene · source: user · added: 2026-06-20 · status: open · stage: requirements`
+  `effort: M · impact: M · area: rhino-scene · source: user · added: 2026-06-20 · status: open · stage: ready · reviewed: 2026-06-21 · refs: docs/place-image-action.md`
 
   External feature request filed today by the Puzzles project (print-and-cut puzzle generator,
   Chunk 06) into `incoming-bugs/place-raster-image-picture-frame-action.md`. Wants a first-class
@@ -91,9 +91,17 @@
   only image-into-scene path today is a PBR material texture (`rhino_render material_texture`), which
   isn't a placed PictureFrame.
 
-  `stage: requirements` because the action shape needs a design decision: which tool, and placement
-  params (plane / corner points vs. width+height, units). Full report in the incoming-bugs file.
-  Doc-audit on build: `rhino_scene` ActionInfo + server instructions.
+  Held at `stage: requirements` originally because the action shape needed a design decision: which
+  tool, and placement params (plane / corner points vs. width+height, units). Full report in the
+  incoming-bugs file. Doc-audit on build: `rhino_scene` ActionInfo + server instructions.
+
+  **[2026-06-21] Discovery complete → `stage: ready`.** Resolved in `docs/place-image-action.md`
+  (refs): tool = `rhino_scene(action='place_image')`; placement = origin (x,y,z) + width + height +
+  optional Z-rotation, flat (user pick — four-corner/arbitrary-plane deferred); units = model units;
+  idempotent `replace` (default false) matches by `name` on the target layer. Foreign API
+  `AddPictureFrame(Plane, path, asMesh, width, height, selfIllumination, embedBitmap)` verified via
+  reflection (no ObjectAttributes overload → set layer/name post-add). Buildable; needs a build-time
+  `verify-api` step on the implementing chunk.
 
 ## Promoted
 
