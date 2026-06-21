@@ -41,7 +41,7 @@
 
 ## 2026-06-21: Place raster images as PictureFrame objects — rhino_scene(place_image) (RSC-2H9K)
 
-<!-- prawduct: type=feature | chunks=01 | scope=place-image | status=in-progress -->
+<!-- prawduct: type=feature | chunks=01 | scope=place-image | status=merged -->
 
 **Why:** External feature request from the Puzzles print-and-cut generator (Chunk 06, deferred on
 this): preview a cut layout *over* printed artwork by placing the image as a real Rhino object. No

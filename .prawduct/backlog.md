@@ -71,34 +71,32 @@ _(none currently open)_
 <!-- Items currently being addressed in an active build plan. /backlog pick
      skips these by default (work is already in flight). -->
 
-- **[RSC-2H9K]** Native place-raster-image / PictureFrame action (rhino_scene)
-  `effort: M · impact: M · area: rhino-scene · source: user · added: 2026-06-20 · status: promoted · stage: ready · reviewed: 2026-06-21 · refs: docs/place-image-action.md`
-
-  External feature request filed today by the Puzzles project (print-and-cut puzzle generator,
-  Chunk 06) into `incoming-bugs/place-raster-image-picture-frame-action.md`. Wants a first-class
-  cordyceps action to place a raster image into the live Rhino scene as a PictureFrame object
-  (`RhinoDoc.Objects.AddPictureFrame`) at a caller-specified placement, returning the new object id —
-  to preview a cut layout over the printed artwork.
-
-  **Verified 2026-06-20:** no PictureFrame/AddPictureFrame support exists anywhere in the tree; the
-  only image-into-scene path today is a PBR material texture (`rhino_render material_texture`), which
-  isn't a placed PictureFrame.
-
-  Held at `stage: requirements` originally because the action shape needed a design decision: which
-  tool, and placement params (plane / corner points vs. width+height, units). Full report in the
-  incoming-bugs file. Doc-audit on build: `rhino_scene` ActionInfo + server instructions.
-
-  **[2026-06-21] Discovery complete → `stage: ready`.** Resolved in `docs/place-image-action.md`
-  (refs): tool = `rhino_scene(action='place_image')`; placement = origin (x,y,z) + width + height +
-  optional Z-rotation, flat (user pick — four-corner/arbitrary-plane deferred); units = model units;
-  idempotent `replace` (default false) matches by `name` on the target layer. Foreign API
-  `AddPictureFrame(Plane, path, asMesh, width, height, selfIllumination, embedBitmap)` verified via
-  reflection (no ObjectAttributes overload → set layer/name post-add). Buildable; needs a build-time
-  `verify-api` step on the implementing chunk.
+_(none currently in flight)_
 
 ## Archive
 
 <!-- Shipped and dropped items, kept for searchability. Never deleted. -->
+
+- **[RSC-2H9K]** Native place-raster-image / PictureFrame action (rhino_scene)
+  `effort: M · impact: M · area: rhino-scene · source: user · added: 2026-06-20 · status: shipped · stage: ready · reviewed: 2026-06-21 · closed-by: ceab6e0 · refs: docs/place-image-action.md`
+
+  External feature request filed by the Puzzles project (print-and-cut puzzle generator, Chunk 06):
+  a first-class action to place a raster image into the live Rhino scene as a PictureFrame object at
+  a caller-specified placement, returning the new object id — to preview a cut layout over printed
+  artwork. Discovery (2026-06-21) resolved the contract in `docs/place-image-action.md`: tool =
+  `rhino_scene(action='place_image')`; placement = origin (x,y,z) + width + height + optional
+  Z-rotation, flat; units = model units; idempotent `replace` (default false) matches by `name` on
+  the target layer.
+
+  **[2026-06-21] Shipped:** built on `feature/place-image-action`. New
+  `rhino_scene(action='place_image')` + host-free `Core/PlaceImageValidation.cs` (12 unit tests) +
+  shared `FindOrCreateLayer` (extracted from `set_layer`). Build-time `verify-api` reflection
+  confirmed `AddPictureFrame`/`Plane.Rotate`/`RhinoMath.ToRadians` on Rhino 8 RhinoCommon (no
+  `ObjectAttributes` overload → layer/name set post-add). Critic `final` clean (0 findings) over the
+  branch; Release build 0/0; 149 tests pass. Doc-audit: server instructions, `rhino_scene`
+  ActionInfo, root CHANGELOG, change-log, RenderingGuide. Fast-forward merged direct to main
+  (`ceab6e0`). **Live Rhino operator verification still pending** (host-dependent handler, can't be
+  unit-tested per project-preferences).
 
 - **[CQ-7T4P]** gh_inspect(docs)/component search returns success:true with empty params when a proxy can't be instantiated
   `effort: S · impact: S · area: code-quality · source: critic · added: 2026-06-20 · status: shipped · stage: ready · reviewed: 2026-06-21 · closed-by: d1e1787 · related: CQ-2X8B, CQ-5J9N`
