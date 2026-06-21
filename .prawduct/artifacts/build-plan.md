@@ -27,10 +27,12 @@ Reflected on the actual Rhino 8 RhinoCommon (`8.0.23304.9001`, the version `Cord
 - **Embedded Documentation Contract (agent-facing):** new action must appear in server instructions + ActionInfo; root `CHANGELOG.md` Added entry; `change-log.md` tagged entry (views source).
 - **Grasshopper / Rhino Host API (FOREIGN):** `AddPictureFrame` + post-add `ModifyAttributes` — verified above. Handler runs on the UI thread via `_context.ExecuteOnUiThread()` per project convention.
 
-## Chunk 01 — place_image (the whole feature)
+## Chunks
+
+### Chunk 01: place_image — action + PlaceImageValidation helper + doc audit
 
 - **Type:** code (feature) + doc audit. **Critic mode:** chunk after commit, then final before ship.
-- **Host-free helper (unit-tested):** `Core/PlaceImageValidation.cs` — `static string Validate(string path, double width, double height)` returning an error message or null. Validates: `path` non-empty, file exists (`System.IO.File.Exists`), `width > 0`, `height > 0` (the `!(x > 0)` form also rejects NaN). Presence/required-ness of `path`/`x`/`y`/`z`/`width`/`height` is enforced upstream by `ValidateAction` (NaN-excluded `BuildParams`), consistent with the other `rhino_scene`/`gh_canvas` numeric params. Linked into `Cordyceps.Tests.csproj` (host-free: `System`/`System.IO` only — no `DebugLog`, no RhinoCommon, per the "linked code must stay host-free" learning). Plane construction stays in the handler because it needs `Rhino.Geometry` (not linkable into the test project).
+- **Host-free helper (unit-tested):** `src/Cordyceps/Core/PlaceImageValidation.cs` — `static string Validate(string path, double width, double height)` returning an error message or null. Validates: `path` non-empty, file exists (`System.IO.File.Exists`), `width > 0`, `height > 0` (the `!(x > 0)` form also rejects NaN). Presence/required-ness of `path`/`x`/`y`/`z`/`width`/`height` is enforced upstream by `ValidateAction` (NaN-excluded `BuildParams`), consistent with the other `rhino_scene`/`gh_canvas` numeric params. Linked into `Cordyceps.Tests.csproj` (host-free: `System`/`System.IO` only — no `DebugLog`, no RhinoCommon, per the "linked code must stay host-free" learning). Plane construction stays in the handler because it needs `Rhino.Geometry` (not linkable into the test project).
 - **Tests:** `PlaceImageValidationTests.cs` — happy path (real temp file, positive dims → null); missing path (null/empty/whitespace); non-existent file; `width`/`height` ≤ 0 and NaN; error-message contract per case.
 - **Handler:** `ActionPlaceImage(...)` in `RhinoSceneTool` (new partial `RhinoSceneTool.PlaceImage.cs`, mirroring the `.Layers.cs` split):
   - active-doc guard → `PlaceImageValidation.Validate` → resolve/create target layer (current layer if `layer` null; find-or-create otherwise via a shared `FindOrCreateLayer` helper — see decision below).
@@ -39,7 +41,7 @@ Reflected on the actual Rhino 8 RhinoCommon (`8.0.23304.9001`, the version `Cord
   - `AddPictureFrame(plane, path, asMesh, width, height, selfIllumination, embedBitmap)`; `Guid.Empty` → error.
   - post-add: duplicate attrs, set `LayerIndex` (+ `Name` if provided), `ModifyAttributes`; `Views.Redraw()`.
   - return `{ success:true, objectId, layer, replaced, note }` (note null unless the replace-without-name case).
-- **Wiring:** add the new params to the `RhinoScene` method signature (doubles default `NaN`/`rotation=0`; bools as `"true"/"false"` strings parsed by `ToolHelpers.ParseBool`, matching the existing convention); add to `BuildParams` (NaN-excluded); add `place_image` to the dispatch switch; add the `place_image` `ActionInfo` (Required `path,x,y,z,width,height`; Optional `rotation,layer,name,replace,selfIllumination,embedBitmap,asMesh`; example; tips). Update the `[Description]` action list on the method + `GetServerInstructions()`.
+- **Wiring:** add the new params to the `RhinoScene` method signature (doubles default `NaN`/`rotation=0`; bools as `true`/`false` strings parsed by `ToolHelpers.ParseBool`, matching the existing convention); add to `BuildParams` (NaN-excluded); add `place_image` to the dispatch switch; add the `place_image` `ActionInfo` (Required `path,x,y,z,width,height`; Optional `rotation,layer,name,replace,selfIllumination,embedBitmap,asMesh`; example; tips). Update the `[Description]` action list on the method + `GetServerInstructions()`.
 - **Doc audit:** server instructions `rhino_scene` line; `rhino_scene` ActionInfo; root `CHANGELOG.md` (Added); `change-log.md` tagged entry. Knowledge guides: assessed — no existing rendering/scene guide documents a placement workflow that now lags; a one-line note is optional, not required (decide during audit, record the call).
 - **Done when:** `dotnet test -c Release` green (new validation tests + 137 prior); Release build 0 warn/0 err; `releases/Cordyceps.gha` restored; `/prawduct:critic` run and blocking findings resolved; CHANGELOG + change-log + backlog updated; reflection captured.
 
@@ -61,6 +63,6 @@ Reflected on the actual Rhino 8 RhinoCommon (`8.0.23304.9001`, the version `Cord
      branch and flip to [x] only via `regen-views` from change-log `status=shipped` tags
      at merge time. Live in-flight progress is tracked in the **Context** prose below. -->
 
-- [ ] Chunk 01 — place_image action + PlaceImageValidation helper + doc audit
+- [ ] Chunk 01: place_image — action + PlaceImageValidation helper + doc audit
 
 **Context:** Plan written; verify-api done (RhinoCommon reflection confirmed all three foreign APIs). Next: implement `PlaceImageValidation` + tests, then the handler + wiring, then doc audit, then build/test/Critic.
