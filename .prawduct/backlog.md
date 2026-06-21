@@ -94,8 +94,14 @@
 <!-- Items currently being addressed in an active build plan. /backlog pick
      skips these by default (work is already in flight). -->
 
+_(none currently in flight)_
+
+## Archive
+
+<!-- Shipped and dropped items, kept for searchability. Never deleted. -->
+
 - **[CQ-7T4P]** gh_inspect(docs)/component search returns success:true with empty params when a proxy can't be instantiated
-  `effort: S · impact: S · area: code-quality · source: critic · added: 2026-06-20 · status: promoted · stage: ready · reviewed: 2026-06-21 · accepted-by: @brooks · related: CQ-2X8B, CQ-5J9N`
+  `effort: S · impact: S · area: code-quality · source: critic · added: 2026-06-20 · status: shipped · stage: ready · reviewed: 2026-06-21 · closed-by: d1e1787 · related: CQ-2X8B, CQ-5J9N`
 
   Surfaced by the cumulative Critic on the CQ-2X8B refactor. `ToolHelpers.WithProxyComponent` (and
   its callers `GhInspectTool.ActionDocs` + `ComponentRegistry.CreateComponentMatch`) now LOG when
@@ -108,11 +114,10 @@
   response, so it was deliberately kept out of the behavior-preserving CQ-2X8B refactor. Builds on
   the logging added by CQ-5J9N. Doc-audit: `gh_inspect` ActionInfo if the response shape changes.
 
-  **[2026-06-21] Promoted:** claimed by @brooks.
-
-## Archive
-
-<!-- Shipped and dropped items, kept for searchability. Never deleted. -->
+  **[2026-06-21] Shipped:** built on `fix/proxy-params-unavailable` (commit `ccd8e1d`); Critic
+  `final` + `verify-resolutions` clean (the final pass caught a third params-surfacing path,
+  `gh://component/{name}`, fixed in-chunk). Pushed direct to main (`d1e1787`). 137 tests pass.
+  Doc-audit done: root CHANGELOG + `gh_inspect` `docs` ActionInfo.
 
 - **[MCP-4R2K]** Honor the MCP error contract at the server boundary
   `effort: M · impact: L · area: mcp-server · source: reflection · added: 2026-06-20 · status: shipped · stage: ready · reviewed: 2026-06-20 · closed-by: #18`
