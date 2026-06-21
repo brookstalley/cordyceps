@@ -33,6 +33,18 @@ rebuilt binary never lands in a non-release diff. The binary should only change 
 `scripts/release.sh` at actual release time. (Mirror of the GHS-7K2P housekeeping snag with the
 regenerable `.work-model-index.json`: discard regenerable build artifacts before committing.)
 
+## Tracing consumers of a shared helper misses paths that bypass it
+
+When fixing a defect that lives in a shared helper (e.g. `ToolHelpers.WithProxyComponent`'s
+empty-vs-failed param ambiguity), a consumer trace that greps for the *helper's callers* will miss
+any path that produces the **same result by reimplementing the behavior without the helper**. In
+CQ-7T4P, two surfaces went through `WithProxyComponent`, but a third — `ResourceRegistry`
+`GenerateComponentDocumentation` (`gh://component/{name}`) — instantiated a proxy directly via
+`ComponentRegistry.CreateComponent` and had the identical defect. **Trace by the defect/behavior
+(grep for the symptom: `CreateInstance`, `CreateComponent`, "Params.Input", silent omission of
+params), not only by the helper's call sites.** The Critic caught this one; the cheaper move is to
+widen the grep up front.
+
 ## Version lives in three places; keep them in lockstep
 
 A release version must match across `src/Cordyceps/Cordyceps.csproj` `<Version>`, the tracked

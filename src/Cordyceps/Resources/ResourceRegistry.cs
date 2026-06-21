@@ -421,6 +421,16 @@ namespace Cordyceps.Resources
                             sb.AppendLine(note);
                         }
                     }
+                    else
+                    {
+                        // Instantiation failed: emit an explicit note rather than silently omitting
+                        // the Inputs/Outputs sections, so a reader doesn't mistake "couldn't
+                        // introspect" for "this component has no parameters" (CQ-7T4P — mirrors the
+                        // paramsUnavailable flag on gh_inspect(action='docs')).
+                        sb.AppendLine("## Parameters");
+                        sb.AppendLine();
+                        sb.AppendLine("*Parameters could not be introspected (the component proxy failed to instantiate); this does not mean the component has no inputs/outputs. See `gh_inspect(action='log')` for the failure detail.*");
+                    }
                 }
                 else
                 {

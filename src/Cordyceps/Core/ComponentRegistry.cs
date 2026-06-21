@@ -362,7 +362,12 @@ namespace Cordyceps.Core
                 Outputs = new List<ParameterInfo>()
             };
 
-            // Try to get input/output details by creating a temporary instance
+            // Try to get input/output details by creating a temporary instance.
+            // The bool return (did introspection run) is intentionally ignored here: these
+            // Inputs/Outputs reach a tool result only via GhCanvasTool's disambiguation response,
+            // which never surfaces params — so there's no empty-vs-failed ambiguity for a caller to
+            // resolve. The failure is logged inside WithProxyComponent (CQ-5J9N). Contrast
+            // GhInspectTool.ActionDocs, which DOES surface params and so flags paramsUnavailable.
             ToolHelpers.WithProxyComponent(proxy, comp =>
             {
                 // Also check if type name contains OBSOLETE

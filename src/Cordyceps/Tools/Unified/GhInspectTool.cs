@@ -83,9 +83,10 @@ namespace Cordyceps.Tools.Unified
                 ["docs"] = new ActionInfo
                 {
                     Name = "docs",
-                    Description = "Get documentation for a component type",
+                    Description = "Get documentation for a component type (name/category/inputs/outputs)",
                     Required = new[] { "component" },
-                    Example = "action='docs', component='Circle'"
+                    Example = "action='docs', component='Circle'",
+                    Tips = new[] { "If the component proxy can't be introspected, the response sets paramsUnavailable=true with a note — empty inputs/outputs then mean 'introspection failed', not 'no parameters'." }
                 },
                 ["help"] = new ActionInfo
                 {
@@ -446,7 +447,7 @@ namespace Cordyceps.Tools.Unified
                 var inputs = new List<object>();
                 var outputs = new List<object>();
 
-                ToolHelpers.WithProxyComponent(proxy, comp =>
+                bool paramsAvailable = ToolHelpers.WithProxyComponent(proxy, comp =>
                 {
                     foreach (var i in comp.Params.Input)
                         inputs.Add(new { name = i.Name, type = i.TypeName, optional = i.Optional, description = i.Description });
@@ -454,17 +455,30 @@ namespace Cordyceps.Tools.Unified
                         outputs.Add(new { name = o.Name, type = o.TypeName, description = o.Description });
                 });
 
-                return JsonConvert.SerializeObject(new
+                var result = new Dictionary<string, object>
                 {
-                    success = true,
-                    name = proxy.Desc.Name,
-                    description = proxy.Desc.Description,
-                    category = proxy.Desc.Category,
-                    subcategory = proxy.Desc.SubCategory,
-                    guid = proxy.Guid.ToString(),
-                    inputs,
-                    outputs
-                });
+                    ["success"] = true,
+                    ["name"] = proxy.Desc.Name,
+                    ["description"] = proxy.Desc.Description,
+                    ["category"] = proxy.Desc.Category,
+                    ["subcategory"] = proxy.Desc.SubCategory,
+                    ["guid"] = proxy.Guid.ToString(),
+                    ["inputs"] = inputs,
+                    ["outputs"] = outputs
+                };
+
+                // When the proxy can't be instantiated, inputs/outputs are empty NOT because the
+                // component has no params, but because introspection failed. Surface that so the
+                // caller doesn't read an empty list as authoritative (CQ-7T4P; the failure itself is
+                // already logged by WithProxyComponent per CQ-5J9N). Keys are absent on success, so
+                // the success-path response shape is unchanged.
+                if (!paramsAvailable)
+                {
+                    result["paramsUnavailable"] = true;
+                    result["note"] = "Component parameters could not be introspected (proxy instantiation failed); the empty inputs/outputs lists do not mean the component has no parameters. See gh_inspect(action='log') for the failure detail.";
+                }
+
+                return JsonConvert.SerializeObject(result);
             });
         }
 

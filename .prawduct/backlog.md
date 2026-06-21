@@ -64,20 +64,6 @@
 
 <!-- Items available to pick up. -->
 
-- **[CQ-7T4P]** gh_inspect(docs)/component search returns success:true with empty params when a proxy can't be instantiated
-  `effort: S · impact: S · area: code-quality · source: critic · added: 2026-06-20 · status: open · stage: ready · related: CQ-2X8B, CQ-5J9N`
-
-  Surfaced by the cumulative Critic on the CQ-2X8B refactor. `ToolHelpers.WithProxyComponent` (and
-  its callers `GhInspectTool.ActionDocs` + `ComponentRegistry.CreateComponentMatch`) now LOG when
-  `proxy.CreateInstance()` fails, but the tool result still returns `success: true` with an empty
-  inputs/outputs list — the caller can't distinguish "component genuinely has no params" from "we
-  failed to introspect it."
-
-  **Fix shape:** surface a result-level signal (e.g. a `"paramsUnavailable": true` flag or a `note`
-  field) when `WithProxyComponent`'s callback didn't run. This is a behavior change to the tool
-  response, so it was deliberately kept out of the behavior-preserving CQ-2X8B refactor. Builds on
-  the logging added by CQ-5J9N. Doc-audit: `gh_inspect` ActionInfo if the response shape changes.
-
 - **[RSC-2H9K]** Native place-raster-image / PictureFrame action (rhino_scene)
   `effort: M · impact: M · area: rhino-scene · source: user · added: 2026-06-20 · status: open · stage: ready · reviewed: 2026-06-21 · refs: docs/place-image-action.md`
 
@@ -108,7 +94,21 @@
 <!-- Items currently being addressed in an active build plan. /backlog pick
      skips these by default (work is already in flight). -->
 
-_(none currently in flight)_
+- **[CQ-7T4P]** gh_inspect(docs)/component search returns success:true with empty params when a proxy can't be instantiated
+  `effort: S · impact: S · area: code-quality · source: critic · added: 2026-06-20 · status: promoted · stage: ready · reviewed: 2026-06-21 · accepted-by: @brooks · related: CQ-2X8B, CQ-5J9N`
+
+  Surfaced by the cumulative Critic on the CQ-2X8B refactor. `ToolHelpers.WithProxyComponent` (and
+  its callers `GhInspectTool.ActionDocs` + `ComponentRegistry.CreateComponentMatch`) now LOG when
+  `proxy.CreateInstance()` fails, but the tool result still returns `success: true` with an empty
+  inputs/outputs list — the caller can't distinguish "component genuinely has no params" from "we
+  failed to introspect it."
+
+  **Fix shape:** surface a result-level signal (e.g. a `"paramsUnavailable": true` flag or a `note`
+  field) when `WithProxyComponent`'s callback didn't run. This is a behavior change to the tool
+  response, so it was deliberately kept out of the behavior-preserving CQ-2X8B refactor. Builds on
+  the logging added by CQ-5J9N. Doc-audit: `gh_inspect` ActionInfo if the response shape changes.
+
+  **[2026-06-21] Promoted:** claimed by @brooks.
 
 ## Archive
 

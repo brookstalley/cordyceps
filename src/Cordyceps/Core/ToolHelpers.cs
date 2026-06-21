@@ -615,17 +615,27 @@ namespace Cordyceps.Core
         /// search. On failure it logs and returns without invoking the callback — callers
         /// degrade to whatever info they already have.
         /// </summary>
-        public static void WithProxyComponent(IGH_ObjectProxy proxy, Action<IGH_Component> project)
+        /// <returns>
+        /// <c>true</c> if the callback ran (the proxy instantiated to an <see cref="IGH_Component"/>);
+        /// <c>false</c> if instantiation failed or produced a non-component, so callers can surface a
+        /// "parameters unavailable" signal instead of reporting empty params as authoritative.
+        /// </returns>
+        public static bool WithProxyComponent(IGH_ObjectProxy proxy, Action<IGH_Component> project)
         {
             try
             {
                 var instance = proxy.CreateInstance();
                 if (instance is IGH_Component comp)
+                {
                     project(comp);
+                    return true;
+                }
+                return false;
             }
             catch (Exception ex) // prawduct:allow prawduct/broad-except -- foreign component-proxy instantiation can throw arbitrary plugin/reflection errors; log and degrade to basic info
             {
                 DebugLog.Warn($"Failed to instantiate proxy '{proxy?.Desc?.Name}' ({proxy?.Guid}) for parameter enumeration: {ex.Message}");
+                return false;
             }
         }
 
