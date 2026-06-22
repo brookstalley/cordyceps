@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [1.4.10] - 2026-06-22
+
 ### Added
 
 - **Place raster images** - New `rhino_scene(action='place_image')` action places an image file into the scene as a real Rhino PictureFrame object at a caller-specified origin (`x`/`y`/`z`), size (`width`/`height`, model units), and optional in-plane `rotation` (degrees, flat on world-XY). Auto-creates the target `layer`, sets the object `name`, and returns the new object id. Pass `replace=true` with a `name` to delete prior same-named objects on that layer first, making repeated parametric calls idempotent (returns a `replaced` count). Optional `selfIllumination` (default true), `embedBitmap`, and `asMesh` flags control appearance and storage.
