@@ -41,7 +41,7 @@
 
 ## 2026-06-22: Operational-safety hardening — Stage 1 (non-wedging marshaling, lifecycle, concurrency)
 
-<!-- prawduct: type=bugfix | chunks=01,02,03 | scope=solidity-hardening -->
+<!-- prawduct: type=bugfix | chunks=01,02,03 | scope=solidity-hardening | status=merged -->
 
 **Why:** Stage 1 of the firsthand solidity-hardening analysis (2026-06-21) closes the
 highest-severity operational hazards in the HTTP/SSE server and UI-thread marshaling.
