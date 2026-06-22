@@ -65,8 +65,18 @@ Context: **Stage 1 in progress on branch `fix/ops-safety-stage1`.**
   deferred to operator queue `VRF-002` (agent has no headless Rhino). Doc-audit: CHANGELOG +
   CommonErrorsGuide ("shutting down" row). 164/164 tests pass. **Box stays `[ ]` (views derive from
   change-log at merge).**
-- **Next:** Chunk 03 (concurrency hygiene: counters + snapshot reads) — `Type: cumulative-final`,
-  its review IS the Stage 1 PR gate.
+- **Chunk 03 — done on branch (not merged).** Concurrency hygiene. (a) The server's `CommandCount`/
+  `LastCommand` (unsynchronized auto-properties mutated from concurrent HTTP worker threads) now go
+  through a new host-free `Core/CommandStats` (`Interlocked.Increment` + `Volatile` publish/read; 5
+  unit tests incl. a genuinely-concurrent lost-increment test, mutation-verified non-vacuous). (b) The
+  `_snapshots` store in `GhDocumentTool.cs` (written on the UI thread, listed off-thread) is now a
+  `ConcurrentDictionary` — BCL-guaranteed thread-safe, no behavior change. Live-in-Rhino integration
+  smoke deferred to operator queue `VRF-003` (agent has no headless Rhino). Doc-audit: CHANGELOG
+  Fixed entry. 164/164 → 169/169 tests pass; Release build 0/0. **Box stays `[ ]` (views derive from
+  change-log at merge).**
+- **Next:** Chunk 03 is `Type: cumulative-final` — run `/prawduct:critic cumulative` against
+  `merge-base...HEAD` (the Stage 1 PR gate), then `/prawduct:pr create` → user merges PR #1 →
+  `git checkout main && git pull` → `/clear` before Stage 2.
 
 Stages are independent and dependency-ordered; build top to bottom. `/clear` after each stage's
 merge. Each chunk: build → `/prawduct:critic chunk` → commit. Each stage's LAST chunk is

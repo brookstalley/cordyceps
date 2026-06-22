@@ -54,14 +54,22 @@ namespace Cordyceps
         public string StartError { get; private set; }
 
         /// <summary>
+        /// Thread-safe activity counters. <see cref="RecordCommand"/> runs on concurrent HTTP
+        /// worker threads while the status/health readers run elsewhere, so the counter and
+        /// last-command label go through <see cref="Core.CommandStats"/> rather than unsynchronized
+        /// fields (which lost increments and risked stale reads).
+        /// </summary>
+        private readonly Core.CommandStats _commandStats = new Core.CommandStats();
+
+        /// <summary>
         /// Total number of commands received
         /// </summary>
-        public int CommandCount { get; private set; }
+        public int CommandCount => _commandStats.Count;
 
         /// <summary>
         /// Last command received (type and timestamp)
         /// </summary>
-        public string LastCommand { get; private set; } = "(none)";
+        public string LastCommand => _commandStats.Last;
 
         /// <summary>
         /// Current port the server is listening on
@@ -816,8 +824,7 @@ Resources: gh://docs/getting-started, gh://docs/data-trees, gh://docs/common-err
         /// </summary>
         public void RecordCommand(string commandType)
         {
-            CommandCount++;
-            LastCommand = $"{commandType} @ {DateTime.Now:HH:mm:ss}";
+            _commandStats.Record($"{commandType} @ {DateTime.Now:HH:mm:ss}");
             CordycepsComponent.RefreshComponent();
         }
 

@@ -54,3 +54,24 @@ these were reasoned + statically reviewed, not executed.
   processed"* result (or completes), **never** an unhandled `NullReferenceException` in the worker.
 - **No listener/port leak:** add and remove the component several times on the same port. Expected:
   each add starts cleanly with no "port in use" error attributable to a leaked prior listener.
+
+## VRF-003 — Chunk 03 — Concurrency hygiene (command counter + snapshot store)
+
+**Status:** pending
+**Added:** 2026-06-21 (Chunk 03, solidity-hardening Stage 1)
+**Where to verify:** Rhino 8 + Grasshopper with the Cordyceps component placed and an MCP client connected.
+
+**Why this needs a human:** The thread-safe counter (`Core/CommandStats`) and its lost-increment
+contract are unit-tested in CI, and the snapshot store is now a `ConcurrentDictionary` (BCL-guaranteed
+thread-safety). What only a live Rhino confirms is the *integration*: that `RecordCommand` is driven
+from concurrent HTTP worker threads and that the off-thread `snapshots` list path coexists with an
+on-UI-thread snapshot write without error. The build agent has no headless Rhino.
+
+**Verify:**
+- **Counter is exact under load:** issue many MCP requests in quick succession (ideally a few in
+  parallel), then read the Cordyceps component's "Commands received" Status line (and/or the `/health`
+  endpoint's `commandCount`). Expected: the count equals the number of requests actually made — no
+  undercount — and "Last command" reflects a real recent call.
+- **Snapshot list is stable under concurrency:** create a snapshot (`gh_document(action='snapshot')`)
+  and, around the same time, list snapshots (`gh_document(action='snapshots')`). Expected: listing
+  returns the current set with no exception and no corrupt/partial entry, regardless of timing.
