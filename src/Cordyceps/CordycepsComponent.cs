@@ -112,6 +112,14 @@ namespace Cordyceps
                 DA.SetData(1, $"Server: BLOCKED\nPort {port} is owned by another Cordyceps component.\nChange port input to use a different port.");
                 DA.SetData(2, "(blocked)");
             }
+            else if (myServer != null && !myServer.IsRunning && !string.IsNullOrEmpty(myServer.StartError))
+            {
+                // The server failed to bind/start (e.g. the port is held by a non-Cordyceps
+                // process). Surface the actionable reason instead of a bare "NOT RUNNING".
+                AddRuntimeMessage(GH_RuntimeMessageLevel.Error, myServer.StartError);
+                DA.SetData(1, $"Server: FAILED TO START\n{myServer.StartError}");
+                DA.SetData(2, "(server failed to start)");
+            }
             else
             {
                 DA.SetData(1, GetStatusInfo(myServer));

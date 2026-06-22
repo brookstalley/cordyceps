@@ -56,7 +56,17 @@ Context: **Stage 1 in progress on branch `fix/ops-safety-stage1`.**
   no BLOCKING, 1 WARNING (live-in-Rhino verification — deferred to operator queue `VRF-001`, agent
   has no headless Rhino), 4 backlog-grade NOTES. 156/156 tests pass. **Box stays `[ ]` (views
   derive from change-log at merge).**
-- **Next:** Chunk 02 (lifecycle: bind failure, drain, teardown race).
+- **Chunk 02 — done on branch (not merged).** Host-coupled lifecycle fixes in `McpServer.cs` +
+  `CordycepsComponent.cs`: (a) bind failure now records an actionable `StartError` that the component
+  surfaces as a canvas error + Status output (no more bare "NOT RUNNING"); (b) request handlers are
+  tracked via new host-free `Core/InFlightRequests` (8 unit tests) and drained on `Stop()` within the
+  shutdown budget; (c) teardown race closed by capturing `_context` once at the single read site and
+  returning a structured "shutting down" result if it's been released. Live-in-Rhino verification
+  deferred to operator queue `VRF-002` (agent has no headless Rhino). Doc-audit: CHANGELOG +
+  CommonErrorsGuide ("shutting down" row). 164/164 tests pass. **Box stays `[ ]` (views derive from
+  change-log at merge).**
+- **Next:** Chunk 03 (concurrency hygiene: counters + snapshot reads) — `Type: cumulative-final`,
+  its review IS the Stage 1 PR gate.
 
 Stages are independent and dependency-ordered; build top to bottom. `/clear` after each stage's
 merge. Each chunk: build → `/prawduct:critic chunk` → commit. Each stage's LAST chunk is
