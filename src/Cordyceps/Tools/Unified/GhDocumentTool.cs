@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.ComponentModel;
 using System.Drawing;
@@ -26,8 +27,10 @@ namespace Cordyceps.Tools.Unified
     {
         private readonly GrasshopperContext _context;
 
-        // Snapshot storage
-        private static readonly Dictionary<string, byte[]> _snapshots = new Dictionary<string, byte[]>();
+        // Snapshot storage. Written under ExecuteOnUiThread (snapshot/revert) but the
+        // list-snapshots path reads it off the HTTP worker thread, so it must be a concurrent
+        // collection — a plain Dictionary read concurrently with a write can throw or tear.
+        private static readonly ConcurrentDictionary<string, byte[]> _snapshots = new ConcurrentDictionary<string, byte[]>();
 
         private static readonly UnifiedToolInfo ToolInfo = new UnifiedToolInfo
         {

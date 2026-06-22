@@ -35,6 +35,9 @@ namespace Cordyceps
         private int _port;
         private GrasshopperContext _context;
         private readonly List<ToolInfo> _tools = new List<ToolInfo>();
+        // In-flight request handlers, tracked so Stop() can drain them before tearing down
+        // shared state instead of detaching them mid-request.
+        private readonly Core.InFlightRequests _inFlight = new Core.InFlightRequests();
         private bool _disposed;
         private DateTime _startTime;
 
@@ -44,14 +47,29 @@ namespace Cordyceps
         public bool IsRunning { get; private set; }
 
         /// <summary>
+        /// Actionable reason the last <see cref="Start"/> failed (e.g. the port is held by another
+        /// application), or <c>null</c> if the server started cleanly. Lets the host component
+        /// surface a real cause instead of a bare "NOT RUNNING".
+        /// </summary>
+        public string StartError { get; private set; }
+
+        /// <summary>
+        /// Thread-safe activity counters. <see cref="RecordCommand"/> runs on concurrent HTTP
+        /// worker threads while the status/health readers run elsewhere, so the counter and
+        /// last-command label go through <see cref="Core.CommandStats"/> rather than unsynchronized
+        /// fields (which lost increments and risked stale reads).
+        /// </summary>
+        private readonly Core.CommandStats _commandStats = new Core.CommandStats();
+
+        /// <summary>
         /// Total number of commands received
         /// </summary>
-        public int CommandCount { get; private set; }
+        public int CommandCount => _commandStats.Count;
 
         /// <summary>
         /// Last command received (type and timestamp)
         /// </summary>
-        public string LastCommand { get; private set; } = "(none)";
+        public string LastCommand => _commandStats.Last;
 
         /// <summary>
         /// Current port the server is listening on
@@ -71,6 +89,7 @@ namespace Cordyceps
 
             _port = port;
             _cts = new CancellationTokenSource();
+            StartError = null;
 
             try
             {
@@ -94,8 +113,15 @@ namespace Cordyceps
                 _startTime = DateTime.UtcNow;
                 Core.DebugLog.WriteLine($"MCP server started on http://127.0.0.1:{_port}/mcp", "INFO", 0);
             }
-            catch (Exception ex)
+            catch (Exception ex) // prawduct:allow prawduct/broad-except -- startup boundary: any failure (bind/reflection) must leave the server cleanly not-running with an actionable reason, never crash the host component's solve
             {
+                // Surface an actionable reason so the host component can show *why* the server is
+                // not running rather than a bare "NOT RUNNING". A bind failure (port held by a
+                // non-Cordyceps process) arrives as HttpListenerException.
+                StartError = ex is HttpListenerException
+                    ? $"MCP server could not start on port {port}: {ex.Message}. The port may be in use by another application — choose a different port (the HttpPort input) or close the process holding it."
+                    : $"MCP server failed to start on port {port}: {ex.Message}";
+
                 Core.DebugLog.WriteLine($"Failed to start MCP server: {ex.Message}", "ERROR", 0);
                 Core.DebugLog.WriteLine($"Stack trace: {ex.StackTrace}", "ERROR", 1);
                 _cts?.Dispose();
@@ -125,6 +151,14 @@ namespace Cordyceps
                 {
                     Core.DebugLog.WriteLine($"Shutdown exception (expected): {ex.InnerException?.Message}", "DEBUG", 1);
                 }
+
+                // Drain in-flight request handlers within the shutdown budget so they finish
+                // against a still-valid context before the finally block releases it. A handler
+                // that outlives the budget is detached; it reads the context defensively (see
+                // HandleToolCallAsync) and the Chunk-01 document-lock timeout bounds any wedged
+                // work, so this wait stays finite.
+                if (!_inFlight.DrainWithin(TimeSpan.FromSeconds(SHUTDOWN_TIMEOUT_SECONDS)))
+                    Core.DebugLog.WriteLine($"Shutdown: {_inFlight.Count} request(s) still in flight after {SHUTDOWN_TIMEOUT_SECONDS}s; detaching", "WARN", 1);
             }
             catch (Exception ex)
             {
@@ -213,7 +247,9 @@ namespace Cordyceps
                 try
                 {
                     var httpContext = await _listener.GetContextAsync().ConfigureAwait(false);
-                    _ = Task.Run(() => HandleRequestAsync(httpContext, ct), ct);
+                    // Track the handler so Stop() can drain it instead of detaching it.
+                    var handlerTask = Task.Run(() => HandleRequestAsync(httpContext, ct), ct);
+                    _inFlight.Track(handlerTask);
                 }
                 catch (HttpListenerException) when (ct.IsCancellationRequested) { break; }
                 catch (ObjectDisposedException) { break; }
@@ -598,6 +634,22 @@ Resources: gh://docs/getting-started, gh://docs/data-trees, gh://docs/common-err
             var name = paramsEl.GetProperty("name").GetString();
             var arguments = paramsEl.TryGetProperty("arguments", out var a) ? a : default;
 
+            // Capture the context once. Stop() releases _context during teardown; a handler still
+            // in flight then would otherwise hand a null context to the tool and NRE. Capturing a
+            // local (the field read is atomic) and guarding it turns that race into a clean,
+            // structured "shutting down" result.
+            var ctx = _context;
+            if (ctx == null)
+            {
+                var shuttingDown = Core.McpResultFormatter.FormatExceptionResult(
+                    new InvalidOperationException("MCP server is shutting down; the request was not processed."));
+                return new
+                {
+                    content = new[] { new { type = "text", text = shuttingDown } },
+                    isError = true
+                };
+            }
+
             RecordCommand(name);
 
             var tool = _tools.FirstOrDefault(t => t.Name == name);
@@ -605,7 +657,7 @@ Resources: gh://docs/getting-started, gh://docs/data-trees, gh://docs/common-err
                 throw new Exception($"Unknown tool: {name}");
 
             // Create tool instance (all tool classes take GrasshopperContext)
-            var instance = Activator.CreateInstance(tool.DeclaringType, _context);
+            var instance = Activator.CreateInstance(tool.DeclaringType, ctx);
 
             // Build method arguments
             var methodParams = tool.Method.GetParameters();
@@ -772,8 +824,7 @@ Resources: gh://docs/getting-started, gh://docs/data-trees, gh://docs/common-err
         /// </summary>
         public void RecordCommand(string commandType)
         {
-            CommandCount++;
-            LastCommand = $"{commandType} @ {DateTime.Now:HH:mm:ss}";
+            _commandStats.Record($"{commandType} @ {DateTime.Now:HH:mm:ss}");
             CordycepsComponent.RefreshComponent();
         }
 

@@ -215,6 +215,10 @@ technical_decisions:
       rationale: "Grasshopper/Rhino APIs are not thread-safe; off-thread access corrupts state or crashes Rhino"
       alternatives_considered: "Direct access from request threads — rejected: unsafe"
       date: 2026-06-20
+    - decision: "Document-lock acquire is bounded (120s) via Core/DocumentLock; a slow/wedged operation fails waiters fast with DocumentBusyException instead of hanging every later request forever. A re-entrancy guard (RhinoApp.InvokeRequired) runs UI-thread-originated calls inline."
+      rationale: "RhinoApp.InvokeAndWait cannot be cancelled (verified by reflection, .prawduct/artifacts/api-notes-rhinocommon.md), so the timeout bounds WAITERS, not the holder; bounding waiters keeps the server responsive even when one operation is stuck"
+      alternatives_considered: "Post-action + ManualResetEvent(timeout) to also free the holder — rejected: risks delayed/stale mutation after a reported timeout. Unbounded wait (prior behavior) — rejected: one stuck op wedged the whole server until a Rhino restart."
+      date: 2026-06-21
     - decision: "Unified action-dispatch tools (7 classes, each dispatching on an 'action' param) with reflection-based discovery via [McpServerToolType]/[McpServerTool]"
       rationale: "Keeps the agent-visible tool list small and navigable; one class per domain area"
       alternatives_considered: "One MCP tool per operation — rejected: too many tools, harder for agents to navigate"

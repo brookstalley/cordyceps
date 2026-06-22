@@ -64,7 +64,42 @@
 
 <!-- Items available to pick up. -->
 
-_(none currently open)_
+- **[MCP-9F3Q]** Introduce a ServerState enum as the single source of truth for server lifecycle
+  `effort: M · impact: M · area: mcp-server · source: critic · added: 2026-06-21 · status: open · stage: ready`
+
+  Stage-1 cumulative Critic NOTE (non-blocking, forward-looking, on Chunk 01/02 code). Server
+  lifecycle state in `McpServer` is currently reconstructed from 3 interdependent signals —
+  `IsRunning` + `StartError` + `_context` — with no single source of truth. No invalid combination
+  is currently reachable, but Stage 2+ will add conditions that increase the combinatorial surface.
+
+  **Fix shape:** introduce a `ServerState` enum (e.g. Stopped/Starting/Running/Failed) as the single
+  source of truth, and derive `IsRunning`/`StartError` from it, before that Stage 2+ complexity lands.
+  Refactor, behavior-preserving. Doc-audit: internal lifecycle only; check whether any tool surfaces
+  server status to clients.
+
+- **[MCP-5T7W]** Decide + test InFlightRequests.DrainWithin timeout-coincident-with-fault behavior
+  `effort: S · impact: M · area: mcp-server · source: critic · added: 2026-06-21 · status: open · stage: ready`
+
+  Stage-1 cumulative Critic NOTE (non-blocking, forward-looking, on Chunk 01/02 code).
+  `Core/InFlightRequests.DrainWithin` returns `true` on any `AggregateException`, which can mask a
+  budget-timeout that coincided with a handler fault. The masking loses only a WARN log — correctness
+  is still protected by the `_context == null` guard — but the timeout+fault combination is currently
+  untested.
+
+  **Fix shape:** make an explicit decision about the correct return value when a drain timeout
+  coincides with a handler fault, then add a regression test covering that combination. Touches
+  `Core/InFlightRequests.cs` + the test project.
+
+- **[GHD-6M2J]** Bound or evict GhDocumentTool snapshot store (unbounded process-lifetime)
+  `effort: S · impact: S · area: gh-document · source: critic · added: 2026-06-21 · status: open · stage: ready`
+
+  Stage-1 cumulative Critic NOTE (non-blocking, forward-looking, low priority). `GhDocumentTool._snapshots`
+  is an unbounded process-lifetime store (pre-existing; Chunk 03 only changed the collection type for
+  thread-safety). Snapshots accumulate for the life of the Rhino session with no eviction or cap.
+
+  **Fix shape:** consider a bound (max snapshot count) or an eviction policy (e.g. LRU / oldest-first).
+  Gated by explicit user action, so memory growth is operator-driven and low priority. Doc-audit: if a
+  cap is introduced, check `gh_document` snapshot ActionInfo for the new limit semantics.
 
 ## Promoted
 

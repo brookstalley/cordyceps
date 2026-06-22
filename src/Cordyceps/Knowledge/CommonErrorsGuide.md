@@ -62,3 +62,5 @@ Numeric parameters (e.g., `x`, `y`, `lens`, `wait`, `timeout`, `azimuth`) accept
 | "No active document" | GH/Rhino not ready | Ensure document open, `gh_document(action='info')` |
 | "No bakeable outputs" | Non-geometry component | Only geometry types can bake |
 | "Render timed out" | Slow render | Increase timeout or reduce complexity |
+| "Document is busy: another operation held the ... document lock for more than N seconds" | A prior request is running a long operation, or the Rhino UI thread is wedged (e.g. an infinite-loop script component) | Wait and retry; if it persists, a script component is likely stuck — fix or remove it, and restart Rhino if needed. Operations are serialized on the single Rhino UI thread, so only one runs at a time. |
+| "MCP server is shutting down; the request was not processed" | The Cordyceps component was removed (or its port changed) while this request was in flight | Transient — the server stopped. Re-place the component (or restore its port) and reconnect, then retry. |

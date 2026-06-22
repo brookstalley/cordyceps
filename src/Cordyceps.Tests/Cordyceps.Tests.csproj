@@ -23,6 +23,9 @@
   <!-- Link source files directly to avoid pulling in Grasshopper runtime dependencies -->
   <ItemGroup>
     <Compile Include="..\Cordyceps\Core\JsonTypeConverter.cs" Link="JsonTypeConverter.cs" />
+    <Compile Include="..\Cordyceps\Core\DocumentLock.cs" Link="DocumentLock.cs" />
+    <Compile Include="..\Cordyceps\Core\InFlightRequests.cs" Link="InFlightRequests.cs" />
+    <Compile Include="..\Cordyceps\Core\CommandStats.cs" Link="CommandStats.cs" />
     <Compile Include="..\Cordyceps\Core\ScriptDirective.cs" Link="ScriptDirective.cs" />
     <Compile Include="..\Cordyceps\Core\McpResultFormatter.cs" Link="McpResultFormatter.cs" />
     <Compile Include="..\Cordyceps\Core\RequestValidator.cs" Link="RequestValidator.cs" />

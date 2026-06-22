@@ -1,5 +1,5 @@
 using System;
-using System.Threading;
+using System.Runtime.ExceptionServices;
 using Grasshopper;
 using Grasshopper.Kernel;
 using Rhino;
@@ -9,30 +9,47 @@ namespace Cordyceps.Core
     /// <summary>
     /// Provides thread-safe access to Grasshopper documents.
     /// All Grasshopper operations must run on the UI thread.
-    /// Uses a semaphore to prevent concurrent document modifications from
-    /// multiple HTTP requests.
+    /// Uses a <see cref="DocumentLock"/> (a bounded mutex) to serialize document
+    /// modifications from concurrent HTTP requests without letting a single slow or
+    /// wedged operation block every subsequent request forever.
     /// </summary>
     public class GrasshopperContext
     {
         private const int DEFAULT_SOLUTION_DELAY_MS = 10;
 
         /// <summary>
-        /// Mutex to ensure only one request modifies the document at a time.
-        /// Prevents race conditions when multiple HTTP requests arrive concurrently.
+        /// Maximum time to wait to acquire the document lock before failing fast with
+        /// <see cref="DocumentBusyException"/>. Generous, so a legitimate long single
+        /// operation doesn't trip it, but finite, so a wedged UI thread no longer makes
+        /// every request hang indefinitely. RhinoCommon's <c>InvokeAndWait</c> cannot
+        /// itself be cancelled (see <c>.prawduct/artifacts/api-notes-rhinocommon.md</c>),
+        /// so this bounds the <em>waiters</em>, not the holder of a wedged operation.
         /// </summary>
-        private static readonly SemaphoreSlim _documentMutex = new SemaphoreSlim(1, 1);
+        private const int DOCUMENT_LOCK_TIMEOUT_SECONDS = 120;
+
+        /// <summary>
+        /// Lock serializing document access. Static so a single shared Rhino document is
+        /// serialized across all contexts (and any additional server instances).
+        /// </summary>
+        private static readonly DocumentLock _documentLock =
+            new DocumentLock(TimeSpan.FromSeconds(DOCUMENT_LOCK_TIMEOUT_SECONDS));
 
         /// <summary>
         /// Execute an action on the Rhino UI thread and return the result.
-        /// Acquires document mutex to prevent concurrent modifications.
+        /// Serializes document access via the bounded <see cref="DocumentLock"/>.
         /// </summary>
         public T ExecuteOnUiThread<T>(Func<T> action)
         {
-            _documentMutex.Wait();
-            try
+            // Re-entrancy guard: if we're already on the UI thread, run inline. Re-marshaling
+            // via InvokeAndWait from the UI thread would deadlock, and acquiring the document
+            // lock here could deadlock against a worker thread already blocked in InvokeAndWait.
+            if (!RhinoApp.InvokeRequired)
+                return action();
+
+            return _documentLock.Run(() =>
             {
                 T result = default;
-                Exception exception = null;
+                ExceptionDispatchInfo captured = null;
 
                 RhinoApp.InvokeAndWait(new Action(() =>
                 {
@@ -42,33 +59,31 @@ namespace Cordyceps.Core
                     }
                     catch (Exception ex)
                     {
-                        exception = ex;
+                        captured = ExceptionDispatchInfo.Capture(ex);
                     }
                 }));
 
-                if (exception != null)
-                {
-                    throw exception;
-                }
-
+                captured?.Throw();
                 return result;
-            }
-            finally
-            {
-                _documentMutex.Release();
-            }
+            });
         }
 
         /// <summary>
         /// Execute an action on the Rhino UI thread (no return value).
-        /// Acquires document mutex to prevent concurrent modifications.
+        /// Serializes document access via the bounded <see cref="DocumentLock"/>.
         /// </summary>
         public void ExecuteOnUiThread(Action action)
         {
-            _documentMutex.Wait();
-            try
+            // Re-entrancy guard — see the generic overload.
+            if (!RhinoApp.InvokeRequired)
             {
-                Exception exception = null;
+                action();
+                return;
+            }
+
+            _documentLock.Run(() =>
+            {
+                ExceptionDispatchInfo captured = null;
 
                 RhinoApp.InvokeAndWait(new Action(() =>
                 {
@@ -78,19 +93,12 @@ namespace Cordyceps.Core
                     }
                     catch (Exception ex)
                     {
-                        exception = ex;
+                        captured = ExceptionDispatchInfo.Capture(ex);
                     }
                 }));
 
-                if (exception != null)
-                {
-                    throw exception;
-                }
-            }
-            finally
-            {
-                _documentMutex.Release();
-            }
+                captured?.Throw();
+            });
         }
 
         /// <summary>
