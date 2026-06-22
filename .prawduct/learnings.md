@@ -33,6 +33,19 @@ rebuilt binary never lands in a non-release diff. The binary should only change 
 `scripts/release.sh` at actual release time. (Mirror of the GHS-7K2P housekeeping snag with the
 regenerable `.work-model-index.json`: discard regenerable build artifacts before committing.)
 
+## A test naming a race/snapshot/ordering contract must actually exercise concurrency
+
+When a host-free concurrency primitive is extracted and unit-tested (e.g. `DocumentLock`,
+`InFlightRequests`), a test whose name claims a *timing* contract — "ignores tasks tracked after
+it starts", "snapshot taken up front", "drains within budget" — must drive it with real
+concurrency: a background task running the method under test plus a `TaskCompletionSource` that
+deliberately never completes during the assertion window, so the test fails if the contract
+breaks. Standing in an *already-completed* task makes the test pass vacuously — it would still
+pass if the implementation re-read live state — which is false confidence, worse than no test.
+The Chunk-02 `DrainWithin_TakesSnapshot...` test shipped vacuous and the Critic (chunk mode,
+Goal 1 test-quality) caught it; the fix was a background-drain + mid-wait-tracked-TCS rewrite.
+Write the concurrent form from the start for any timing-contract test.
+
 ## Tracing consumers of a shared helper misses paths that bypass it
 
 When fixing a defect that lives in a shared helper (e.g. `ToolHelpers.WithProxyComponent`'s
