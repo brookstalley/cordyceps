@@ -118,16 +118,22 @@ After any code change, check each of these and update as needed:
 
 ## Publishing
 
-To publish a new version to yak:
+Releases publish to **both** GitHub (`Release vX.Y.Z` commit + tag on `main`, plus the
+downloadable `releases/Cordyceps.gha`) and the **Yak** package manager (how Rhino's
+Package Manager installs Cordyceps). Both are driven by one script — don't run the yak
+commands by hand.
 
 ```bash
-# Update version in src/Cordyceps/Cordyceps.csproj, CHANGELOG.md, and manifest.yml
-# Build, then from the dist/ folder:
-"/Applications/Rhino 8.app/Contents/Resources/bin/yak" build --platform any
-"/Applications/Rhino 8.app/Contents/Resources/bin/yak" push cordyceps-X.Y.Z-rh8_0-any.yak
+# Add a `## [X.Y.Z]` section to CHANGELOG.md (rename the top [Unreleased] section), then:
+./scripts/release.sh            # auto-increment patch (e.g. 1.4.9 -> 1.4.10)
+./scripts/release.sh 1.4.10     # or set an explicit version
+./scripts/release.sh --dry-run  # preview every step without changing anything
 ```
 
-The `dist/` folder should contain only: `Cordyceps.gha`, `manifest.yml`, and `icon.png`.
+The script bumps the version (csproj + `manifest.yml`), builds the `.gha`, builds and
+pushes the yak package, and commits/tags/pushes to `main`. Prerequisites (dotnet, Rhino 8
+for the yak CLI, yak login) and the full step-by-step flow are in
+[`docs/release-process.md`](docs/release-process.md).
 
 <!-- PRAWDUCT:ANCHOR — static governance pointer managed by the prawduct plugin. Keep it small and version-free: principles, methodology, and the active version live in the plugin and are injected at session start. -->
 
