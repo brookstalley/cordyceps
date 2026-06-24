@@ -41,7 +41,7 @@
 
 ## 2026-06-24: gh_script(set) flags a silently-broken Script component (issue #15)
 
-<!-- prawduct: type=bugfix | scope=gh-script-language | status=in-progress -->
+<!-- prawduct: type=bugfix | scope=gh-script-language | status=merged -->
 
 **Why:** Setting a directive-less body on a bare unified **Script** component (Rhino 8's
 `ScriptComponent`, which has no language until one is chosen) leaves it unable to compile —
@@ -58,7 +58,7 @@ unit tests; docs audited (CommonErrorsGuide, gh_script set/configure help, CHANG
 investigation also showed the component is **recoverable** by setting source with a
 directive, correcting issue #15's "permanently broken" claim. Reported by @anthonyesau (#15).
 
-<!-- prawduct: type=bugfix | scope=gh-document-save | status=in-progress -->
+<!-- prawduct: type=bugfix | scope=gh-document-save | status=merged -->
 
 **Why:** `gh_document(action='save')` could not overwrite an existing `.gh` (binary) file —
 every repeated save returned a bare `"Failed to write file"`, breaking incremental
