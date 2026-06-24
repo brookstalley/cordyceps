@@ -39,7 +39,36 @@
      derived view. Don't hand-edit them — add/update a tagged entry here and
      run `prawduct-hook regen-views`. -->
 
-## 2026-06-22: Operational-safety hardening — Stage 1 (non-wedging marshaling, lifecycle, concurrency)
+## 2026-06-24: gh_script(set) flags a silently-broken Script component (issue #15)
+
+<!-- prawduct: type=bugfix | scope=gh-script-language | status=in-progress -->
+
+**Why:** Setting a directive-less body on a bare unified **Script** component (Rhino 8's
+`ScriptComponent`, which has no language until one is chosen) leaves it unable to compile —
+it fails at solve time with "Can not determine input code language" and emits no geometry.
+`gh_script(set)` returned `codeSet:true` with no signal, so the natural retry silently
+re-broke it (the painful core of issue #15). The error is produced during SolveInstance, so
+it can't be observed synchronously inside `set` without forcing a cluster-unsafe recompute
+(confirmed live: with the solver disabled the error doesn't surface). Instead, `set` now
+detects the at-risk condition statically — a unified `ScriptComponent` whose final source
+(after directive preservation) still has no language directive — and returns a
+`languageWarning` with the remedy. Both `set` and `configure` (which share the same
+`SetSource` path) emit it. New pure helper `ScriptDirective.LanguageWarning(...)` with 11
+unit tests; docs audited (CommonErrorsGuide, gh_script set/configure help, CHANGELOG). Live
+investigation also showed the component is **recoverable** by setting source with a
+directive, correcting issue #15's "permanently broken" claim. Reported by @anthonyesau (#15).
+
+<!-- prawduct: type=bugfix | scope=gh-document-save | status=in-progress -->
+
+**Why:** `gh_document(action='save')` could not overwrite an existing `.gh` (binary) file —
+every repeated save returned a bare `"Failed to write file"`, breaking incremental
+checkpoints and "save before mutating" safety nets. Root cause was a format-dependent
+overwrite flag: the `.gh` branch passed `overwrite=false` to GH_IO's
+`GH_Archive.WriteToFile`, while `.ghx` correctly passed `overwrite=true`. The save policy
+is now a pure, host-free helper (`Core/GhArchiveSave.cs`) that returns
+`overwrite=true, rememberPath=true` for both formats (File→Save semantics), with 15 unit
+tests including a regression guard for the format-dependent overwrite. Reproduced and to be
+re-verified live against the running Cordyceps MCP server. Reported by @anthonyesau (#14).
 
 <!-- prawduct: type=bugfix | chunks=01,02,03 | scope=solidity-hardening | status=merged -->
 

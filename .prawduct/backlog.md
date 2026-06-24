@@ -101,6 +101,22 @@
   Gated by explicit user action, so memory growth is operator-driven and low priority. Doc-audit: if a
   cap is introduced, check `gh_document` snapshot ActionInfo for the new limit semantics.
 
+- **[GHS-4D8M]** gh_script(set/configure) silently succeeds when it leaves a Script component unable to determine its language (Rhino LanguageSpec wipe — upstream)
+  `effort: M · impact: M · area: gh-script · source: user · added: 2026-06-24 · status: open · stage: ready · related: GHS-7K2P · refs: issue #15`
+
+  `gh_script(set/configure)` silently returns `{"success": true}` in a case where it leaves a unified
+  `ScriptComponent` unable to determine its language — the component then fails at solve time (the same
+  class of failure as GHS-7K2P, but via a different mechanism). A partial fix landed this session: a
+  `languageWarning` guard was added so the tool now surfaces a warning instead of silently reporting
+  success (issue #15, partial).
+
+  **Remaining (this item):** the underlying cause — Rhino's `LanguageSpec` being wiped — is upstream in
+  Rhino 8's `ScriptComponent` and is **not** resolved by the guard. This item tracks (a) the remaining
+  upstream LanguageSpec-wipe problem and any cordyceps-side mitigation, and (b) confirming the
+  `languageWarning` guard's coverage. Related to GHS-7K2P (the directive-preservation fix via
+  `Core/ScriptDirective.cs`); distinct mechanism, same `gh-script` area. Doc-audit: if the warning
+  surfaces in tool responses, check `gh_script` ActionInfo + server instructions.
+
 ## Promoted
 
 <!-- Items currently being addressed in an active build plan. /backlog pick
@@ -111,6 +127,23 @@ _(none currently in flight)_
 ## Archive
 
 <!-- Shipped and dropped items, kept for searchability. Never deleted. -->
+
+- **[GHD-8P4N]** gh_document(save) cannot overwrite an existing .gh file
+  `effort: S · impact: M · area: gh-document · source: user · added: 2026-06-24 · status: shipped · stage: ready · reviewed: 2026-06-24 · closed-by: gh-document-save · refs: issue #14`
+
+  Reported by @anthonyesau (#14). `gh_document(action='save')` could not overwrite an existing
+  `.gh` (binary) file — every repeated save returned a bare `{"success": false, "error": "Failed to
+  write file"}`, breaking incremental checkpoints, "save before mutating" safety nets, and any
+  repeated save to the same path; only the first save (when the file did not yet exist) succeeded.
+  Root cause was a format-dependent overwrite flag: the `.gh` branch passed `overwrite=false` to
+  GH_IO's `GH_Archive.WriteToFile`, while `.ghx` correctly passed `overwrite=true`.
+
+  **[2026-06-24] Shipped (this session):** save policy extracted to a pure, host-free helper
+  `Core/GhArchiveSave.cs` returning `overwrite=true, rememberPath=true` for both formats (matching
+  Grasshopper's File→Save semantics); `GhDocumentTool.cs` now calls it. 15 unit tests in
+  `GhArchiveSaveTests.cs`, including a regression guard for the format-dependent overwrite. CHANGELOG
+  + change-log entries added. Live re-verification against the running Cordyceps MCP server still
+  pending (host-dependent save handler, can't be unit-tested).
 
 - **[RSC-2H9K]** Native place-raster-image / PictureFrame action (rhino_scene)
   `effort: M · impact: M · area: rhino-scene · source: user · added: 2026-06-20 · status: shipped · stage: ready · reviewed: 2026-06-21 · closed-by: ceab6e0 · refs: docs/place-image-action.md`

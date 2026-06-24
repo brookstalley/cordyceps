@@ -43,7 +43,8 @@ namespace Cordyceps.Tools.Unified
                         "Params matching by name keep their wires (LCS diffing)",
                         "Renamed/removed params lose connections — reported in lostConnections",
                         "Use gh_wire(action='connect', connections='<lostConnections>') to restore",
-                        "Script language is preserved automatically; start code with '#! python 3' or '// #! csharp' to set it explicitly"
+                        "Script language is preserved automatically; start code with '#! python 3' or '// #! csharp' to set it explicitly",
+                        "A bare unified 'Script' component (no language picked) returns a languageWarning until code starts with a directive — add '#! python 3' or '// #! csharp'"
                     }
                 },
                 ["configure"] = new ActionInfo
@@ -53,7 +54,7 @@ namespace Cordyceps.Tools.Unified
                     Required = new[] { "id" },
                     Optional = new[] { "inputs", "outputs", "code" },
                     Example = "action='configure', id='abc', inputs='[{\"name\":\"x\",\"type\":\"double\"}]', code='...'",
-                    Tips = new[] { "inputs: [{name, type, access}]", "outputs: [{name, type}]", "types: int, double, bool, string, Point3d, etc.", "Script language is preserved automatically; start code with '#! python 3' or '// #! csharp' to set it explicitly" }
+                    Tips = new[] { "inputs: [{name, type, access}]", "outputs: [{name, type}]", "types: int, double, bool, string, Point3d, etc.", "Script language is preserved automatically; start code with '#! python 3' or '// #! csharp' to set it explicitly", "A bare unified 'Script' component (no language picked) returns a languageWarning until code starts with a directive — add '#! python 3' or '// #! csharp'" }
                 },
                 ["info"] = new ActionInfo
                 {
@@ -162,7 +163,8 @@ namespace Cordyceps.Tools.Unified
                 {
                     dynamic scriptComp = component;
 
-                    scriptComp.SetSource(PreserveLanguageDirective(component, code));
+                    var finalSource = PreserveLanguageDirective(component, code);
+                    scriptComp.SetSource(finalSource);
 
                     // Surgically sync params instead of SetParametersFromScript(),
                     // which rebuilds all params and destroys cluster input hooks.
@@ -204,6 +206,14 @@ namespace Cordyceps.Tools.Unified
                         ["outputs"] = outputs
                     };
 
+                    // The source is stored, but a unified Script component with no language directive
+                    // compiles to nothing ("Can not determine input code language") — and SetSource
+                    // reports no error. The failure only surfaces at solve time, which we can't observe
+                    // here without forcing a (cluster-unsafe) recompute, so flag it up front (issue #15).
+                    var languageWarning = ScriptDirective.LanguageWarning(component.GetType().Name, finalSource);
+                    if (languageWarning != null)
+                        response["languageWarning"] = languageWarning;
+
                     if (lostConnections != null)
                     {
                         response["lostConnections"] = lostConnections;
@@ -241,6 +251,7 @@ namespace Cordyceps.Tools.Unified
 
                 bool configured = false;
                 string message = "";
+                string languageWarning = null;
 
                 try
                 {
@@ -258,7 +269,9 @@ namespace Cordyceps.Tools.Unified
                             {
                                 try
                                 {
-                                    scriptComp.SetSource(PreserveLanguageDirective(component, code));
+                                    var finalSource = PreserveLanguageDirective(component, code);
+                                    scriptComp.SetSource(finalSource);
+                                    languageWarning = ScriptDirective.LanguageWarning(component.GetType().Name, finalSource);
                                     message += ", source set";
                                 }
                                 catch (Exception srcEx)
@@ -281,7 +294,9 @@ namespace Cordyceps.Tools.Unified
                     {
                         try
                         {
-                            scriptComp.SetSource(PreserveLanguageDirective(component, code));
+                            var finalSource = PreserveLanguageDirective(component, code);
+                            scriptComp.SetSource(finalSource);
+                            languageWarning = ScriptDirective.LanguageWarning(component.GetType().Name, finalSource);
                             // Best-effort param sync after SetSource: not all script-component types
                             // expose every hook, so a failure here is non-fatal — log at Debug and continue.
                             try { SyncScriptParams(component, code, out _); }
@@ -322,14 +337,18 @@ namespace Cordyceps.Tools.Unified
                 foreach (var param in ghComponent.Params.Output)
                     finalOutputs.Add(new { name = param.Name, type = param.TypeName });
 
-                return JsonConvert.SerializeObject(new
+                var configureResponse = new Dictionary<string, object>
                 {
-                    success = configured,
-                    id = component.InstanceGuid.ToString(),
-                    message,
-                    inputs = finalInputs,
-                    outputs = finalOutputs
-                });
+                    ["success"] = configured,
+                    ["id"] = component.InstanceGuid.ToString(),
+                    ["message"] = message,
+                    ["inputs"] = finalInputs,
+                    ["outputs"] = finalOutputs
+                };
+                if (languageWarning != null)
+                    configureResponse["languageWarning"] = languageWarning;
+
+                return JsonConvert.SerializeObject(configureResponse);
             });
         }
 

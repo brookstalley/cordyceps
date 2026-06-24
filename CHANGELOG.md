@@ -6,6 +6,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Fixed
+
+- **`gh_document(action='save')` can now overwrite an existing `.gh` file** - Saving over an already-existing `.gh` (binary) path previously failed every time with a bare `{"success": false, "error": "Failed to write file"}`, breaking incremental checkpoints, "save before mutating" safety nets, and any repeated save to the same path; only the first save (when the file did not yet exist) succeeded. The cause was a format-dependent overwrite flag — the `.gh` branch passed `overwrite=false` to GH_IO's `GH_Archive.WriteToFile`, while `.ghx` correctly passed `overwrite=true`. Both formats now save with `overwrite=true` (and `rememberPath=true`, matching Grasshopper's File→Save), so re-saving to the same path succeeds. Thanks to @anthonyesau for the detailed report (#14).
+- **`gh_script(action='set'/'configure')` no longer silently leaves a Script component broken** - Setting a directive-less body on a bare unified **Script** component (which has no language until one is chosen) leaves it unable to compile — it fails at solve time with *"Can not determine input code language"* and emits no geometry. Previously `set`/`configure` returned `{"codeSet": true}` / a success message with no hint of the problem, so the natural retry (re-sending the same directive-less body) silently re-broke it. Both actions now return a `languageWarning` in that case, telling you to start your `code` with a directive (`#! python 3` / `// #! csharp`); doing so also recovers a component already in the broken state. The dedicated `C# Script` / `Python 3 Script` components are unaffected (they carry a concrete language and never need a directive). This narrows the remaining surface of the report by @anthonyesau (#15); the underlying language wipe is a Rhino-side behavior, but cordyceps no longer hides it.
+
 ## [1.4.10] - 2026-06-22
 
 ### Added

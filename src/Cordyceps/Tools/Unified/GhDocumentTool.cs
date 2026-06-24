@@ -4,7 +4,6 @@ using System.Collections.Generic;
 using System.ComponentModel;
 using System.Drawing;
 using System.Drawing.Imaging;
-using System.IO;
 using System.Linq;
 using System.Windows.Forms;
 using Cordyceps.Core;
@@ -268,8 +267,7 @@ namespace Cordyceps.Tools.Unified
                 if (string.IsNullOrEmpty(path))
                     return ToolHelpers.ErrorResponse("File path is required");
 
-                var ext = Path.GetExtension(path).ToLowerInvariant();
-                if (ext != ".gh" && ext != ".ghx")
+                if (!GhArchiveSave.TryGetFormat(path, out var format))
                     return ToolHelpers.ErrorResponse("File must have .gh or .ghx extension");
 
                 try
@@ -278,18 +276,15 @@ namespace Cordyceps.Tools.Unified
                     if (!archive.AppendObject(doc, "Definition"))
                         return ToolHelpers.ErrorResponse("Failed to serialize document");
 
-                    bool success = ext == ".ghx"
-                        ? archive.WriteToFile(path, true, false)
-                        : archive.WriteToFile(path, false, true);
-
-                    if (!success)
+                    var (overwrite, rememberPath) = GhArchiveSave.WriteFlags;
+                    if (!archive.WriteToFile(path, overwrite, rememberPath))
                         return ToolHelpers.ErrorResponse("Failed to write file");
 
                     return JsonConvert.SerializeObject(new
                     {
                         success = true,
                         path,
-                        format = ext == ".ghx" ? "XML" : "binary"
+                        format
                     });
                 }
                 catch (Exception ex)
