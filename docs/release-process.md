@@ -2,8 +2,10 @@
 
 Cordyceps is distributed two ways, and a release publishes to both:
 
-1. **GitHub** — a `Release vX.Y.Z` commit + `vX.Y.Z` tag on `main`, and the built
-   `releases/Cordyceps.gha` (the file users download directly from the README link).
+1. **GitHub** — a `Release vX.Y.Z` commit + `vX.Y.Z` tag on `main`, a published
+   **GitHub Release** (with the `.gha` attached as a downloadable asset and the CHANGELOG
+   section as its notes), and the built `releases/Cordyceps.gha` (the file users download
+   directly from the README link).
 2. **Yak** — the [Rhino package manager](https://yak.rhino3d.com/packages/cordyceps),
    which is how Rhino's Package Manager (`_PackageManager`) finds and installs Cordyceps.
 
@@ -15,6 +17,9 @@ GitHub tag, and the published yak package all in lockstep.
 
 - **.NET 8 SDK** (`dotnet` on PATH) — builds the `.gha`.
 - **Git push access** to `origin` — the script pushes the release commit and tag to `main`.
+- **GitHub CLI** (`gh` on PATH), authenticated — creates the GitHub Release. The script
+  verifies `gh auth status` up front and aborts before any push if it is missing or
+  unauthenticated. Run `gh auth login` once (https://cli.github.com).
 - **Rhino 8 installed** — provides the `yak` CLI. The script locates it automatically
   (`/Applications/Rhino 8.app/Contents/Resources/bin/yak` on macOS;
   `C:\Program Files\Rhino 8\System\yak.exe` on Windows/Git Bash), or uses `yak` if it's on PATH.
@@ -67,9 +72,13 @@ for the current version; the script reads it and increments the last component.
 8. Commits `csproj`, `manifest.yml`, `releases/Cordyceps.gha`, and `CHANGELOG.md` as
    `Release vX.Y.Z`, and creates an annotated `vX.Y.Z` tag.
 9. Pushes the commit and the tag to `origin main`.
-10. Pushes the package to yak: `yak push dist/cordyceps-X.Y.Z-any.yak`.
+10. Creates the GitHub Release for `vX.Y.Z` (`gh release create`), attaching
+    `releases/Cordyceps.gha` as `Cordyceps.gha` and using the `## [X.Y.Z]` CHANGELOG
+    section as the release notes, marked as `--latest`. If a Release already exists for the
+    tag, this step is skipped (so re-runs don't hard-fail).
+11. Pushes the package to yak: `yak push dist/cordyceps-X.Y.Z-any.yak`.
 
-On success it prints the GitHub release tag URL and the yak package URL.
+On success it prints the GitHub Release URL and the yak package URL.
 
 ## Notes & cautions
 

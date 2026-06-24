@@ -13,11 +13,13 @@
 #   3. Updates version in csproj
 #   4. Builds the GHA
 #   5. Commits and pushes to GitHub with a version tag
-#   6. Builds and pushes the Yak package
+#   6. Creates a GitHub Release with the .gha attached and CHANGELOG notes
+#   7. Builds and pushes the Yak package
 #
 # Prerequisites:
 #   - dotnet CLI
 #   - git
+#   - gh CLI (GitHub CLI), authenticated (gh auth login) - creates the GitHub Release
 #   - Rhino 8 installed (for yak CLI)
 #
 
@@ -153,6 +155,27 @@ ensure_yak_login() {
         log_error "Yak login failed"
         exit 1
     fi
+}
+
+# Verify the GitHub CLI is installed and authenticated (used to create the Release)
+ensure_gh() {
+    if ! command -v gh &> /dev/null; then
+        log_error "GitHub CLI ('gh') not found - it creates the GitHub Release."
+        log_error "Install it (https://cli.github.com) and run 'gh auth login', then retry."
+        exit 1
+    fi
+
+    if [[ "$DRY_RUN" == true ]]; then
+        log_info "[DRY-RUN] Would verify 'gh' authentication"
+        return 0
+    fi
+
+    if ! gh auth status &> /dev/null; then
+        log_error "GitHub CLI is not authenticated. Run 'gh auth login', then retry."
+        exit 1
+    fi
+
+    log_success "GitHub CLI authenticated"
 }
 
 # Parse arguments
@@ -366,6 +389,59 @@ git_push() {
     fi
 }
 
+# Extract a CHANGELOG section body (everything under "## [version]" up to the next
+# "## [" heading), dropping the heading line and any leading blank lines. Portable awk:
+# index(...)==1 is a literal anchored match, so the bracketed version needs no escaping.
+extract_changelog_notes() {
+    local version="$1"
+    awk -v ver="## [$version]" '
+        index($0, ver) == 1 { f = 1; next }
+        f && index($0, "## [") == 1 { exit }
+        f { if (!started && $0 == "") next; started = 1; print }
+    ' "$CHANGELOG"
+}
+
+# Create the GitHub Release from the pushed tag, attaching the .gha and CHANGELOG notes
+create_github_release() {
+    local version="$1"
+    log_info "Creating GitHub Release v$version..."
+
+    if [[ "$DRY_RUN" == true ]]; then
+        log_info "[DRY-RUN] Would create GitHub Release v$version with releases/Cordyceps.gha attached"
+        return 0
+    fi
+
+    # A tag can be pushed without a Release object; re-running must not hard-fail.
+    if gh release view "v$version" &> /dev/null; then
+        log_warn "GitHub Release v$version already exists - skipping creation"
+        return 0
+    fi
+
+    local notes_file
+    notes_file=$(mktemp)
+    extract_changelog_notes "$version" > "$notes_file"
+
+    if [[ ! -s "$notes_file" ]]; then
+        rm -f "$notes_file"
+        log_error "Could not extract CHANGELOG notes for $version (empty section?)"
+        exit 1
+    fi
+
+    # Tested condition: failure is handled here (not via set -e), so cleanup always runs.
+    if ! gh release create "v$version" \
+        "$RELEASES_DIR/Cordyceps.gha#Cordyceps.gha" \
+        --title "v$version" \
+        --notes-file "$notes_file" \
+        --latest; then
+        rm -f "$notes_file"
+        log_error "gh release create failed for v$version (the tag was pushed; create the Release manually or re-run)"
+        exit 1
+    fi
+
+    rm -f "$notes_file"
+    log_success "GitHub Release v$version published"
+}
+
 # Push to Yak
 yak_push() {
     local version="$1"
@@ -426,6 +502,9 @@ main() {
         exit 1
     fi
 
+    # Verify GitHub CLI early (a half-done release with no GitHub Release is worse than failing here)
+    ensure_gh
+
     # Check Yak login status early
     ensure_yak_login
 
@@ -469,6 +548,7 @@ main() {
     build_yak "$NEW_VERSION"
     git_commit_and_tag "$NEW_VERSION"
     git_push "$NEW_VERSION"
+    create_github_release "$NEW_VERSION"
     yak_push "$NEW_VERSION"
 
     echo ""
