@@ -39,7 +39,24 @@
      derived view. Don't hand-edit them — add/update a tagged entry here and
      run `prawduct-hook regen-views`. -->
 
-## 2026-06-24: Fix gh_document save overwrite of existing .gh files (issue #14)
+## 2026-06-24: gh_script(set) flags a silently-broken Script component (issue #15)
+
+<!-- prawduct: type=bugfix | scope=gh-script-language | status=in-progress -->
+
+**Why:** Setting a directive-less body on a bare unified **Script** component (Rhino 8's
+`ScriptComponent`, which has no language until one is chosen) leaves it unable to compile —
+it fails at solve time with "Can not determine input code language" and emits no geometry.
+`gh_script(set)` returned `codeSet:true` with no signal, so the natural retry silently
+re-broke it (the painful core of issue #15). The error is produced during SolveInstance, so
+it can't be observed synchronously inside `set` without forcing a cluster-unsafe recompute
+(confirmed live: with the solver disabled the error doesn't surface). Instead, `set` now
+detects the at-risk condition statically — a unified `ScriptComponent` whose final source
+(after directive preservation) still has no language directive — and returns a
+`languageWarning` with the remedy. Both `set` and `configure` (which share the same
+`SetSource` path) emit it. New pure helper `ScriptDirective.LanguageWarning(...)` with 11
+unit tests; docs audited (CommonErrorsGuide, gh_script set/configure help, CHANGELOG). Live
+investigation also showed the component is **recoverable** by setting source with a
+directive, correcting issue #15's "permanently broken" claim. Reported by @anthonyesau (#15).
 
 <!-- prawduct: type=bugfix | scope=gh-document-save | status=in-progress -->
 

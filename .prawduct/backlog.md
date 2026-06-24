@@ -101,6 +101,22 @@
   Gated by explicit user action, so memory growth is operator-driven and low priority. Doc-audit: if a
   cap is introduced, check `gh_document` snapshot ActionInfo for the new limit semantics.
 
+- **[GHS-4D8M]** gh_script(set/configure) silently succeeds when it leaves a Script component unable to determine its language (Rhino LanguageSpec wipe — upstream)
+  `effort: M · impact: M · area: gh-script · source: user · added: 2026-06-24 · status: open · stage: ready · related: GHS-7K2P · refs: issue #15`
+
+  `gh_script(set/configure)` silently returns `{"success": true}` in a case where it leaves a unified
+  `ScriptComponent` unable to determine its language — the component then fails at solve time (the same
+  class of failure as GHS-7K2P, but via a different mechanism). A partial fix landed this session: a
+  `languageWarning` guard was added so the tool now surfaces a warning instead of silently reporting
+  success (issue #15, partial).
+
+  **Remaining (this item):** the underlying cause — Rhino's `LanguageSpec` being wiped — is upstream in
+  Rhino 8's `ScriptComponent` and is **not** resolved by the guard. This item tracks (a) the remaining
+  upstream LanguageSpec-wipe problem and any cordyceps-side mitigation, and (b) confirming the
+  `languageWarning` guard's coverage. Related to GHS-7K2P (the directive-preservation fix via
+  `Core/ScriptDirective.cs`); distinct mechanism, same `gh-script` area. Doc-audit: if the warning
+  surfaces in tool responses, check `gh_script` ActionInfo + server instructions.
+
 ## Promoted
 
 <!-- Items currently being addressed in an active build plan. /backlog pick

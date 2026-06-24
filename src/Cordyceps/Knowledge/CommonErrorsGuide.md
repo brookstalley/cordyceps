@@ -48,7 +48,7 @@ See `gh://docs/data-trees` for details.
 | "Compilation failed" | Syntax error | `gh_inspect(action='reports')` for details |
 | "Type not found" | Missing import | C#: `using Rhino.Geometry;` / Python: `import Rhino.Geometry as rg` |
 | Connections lost after `gh_script set` | Param renamed or removed | Check `lostConnections` in response, re-wire with `gh_wire(action='connect')` |
-| "Can not determine input code language" | Script body set without the line-1 language directive | Auto-handled: `gh_script(set/configure)` preserves the component's directive. If it persists (directive already lost), prepend `#! python 3` (or `// #! csharp`) as the first line of `code` |
+| "Can not determine input code language" | Directive-less body set on a bare unified **Script** component, which has no language until one is given | `gh_script(set)` preserves an existing directive automatically; for a bare Script component with no language yet it now returns a `languageWarning` in the response. Start your `code` with `#! python 3` (or `// #! csharp`) as line 1 and call `set` again — this also recovers a component already in this state. (The dedicated `C# Script` / `Python 3 Script` components carry a concrete language and don't need a directive.) |
 
 ## Type Marshaling
 

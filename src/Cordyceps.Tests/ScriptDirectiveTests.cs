@@ -160,3 +160,42 @@ public class ScriptDirectiveExtractTests
         Assert.Equal(expected, ScriptDirective.HasDirective(code));
     }
 }
+
+public class ScriptDirectiveLanguageWarningTests
+{
+    // Issue #15: a unified "Script" component (type name ScriptComponent) with a directive-less
+    // body silently compiles to nothing — warn so the caller isn't left with a broken component.
+    [Theory]
+    [InlineData("a = 42")]
+    [InlineData("private void RunScript(object x, ref object A) { A = x; }")]
+    [InlineData("")]            // empty body still leaves no language
+    [InlineData(null)]
+    public void Warns_ForUnifiedScript_WithoutDirective(string finalSource)
+    {
+        var warning = ScriptDirective.LanguageWarning("ScriptComponent", finalSource);
+        Assert.NotNull(warning);
+        Assert.Contains("Can not determine input code language", warning);
+        Assert.Contains("#! python 3", warning);
+        Assert.Contains("// #! csharp", warning);
+    }
+
+    [Theory]
+    [InlineData("#! python 3\na = 42")]
+    [InlineData("#! python 2\na = 42")]
+    [InlineData("// #! csharp\nA = 42;")]
+    public void NoWarning_ForUnifiedScript_WithDirective(string finalSource)
+    {
+        Assert.Null(ScriptDirective.LanguageWarning("ScriptComponent", finalSource));
+    }
+
+    // The dedicated components carry a concrete language and never need a directive.
+    [Theory]
+    [InlineData("CSharpComponent", "A = 42;")]
+    [InlineData("Python3Component", "a = 42")]
+    [InlineData("IronPython2Component", "a = 42")]
+    [InlineData("Component", "anything")]
+    public void NoWarning_ForOtherComponentTypes(string typeName, string finalSource)
+    {
+        Assert.Null(ScriptDirective.LanguageWarning(typeName, finalSource));
+    }
+}
