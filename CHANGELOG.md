@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Fixed
+
+- **`gh_document(action='save')` can now overwrite an existing `.gh` file** - Saving over an already-existing `.gh` (binary) path previously failed every time with a bare `{"success": false, "error": "Failed to write file"}`, breaking incremental checkpoints, "save before mutating" safety nets, and any repeated save to the same path; only the first save (when the file did not yet exist) succeeded. The cause was a format-dependent overwrite flag — the `.gh` branch passed `overwrite=false` to GH_IO's `GH_Archive.WriteToFile`, while `.ghx` correctly passed `overwrite=true`. Both formats now save with `overwrite=true` (and `rememberPath=true`, matching Grasshopper's File→Save), so re-saving to the same path succeeds. Thanks to @anthonyesau for the detailed report (#14).
+
 ## [1.4.10] - 2026-06-22
 
 ### Added

@@ -39,7 +39,19 @@
      derived view. Don't hand-edit them — add/update a tagged entry here and
      run `prawduct-hook regen-views`. -->
 
-## 2026-06-22: Operational-safety hardening — Stage 1 (non-wedging marshaling, lifecycle, concurrency)
+## 2026-06-24: Fix gh_document save overwrite of existing .gh files (issue #14)
+
+<!-- prawduct: type=bugfix | scope=gh-document-save | status=in-progress -->
+
+**Why:** `gh_document(action='save')` could not overwrite an existing `.gh` (binary) file —
+every repeated save returned a bare `"Failed to write file"`, breaking incremental
+checkpoints and "save before mutating" safety nets. Root cause was a format-dependent
+overwrite flag: the `.gh` branch passed `overwrite=false` to GH_IO's
+`GH_Archive.WriteToFile`, while `.ghx` correctly passed `overwrite=true`. The save policy
+is now a pure, host-free helper (`Core/GhArchiveSave.cs`) that returns
+`overwrite=true, rememberPath=true` for both formats (File→Save semantics), with 15 unit
+tests including a regression guard for the format-dependent overwrite. Reproduced and to be
+re-verified live against the running Cordyceps MCP server. Reported by @anthonyesau (#14).
 
 <!-- prawduct: type=bugfix | chunks=01,02,03 | scope=solidity-hardening | status=merged -->
 

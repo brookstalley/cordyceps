@@ -112,6 +112,23 @@ _(none currently in flight)_
 
 <!-- Shipped and dropped items, kept for searchability. Never deleted. -->
 
+- **[GHD-8P4N]** gh_document(save) cannot overwrite an existing .gh file
+  `effort: S · impact: M · area: gh-document · source: user · added: 2026-06-24 · status: shipped · stage: ready · reviewed: 2026-06-24 · closed-by: gh-document-save · refs: issue #14`
+
+  Reported by @anthonyesau (#14). `gh_document(action='save')` could not overwrite an existing
+  `.gh` (binary) file — every repeated save returned a bare `{"success": false, "error": "Failed to
+  write file"}`, breaking incremental checkpoints, "save before mutating" safety nets, and any
+  repeated save to the same path; only the first save (when the file did not yet exist) succeeded.
+  Root cause was a format-dependent overwrite flag: the `.gh` branch passed `overwrite=false` to
+  GH_IO's `GH_Archive.WriteToFile`, while `.ghx` correctly passed `overwrite=true`.
+
+  **[2026-06-24] Shipped (this session):** save policy extracted to a pure, host-free helper
+  `Core/GhArchiveSave.cs` returning `overwrite=true, rememberPath=true` for both formats (matching
+  Grasshopper's File→Save semantics); `GhDocumentTool.cs` now calls it. 15 unit tests in
+  `GhArchiveSaveTests.cs`, including a regression guard for the format-dependent overwrite. CHANGELOG
+  + change-log entries added. Live re-verification against the running Cordyceps MCP server still
+  pending (host-dependent save handler, can't be unit-tested).
+
 - **[RSC-2H9K]** Native place-raster-image / PictureFrame action (rhino_scene)
   `effort: M · impact: M · area: rhino-scene · source: user · added: 2026-06-20 · status: shipped · stage: ready · reviewed: 2026-06-21 · closed-by: ceab6e0 · refs: docs/place-image-action.md`
 
