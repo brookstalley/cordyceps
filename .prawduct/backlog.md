@@ -129,6 +129,27 @@
   area. Doc-audit: if the warning surfaces in tool responses, check `gh_script` ActionInfo + server
   instructions.
 
+- **[GHC-2N8K]** De-duplicate the host-bound slider-apply block shared by gh_canvas add and config
+  `effort: S · impact: S · area: gh-canvas · source: critic · added: 2026-06-24 · status: open · stage: ready · related: GHC-7X4B, GHS-3W9N`
+
+  NOTE from the cumulative Critic review of GHC-7X4B / GHS-3W9N; user asked to track it. The pure
+  decision logic is already shared via `Core/SliderConfig` (`SliderConfig.Plan(...)` → `SliderConfigPlan`),
+  but the ~4-line **host-bound apply step** — set Minimum, then Maximum, then DecimalPlaces (and value)
+  on the live `GH_NumberSlider` — is copy-pasted verbatim in two sites:
+  - `GhCanvasTool.cs` `ActionAdd` (~lines 460-463)
+  - `GhCanvasTool.Values.cs` `ActionConfig` (~lines 125-128)
+
+  **Risk:** low but real — a future change to the apply sequence (e.g. ordering, or a new slider
+  property) could be made in one site and missed in the other.
+
+  **Fix shape:** extract the apply into a single helper (e.g. `SliderConfig.ApplyTo(slider)`, or a small
+  host-side method both call) so add and config share one apply path as well as one plan path.
+
+  Low divergence risk today and no user-facing payoff, so it sat below the earn-the-entry bar until
+  requested. Add and config are currently verified to produce identical sliders by the
+  operator-verification parity check (VRF-004) — that parity is what this item protects against future
+  drift. Doc-audit: internal refactor, behavior-preserving; no user-facing surface expected to change.
+
 ## Promoted
 
 <!-- Items currently being addressed in an active build plan. /backlog pick
