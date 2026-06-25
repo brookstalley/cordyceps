@@ -67,5 +67,7 @@ Critic mode: cumulative (gates the develop PR) after all chunks.
 Context: Chunk 01 done (base_branch=develop, CI develop trigger, dist/manifest.yml untracked;
 resolve-base→origin/develop verified). Chunk 02 done (release.sh prep/publish rewrite; syntax +
 branch-guard + dispatch verified, mutating flows dry-run-guarded → VRF-006 enqueued). Next:
-Chunk 03 (docs: release-process.md, CLAUDE.md Publishing, CHANGELOG + change-log entry), then
-cumulative Critic, then PR → develop. Phase 2c (protect main strict) follows after this merges.
+Chunk 03 done (docs/release-process.md rewritten for gitflow two-step; CLAUDE.md Publishing
+updated; change-log entry added — no CHANGELOG.md entry, this is internal tooling not a
+user-facing plugin change). All three chunks complete. Next: cumulative Critic, then PR →
+develop. Phase 2c (protect main strict) follows after this merges.
