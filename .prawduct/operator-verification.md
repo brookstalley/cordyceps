@@ -75,3 +75,47 @@ on-UI-thread snapshot write without error. The build agent has no headless Rhino
 - **Snapshot list is stable under concurrency:** create a snapshot (`gh_document(action='snapshot')`)
   and, around the same time, list snapshots (`gh_document(action='snapshots')`). Expected: listing
   returns the current set with no exception and no corrupt/partial entry, regardless of timing.
+
+## VRF-004 — Chunk 1 (GHC-7X4B) — Slider params applied on `add`
+
+**Status:** pending
+**Added:** 2026-06-24 (Chunk 1, slider-add-params)
+**Where to verify:** Rhino 8 + Grasshopper with the Cordyceps component placed and an MCP client connected.
+
+**Why this needs a human:** The decision logic (`Core/SliderConfig` — which settings to apply, parsed
+with InvariantCulture) is unit-tested in CI, but the host glue — applying the plan to a live
+`GH_NumberSlider` after `doc.AddObject` (set range, then value so it isn't clamped to the old range,
+then decimals) — only runs with a real Grasshopper document. The build agent has no headless Rhino.
+
+**Verify:**
+- **Add applies all four:** `gh_canvas(action='add', type='slider', min=0, max=100, value=50, decimals=2)`.
+  Expected: the new slider on the canvas reads **0–100**, value **50**, **2** decimals — in a single
+  call, no follow-up `action='config'`. Before this fix it landed at the default 0–1 / 0.5.
+- **Range-before-value ordering:** add a slider with `min=10, max=20, value=15`. Expected value is
+  **15**, not clamped to a stale 0–1 range.
+- **Non-slider unaffected:** `gh_canvas(action='add', type='panel', ...)` (or any non-slider) with the
+  same params present ignores them and adds normally.
+- **Parity with config:** a slider added with these params matches one added plain then `action='config'`-ed
+  to the same values.
+
+## VRF-005 — Chunk 2 (GHS-3W9N) — `configure` preserves wires; partial-update semantics
+
+**Status:** pending
+**Added:** 2026-06-24 (Chunk 2, configure-wire-preservation)
+**Where to verify:** Rhino 8 + Grasshopper with a C#/Python script component wired on both sides, MCP client connected.
+
+**Why this needs a human:** The LCS diff (`Core/ParamSyncPlan` — keep/remove/insert by name) is
+unit-tested in CI, but the host glue — reshaping live `IGH_Param` registration from the plan, carrying
+existing wires across name-matched params, collecting removed-param wires into `lostConnections`, and
+applying type hints + access — only exists with a running Grasshopper document.
+
+**Verify:** (script component with inputs **and** outputs both wired)
+- **Name-matched wires survive:** `configure` a side keeping a param's name. Expected: that param's
+  wire is still connected after; no silent drop. Before this fix `configure` wiped **every** wire.
+- **Partial update — omit a side:** `configure` passing only `inputs` (omit `outputs`). Expected:
+  outputs **and their wires** are left untouched. Before this fix configuring inputs wiped outputs.
+- **Explicit clear — `[]`:** `configure` passing `outputs=[]`. Expected: outputs cleared and their
+  wires returned in `lostConnections`.
+- **Rename reports + reconnects:** rename an input. Expected: its old wire appears in `lostConnections`
+  with a `reconnectHint`, and that hint is directly usable with `gh_wire(action='connect')` to restore it.
+- **Response shape matches `set`:** `lostConnections` + `reconnectHint` look identical to what `set` returns.

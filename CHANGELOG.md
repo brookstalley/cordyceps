@@ -6,6 +6,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Fixed
+
+- **`gh_canvas(action='add')` now applies slider min/max/value/decimals** - Adding a Number Slider with `gh_canvas(action='add', type='slider', min=0, max=100, value=50, decimals=2)` previously ignored all four configuration params — the slider always landed at the default 0–1 range and 0.5 value, forcing a second `action='config'` call. The `add` dispatcher dropped the params before they reached the component. They are now applied on add (range first, then value, so the value isn't clamped to the old range), giving `add` parity with `config`; both share one `Core.SliderConfig` policy. Non-slider components ignore these params. (GHC-7X4B)
+- **`gh_script(action='configure')` now preserves wires instead of destroying them** - `configure` previously unregistered *every* input and output parameter and re-registered them from scratch, so it silently dropped **all** wires on the component — even on parameters whose name didn't change — and returned no record of what was lost. It now reshapes parameters by name using the same LCS sync that `set` already used: parameters matching by name keep their connections, and wires on renamed/removed parameters are returned in a `lostConnections` array (with a `reconnectHint`), directly usable with `gh_wire(action='connect')` to restore them. `configure` is now also a **partial update** — omit a side (don't pass `inputs`/`outputs`) to leave it untouched, or pass `[]` to explicitly clear that side; previously, configuring only `inputs` would wipe all `outputs`. (GHS-3W9N)
+
 ## [1.4.11] - 2026-06-24
 
 ### Fixed

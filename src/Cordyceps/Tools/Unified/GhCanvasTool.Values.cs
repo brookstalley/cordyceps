@@ -119,11 +119,14 @@ namespace Cordyceps.Tools.Unified
 
                 if (component is GH_NumberSlider slider)
                 {
-                    if (!double.IsNaN(min)) slider.Slider.Minimum = (decimal)min;
-                    if (!double.IsNaN(max)) slider.Slider.Maximum = (decimal)max;
-                    if (decimals >= 0) slider.Slider.DecimalPlaces = decimals;
-                    if (!string.IsNullOrEmpty(value) && double.TryParse(value, out double val))
-                        slider.SetSliderValue((decimal)val);
+                    // Shares Core.SliderConfig with the 'add' action so both configure a slider
+                    // identically (GHC-7X4B). Range is applied before value because SetSliderValue
+                    // clamps to the current range.
+                    var plan = SliderConfig.Plan(min, max, value, decimals);
+                    if (plan.SetMinimum) slider.Slider.Minimum = plan.Minimum;
+                    if (plan.SetMaximum) slider.Slider.Maximum = plan.Maximum;
+                    if (plan.SetDecimals) slider.Slider.DecimalPlaces = plan.Decimals;
+                    if (plan.SetValue) slider.SetSliderValue(plan.Value);
 
                     if (component is IGH_ActiveObject activeSlider)
                         activeSlider.ExpireSolution(false);
