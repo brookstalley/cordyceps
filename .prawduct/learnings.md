@@ -22,6 +22,19 @@ local-progress gesture is view↔tag drift (the Critic flags it; regen-views wou
 **Track in-flight progress in the `## Status` Context prose**, not by editing the boxes. (Recurred:
 the MCP-4R2K plan did it, then the backlog-batch plan copied it — Critic-caught both times.)
 
+## Test parallelization is disabled on purpose — don't re-enable it naively
+
+`src/Cordyceps.Tests/AssemblyInfo.cs` sets `[assembly: CollectionBehavior(DisableTestParallelization
+= true)]`. Several tests assert timing/concurrency contracts (`InFlightRequests` drain + count,
+`DocumentLock`, `CommandStats`) by waiting on thread-pool continuations within a bounded budget. Under
+xUnit's default parallel collections, those tests contend for the **2-core CI runner's** thread pool —
+a sibling test's `Thread.Sleep`/blocking `Wait` can starve a `ContinueWith(..., TaskScheduler.Default)`
+continuation past its budget, so `build-test` flakes (passed locally + on #21, failed twice on #22 with
+no relevant change). Since `build-test` is the **required check for strict `main` protection**, a flaky
+gate is unacceptable. The suite is sub-second, so serial execution costs ~nothing. If you re-enable
+parallelization (or add a new timing test), make those tests deterministic first — don't trade the
+gate's reliability for parallel speed.
+
 ## Refresh stale `.test-evidence.json` via the hook, not by hand
 
 The cumulative-Critic staleness check and the `test-status` gate READ
