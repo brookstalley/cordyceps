@@ -421,6 +421,17 @@ coverage_required: false
 test_command: dotnet test src/Cordyceps.Tests/Cordyceps.Tests.csproj -c Release --logger junit;LogFilePath={junit_xml}
 
 # =============================================================================
+# INTEGRATION BASE (gitflow)
+# =============================================================================
+# This repo uses gitflow: `develop` is the integration branch (default branch,
+# where features merge) and `main` is the release surface (strict-protected,
+# release commits arrive via a develop->main PR + tags). `resolve-base` and the
+# PR / coverage / cumulative-Critic gates and `stamp-merged` honor this so the
+# reviewer/gate diff is `merge-base develop HEAD`, not main. Unset would fall
+# back to origin/main (the pre-gitflow trunk default).
+base_branch: develop
+
+# =============================================================================
 # OPERATOR VERIFICATION (opt-in, v1.4+)
 # =============================================================================
 # When true, `/pr create` BLOCKS if `.prawduct/operator-verification.md`
