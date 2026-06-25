@@ -53,8 +53,12 @@ create the GitHub Release, push to yak). Also: `base_branch: develop` in project
 prawduct gates/`resolve-base` diff against develop; CI runs on `develop` pushes; untracked the
 gitignored-yet-tracked `dist/manifest.yml` (restamped every release). A bash release script isn't
 unit-testable — syntax + branch-guard + dispatch were verified statically; the next real release is
-operator-verified (VRF-006). Docs: `docs/release-process.md` rewritten, `CLAUDE.md` Publishing updated.
-Strict main protection itself is applied as a separate step after this lands.
+operator-verified (VRF-006). Also disabled xUnit test parallelization
+(`src/Cordyceps.Tests/AssemblyInfo.cs`) — a pre-existing flaky timing test
+(`InFlightRequestsTests.Count_…`) starved its removal continuation under parallel execution on the
+2-core CI runner, and `build-test` must be reliable since it becomes the required main-protection
+check. Docs: `docs/release-process.md` rewritten, `CLAUDE.md` Publishing updated. Strict main
+protection itself is applied as a separate step after this lands.
 
 ## 2026-06-24: slider add-params + configure wire-preservation (v1.4.12)
 

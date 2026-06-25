@@ -60,14 +60,27 @@ Critic mode: cumulative (gates the develop PR) after all chunks.
 - [ ] `CLAUDE.md` Publishing section: two-step flow + gitflow (develop default, main release surface).
 - [ ] CHANGELOG `[Unreleased]` entry; `.prawduct/change-log.md` statusless entry (PR gate needs it).
 
+### Chunk 04: harden the build-test gate (disable test parallelization)
+- [ ] `src/Cordyceps.Tests/AssemblyInfo.cs`: `[assembly: CollectionBehavior(DisableTestParallelization = true)]`.
+      Surfaced mid-build: PR #22 CI failed twice on the pre-existing flaky timing test
+      `InFlightRequestsTests.Count_ReflectsTrackedHandlers_AndDropsOnCompletion` — under xUnit's
+      default parallel collections the 2-core CI runner's thread pool is contended, starving the
+      removal continuation past the test's 2s budget (it passed on #21). A flaky `build-test` is
+      unacceptable for the *required* main-protection check this PR establishes, so disable
+      parallelization (suite is sub-second; no assertion weakened). Scope grew from
+      release-tooling to "reliable required gate" — documented here, not slipped in.
+
 ## Status
 - [ ] Chunk 01
 - [ ] Chunk 02
 - [ ] Chunk 03
+- [ ] Chunk 04
 Context: Chunk 01 done (base_branch=develop, CI develop trigger, dist/manifest.yml untracked;
 resolve-base→origin/develop verified). Chunk 02 done (release.sh prep/publish rewrite; syntax +
 branch-guard + dispatch verified, mutating flows dry-run-guarded → VRF-006 enqueued). Next:
 Chunk 03 done (docs/release-process.md rewritten for gitflow two-step; CLAUDE.md Publishing
 updated; change-log entry added — no CHANGELOG.md entry, this is internal tooling not a
-user-facing plugin change). All three chunks complete. Next: cumulative Critic, then PR →
-develop. Phase 2c (protect main strict) follows after this merges.
+user-facing plugin change). Chunk 04 added mid-build (disable test parallelization — flaky
+build-test on the 2-core CI runner blocked PR #22; the required gate must be reliable). All
+chunks complete; suite 224 green serially. Next: re-Critic over the new scope, re-review the
+PR delta, re-run CI, merge → develop. Phase 2c (protect main strict) follows after this merges.
