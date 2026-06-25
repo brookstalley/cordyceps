@@ -1,12 +1,4 @@
-# Upstream bug report (McNeel): unified `ScriptComponent` silently loses its language on source replacement
-
-This is a **draft to file with McNeel** (Rhino/Grasshopper), not a Cordyceps bug. Cordyceps
-already mitigates the reachable cases (see *Cordyceps mitigation* below); the root cause is in
-Rhino 8's `RhinoCodePluginGH.Components.ScriptComponent`. Backlog: `GHS-4D8M`. Originally surfaced
-in Cordyceps issue [#15](https://github.com/brookstalley/cordyceps/issues/15).
-
-**Where to file:** McNeel Discourse (https://discourse.mcneel.com/, *Grasshopper Developer* /
-*Scripting* category) or, if you have an account, YouTrack (https://mcneel.myjetbrains.com/).
+# Unified `ScriptComponent` silently loses its language on source replacement
 
 ---
 
