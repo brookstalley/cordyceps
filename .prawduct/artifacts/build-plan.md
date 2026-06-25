@@ -69,6 +69,10 @@ Critic mode: cumulative (gates the develop PR) after all chunks.
       unacceptable for the *required* main-protection check this PR establishes, so disable
       parallelization (suite is sub-second; no assertion weakened). Scope grew from
       release-tooling to "reliable required gate" — documented here, not slipped in.
+      Alternatives considered: scoped `[Collection]` to serialize only the timing tests (more
+      surgical but needs attributes on several classes), or widening the 2s budget (band-aid,
+      still timing-based). Assembly-wide disable is one line, hardens all timing tests, and the
+      sub-second suite makes the lost parallelism negligible.
 
 ## Status
 - [ ] Chunk 01
