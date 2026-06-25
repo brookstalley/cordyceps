@@ -597,8 +597,11 @@ do_prep() {
 
     echo ""
     log_info "Running pre-flight checks..."
+    # rename_changelog_unreleased already aborts when there are no notes (neither a
+    # [version] nor an [Unreleased] section), so a separate check_changelog here would be
+    # redundant in the real path and wrong under --dry-run (the rename only logs, so the
+    # [version] section wouldn't exist yet). publish keeps its check_changelog.
     rename_changelog_unreleased "$NEW_VERSION"
-    check_changelog "$NEW_VERSION"
     check_readme "$NEW_VERSION"
     echo ""
 
