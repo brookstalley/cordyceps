@@ -41,7 +41,7 @@
 
 ## 2026-06-24: slider add-params + configure wire-preservation (v1.4.12)
 
-<!-- prawduct: type=bugfix | scope=gh-canvas-slider-add -->
+<!-- prawduct: type=bugfix | scope=gh-canvas-slider-add | status=merged -->
 
 **Why:** `gh_canvas(action='add', type='slider', ...)` silently dropped min/max/value/decimals —
 the `add` dispatcher forwarded only type/x/y/nickname to `ActionAdd`, so a new slider always
