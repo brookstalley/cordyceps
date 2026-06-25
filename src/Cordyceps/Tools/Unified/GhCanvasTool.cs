@@ -31,9 +31,14 @@ namespace Cordyceps.Tools.Unified
                     Name = "add",
                     Description = "Add a component to the canvas",
                     Required = new[] { "type", "x", "y" },
-                    Optional = new[] { "nickname" },
+                    Optional = new[] { "nickname", "min", "max", "value", "decimals" },
                     Example = "action='add', type='Circle', x=200, y=100",
-                    Tips = new[] { "Use 'Category/Name' format for ambiguous names (e.g., 'Curve/Circle')", "Use GUID for guaranteed accuracy" }
+                    Tips = new[] {
+                        "Use 'Category/Name' format for ambiguous names (e.g., 'Curve/Circle')",
+                        "Use GUID for guaranteed accuracy",
+                        "Adding a slider: pass min/max/value/decimals to configure it in one call (e.g. type='slider', min=0, max=100, value=50, decimals=2). Non-slider components ignore these.",
+                        "Set min/max before value: value is clamped to the range. Same slider config as action='config'."
+                    }
                 },
                 ["delete"] = new ActionInfo
                 {
@@ -364,7 +369,7 @@ namespace Cordyceps.Tools.Unified
             // Dispatch to action handler
             return action.ToLowerInvariant() switch
             {
-                "add" => ActionAdd(type, x, y, nickname),
+                "add" => ActionAdd(type, x, y, nickname, min, max, value, decimals),
                 "delete" => ActionDelete(id, ids),
                 "move" => ActionMove(id, x, y, moves),
                 "rename" => ActionRename(id, nickname),
@@ -398,7 +403,8 @@ namespace Cordyceps.Tools.Unified
             };
         }
 
-        private string ActionAdd(string type, double x, double y, string nickname)
+        private string ActionAdd(string type, double x, double y, string nickname,
+            double min, double max, string value, int decimals)
         {
             Core.DebugLog.Info($"gh_canvas add: type='{type}', x={x}, y={y}, nickname='{nickname}'");
 
@@ -445,6 +451,19 @@ namespace Cordyceps.Tools.Unified
 
                     component.Attributes.Pivot = new PointF((float)x, (float)y);
                     doc.AddObject(component, false);
+
+                    // Apply slider configuration when the caller passed min/max/value/decimals on add.
+                    // Non-slider components ignore these params (GHC-7X4B). Shares Core.SliderConfig
+                    // with the 'config' action so add and config configure a slider identically.
+                    if (component is GH_NumberSlider addedSlider)
+                    {
+                        var plan = SliderConfig.Plan(min, max, value, decimals);
+                        if (plan.SetMinimum) addedSlider.Slider.Minimum = plan.Minimum;
+                        if (plan.SetMaximum) addedSlider.Slider.Maximum = plan.Maximum;
+                        if (plan.SetDecimals) addedSlider.Slider.DecimalPlaces = plan.Decimals;
+                        if (plan.SetValue) addedSlider.SetSliderValue(plan.Value);
+                    }
+
                     if (component is IGH_ActiveObject activeAdd)
                         activeAdd.ExpireSolution(false);
 

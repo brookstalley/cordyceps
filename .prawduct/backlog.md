@@ -102,7 +102,7 @@
   cap is introduced, check `gh_document` snapshot ActionInfo for the new limit semantics.
 
 - **[GHS-4D8M]** gh_script(set/configure) silently succeeds when it leaves a Script component unable to determine its language (Rhino LanguageSpec wipe — upstream)
-  `effort: M · impact: M · area: gh-script · source: user · added: 2026-06-24 · status: open · stage: ready · related: GHS-7K2P · refs: issue #15`
+  `effort: M · impact: M · area: gh-script · source: user · added: 2026-06-24 · status: open · stage: ready · reviewed: 2026-06-24 · related: GHS-7K2P · refs: issue #15, docs/upstream-rhino-scriptcomponent-languagespec.md`
 
   `gh_script(set/configure)` silently returns `{"success": true}` in a case where it leaves a unified
   `ScriptComponent` unable to determine its language — the component then fails at solve time (the same
@@ -110,12 +110,45 @@
   `languageWarning` guard was added so the tool now surfaces a warning instead of silently reporting
   success (issue #15, partial).
 
-  **Remaining (this item):** the underlying cause — Rhino's `LanguageSpec` being wiped — is upstream in
-  Rhino 8's `ScriptComponent` and is **not** resolved by the guard. This item tracks (a) the remaining
-  upstream LanguageSpec-wipe problem and any cordyceps-side mitigation, and (b) confirming the
-  `languageWarning` guard's coverage. Related to GHS-7K2P (the directive-preservation fix via
-  `Core/ScriptDirective.cs`); distinct mechanism, same `gh-script` area. Doc-audit: if the warning
-  surfaces in tool responses, check `gh_script` ActionInfo + server instructions.
+  **[2026-06-24] Investigation + upstream report drafted.** A McNeel bug report is drafted at
+  `docs/upstream-rhino-scriptcomponent-languagespec.md`, pending filing on McNeel Discourse/YouTrack
+  (next action). Investigation findings:
+  - The unified `ScriptComponent` silently loses its language on a **directive-less `SetSource`** — the
+    error surfaces only at solve time, **not** from `SetSource` itself.
+  - It **IS recoverable** via a directive-bearing `SetSource` — this **corrects the original
+    "permanently broken" claim**.
+  - Setting `LanguageSpec` via reflection **does not stick**.
+
+  **Cordyceps mitigation shipped in v1.4.11:** the `languageWarning` guard + directive preservation
+  (the latter via `Core/ScriptDirective.cs`, GHS-7K2P). The remaining root cause — Rhino's
+  `LanguageSpec` being wiped — is **upstream in Rhino 8's `ScriptComponent` and is not
+  cordyceps-fixable**. This item now tracks the upstream report through filing.
+
+  **Next action:** file the drafted report with McNeel (Discourse / YouTrack). Related to GHS-7K2P
+  (the directive-preservation fix via `Core/ScriptDirective.cs`); distinct mechanism, same `gh-script`
+  area. Doc-audit: if the warning surfaces in tool responses, check `gh_script` ActionInfo + server
+  instructions.
+
+- **[GHC-2N8K]** De-duplicate the host-bound slider-apply block shared by gh_canvas add and config
+  `effort: S · impact: S · area: gh-canvas · source: critic · added: 2026-06-24 · status: open · stage: ready · related: GHC-7X4B, GHS-3W9N`
+
+  NOTE from the cumulative Critic review of GHC-7X4B / GHS-3W9N; user asked to track it. The pure
+  decision logic is already shared via `Core/SliderConfig` (`SliderConfig.Plan(...)` → `SliderConfigPlan`),
+  but the ~4-line **host-bound apply step** — set Minimum, then Maximum, then DecimalPlaces (and value)
+  on the live `GH_NumberSlider` — is copy-pasted verbatim in two sites:
+  - `GhCanvasTool.cs` `ActionAdd` (~lines 460-463)
+  - `GhCanvasTool.Values.cs` `ActionConfig` (~lines 125-128)
+
+  **Risk:** low but real — a future change to the apply sequence (e.g. ordering, or a new slider
+  property) could be made in one site and missed in the other.
+
+  **Fix shape:** extract the apply into a single helper (e.g. `SliderConfig.ApplyTo(slider)`, or a small
+  host-side method both call) so add and config share one apply path as well as one plan path.
+
+  Low divergence risk today and no user-facing payoff, so it sat below the earn-the-entry bar until
+  requested. Add and config are currently verified to produce identical sliders by the
+  operator-verification parity check (VRF-004) — that parity is what this item protects against future
+  drift. Doc-audit: internal refactor, behavior-preserving; no user-facing surface expected to change.
 
 ## Promoted
 
@@ -127,6 +160,73 @@ _(none currently in flight)_
 ## Archive
 
 <!-- Shipped and dropped items, kept for searchability. Never deleted. -->
+
+- **[GHC-7X4B]** gh_canvas(action='add') silently drops slider min/max/value/decimals
+  `effort: S · impact: M · area: gh-canvas · source: user · added: 2026-06-24 · status: shipped · stage: ready · reviewed: 2026-06-24 · closed-by: fix/add-slider-params-and-configure-wires`
+
+  Symptom: `gh_canvas(action='add', type='slider', min=0, max=100, value=50, decimals=2)` ignores
+  min/max/value/decimals. The new Number Slider lands at the default 0–1 range and 0.5 value
+  regardless of what the caller passed.
+
+  Root cause (verified in current source): the public `GhCanvas` method
+  (src/Cordyceps/Tools/Unified/GhCanvasTool.cs:296-298) declares `min`, `max`, `value`, `decimals`
+  as optional parameters, but the `add` dispatcher calls `ActionAdd(type, x, y, nickname)` (~line 367)
+  and `ActionAdd` (~line 401) accepts only those four — the slider params are silently dropped before
+  they reach the component.
+
+  Fix shape (clean-room — mirrors our OWN existing code): forward min/max/value/decimals into
+  ActionAdd, and after `doc.AddObject` apply them to GH_NumberSlider exactly as the existing `config`
+  action already does in GhCanvasTool.Values.cs (ActionConfig). The goal is parity: `add` should
+  configure a slider the same way `config` already can. Non-slider components must ignore the params
+  gracefully.
+
+  Verification: unit test that adds a slider with explicit range/value/decimals and asserts the
+  created slider reflects them; confirm non-slider add still works. Doc audit: the `add` ActionInfo
+  should list min/max/value/decimals as optional with a Tip about slider configuration.
+
+  Acceptance: add-with-slider-params yields a correctly-configured slider; tests + help metadata
+  updated.
+
+  **[2026-06-24] Shipped:** bugfix resolved on branch `fix/add-slider-params-and-configure-wires`
+  (slider params now forwarded into `ActionAdd` and applied via `Core/SliderConfig.cs`).
+  Critic-approved; 224 tests green. Archived as part of the closing PR.
+
+- **[GHS-3W9N]** gh_script(action='configure') destroys all wires instead of preserving by name
+  `effort: M · impact: L · area: gh-script · source: user · added: 2026-06-24 · status: shipped · stage: ready · reviewed: 2026-06-24 · closed-by: fix/add-slider-params-and-configure-wires · related: GHS-4D8M, GHS-7K2P`
+
+  Symptom: `gh_script(action='configure', ...)` drops EVERY wire on the script component — including
+  params whose names did not change — and returns no `lostConnections` array. This silently discards
+  the user's wiring. The sibling `set` action behaves correctly: it keeps wires on name-matched params
+  and reports the rest in `lostConnections`.
+
+  Root cause (verified in current source): `ConfigureViaVariableParams`
+  (src/Cordyceps/Tools/Unified/GhScriptTool.cs:806) unconditionally unregisters every input/output
+  param (~lines 816-825) and re-registers them, so all connections are lost. The `set` path instead
+  routes through the LCS-based `SyncParamSide`/`SyncScriptParams` helper (~lines 528 / 471), which
+  preserves wires on unchanged names and collects removed-param wires into `lostConnections`.
+
+  Fix shape (clean-room — uses our OWN existing helper): make `configure` perform its param sync
+  through the same `SyncParamSide` helper that `set` already uses, so unchanged-name params keep their
+  wires and removed-param wires surface in `lostConnections` (identical response shape to `set`,
+  directly usable with gh_wire(action='connect') to restore). Target: configure and set should
+  preserve wiring identically.
+
+  Open design question (decide during build, from our own API surface — not required for the core fix):
+  should `configure` be a true partial update that distinguishes "param side omitted → leave it alone"
+  from "empty list passed → clear that side"? Flag it; don't assume.
+
+  Verification: regression test — configure a script that already has wires, assert name-matched params
+  keep wires and removed params appear in lostConnections. Doc audit: the `configure` ActionInfo Tips
+  and Knowledge/GettingStartedGuide.md should describe wire preservation + lostConnections (today only
+  `set` is documented — GettingStartedGuide.md:37).
+
+  Acceptance: configure preserves wires like set; lostConnections returned for dropped params;
+  regression test + docs/help updated.
+
+  **[2026-06-24] Shipped:** bugfix resolved on branch `fix/add-slider-params-and-configure-wires`
+  (`configure` now syncs params through the shared LCS helper, preserving name-matched wires and
+  surfacing removed-param wires in `lostConnections`; see `Core/ParamSyncPlan.cs`). Critic-approved;
+  224 tests green. Archived as part of the closing PR.
 
 - **[GHD-8P4N]** gh_document(save) cannot overwrite an existing .gh file
   `effort: S · impact: M · area: gh-document · source: user · added: 2026-06-24 · status: shipped · stage: ready · reviewed: 2026-06-24 · closed-by: gh-document-save · refs: issue #14`

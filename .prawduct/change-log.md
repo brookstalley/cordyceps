@@ -39,6 +39,32 @@
      derived view. Don't hand-edit them — add/update a tagged entry here and
      run `prawduct-hook regen-views`. -->
 
+## 2026-06-24: slider add-params + configure wire-preservation (v1.4.12)
+
+<!-- prawduct: type=bugfix | scope=gh-canvas-slider-add -->
+
+**Why:** `gh_canvas(action='add', type='slider', ...)` silently dropped min/max/value/decimals —
+the `add` dispatcher forwarded only type/x/y/nickname to `ActionAdd`, so a new slider always
+landed at the default 0–1 range / 0.5 value regardless of args, forcing a second `config` call.
+The slider-config decision is now a pure host-free helper (`Core/SliderConfig.cs`, parsing the
+value with InvariantCulture — a latent locale fix) shared by both `add` (applied after
+`AddObject` when the new object is a `GH_NumberSlider`: range first, then value so it isn't
+clamped to the old range) and `config` (refactored for parity). 19 unit tests incl. the
+dropped-params regression; non-slider adds ignore the params. Host glue queued for operator
+verification (VRF-004). (GHC-7X4B)
+
+<!-- prawduct: type=bugfix | scope=gh-script-configure-wires -->
+
+**Why:** `gh_script(action='configure')` unregistered every input/output param and re-registered
+them from scratch (`ConfigureViaVariableParams`), silently destroying ALL wires — even on
+name-unchanged params — and reported nothing lost. It now reshapes params by name via the same
+LCS sync `set` already used, extracted to a pure helper (`Core/ParamSyncPlan.cs`): name-matched
+params keep their connections; wires on renamed/removed params return in a `lostConnections` array
+(with a `reconnectHint`) usable directly with `gh_wire(action='connect')`. `configure` is now also
+a partial update — omit a side to leave it untouched, pass `[]` to clear it (previously,
+configuring only `inputs` wiped all `outputs`). 10 unit tests; host glue queued for operator
+verification (VRF-005). (GHS-3W9N)
+
 ## 2026-06-24: gh_script(set) flags a silently-broken Script component (issue #15)
 
 <!-- prawduct: type=bugfix | scope=gh-script-language | status=merged -->

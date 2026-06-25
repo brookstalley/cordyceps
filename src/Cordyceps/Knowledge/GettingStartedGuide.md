@@ -36,6 +36,8 @@ gh_inspect(action='status')
 
 **Updating script code**: `gh_script(action='set')` preserves connections for params whose names survive unchanged. If params are renamed or removed, the response includes `lostConnections` — an array directly usable with `gh_wire(action='connect')` to restore wiring.
 
+**Configuring params**: `gh_script(action='configure')` preserves wires the same way — params matching by name keep their connections, and removed/renamed params come back in `lostConnections`. It's a partial update: omit a side (don't pass `inputs` or `outputs`) to leave it untouched, or pass `[]` to explicitly clear that side. So configuring only `inputs` no longer wipes your outputs.
+
 ## Groups
 
 - `gh_canvas(action='group_create', name='...', ids='[...]', color='#FF6B6B')`

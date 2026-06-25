@@ -22,6 +22,19 @@ local-progress gesture is view↔tag drift (the Critic flags it; regen-views wou
 **Track in-flight progress in the `## Status` Context prose**, not by editing the boxes. (Recurred:
 the MCP-4R2K plan did it, then the backlog-batch plan copied it — Critic-caught both times.)
 
+## Refresh stale `.test-evidence.json` via the hook, not by hand
+
+The cumulative-Critic staleness check and the `test-status` gate READ
+`.prawduct/.test-evidence.json`; the WRITER is `prawduct-hook test-evidence record` (a real run +
+ISO timestamp + F4a coverage overlay). **Don't hand-edit the JSON** — the hook's own docstring notes
+"every product repo improvised a hand-written JSON," which is exactly what drifts. Gotcha: this repo
+declares `test_command:` in `project-state.yaml`, so `record --from-junit <report>` is **rejected**
+(it would be two runners — the declared command vs. an ingested report). Just run
+`python3 <plugin>/bin/prawduct-hook test-evidence record` and it runs the declared command itself
+(substituting `{junit_xml}`), stamps the timestamp, and merges coverage. Note the `changes_*` fields
+will list every C# file under `changes_unjudged` — the floor verifier is Python-only symbol-grep, so
+that's structurally expected here, not a coverage failure.
+
 ## Building dirties the tracked `releases/Cordyceps.gha` binary
 
 `Cordyceps.csproj` has a post-build `CopyToReleases` target that copies the built `.gha`

@@ -54,7 +54,13 @@ namespace Cordyceps.Tools.Unified
                     Required = new[] { "id" },
                     Optional = new[] { "inputs", "outputs", "code" },
                     Example = "action='configure', id='abc', inputs='[{\"name\":\"x\",\"type\":\"double\"}]', code='...'",
-                    Tips = new[] { "inputs: [{name, type, access}]", "outputs: [{name, type}]", "types: int, double, bool, string, Point3d, etc.", "Script language is preserved automatically; start code with '#! python 3' or '// #! csharp' to set it explicitly", "A bare unified 'Script' component (no language picked) returns a languageWarning until code starts with a directive — add '#! python 3' or '// #! csharp'" }
+                    Tips = new[] {
+                        "inputs: [{name, type, access}]", "outputs: [{name, type}]", "types: int, double, bool, string, Point3d, etc.",
+                        "Partial update: omit a side (don't pass inputs/outputs) to leave it untouched; pass [] to clear that side. Passing inputs without outputs no longer wipes outputs.",
+                        "Params matching by name keep their wires (like 'set'); renamed/removed params lose connections, reported in lostConnections — pass it to gh_wire(action='connect') to restore",
+                        "Script language is preserved automatically; start code with '#! python 3' or '// #! csharp' to set it explicitly",
+                        "A bare unified 'Script' component (no language picked) returns a languageWarning until code starts with a directive — add '#! python 3' or '// #! csharp'"
+                    }
                 },
                 ["info"] = new ActionInfo
                 {
@@ -246,48 +252,54 @@ namespace Cordyceps.Tools.Unified
                 if (!(component is IGH_Component ghComponent))
                     return ToolHelpers.ErrorResponse("Not an IGH_Component");
 
-                var inputDefs = ParseParamDefs(inputs);
-                var outputDefs = ParseParamDefs(outputs);
+                // Partial-update contract: a side is "provided" only when its JSON arg is non-empty.
+                // Omitted (null/"") => leave that side (and its wires) untouched; "[]" => clear it.
+                var inputDefs = string.IsNullOrEmpty(inputs) ? null : ParseParamDefs(inputs);
+                var outputDefs = string.IsNullOrEmpty(outputs) ? null : ParseParamDefs(outputs);
 
                 bool configured = false;
                 string message = "";
                 string languageWarning = null;
+                List<object> lostConnections = null;
 
                 try
                 {
                     dynamic scriptComp = component;
 
-                    if (component is IGH_VariableParameterComponent varParamComp)
+                    bool anyParamSide = inputDefs != null || outputDefs != null;
+                    if (component is IGH_VariableParameterComponent varParamComp && anyParamSide)
                     {
-                        configured = ConfigureViaVariableParams(ghComponent, varParamComp, inputDefs, outputDefs);
+                        // Sync only the provided sides via the same LCS helper 'set' uses, so
+                        // name-matched params keep their wires and removed-param wires surface in
+                        // lostConnections (GHS-3W9N). Replaces the old "unregister everything" rebuild.
+                        SyncParamsForConfigure(ghComponent, varParamComp, inputDefs, outputDefs, out var lost);
+                        configured = true;
+                        message = $"Parameters configured ({ghComponent.Params.Input.Count} inputs, {ghComponent.Params.Output.Count} outputs)";
 
-                        if (configured)
+                        if (!string.IsNullOrEmpty(code))
                         {
-                            message = $"Parameters configured ({ghComponent.Params.Input.Count} inputs, {ghComponent.Params.Output.Count} outputs)";
-
-                            if (!string.IsNullOrEmpty(code))
+                            try
                             {
-                                try
-                                {
-                                    var finalSource = PreserveLanguageDirective(component, code);
-                                    scriptComp.SetSource(finalSource);
-                                    languageWarning = ScriptDirective.LanguageWarning(component.GetType().Name, finalSource);
-                                    message += ", source set";
-                                }
-                                catch (Exception srcEx)
-                                {
-                                    message += $", source failed: {srcEx.Message}";
-                                }
+                                var finalSource = PreserveLanguageDirective(component, code);
+                                scriptComp.SetSource(finalSource);
+                                languageWarning = ScriptDirective.LanguageWarning(component.GetType().Name, finalSource);
+                                message += ", source set";
                             }
-
-                            // Re-apply type hints AFTER source is set, because SetSource may reset them
-                            ReapplyTypeHints(ghComponent, inputDefs, outputDefs);
-
-                            // Call VariableParameterMaintenance to finalize parameter setup
-                            varParamComp.VariableParameterMaintenance();
-
-                            ghComponent.ExpireSolution(false);
+                            catch (Exception srcEx)
+                            {
+                                message += $", source failed: {srcEx.Message}";
+                            }
                         }
+
+                        // Re-apply type hints + access AFTER source is set, because SetSource may reset them.
+                        ApplyParamHints(ghComponent, inputDefs, outputDefs);
+
+                        // Call VariableParameterMaintenance to finalize parameter setup
+                        varParamComp.VariableParameterMaintenance();
+
+                        ghComponent.ExpireSolution(false);
+
+                        if (lost.Count > 0) lostConnections = lost;
                     }
 
                     if (!configured && !string.IsNullOrEmpty(code))
@@ -347,6 +359,16 @@ namespace Cordyceps.Tools.Unified
                 };
                 if (languageWarning != null)
                     configureResponse["languageWarning"] = languageWarning;
+
+                // Same lostConnections contract as 'set': removed-param wires are returned so the
+                // caller can restore them with gh_wire(action='connect') (GHS-3W9N).
+                if (lostConnections != null)
+                {
+                    configureResponse["lostConnections"] = lostConnections;
+                    configureResponse["reconnectHint"] = "These connections were lost due to parameter changes. "
+                        + "To restore, pass the lostConnections array as 'connections' to gh_wire(action='connect'), "
+                        + "updating targetParam/sourceParam if params were renamed.";
+                }
 
                 return JsonConvert.SerializeObject(configureResponse);
             });
@@ -532,16 +554,13 @@ namespace Cordyceps.Tools.Unified
             var paramList = side == GH_ParameterSide.Input ? ghComponent.Params.Input : ghComponent.Params.Output;
             var existingNames = paramList.Skip(skipCount).Select(p => p.NickName).ToList();
 
-            // Find longest common subsequence — these params keep their connections
-            var matches = ComputeLCS(existingNames, targetNames);
-            var keepIndices = new HashSet<int>(matches.Select(m => m.existIdx));
+            // Pure LCS diff: params whose names appear in both lists are kept (wires preserved);
+            // the rest are removed and missing target names inserted. Shared with the 'configure' path.
+            var plan = Core.ParamSyncPlan.Compute(existingNames, targetNames);
 
-            // Step 1: Remove params not in LCS (iterate backwards to avoid index shift issues)
-            for (int i = existingNames.Count - 1; i >= 0; i--)
+            // Step 1: Remove params not kept (descending indices — shift-safe). Capture wires first.
+            foreach (int i in plan.RemoveExistingIndicesDescending)
             {
-                if (keepIndices.Contains(i))
-                    continue;
-
                 var param = paramList[i + skipCount];
 
                 // Capture connections before removal
@@ -587,20 +606,13 @@ namespace Cordyceps.Tools.Unified
                     ghComponent.Params.UnregisterOutputParameter(param);
             }
 
-            // After removal, remaining custom params (past skipCount) are LCS elements in order.
-            // Step 2: Insert new params at the correct positions.
-            // Walk through target list left-to-right. For positions covered by LCS, the param
-            // is already in place. For other positions, insert a new param.
-            // Since we process left-to-right, actualIdx = t + skipCount accounts for
-            // all previous insertions automatically.
-            var lcsTargetIndices = new HashSet<int>(matches.Select(m => m.targetIdx));
-
-            for (int t = 0; t < targetNames.Count; t++)
+            // After removal, the kept custom params (past skipCount) are the LCS elements in order.
+            // Step 2: Insert new params at their target positions. Insertions are ascending, so
+            // applying them left-to-right makes actualIdx = TargetIndex + skipCount land each
+            // correctly (earlier insertions account for the later ones automatically).
+            foreach (var insertion in plan.Insertions)
             {
-                if (lcsTargetIndices.Contains(t))
-                    continue; // Already in place from existing params
-
-                int actualIdx = t + skipCount;
+                int actualIdx = insertion.TargetIndex + skipCount;
                 if (!varParamComp.CanInsertParameter(side, actualIdx))
                 {
                     DebugLog.Warn($"[SyncParamSide] Cannot insert {side} param at index {actualIdx}");
@@ -614,50 +626,15 @@ namespace Cordyceps.Tools.Unified
                     continue;
                 }
 
-                newParam.Name = targetNames[t];
-                newParam.NickName = targetNames[t];
+                newParam.Name = insertion.Name;
+                newParam.NickName = insertion.Name;
 
-                DebugLog.Debug($"[SyncParamSide] Inserting {side} '{targetNames[t]}' at index {actualIdx}");
+                DebugLog.Debug($"[SyncParamSide] Inserting {side} '{insertion.Name}' at index {actualIdx}");
                 if (side == GH_ParameterSide.Input)
                     ghComponent.Params.RegisterInputParam(newParam, actualIdx);
                 else
                     ghComponent.Params.RegisterOutputParam(newParam, actualIdx);
             }
-        }
-
-        /// <summary>
-        /// Compute the Longest Common Subsequence of two string lists.
-        /// Returns pairs of (index in existing, index in target) for matched elements.
-        /// </summary>
-        private static List<(int existIdx, int targetIdx)> ComputeLCS(List<string> existing, List<string> target)
-        {
-            int m = existing.Count, n = target.Count;
-            var dp = new int[m + 1, n + 1];
-
-            for (int i = 1; i <= m; i++)
-                for (int j = 1; j <= n; j++)
-                    dp[i, j] = existing[i - 1] == target[j - 1]
-                        ? dp[i - 1, j - 1] + 1
-                        : Math.Max(dp[i - 1, j], dp[i, j - 1]);
-
-            // Backtrack to find matched pairs
-            var matches = new List<(int, int)>();
-            int x = m, y = n;
-            while (x > 0 && y > 0)
-            {
-                if (existing[x - 1] == target[y - 1])
-                {
-                    matches.Add((x - 1, y - 1));
-                    x--; y--;
-                }
-                else if (dp[x - 1, y] >= dp[x, y - 1])
-                    x--;
-                else
-                    y--;
-            }
-
-            matches.Reverse();
-            return matches;
         }
 
         /// <summary>
@@ -766,131 +743,87 @@ namespace Cordyceps.Tools.Unified
         }
 
         /// <summary>
-        /// Re-apply type hints to parameters after source has been set
-        /// SetSource may reset output type hints, so we need to reapply them
+        /// Configure-path parameter sync. Reshapes only the <em>provided</em> sides (a null def list
+        /// means "side omitted — leave it and its wires untouched"; an empty list means "clear that
+        /// side") to match the given defs <em>by name</em>, routing through the same LCS-based
+        /// <see cref="SyncParamSide"/> that <c>set</c> uses. Params whose names are unchanged keep
+        /// their wires; wires on removed params are captured into <paramref name="lostConnections"/>
+        /// in the gh_wire(action='connect')-ready shape. This replaces the previous
+        /// unregister-everything rebuild that destroyed all wires (GHS-3W9N).
+        ///
+        /// <para>Type hints and access are NOT set here — <see cref="ApplyParamHints"/> applies them
+        /// after <c>SetSource</c>, which can reset type hints.</para>
         /// </summary>
-        private void ReapplyTypeHints(IGH_Component ghComponent, List<ParamDef> inputDefs, List<ParamDef> outputDefs)
+        private void SyncParamsForConfigure(IGH_Component ghComponent, IGH_VariableParameterComponent varParamComp,
+            List<ParamDef> inputDefs, List<ParamDef> outputDefs, out List<object> lostConnections)
         {
-            DebugLog.Debug($"ReapplyTypeHints: {inputDefs.Count} inputs, {outputDefs.Count} outputs");
+            lostConnections = new List<object>();
 
-            // Re-apply input type hints
-            for (int i = 0; i < inputDefs.Count && i < ghComponent.Params.Input.Count; i++)
+            if (inputDefs != null)
             {
-                var def = inputDefs[i];
-                var param = ghComponent.Params.Input[i];
-                if (!string.IsNullOrEmpty(def.Type))
-                {
-                    SetParameterTypeHint(param, def.Type);
-                }
+                var targetNames = inputDefs.Select(d => d.Name).ToList();
+                SyncParamSide(ghComponent, varParamComp, GH_ParameterSide.Input, targetNames, 0, out var inputLost);
+                lostConnections.AddRange(inputLost);
             }
 
-            // Re-apply output type hints (skip the first 'out' parameter if present)
-            // Output parameters start at index 1 (index 0 is 'out')
-            for (int i = 0; i < outputDefs.Count; i++)
+            if (outputDefs != null)
             {
-                var def = outputDefs[i];
-                // Output index is i+1 because index 0 is the built-in 'out' parameter
-                int paramIndex = i + 1;
-                if (paramIndex < ghComponent.Params.Output.Count)
-                {
-                    var param = ghComponent.Params.Output[paramIndex];
-                    if (!string.IsNullOrEmpty(def.Type))
-                    {
-                        DebugLog.Debug($"ReapplyTypeHints: Output '{param.Name}' -> type '{def.Type}'");
-                        SetParameterTypeHint(param, def.Type);
-                    }
-                }
+                // skipCount=1: preserve the built-in index-0 'out' output (mirrors the 'set' path).
+                var targetNames = outputDefs.Select(d => d.Name).ToList();
+                SyncParamSide(ghComponent, varParamComp, GH_ParameterSide.Output, targetNames, 1, out var outputLost);
+                lostConnections.AddRange(outputLost);
             }
+
+            varParamComp.VariableParameterMaintenance();
+            DebugLog.Info($"SyncParamsForConfigure complete: {ghComponent.Params.Input.Count} inputs, {ghComponent.Params.Output.Count} outputs, {lostConnections.Count} wires lost");
         }
 
-        private bool ConfigureViaVariableParams(IGH_Component ghComponent, IGH_VariableParameterComponent varParamComp, List<ParamDef> inputDefs, List<ParamDef> outputDefs)
+        /// <summary>
+        /// Apply type hints (both sides) and access modes (inputs only) from the provided defs to the
+        /// component's params by position. A null def list means the side was omitted — leave it
+        /// alone (partial-update contract). After <see cref="SyncParamsForConfigure"/> the params are
+        /// in def order, so def[i] maps to input[i] / output[i+1] (index 0 is the built-in 'out').
+        /// Called after <c>SetSource</c>, which can reset type hints.
+        /// </summary>
+        private void ApplyParamHints(IGH_Component ghComponent, List<ParamDef> inputDefs, List<ParamDef> outputDefs)
         {
-            try
+            if (inputDefs != null)
             {
-                DebugLog.Info($"ConfigureViaVariableParams: {inputDefs.Count} inputs, {outputDefs.Count} outputs");
-
-                // Remove existing inputs
-                while (ghComponent.Params.Input.Count > 0)
+                for (int i = 0; i < inputDefs.Count && i < ghComponent.Params.Input.Count; i++)
                 {
-                    var param = ghComponent.Params.Input[ghComponent.Params.Input.Count - 1];
-                    varParamComp.CanRemoveParameter(GH_ParameterSide.Input, ghComponent.Params.Input.Count - 1);
-                    ghComponent.Params.UnregisterInputParameter(param);
-                }
-
-                // Remove outputs except first ('out')
-                while (ghComponent.Params.Output.Count > 1)
-                {
-                    var param = ghComponent.Params.Output[ghComponent.Params.Output.Count - 1];
-                    varParamComp.CanRemoveParameter(GH_ParameterSide.Output, ghComponent.Params.Output.Count - 1);
-                    ghComponent.Params.UnregisterOutputParameter(param);
-                }
-
-                // Add inputs with type hints
-                foreach (var def in inputDefs)
-                {
-                    if (varParamComp.CanInsertParameter(GH_ParameterSide.Input, ghComponent.Params.Input.Count))
+                    var def = inputDefs[i];
+                    var param = ghComponent.Params.Input[i];
+                    if (!string.IsNullOrEmpty(def.Type))
+                        SetParameterTypeHint(param, def.Type);
+                    if (!string.IsNullOrEmpty(def.Access))
                     {
-                        // Use CreateParameter to get the component's native parameter type
-                        var newParam = varParamComp.CreateParameter(GH_ParameterSide.Input, ghComponent.Params.Input.Count);
-                        if (newParam != null)
+                        switch (def.Access.ToLowerInvariant())
                         {
-                            newParam.Name = def.Name;
-                            newParam.NickName = def.Name;
-
-                            // Set type hint BEFORE registering (for script components)
-                            if (!string.IsNullOrEmpty(def.Type))
-                            {
-                                SetParameterTypeHint(newParam, def.Type);
-                            }
-
-                            // Set access mode
-                            if (!string.IsNullOrEmpty(def.Access))
-                            {
-                                switch (def.Access.ToLowerInvariant())
-                                {
-                                    case "list": newParam.Access = GH_ParamAccess.list; break;
-                                    case "tree": newParam.Access = GH_ParamAccess.tree; break;
-                                    default: newParam.Access = GH_ParamAccess.item; break;
-                                }
-                            }
-
-                            ghComponent.Params.RegisterInputParam(newParam);
-                            DebugLog.Debug($"Added input '{def.Name}' type='{def.Type}' access='{def.Access}'");
+                            case "list": param.Access = GH_ParamAccess.list; break;
+                            case "tree": param.Access = GH_ParamAccess.tree; break;
+                            default: param.Access = GH_ParamAccess.item; break;
                         }
                     }
                 }
-
-                // Add outputs with type hints
-                foreach (var def in outputDefs)
-                {
-                    if (varParamComp.CanInsertParameter(GH_ParameterSide.Output, ghComponent.Params.Output.Count))
-                    {
-                        var newParam = varParamComp.CreateParameter(GH_ParameterSide.Output, ghComponent.Params.Output.Count);
-                        if (newParam != null)
-                        {
-                            newParam.Name = def.Name;
-                            newParam.NickName = def.Name;
-
-                            // Set type hint for output too
-                            if (!string.IsNullOrEmpty(def.Type))
-                            {
-                                SetParameterTypeHint(newParam, def.Type);
-                            }
-
-                            ghComponent.Params.RegisterOutputParam(newParam);
-                            DebugLog.Debug($"Added output '{def.Name}' type='{def.Type}'");
-                        }
-                    }
-                }
-
-                varParamComp.VariableParameterMaintenance();
-                DebugLog.Info($"ConfigureViaVariableParams complete: {ghComponent.Params.Input.Count} inputs, {ghComponent.Params.Output.Count} outputs");
-                return true;
             }
-            catch (Exception ex)
+
+            if (outputDefs != null)
             {
-                DebugLog.Error($"ConfigureViaVariableParams failed: {ex.Message}");
-                return false;
+                // Output params start at index 1 (index 0 is the built-in 'out').
+                for (int i = 0; i < outputDefs.Count; i++)
+                {
+                    int paramIndex = i + 1;
+                    if (paramIndex < ghComponent.Params.Output.Count)
+                    {
+                        var def = outputDefs[i];
+                        var param = ghComponent.Params.Output[paramIndex];
+                        if (!string.IsNullOrEmpty(def.Type))
+                        {
+                            DebugLog.Debug($"ApplyParamHints: Output '{param.Name}' -> type '{def.Type}'");
+                            SetParameterTypeHint(param, def.Type);
+                        }
+                    }
+                }
             }
         }
 
