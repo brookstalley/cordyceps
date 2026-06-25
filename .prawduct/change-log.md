@@ -41,7 +41,7 @@
 
 ## 2026-06-24: gitflow + two-step release (prep/publish)
 
-<!-- prawduct: type=tooling | scope=gitflow-release-refactor -->
+<!-- prawduct: type=tooling | scope=gitflow-release-refactor | status=merged -->
 
 **Why:** Adopted gitflow — `develop` is now the default/integration branch and `main` is the
 release surface, to be strict-protected (require PR + `build-test`, no bypass). The old
