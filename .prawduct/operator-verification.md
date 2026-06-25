@@ -119,3 +119,29 @@ applying type hints + access — only exists with a running Grasshopper document
 - **Rename reports + reconnects:** rename an input. Expected: its old wire appears in `lostConnections`
   with a `reconnectHint`, and that hint is directly usable with `gh_wire(action='connect')` to restore it.
 - **Response shape matches `set`:** `lostConnections` + `reconnectHint` look identical to what `set` returns.
+
+## VRF-006 — gitflow-release-refactor — `release.sh prep`/`publish` end-to-end
+
+**Status:** pending
+**Added:** 2026-06-24 (gitflow-release-refactor, Chunk 02)
+**Where to verify:** a real (or throwaway-version) release after this lands on `develop` + `main`, with main strict-protected.
+
+**Why this needs a human:** `scripts/release.sh` is a bash orchestration script — not unit-testable in
+the xUnit project. Its guards, arg parsing, and dispatch were statically checked (syntax + branch-guard
+failure cases), but the mutating prep/publish flows (build, commit, push, `gh pr create`, tag push, GH
+Release, yak push) are dry-run-guarded and only run for real at a release. shellcheck was unavailable on
+the build host, so the logic was review-verified, not linted.
+
+**Verify (at the next release, e.g. v1.4.13):**
+- **Dry-runs first:** on `develop`, `./scripts/release.sh prep --dry-run`; on `main`,
+  `./scripts/release.sh publish --dry-run`. Each should print its full step list and make **no** changes.
+- **prep (on develop):** `./scripts/release.sh prep 1.4.13` bumps csproj+manifest, renames CHANGELOG
+  `[Unreleased]`→`[1.4.13]`, builds the `.gha`, commits `Release v1.4.13`, pushes develop, and opens a
+  develop→main PR. Confirm the PR exists with CHANGELOG notes and `build-test` runs on it.
+- **Merge under protection:** the develop→main PR merges only after `build-test` passes (no direct push) —
+  confirms strict protection + the release path coexist.
+- **publish (on main, after merge + `git pull`):** `./scripts/release.sh publish 1.4.13` builds the yak
+  package, **pushes only the `v1.4.13` tag** (not the branch — confirm the branch push is never attempted),
+  publishes the GitHub Release with the `.gha`, and pushes to yak.
+- **Alignment:** after publish, `develop` and `main` have identical trees (no back-merge needed); the next
+  `prep` starts clean.

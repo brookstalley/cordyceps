@@ -64,4 +64,8 @@ Critic mode: cumulative (gates the develop PR) after all chunks.
 - [ ] Chunk 01
 - [ ] Chunk 02
 - [ ] Chunk 03
-Context: Branch created off develop. Next: implement Chunk 01 (config/CI/hygiene).
+Context: Chunk 01 done (base_branch=develop, CI develop trigger, dist/manifest.yml untracked;
+resolve-base→origin/develop verified). Chunk 02 done (release.sh prep/publish rewrite; syntax +
+branch-guard + dispatch verified, mutating flows dry-run-guarded → VRF-006 enqueued). Next:
+Chunk 03 (docs: release-process.md, CLAUDE.md Publishing, CHANGELOG + change-log entry), then
+cumulative Critic, then PR → develop. Phase 2c (protect main strict) follows after this merges.
