@@ -19,12 +19,26 @@
 
 ## Installation
 
-1. **[Download Cordyceps.gha](https://github.com/brookstalley/cordyceps/raw/main/releases/Cordyceps.gha)**
+### Rhino Package Manager (recommended)
+
+1. In Rhino 8, run the **`PackageManager`** command (or *Tools → Package Manager*)
+2. Search for **Cordyceps** and click **Install**
+3. Restart Rhino
+
+The Package Manager downloads the plugin, places it in the right folder, and unblocks it for you — and future updates are one click.
+
+### Manual install
+
+1. **[Download Cordyceps.gha](https://github.com/brookstalley/cordyceps/raw/main/releases/Cordyceps.gha)** (or grab it from the [latest release](https://github.com/brookstalley/cordyceps/releases/latest))
 
 2. Copy to your Grasshopper components folder:
    *File → Special Folders → Components Folder*
 
-3. **Windows users**: Right-click the file → Properties → check "Unblock" → OK
+3. Unblock the file so Rhino will load it:
+   - **Windows**: right-click → Properties → check "Unblock" → OK
+   - **macOS**: clear the quarantine flag (e.g. `xattr -dr com.apple.quarantine <path-to-Cordyceps.gha>`)
+
+4. Restart Rhino
 
 ## Usage
 
@@ -154,7 +168,7 @@ Browse the documentation directly: [`src/Cordyceps/Knowledge/`](src/Cordyceps/Kn
 
 | Problem | Solution |
 |---------|----------|
-| Plugin won't load | Verify Rhino 8.21+. Unblock the .gha file (Windows) or clear quarantine (macOS). |
+| Plugin won't load | Verify Rhino 8.21+. If you installed manually, unblock the .gha file (Windows) or clear its quarantine flag (macOS) — the Package Manager does this for you. |
 | Can't connect | Ensure Cordyceps component is on canvas. Check the port. |
 | Claude Desktop can't connect | Ensure Node.js is installed. Check Rhino is running with Cordyceps. Restart Claude Desktop after config changes. |
 | Component not found | Use `gh_canvas(action='search', query='...')` to find exact names. |

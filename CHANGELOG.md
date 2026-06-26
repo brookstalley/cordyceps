@@ -4,6 +4,12 @@ All notable changes to Cordyceps will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [Unreleased]
+
+### Changed
+
+- **README install instructions** - Documented installation via the Rhino Package Manager (run `PackageManager`, search "Cordyceps", install) as the recommended method, with manual `.gha` download kept as the secondary option. Clarified that file-unblocking (Windows) / quarantine-clearing (macOS) is only needed for manual installs, and added the macOS `xattr` quarantine-clear command.
+
 ## [1.4.12] - 2026-06-24
 
 ### Fixed
