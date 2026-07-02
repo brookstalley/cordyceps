@@ -162,7 +162,12 @@ namespace Cordyceps
                     bool needsRestart;
                     lock (_lock)
                     {
-                        needsRestart = _myPort == 0;
+                        // Restart when we hold no port (normal reopen path) OR when we still
+                        // own a port whose cached server isn't running (StartServer caches a
+                        // failed instance while _portOwners/_myPort stay set — without this,
+                        // a dead server isn't restarted until a manual recompute).
+                        needsRestart = _myPort == 0
+                            || !(_servers.TryGetValue(_myPort, out var s) && s.IsRunning);
                     }
                     if (needsRestart && document != null)
                         document.ScheduleSolution(10, d => ExpireSolution(false));

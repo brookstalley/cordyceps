@@ -40,6 +40,7 @@
     <Compile Include="..\Cordyceps\Core\McpNaming.cs" Link="McpNaming.cs" />
     <Compile Include="..\Cordyceps\Core\PromptTemplate.cs" Link="PromptTemplate.cs" />
     <Compile Include="..\Cordyceps\Core\LogBuffer.cs" Link="LogBuffer.cs" />
+    <Compile Include="..\Cordyceps\Core\JsonRpcEnvelope.cs" Link="JsonRpcEnvelope.cs" />
   </ItemGroup>
 
 </Project>

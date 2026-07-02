@@ -69,8 +69,21 @@ and stable"). A six-agent survey found the dominant defect class was mutate-then
 
 **Verification:** 224 → 370 tests, all green; plugin + test builds 0 warnings; Critic per chunk
 (03: clean; 04: 1 warning resolved in 06, 1 note fixed in-chunk; 05: 2 notes — one fixed
-in-chunk, one closed in 06; 06: clean). Cumulative Critic at close-out. Live-Rhino halves
-recorded in VRF-007; queue burn-down (VRF-001..007) remains operator work.
+in-chunk, one closed in 06; 06: clean). Cumulative Critic at close-out (0 blocking, 2 warnings,
+11 notes — warnings resolved in the findings-fix commit; see below). Live-Rhino halves recorded
+in VRF-007 (Chunk 03 HIGH fixes) and VRF-008 (Chunk 04/05 sweep behaviors); queue burn-down
+(VRF-001..008) remains operator work.
+
+**Deliberate deviations recorded (cumulative-Critic notes):**
+- Chunk 06 plan said "swappable console sink" for DebugLog; shipped as a host-free `LogBuffer`
+  whose `Add()` returns the emission decision, with `RhinoApp.WriteLine` staying in the wrapper —
+  simpler seam, same testability outcome (no test needs to observe the sink itself).
+- `JsonTypeConverter` number→bool is deliberate C-truthiness (`GetDouble() != 0`, tested): JSON
+  numbers for bools get numeric semantics (0/nonzero), while STRING booleans use the strict
+  true/false/1/0/yes/no grammar that errors on garbage. Rationale: a number is unambiguous about
+  truthiness; a garbage string is not.
+- `select type='all'` opt-in went slightly beyond the plan text ("require ≥1 filter") — accepted,
+  documented in ActionInfo + CHANGELOG.
 
 ## 2026-06-24: gitflow + two-step release (prep/publish)
 

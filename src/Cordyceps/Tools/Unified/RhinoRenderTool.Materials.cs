@@ -380,6 +380,15 @@ namespace Cordyceps.Tools.Unified
                 // copy — setting PBR values on it never reached the material added to the doc,
                 // so roughness/metallic/emission/opacity were silently discarded.
                 var notApplied = new List<string>();
+                // Which PBR params did the caller actually provide? (Detected as differs-from-
+                // default: roughness=0.5, metallic=0, transparency=0 -> opacity, ior=1.0,
+                // emission non-empty.) Fallback paths report only these in notApplied instead of
+                // unconditionally listing every PBR param the caller may never have passed.
+                var providedPbrParams = new List<string>();
+                if (roughness != 0.5) providedPbrParams.Add("roughness");
+                if (metallic != 0) providedPbrParams.Add("metallic");
+                if (!string.IsNullOrEmpty(emission)) providedPbrParams.Add("emission");
+                if (transparency != 0 || ior != 1.0) providedPbrParams.Add("opacity");
                 RenderMaterial renderMaterial;
                 try
                 {
@@ -405,7 +414,7 @@ namespace Cordyceps.Tools.Unified
                     }
                     else
                     {
-                        notApplied.AddRange(new[] { "roughness", "metallic", "emission", "opacity" });
+                        notApplied.AddRange(providedPbrParams);
                         DebugLog.Warn("material_create: PhysicallyBased accessor unavailable after ToPhysicallyBased(); PBR params not applied");
                     }
 
@@ -416,7 +425,8 @@ namespace Cordyceps.Tools.Unified
                 catch (Exception ex)
                 {
                     DebugLog.Warn($"material_create: PBR conversion failed, falling back to basic material: {ex.Message}");
-                    notApplied.AddRange(new[] { "roughness", "metallic", "emission", "opacity" });
+                    notApplied.Clear(); // the emission entry may already be there; rebuild from provided params only
+                    notApplied.AddRange(providedPbrParams);
                     renderMaterial = null;
                 }
 

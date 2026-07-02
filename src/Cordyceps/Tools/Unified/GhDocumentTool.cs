@@ -400,14 +400,14 @@ namespace Cordyceps.Tools.Unified
             // The Grasshopper undo system interacts with UI thread in ways that
             // cause the HTTP response to be disposed before it can be sent.
             // Use snapshots (action='snapshot'/'revert') as an alternative.
-            return ToolHelpers.ErrorResponse("Undo is temporarily disabled due to threading issues. Use snapshots instead: gh_document(action='snapshot', name='...') to save state, gh_document(action='revert', name='...') to restore.");
+            return ToolHelpers.ErrorResponse("Undo is disabled (threading issues with the Grasshopper undo stack). Use snapshots instead: gh_document(action='snapshot', name='...') before changes, gh_document(action='revert', name='...') to restore.");
         }
 
         private string ActionRedo()
         {
             // TODO: Redo has threading issues with HTTP response handling.
             // See ActionUndo for details.
-            return ToolHelpers.ErrorResponse("Redo is temporarily disabled due to threading issues. Use snapshots instead.");
+            return ToolHelpers.ErrorResponse("Redo is disabled (threading issues with the Grasshopper undo stack). Use snapshots instead (action='snapshot'/'revert').");
         }
 
         private string ActionSnapshot(string name)

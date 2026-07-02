@@ -91,7 +91,7 @@
   `Core/InFlightRequests.cs` + the test project.
 
 - **[GHD-6M2J]** Bound or evict GhDocumentTool snapshot store (unbounded process-lifetime)
-  `effort: S · impact: S · area: gh-document · source: critic · added: 2026-06-21 · status: open · stage: ready`
+  `effort: S · impact: M · area: gh-document · source: critic · added: 2026-06-21 · status: open · stage: ready · reviewed: 2026-07-02`
 
   Stage-1 cumulative Critic NOTE (non-blocking, forward-looking, low priority). `GhDocumentTool._snapshots`
   is an unbounded process-lifetime store (pre-existing; Chunk 03 only changed the collection type for
@@ -100,6 +100,14 @@
   **Fix shape:** consider a bound (max snapshot count) or an eviction policy (e.g. LRU / oldest-first).
   Gated by explicit user action, so memory growth is operator-driven and low priority. Doc-audit: if a
   cap is introduced, check `gh_document` snapshot ActionInfo for the new limit semantics.
+
+  **[2026-07-02] Impact raised S→M (cumulative Critic, sustainability).** The 2026-07-02 janitor
+  branch materially increases pressure on this store: undo/redo are now advertised as DISABLED in
+  ActionInfo/server-instructions/README with explicit "use action='snapshot' before changes and
+  action='revert'" guidance, steering every agent mutation workflow into this unbounded
+  process-lifetime ConcurrentDictionary of full document serializations. Auto-timestamped names mean
+  repeated unnamed snapshots never overwrite. Fix shape unchanged (cap + oldest-first eviction — the
+  LogBuffer pattern is now in-tree — and/or a snapshot_delete action).
 
 - **[GHS-4D8M]** gh_script(set/configure) silently succeeds when it leaves a Script component unable to determine its language (Rhino LanguageSpec wipe — upstream)
   `effort: M · impact: M · area: gh-script · source: user · added: 2026-06-24 · status: open · stage: ready · reviewed: 2026-06-24 · related: GHS-7K2P · refs: issue #15, docs/upstream-rhino-scriptcomponent-languagespec.md`
@@ -245,7 +253,7 @@
   decide + document whether the oldest-8.x SDK pin is a deliberate min-version strategy.
 
 - **[CQ-9W2F]** Repo structure cosmetics: Tools/Unified flatten, Knowledge/Prompts naming, tracked .gha strategy
-  `effort: M · impact: S · area: code-quality · source: janitor · added: 2026-07-02 · status: open · stage: requirements`
+  `effort: M · impact: S · area: code-quality · source: janitor · added: 2026-07-02 · status: open · stage: requirements · reviewed: 2026-07-02`
 
   Surfaced by the 2026-07-02 janitor audit. Three cosmetic/structural nits to batch when convenient
   (low priority):
@@ -254,6 +262,18 @@
   - `Knowledge/Prompts` (markdown templates) vs `Prompts/` (registry code) is confusable naming.
   - `releases/Cordyceps.gha` is a tracked binary (56 blobs, 27.4 MiB across history, pack still
     compact) — consider LFS or GitHub-Release-asset-only at a future major cleanup.
+
+  **[2026-07-02] Scope extended (cumulative Critic, design reviewer)** — three code-quality dedup
+  follow-ups, same batch-when-convenient priority:
+  - (a) Migrate call sites from the `ToolHelpers` forwarders to `Core/ParseHelpers` +
+    `Core/ResponseHelpers` and delete the forwarders (or mark them internal/`[Obsolete]`) — dual
+    public API for identical behavior.
+  - (b) Extract the ~20-line bulk-result bookkeeping (notFound list + zero-effect check + error
+    construction) copy-pasted across 9 `rhino_scene`/`rhino_render` actions into a shared helper
+    (e.g. `BulkOutcome`), keeping per-action response field names.
+  - (c) Have `RhinoSceneTool.PlaceImage` `FindOrCreateLayer` delegate its resolution phase to
+    `Layers.ResolveLayerIndex` so the two ambiguity contracts (including the verbatim error string)
+    can't drift.
 
 ## Promoted
 

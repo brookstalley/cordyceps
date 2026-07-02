@@ -378,17 +378,22 @@ namespace Cordyceps.Tools.Unified
                     if (!ToolHelpers.TryParseGuidArray(ids, out var guids, out var error))
                         return ToolHelpers.ErrorResponse(error);
 
-                    if (!add)
-                        doc.Objects.UnselectAll();
-
+                    // Resolve every id BEFORE UnselectAll: if all ids are stale the call fails
+                    // without destroying the user's existing selection as a side effect.
+                    var resolved = new List<Guid>();
                     foreach (var guid in guids)
                     {
-                        var obj = doc.Objects.FindId(guid);
-                        if (obj == null)
-                        {
+                        if (doc.Objects.FindId(guid) != null)
+                            resolved.Add(guid);
+                        else
                             notFound.Add(guid.ToString());
-                            continue;
-                        }
+                    }
+
+                    if (!add && resolved.Count > 0)
+                        doc.Objects.UnselectAll();
+
+                    foreach (var guid in resolved)
+                    {
                         // Select() fails for locked/hidden objects — report, don't miscount.
                         if (doc.Objects.Select(guid))
                             selectedCount++;

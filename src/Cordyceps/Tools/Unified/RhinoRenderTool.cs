@@ -221,7 +221,12 @@ namespace Cordyceps.Tools.Unified
                     Description = "Create a PBR material from scratch",
                     Required = new[] { "name", "color" },
                     Optional = new[] { "roughness", "metallic", "transparency", "emission", "ior" },
-                    Example = "action='material_create', name='Red Metal', color='#FF0000', metallic=1"
+                    Example = "action='material_create', name='Red Metal', color='#FF0000', metallic=1",
+                    Tips = new[]
+                    {
+                        "PBR params that can't be applied through the SDK are reported in a 'notApplied' array (an invalid emission color lands there rather than erroring) — check it before trusting the material.",
+                        "If a material with the same name already exists, returns alreadyExists=true without modifying it."
+                    }
                 },
                 ["material_texture"] = new ActionInfo
                 {

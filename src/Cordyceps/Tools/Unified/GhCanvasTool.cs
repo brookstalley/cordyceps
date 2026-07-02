@@ -37,7 +37,8 @@ namespace Cordyceps.Tools.Unified
                         "Use 'Category/Name' format for ambiguous names (e.g., 'Curve/Circle')",
                         "Use GUID for guaranteed accuracy",
                         "Adding a slider: pass min/max/value/decimals to configure it in one call (e.g. type='slider', min=0, max=100, value=50, decimals=2). Non-slider components ignore these.",
-                        "Set min/max before value: value is clamped to the range. Same slider config as action='config'."
+                        "Set min/max before value: value is clamped to the range. Same slider config as action='config'.",
+                        "A slider value that doesn't parse as a number is an error — the component is NOT added (parity with action='config')."
                     }
                 },
                 ["delete"] = new ActionInfo
@@ -480,6 +481,19 @@ namespace Cordyceps.Tools.Unified
                         component.NickName = nickname;
 
                     component.Attributes.Pivot = new PointF((float)x, (float)y);
+
+                    // Validate slider configuration BEFORE adding to the document so an
+                    // unparseable value never leaves a half-configured slider on the canvas.
+                    // Parity with action='config': an invalid value is an explicit error,
+                    // never a silent success with the value ignored.
+                    SliderConfigPlan sliderPlan = null;
+                    if (component is GH_NumberSlider)
+                    {
+                        sliderPlan = SliderConfig.Plan(min, max, value, decimals);
+                        if (sliderPlan.ValueInvalid)
+                            return ToolHelpers.ErrorResponse($"Invalid number: {value}");
+                    }
+
                     doc.AddObject(component, false);
 
                     // Apply slider configuration when the caller passed min/max/value/decimals on add.
@@ -487,7 +501,7 @@ namespace Cordyceps.Tools.Unified
                     // with the 'config' action so add and config configure a slider identically.
                     if (component is GH_NumberSlider addedSlider)
                     {
-                        var plan = SliderConfig.Plan(min, max, value, decimals);
+                        var plan = sliderPlan;
                         if (plan.SetMinimum) addedSlider.Slider.Minimum = plan.Minimum;
                         if (plan.SetMaximum) addedSlider.Slider.Maximum = plan.Maximum;
                         if (plan.SetDecimals) addedSlider.Slider.DecimalPlaces = plan.Decimals;

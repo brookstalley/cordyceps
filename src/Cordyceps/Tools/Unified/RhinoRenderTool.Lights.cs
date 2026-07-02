@@ -203,8 +203,8 @@ namespace Cordyceps.Tools.Unified
                     return ToolHelpers.ErrorResponse($"Invalid spotAngle: {spotAngle} (must be > 0 and <= 90 degrees)");
 
                 bool enabledVal = false;
-                if (!string.IsNullOrEmpty(enabled) && !bool.TryParse(enabled, out enabledVal))
-                    return ToolHelpers.ErrorResponse($"Invalid enabled: {enabled} (expected 'true' or 'false')");
+                if (!string.IsNullOrEmpty(enabled) && !ToolHelpers.TryParseBool(enabled, out enabledVal))
+                    return ToolHelpers.ErrorResponse($"Invalid enabled: '{enabled}' (expected true/false, 1/0, or yes/no)");
 
                 bool anyProperty = !string.IsNullOrEmpty(location) || !string.IsNullOrEmpty(target) ||
                                    !string.IsNullOrEmpty(color) || !double.IsNaN(intensity) ||

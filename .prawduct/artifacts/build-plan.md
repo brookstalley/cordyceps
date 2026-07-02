@@ -19,6 +19,8 @@ Critic mode: chunk (per code chunk) + cumulative before PR.
   test-package version bumps, releases/.gha history strategy, Tools/Unified flatten.
 
 ## Confidence check
+Requirements Confidence: High — scope is the executed janitor survey's verified findings,
+approved by the user chunk-by-chunk; no unvalidated assumptions remain.
 1. Problem: organic growth left silent-success bugs in the tool layer, drifted agent-facing
    docs, and governance/verification debt — user wants "ultra reliable and stable".
 2. Success: every approved finding fixed with regression tests where host-free; docs match
@@ -138,6 +140,6 @@ Critic mode: chunk (per code chunk) + cumulative before PR.
 - [x] DebugLog: swappable console sink so ring buffer/level gating become testable (+tests).
 
 ### Close-out
-- [ ] Backlog: file deferred items; update GHC-2N8K (resolved if dedup lands via Chunk 04),
+- [x] Backlog: file deferred items; update GHC-2N8K (resolved if dedup lands via Chunk 04),
       note GHS-4D8M upstream filing still pending (user action).
 - [ ] Cumulative Critic; reflection; change-log entries per chunk (scope=janitor-2026-07-02).

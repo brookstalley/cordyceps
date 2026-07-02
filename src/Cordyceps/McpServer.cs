@@ -248,7 +248,7 @@ namespace Cordyceps
                 catch (Exception ex)
                 {
                     if (!ct.IsCancellationRequested)
-                        Core.DebugLog.WriteLine($"Listener error: {ex.Message}", "ERROR", 1);
+                        Core.DebugLog.WriteLine($"Listener error: {ex.Message}", "ERROR", 0);
                 }
             }
         }
@@ -306,7 +306,7 @@ namespace Cordyceps
             }
             catch (Exception ex)
             {
-                Core.DebugLog.WriteLine($"Request error: {ex.Message}", "ERROR", 1);
+                Core.DebugLog.WriteLine($"Request error: {ex.Message}", "ERROR", 0);
                 try
                 {
                     response.StatusCode = 500;
@@ -457,20 +457,14 @@ namespace Cordyceps
                 var root = doc.RootElement;
 
                 var method = root.TryGetProperty("method", out var m) ? m.GetString() : null;
-                var hasId = root.TryGetProperty("id", out var id);
                 var paramsEl = root.TryGetProperty("params", out var p) ? p : default;
 
-                // JSON-RPC 2.0: Notifications (ABSENT id) MUST NOT receive a response.
-                // An explicit "id": null is NOT a notification — it still gets a response
-                // (with "id": null echoed back).
-                bool isNotification = !hasId || id.ValueKind == JsonValueKind.Undefined;
-
-                // Compute the response id BEFORE dispatch: echoing is lossless (Clone preserves
-                // long/fractional/string/null exactly as sent), and doing it up front means a
-                // malformed id can never destroy the response after the tool's side effects ran.
-                // A boxed JsonElement of ValueKind.Null serializes as null but is not a null
-                // reference, so WhenWritingNull doesn't strip the "id" property.
-                JsonElement? responseId = isNotification ? (JsonElement?)null : id.Clone();
+                // Notification detection and lossless id echo live in Core.JsonRpcEnvelope
+                // (host-free, unit-tested): notifications are ABSENT-id only ("id": null still
+                // gets a response), and the id is computed BEFORE dispatch so a malformed id can
+                // never destroy the response after the tool's side effects ran.
+                bool isNotification = Core.JsonRpcEnvelope.IsNotification(root);
+                JsonElement? responseId = Core.JsonRpcEnvelope.EchoId(root);
 
                 object result = null;
                 string errorMessage = null;
@@ -499,31 +493,11 @@ namespace Cordyceps
                 response.ContentType = "application/json";
                 response.StatusCode = 200;
 
-                var responseObj = new Dictionary<string, object> { ["jsonrpc"] = "2.0" };
-
-                // Echo the request id losslessly (required for non-notification responses),
-                // including an explicit "id": null when the client sent null.
-                if (responseId.HasValue)
-                    responseObj["id"] = responseId.Value;
-
-                if (errorMessage != null)
-                {
-                    responseObj["error"] = new Dictionary<string, object>
-                    {
-                        ["code"] = errorCode,
-                        ["message"] = errorMessage
-                    };
-                }
-                else
-                {
-                    responseObj["result"] = result;
-                }
-
-                var responseJson = JsonSerializer.Serialize(responseObj, new JsonSerializerOptions
-                {
-                    WriteIndented = false,
-                    DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull
-                });
+                // Envelope construction + serialization live in Core.JsonRpcEnvelope
+                // (host-free, unit-tested): lossless id echo, "id": null survival under
+                // WhenWritingNull, error-vs-result shape.
+                var responseObj = Core.JsonRpcEnvelope.Build(responseId, result, errorMessage, errorCode);
+                var responseJson = Core.JsonRpcEnvelope.Serialize(responseObj);
 
                 Core.DebugLog.WriteLine($"Responding: {responseJson.Substring(0, Math.Min(LOG_TRUNCATE_LENGTH, responseJson.Length))}...", "INFO", 1);
 
@@ -534,7 +508,7 @@ namespace Cordyceps
             }
             catch (Exception ex)
             {
-                Core.DebugLog.WriteLine($"JSON-RPC error: {ex.Message}", "ERROR", 1);
+                Core.DebugLog.WriteLine($"JSON-RPC error: {ex.Message}", "ERROR", 0);
                 response.StatusCode = 400;
             }
             finally
@@ -713,7 +687,7 @@ Resources: gh://docs/getting-started, gh://docs/data-trees, gh://docs/common-err
             {
                 // Log the full exception (type + stack) operator-side for root-causing; the client
                 // payload stays message-only via FormatExceptionResult.
-                Core.DebugLog.WriteLine($"Tool '{name}' threw: {ex}", "ERROR", 1);
+                Core.DebugLog.WriteLine($"Tool '{name}' threw: {ex}", "ERROR", 0);
                 var errorText = Core.McpResultFormatter.FormatExceptionResult(ex);
                 return new
                 {
