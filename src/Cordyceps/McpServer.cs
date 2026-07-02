@@ -45,8 +45,9 @@ namespace Cordyceps
 
         /// <summary>
         /// Lifecycle single source of truth (MCP-9F3Q). All lifecycle reads and writes go
-        /// through this field; <see cref="IsRunning"/> is derived from it. Written only on the
-        /// UI thread (Start/Stop are host-component calls), read from worker threads.
+        /// through this field; <see cref="IsRunning"/> is derived from it. Written on the UI
+        /// thread (Start, and Stop's synchronous half) and by Stop()'s background teardown task
+        /// (the final Stopped transition); read from worker threads — hence volatile.
         /// </summary>
         private volatile Core.ServerState _state = Core.ServerState.Stopped;
 
@@ -143,6 +144,7 @@ namespace Cordyceps
                 _cts = null;
                 _listener?.Close();
                 _listener = null;
+                _context = null; // Failed carries the same no-live-plumbing invariant as Stopped
                 _state = Core.ServerState.Failed;
             }
         }
@@ -159,7 +161,7 @@ namespace Cordyceps
             if (!Core.ServerStateTransitions.CanStop(_state)) return;
 
             _state = Core.ServerState.Stopping;
-            Core.DebugLog.WriteLine("Stopping MCP server...", "INFO", 1);
+            Core.DebugLog.WriteLine($"Stopping MCP server (port {_port})...", "INFO", 1);
 
             try
             {
@@ -200,15 +202,23 @@ namespace Cordyceps
                         Core.DebugLog.WriteLine($"Shutdown exception (expected): {ex.InnerException?.Message}", "DEBUG", 1);
                     }
 
-                    if (!_inFlight.DrainWithin(TimeSpan.FromSeconds(SHUTDOWN_TIMEOUT_SECONDS)))
-                        Core.DebugLog.WriteLine($"Shutdown: {_inFlight.Count} request(s) still in flight after {SHUTDOWN_TIMEOUT_SECONDS}s; detaching", "WARN", 1);
+                    if (_inFlight.DrainWithin(TimeSpan.FromSeconds(SHUTDOWN_TIMEOUT_SECONDS)))
+                        Core.DebugLog.WriteLine($"Shutdown (port {_port}): all in-flight requests drained", "DEBUG", 1);
+                    else
+                        Core.DebugLog.WriteLine($"Shutdown (port {_port}): {_inFlight.Count} request(s) still in flight after {SHUTDOWN_TIMEOUT_SECONDS}s; detaching", "WARN", 1);
+                }
+                catch (Exception ex) // prawduct:allow prawduct/broad-except -- background teardown: an unexpected failure here would otherwise vanish as an unobserved task exception; log it, then let finally release state regardless
+                {
+                    Core.DebugLog.WriteLine($"Shutdown (port {_port}): background teardown error: {ex.Message}", "ERROR", 0);
                 }
                 finally
                 {
-                    cts?.Dispose();
+                    // State transition BEFORE disposal: if Dispose ever threw, the instance
+                    // must not be left stuck in Stopping with the context still pinned.
                     _context = null;
                     _state = Core.ServerState.Stopped;
-                    Core.DebugLog.WriteLine("MCP server stopped", "INFO", 0);
+                    Core.DebugLog.WriteLine($"MCP server (port {_port}) stopped", "INFO", 0);
+                    cts?.Dispose();
                 }
             });
         }

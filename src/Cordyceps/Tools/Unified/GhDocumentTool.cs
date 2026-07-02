@@ -440,6 +440,12 @@ namespace Cordyceps.Tools.Unified
 
                     var evicted = _snapshots.Save(snapshotName, data);
 
+                    // Eviction destroys a full document backup; the agent sees it in the
+                    // response's `evicted` field, but log it too so an operator debugging a
+                    // later "Snapshot not found" has a trail via gh_inspect(action='log').
+                    if (evicted.Count > 0)
+                        DebugLog.WriteLine($"Snapshot cap ({_snapshots.MaxSnapshots}) reached: evicted {string.Join(", ", evicted)}", "INFO", 0);
+
                     return JsonConvert.SerializeObject(new
                     {
                         success = true,

@@ -1,9 +1,9 @@
-<!-- Scope-named plan per the gitflow plan lifecycle: the janitor plan
-     (artifacts/build-plan.md) is complete but merge-pending, so it stays the
-     `active_build_plan` until its PR merges. Repoint
-     `active_build_plan: artifacts/build-plan-reliability.md` in
-     project-state.yaml when the janitor PR merges (pr merge-flow step 8) and
-     BEFORE starting Chunk 01. -->
+<!-- Scope-named plan per the gitflow plan lifecycle. The janitor PR (#25)
+     merged to develop on 2026-07-02 and `active_build_plan` now points here
+     (project-state.yaml). Status checkboxes below are a DERIVED view
+     (views_enabled: true) — they flip via `prawduct-hook regen-views` from
+     change-log `status=shipped` tags at merge/release time, never by hand;
+     in-flight progress lives in the Context line. -->
 ---
 artifact: build-plan
 version: 2
@@ -14,8 +14,8 @@ last_validated: 2026-07-02
 
 # Build Plan — reliability follow-through
 
-Branch: `feat/reliability-follow-through` (stacked on `chore/janitor-2026-07-02`;
-rebase onto `develop` once the janitor PR merges).
+Branch: `feat/reliability-follow-through` (originally stacked on
+`chore/janitor-2026-07-02`; rebased onto `develop` after PR #25 merged).
 Scope: the six backlog items promoted in the 2026-07-02 triage — MCP server
 lifecycle (MCP-5T7W, MCP-9F3Q, MCP-3D8V), snapshot-store bound (GHD-6M2J),
 Rhino undo records (RSC-6K1W), and the stop-encouraging-renames guidance audit
@@ -62,9 +62,12 @@ sufficient).
 - [ ] Chunk 04: Bound the snapshot store + snapshot_delete
 - [ ] Chunk 05: Rhino undo records around mutating actions
 - [ ] Chunk 06: Rename-guidance audit — annotate via groups
-Context: Plan authored 2026-07-02 (triage session). No chunks started. Blocked on
-the janitor PR (chore/janitor-2026-07-02 → develop) merging first; then rebase,
-repoint active_build_plan, and start Chunk 01.
+Context: All six chunks built and committed 2026-07-02 (chunks 01-05 Critic-clean
+per chunk; chunk 06 is Type: cumulative-final — its cumulative review found 0
+blocking plus warnings/notes, resolved in the close-out commit). Tagged change-log
+entries carry `scope=reliability`; checkboxes flip at merge via regen-views.
+Remaining: verify-resolutions chain over the close-out, PR to develop, and
+VRF-009/VRF-010 operator burn-down in live Rhino.
 
 ## Scaffolding
 

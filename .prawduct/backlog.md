@@ -146,6 +146,18 @@
     `Layers.ResolveLayerIndex` so the two ambiguity contracts (including the verbatim error string)
     can't drift.
 
+- **[MCP-7D2N]** Fold `_disposed` into the ServerState model or guard Start() after Dispose()
+  `effort: S · impact: S · area: mcp-server · source: critic · added: 2026-07-02 · status: open · stage: ready · related: MCP-9F3Q, MCP-3D8V`
+
+  From the reliability cumulative Critic (2026-07-02, NOTE severity): `McpServer._disposed` remains
+  an independent bool the `ServerState` enum never consults — a disposed instance ends in `Stopped`,
+  where `CanStart` returns true, so `Start()` on a disposed server would proceed. Pre-existing and
+  unreachable via `CordycepsComponent` (stopped instances are removed from `_servers` and restart
+  paths construct fresh instances), so no user-reachable invalid state today.
+
+  **Fix shape:** either add a `Disposed` terminal state to `Core/ServerState` (`CanStart` false) or
+  guard `Start()` on `_disposed`; add a transition-table test either way.
+
 ## Promoted
 
 <!-- Items currently being addressed in an active build plan. /backlog pick

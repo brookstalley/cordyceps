@@ -232,6 +232,11 @@ drain/teardown bullets of VRF-002 (the lifecycle otherwise unchanged).
   open undo record afterward (subsequent manual edits undo normally, one at a time).
 - **script action untouched:** `rhino_scene(action='script', ...)` undo behavior matches the
   native command's own record (not wrapped by Cordyceps).
+- **Settings/environment undo actually records:** change render settings or the environment
+  (`rhino_render(action='settings'/'env_set')`) and press Ctrl-Z — confirm Rhino's undo stack
+  actually records these (the wrapper is in place, but whether RenderSettings/Sun/NamedView
+  changes participate in document undo is unverified). If Rhino does NOT record them, soften
+  the RenderingGuide "Undo Behavior" section and the rhino_render tool note accordingly.
 
 ## VRF-006 — gitflow-release-refactor — `release.sh prep`/`publish` end-to-end
 

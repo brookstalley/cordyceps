@@ -59,6 +59,10 @@ capability — group_create/rename/color already serve annotation. Kept: panel n
 (annotation convention), script-param rename docs (different concern), McpTestingGuide
 capability mention. CHANGELOG under [Unreleased].
 
+**[2026-07-02] Cumulative-Critic close-out:** CommonErrorsGuide find-by-nickname row —
+initially skipped without a recorded descope (Critic warning) — reframed to lead with
+list/typeFilter/group and note that find matches default nicknames.
+
 ## 2026-07-02: Rhino undo records around mutating actions (reliability chunk 05)
 
 <!-- prawduct: type=feature | chunks=05 | scope=reliability -->

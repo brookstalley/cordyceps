@@ -183,7 +183,7 @@ namespace Cordyceps.Tools.Unified
                 "Object IDs are GUIDs that can be used across calls",
                 "Use 'layers' to see valid layer names for filtering",
                 "Bulk id actions (delete, hide, show, set_layer, set_name, set_color) report stale ids in a 'notFound' array and return success:false with an error when no requested object was affected",
-                "Mutating actions run inside one undo record ('Cordyceps <action>'), so a single Ctrl-Z in Rhino reverts the whole action — including bulk operations"
+                "Document-mutating actions (objects, layers, place_image) run inside one undo record ('Cordyceps <action>'), so a single Ctrl-Z in Rhino reverts the whole action — including bulk operations. Exceptions: action='script' (native Rhino commands create their own undo records) and select/deselect (selection is not undoable)"
             }
         };
 
