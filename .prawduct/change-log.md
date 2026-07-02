@@ -39,6 +39,26 @@
      derived view. Don't hand-edit them — add/update a tagged entry here and
      run `prawduct-hook regen-views`. -->
 
+## 2026-07-02: stop encouraging component renames — annotate via groups (reliability chunk 06)
+
+<!-- prawduct: type=feature | chunks=06 | scope=reliability -->
+
+**Why:** [GHC-8V3T, user decision 2026-07-02] Renamed components are hard to find on the canvas
+and renaming is not the Grasshopper convention (labeled groups, panels, scribbles are). Cordyceps
+guidance actively encouraged nicknaming while building. The rename capability stays (explicit
+user/agent use); only the propensity changes.
+
+**What:** (a) Guidance surfaces rewritten: server instructions gain an annotate-with-groups key
+point; BestPracticesGuide #2 flipped from "Name components" to "Annotate with labeled groups,
+not renames"; GettingStartedGuide workflow example de-nicknamed; CreateParametricGeometry prompt
+replaces its rename step with group_create. (b) Verified no code path auto-applies nicknames
+unprompted (add applies only an explicit nickname; script-param and group naming are functional;
+panel default annotation unchanged). (c) Discouragement notes on rename/add ActionInfo; find tip
+clarifies default nicknames match so renaming isn't needed for findability. (d) No new
+capability — group_create/rename/color already serve annotation. Kept: panel nicknames
+(annotation convention), script-param rename docs (different concern), McpTestingGuide
+capability mention. CHANGELOG under [Unreleased].
+
 ## 2026-07-02: Rhino undo records around mutating actions (reliability chunk 05)
 
 <!-- prawduct: type=feature | chunks=05 | scope=reliability -->

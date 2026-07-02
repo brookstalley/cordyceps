@@ -621,6 +621,7 @@ Key points:
 - Disable solver: gh_document(action='solver', enabled=false)
 - Ambiguous names: use GUID or Category/Name format
 - Spacing: 150px horizontal, 70px vertical
+- Annotate with labeled groups (group_create with name/color), panels, or scribbles — do NOT rename components while building; renamed components are hard to find on the canvas and it is not the Grasshopper convention. Track components by the returned id
 - CRITICAL: Inside a cluster editor, NEVER advise the user to press F5 or use Grasshopper's native recompute. It will destroy cluster inputs. Use gh_document(action='recompute') instead — it is cluster-safe.
 
 VERIFY PERIODICALLY: After completing a section of work, run gh_inspect(action='status')
