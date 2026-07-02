@@ -41,7 +41,7 @@
 
 ## 2026-07-02: janitor full reliability audit — hygiene, doc contract, HIGH bugs, MEDIUM sweeps, testability
 
-<!-- prawduct: type=maintenance | chunks=01,02,03,04,05,06 | scope=janitor-2026-07-02 | status=built -->
+<!-- prawduct: type=maintenance | chunks=01,02,03,04,05,06 | scope=janitor-2026-07-02 | status=merged -->
 
 **Why:** The user requested a thorough audit ("quality, bugs, consistency, gaps — ultra reliable
 and stable"). A six-agent survey found the dominant defect class was mutate-then-report-success
