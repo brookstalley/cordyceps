@@ -39,6 +39,24 @@
      derived view. Don't hand-edit them — add/update a tagged entry here and
      run `prawduct-hook regen-views`. -->
 
+## 2026-07-02: bounded snapshot store + snapshot_delete (reliability chunk 04)
+
+<!-- prawduct: type=feature | chunks=04 | scope=reliability -->
+
+**Why:** [GHD-6M2J] `GhDocumentTool._snapshots` was an unbounded process-lifetime dictionary of
+full document serializations — and with undo/redo formally cut, every documented mutation
+workflow ("snapshot before changes, revert to restore") funnels into it, so memory grew for the
+life of the Rhino session.
+
+**What:** New host-free `Core/SnapshotStore.cs` (LogBuffer pattern): cap 20, oldest-first
+eviction, same-name re-save replaces in place (refreshing its age) without eviction, oldest-first
+listing with `createdAtUtc`, `Remove` — linked into the test project with 7 tests including a
+concurrent hammer. `gh_document` swapped onto it; new `snapshot_delete` action (missing name is
+an error); `snapshot` response gains `maxSnapshots` + `evicted`. Doc-audit: ActionInfo
+(snapshot/snapshots/snapshot_delete), server instructions, README, CHANGELOG (also added the
+missed user-facing CHANGELOG entry for chunk 03's teardown change); stale undo/redo `TODO`
+comments retired (PR #25 reviewer note). 406/406 green.
+
 ## 2026-07-02: Stop() drain moved off the UI thread (reliability chunk 03)
 
 <!-- prawduct: type=bugfix | chunks=03 | scope=reliability -->
