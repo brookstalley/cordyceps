@@ -193,16 +193,29 @@ namespace Cordyceps.Tools.Unified
                 List<string> idList = BuildIdList(id, ids, out error);
                 if (idList == null) return ToolHelpers.ErrorResponse(error);
 
-                int changed = 0;
+                // Per-id results (mirrors ActionDelete): unresolvable ids and components that
+                // don't support preview are reported as failures, not silently skipped.
+                var results = new List<object>();
+                int changed = 0, failed = 0;
                 foreach (var compId in idList)
                 {
-                    if (ToolHelpers.TryGetUnprotectedComponent(_context, compId, out var comp, out _))
+                    if (!ToolHelpers.TryGetUnprotectedComponent(_context, compId, out var comp, out var compError))
                     {
-                        if (comp is IGH_PreviewObject preview)
-                        {
-                            preview.Hidden = !enabled;
-                            changed++;
-                        }
+                        results.Add(new { id = compId, success = false, error = compError });
+                        failed++;
+                        continue;
+                    }
+
+                    if (comp is IGH_PreviewObject preview)
+                    {
+                        preview.Hidden = !enabled;
+                        changed++;
+                        results.Add(new { id = compId, success = true });
+                    }
+                    else
+                    {
+                        results.Add(new { id = compId, success = false, error = $"Component '{comp.NickName}' ({comp.GetType().Name}) does not support preview" });
+                        failed++;
                     }
                 }
 
@@ -210,9 +223,12 @@ namespace Cordyceps.Tools.Unified
 
                 return JsonConvert.SerializeObject(new
                 {
-                    success = true,
+                    success = failed == 0,
                     previewEnabled = enabled,
-                    changedCount = changed
+                    changedCount = changed,
+                    failedCount = failed,
+                    results,
+                    error = failed > 0 ? $"{failed} of {idList.Count} id(s) failed — see results" : null
                 });
             });
         }
@@ -227,18 +243,31 @@ namespace Cordyceps.Tools.Unified
                 List<string> idList = BuildIdList(id, ids, out error);
                 if (idList == null) return ToolHelpers.ErrorResponse(error);
 
-                int changed = 0;
+                // Per-id results (mirrors ActionDelete): unresolvable ids and components that
+                // can't be enabled/disabled are reported as failures, not silently skipped.
+                var results = new List<object>();
+                int changed = 0, failed = 0;
                 IGH_DocumentObject lastComp = null;
                 foreach (var compId in idList)
                 {
-                    if (ToolHelpers.TryGetUnprotectedComponent(_context, compId, out var comp, out _))
+                    if (!ToolHelpers.TryGetUnprotectedComponent(_context, compId, out var comp, out var compError))
                     {
-                        if (comp is IGH_ActiveObject active)
-                        {
-                            active.Locked = !enabled;
-                            changed++;
-                            lastComp = comp;
-                        }
+                        results.Add(new { id = compId, success = false, error = compError });
+                        failed++;
+                        continue;
+                    }
+
+                    if (comp is IGH_ActiveObject active)
+                    {
+                        active.Locked = !enabled;
+                        changed++;
+                        lastComp = comp;
+                        results.Add(new { id = compId, success = true });
+                    }
+                    else
+                    {
+                        results.Add(new { id = compId, success = false, error = $"Component '{comp.NickName}' ({comp.GetType().Name}) does not support enable/disable" });
+                        failed++;
                     }
                 }
 
@@ -247,9 +276,12 @@ namespace Cordyceps.Tools.Unified
 
                 return JsonConvert.SerializeObject(new
                 {
-                    success = true,
+                    success = failed == 0,
                     enabled,
-                    changedCount = changed
+                    changedCount = changed,
+                    failedCount = failed,
+                    results,
+                    error = failed > 0 ? $"{failed} of {idList.Count} id(s) failed — see results" : null
                 });
             });
         }

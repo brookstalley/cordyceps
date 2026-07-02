@@ -8,7 +8,6 @@ using Grasshopper;
 using Grasshopper.Kernel;
 using Grasshopper.Kernel.Parameters;
 using Newtonsoft.Json;
-using Newtonsoft.Json.Linq;
 
 namespace Cordyceps.Tools.Unified
 {
@@ -57,6 +56,7 @@ namespace Cordyceps.Tools.Unified
                     Tips = new[] {
                         "inputs: [{name, type, access}]", "outputs: [{name, type}]", "types: int, double, bool, string, Point3d, etc.",
                         "Partial update: omit a side (don't pass inputs/outputs) to leave it untouched; pass [] to clear that side. Passing inputs without outputs no longer wipes outputs.",
+                        "Malformed inputs/outputs JSON is rejected with an error before anything changes — it is never treated as an empty array",
                         "Params matching by name keep their wires (like 'set'); renamed/removed params lose connections, reported in lostConnections — pass it to gh_wire(action='connect') to restore",
                         "Script language is preserved automatically; start code with '#! python 3' or '// #! csharp' to set it explicitly",
                         "A bare unified 'Script' component (no language picked) returns a languageWarning until code starts with a directive — add '#! python 3' or '// #! csharp'"
@@ -254,8 +254,12 @@ namespace Cordyceps.Tools.Unified
 
                 // Partial-update contract: a side is "provided" only when its JSON arg is non-empty.
                 // Omitted (null/"") => leave that side (and its wires) untouched; "[]" => clear it.
-                var inputDefs = string.IsNullOrEmpty(inputs) ? null : ParseParamDefs(inputs);
-                var outputDefs = string.IsNullOrEmpty(outputs) ? null : ParseParamDefs(outputs);
+                // Malformed JSON is a hard error BEFORE any mutation — it must never be read as
+                // "empty array", which would wipe that side's params and wires under success:true.
+                if (!ScriptParamDefs.TryParse(inputs, out var inputDefs, out var inputsError))
+                    return ToolHelpers.ErrorResponse($"Invalid inputs JSON: {inputsError}");
+                if (!ScriptParamDefs.TryParse(outputs, out var outputDefs, out var outputsError))
+                    return ToolHelpers.ErrorResponse($"Invalid outputs JSON: {outputsError}");
 
                 bool configured = false;
                 string message = "";
@@ -721,27 +725,6 @@ namespace Cordyceps.Tools.Unified
         private string PreserveLanguageDirective(IGH_DocumentObject component, string code)
             => ScriptDirective.Preserve(TryGetScriptSource(component), code);
 
-        private List<ParamDef> ParseParamDefs(string json)
-        {
-            if (string.IsNullOrEmpty(json)) return new List<ParamDef>();
-            try
-            {
-                return JArray.Parse(json)
-                    .Select(item => new ParamDef
-                    {
-                        Name = item["name"]?.ToString() ?? "param",
-                        Type = item["type"]?.ToString() ?? "object",
-                        Access = item["access"]?.ToString() ?? ""
-                    })
-                    .ToList();
-            }
-            catch (Exception ex)
-            {
-                DebugLog.Warn($"ParseParamDefs: invalid param-def JSON ignored ({ex.Message})");
-                return new List<ParamDef>();
-            }
-        }
-
         /// <summary>
         /// Configure-path parameter sync. Reshapes only the <em>provided</em> sides (a null def list
         /// means "side omitted — leave it and its wires untouched"; an empty list means "clear that
@@ -755,7 +738,7 @@ namespace Cordyceps.Tools.Unified
         /// after <c>SetSource</c>, which can reset type hints.</para>
         /// </summary>
         private void SyncParamsForConfigure(IGH_Component ghComponent, IGH_VariableParameterComponent varParamComp,
-            List<ParamDef> inputDefs, List<ParamDef> outputDefs, out List<object> lostConnections)
+            List<ScriptParamDef> inputDefs, List<ScriptParamDef> outputDefs, out List<object> lostConnections)
         {
             lostConnections = new List<object>();
 
@@ -785,7 +768,7 @@ namespace Cordyceps.Tools.Unified
         /// in def order, so def[i] maps to input[i] / output[i+1] (index 0 is the built-in 'out').
         /// Called after <c>SetSource</c>, which can reset type hints.
         /// </summary>
-        private void ApplyParamHints(IGH_Component ghComponent, List<ParamDef> inputDefs, List<ParamDef> outputDefs)
+        private void ApplyParamHints(IGH_Component ghComponent, List<ScriptParamDef> inputDefs, List<ScriptParamDef> outputDefs)
         {
             if (inputDefs != null)
             {
@@ -936,13 +919,6 @@ namespace Cordyceps.Tools.Unified
                 "geometry" or "geom" => typeof(Rhino.Geometry.GeometryBase),
                 _ => null
             };
-        }
-
-        private class ParamDef
-        {
-            public string Name { get; set; }
-            public string Type { get; set; }
-            public string Access { get; set; }
         }
 
         /// <summary>

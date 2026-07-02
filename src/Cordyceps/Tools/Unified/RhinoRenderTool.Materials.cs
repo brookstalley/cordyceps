@@ -374,11 +374,17 @@ namespace Cordyceps.Tools.Unified
                     IndexOfRefraction = ior
                 };
 
-                var renderMaterial = RenderMaterial.CreateBasicMaterial(basicMaterial, rhinoDoc);
-
+                // Set the PBR parameters on the Rhino.DocObjects.Material BEFORE creating the
+                // document RenderMaterial. The previous approach called
+                // RenderMaterial.ConvertToPhysicallyBased(), which returns a DETACHED converted
+                // copy — setting PBR values on it never reached the material added to the doc,
+                // so roughness/metallic/emission/opacity were silently discarded.
+                var notApplied = new List<string>();
+                RenderMaterial renderMaterial;
                 try
                 {
-                    var pbr = renderMaterial.ConvertToPhysicallyBased(RenderTexture.TextureGeneration.Allow);
+                    basicMaterial.ToPhysicallyBased(); // in-place conversion (RhinoCommon 7.0+)
+                    var pbr = basicMaterial.PhysicallyBased;
                     if (pbr != null)
                     {
                         pbr.BaseColor = Color4f.FromArgb(1, baseColor.R / 255f, baseColor.G / 255f, baseColor.B / 255f);
@@ -387,15 +393,39 @@ namespace Cordyceps.Tools.Unified
                         pbr.Opacity = 1.0 - transparency;
                         pbr.OpacityIOR = ior;
 
-                        if (!string.IsNullOrEmpty(emission) && ToolHelpers.TryParseColor(emission, out var emissionColor))
-                            pbr.Emission = Color4f.FromArgb(1, emissionColor.R / 255f, emissionColor.G / 255f, emissionColor.B / 255f);
+                        if (!string.IsNullOrEmpty(emission))
+                        {
+                            if (ToolHelpers.TryParseColor(emission, out var emissionColor))
+                                pbr.Emission = Color4f.FromArgb(1, emissionColor.R / 255f, emissionColor.G / 255f, emissionColor.B / 255f);
+                            else
+                                notApplied.Add($"emission (invalid color: '{emission}')");
+                        }
+
+                        pbr.SynchronizeLegacyMaterial();
                     }
+                    else
+                    {
+                        notApplied.AddRange(new[] { "roughness", "metallic", "emission", "opacity" });
+                        DebugLog.Warn("material_create: PhysicallyBased accessor unavailable after ToPhysicallyBased(); PBR params not applied");
+                    }
+
+                    // FromMaterial creates a Physically Based render material when
+                    // material.IsPhysicallyBased is true, carrying the PBR values into the doc.
+                    renderMaterial = RenderMaterial.FromMaterial(basicMaterial, rhinoDoc);
                 }
                 catch (Exception ex)
                 {
-                    DebugLog.Debug($"PBR conversion failed (using basic material): {ex.Message}");
+                    DebugLog.Warn($"material_create: PBR conversion failed, falling back to basic material: {ex.Message}");
+                    notApplied.AddRange(new[] { "roughness", "metallic", "emission", "opacity" });
+                    renderMaterial = null;
                 }
 
+                if (renderMaterial == null)
+                    renderMaterial = RenderMaterial.CreateBasicMaterial(basicMaterial, rhinoDoc);
+                if (renderMaterial == null)
+                    return ToolHelpers.ErrorResponse($"Failed to create render material '{name}'");
+
+                renderMaterial.Name = name;
                 rhinoDoc.RenderMaterials.Add(renderMaterial);
 
                 return JsonConvert.SerializeObject(new
@@ -408,7 +438,11 @@ namespace Cordyceps.Tools.Unified
                     roughness,
                     metallic,
                     transparency,
-                    ior
+                    ior,
+                    notApplied = notApplied.Count > 0 ? notApplied : null,
+                    note = notApplied.Count > 0
+                        ? "Some PBR parameters could not be applied through the SDK; the listed values were dropped."
+                        : null
                 });
             });
         }

@@ -120,6 +120,37 @@ applying type hints + access — only exists with a running Grasshopper document
   with a `reconnectHint`, and that hint is directly usable with `gh_wire(action='connect')` to restore it.
 - **Response shape matches `set`:** `lostConnections` + `reconnectHint` look identical to what `set` returns.
 
+## VRF-007 — janitor-2026-07-02 Chunk 03 — six HIGH bug fixes (host-bound halves)
+
+**Status:** pending
+**Added:** 2026-07-02 (janitor-2026-07-02, Chunk 03)
+**Where to verify:** Rhino 8 + Grasshopper with the Cordyceps component placed and an MCP client connected.
+
+**Why this needs a human:** five of the six fixes are document/host-bound (Grasshopper lifecycle
+events, LayerTable/RenderMaterial/PictureFrame behavior) and cannot run off the UI thread in a unit
+test. Only the `ScriptParamDefs.TryParse` decision (BUG 2) is host-free and CI-tested.
+
+**Verify:**
+- **Server survives document close/reopen (BUG 1):** place the component, close the `.gh` file,
+  reopen the same file. Expected: no "port in use by another Cordyceps component" error — the
+  server restarts cleanly on the same port. Also tab-switch between two open GH documents and back;
+  the server should stop on unload and restart on return.
+- **configure rejects malformed JSON before mutating (BUG 2, host glue):** wire a script component,
+  then `gh_script(action='configure', inputs='[{"name":"x"')` (broken JSON). Expected:
+  `success:false, "Invalid inputs JSON: …"` and ALL existing params/wires intact.
+- **preview/enable per-id errors (BUG 3):** `gh_canvas(action='preview', id='<bogus-guid>',
+  enabled=false)`. Expected: `success:false` with a per-id error entry, not `success:true`.
+- **layer_delete of the current layer (BUG 4):** make a layer current, add objects, delete it with
+  `deleteObjects=false`. Expected: objects moved to a non-descendant destination (echoed as
+  `movedToLayer`), current layer reassigned, layer actually deleted. Also: deleting the only layer
+  errors with no side effects.
+- **material_create applies PBR (BUG 5):** `material_create name='Chrome' color='#CCCCCC'
+  metallic=1 roughness=0.05`, then `material_list`. Expected: the listed material shows
+  metallic≈1, roughness≈0.05 (previously silently dropped); render preview looks metallic.
+- **place_image failed replace keeps the old image (BUG 6):** `place_image` once, then
+  `place_image replace=true` with a corrupt/unreadable image path. Expected: error returned AND the
+  original picture frame still present.
+
 ## VRF-006 — gitflow-release-refactor — `release.sh prep`/`publish` end-to-end
 
 **Status:** pending

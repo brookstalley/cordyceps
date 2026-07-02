@@ -17,7 +17,8 @@ namespace Cordyceps.Tools.Unified
         /// flat on a world-XY-parallel plane at (x,y,z), sized width × height in model units, with
         /// an optional in-plane rotation about Z (degrees). When <paramref name="replace"/> is true
         /// and a <paramref name="name"/> is given, prior objects with that exact name on the target
-        /// layer are deleted first, so the call is idempotent for parametric re-placement.
+        /// layer are deleted (only after the new add succeeds), so the call is idempotent for
+        /// parametric re-placement without risking loss of the old picture on a failed add.
         /// </summary>
         private string ActionPlaceImage(
             string path, double x, double y, double z, double width, double height, double rotation,
@@ -42,7 +43,20 @@ namespace Cordyceps.Tools.Unified
                         return ToolHelpers.ErrorResponse($"Failed to create layer '{layer}'");
                 }
 
+                // Build the placement plane: world-XY at the origin, optional Z rotation (degrees).
+                var plane = Plane.WorldXY;
+                plane.Origin = new Point3d(x, y, z);
+                if (rotation != 0)
+                    plane.Rotate(RhinoMath.ToRadians(rotation), plane.ZAxis);
+
+                var objectId = doc.Objects.AddPictureFrame(
+                    plane, path, asMesh, width, height, selfIllumination, embedBitmap);
+                if (objectId == Guid.Empty)
+                    return ToolHelpers.ErrorResponse("AddPictureFrame failed to create the object");
+
                 // Idempotent replace: delete prior objects with the same name on the target layer.
+                // Runs AFTER the new add succeeded so a failed add never destroys the old picture;
+                // the freshly added object is excluded from the delete scan.
                 int replaced = 0;
                 string note = null;
                 if (replace)
@@ -56,7 +70,7 @@ namespace Cordyceps.Tools.Unified
                         var targetLayer = doc.Layers[layerIndex];
                         foreach (var existing in doc.Objects.FindByLayer(targetLayer))
                         {
-                            if (existing.IsDeleted) continue;
+                            if (existing.IsDeleted || existing.Id == objectId) continue;
                             if (string.Equals(existing.Attributes.Name, name, StringComparison.Ordinal)
                                 && doc.Objects.Delete(existing, true))
                                 replaced++;
@@ -64,27 +78,27 @@ namespace Cordyceps.Tools.Unified
                     }
                 }
 
-                // Build the placement plane: world-XY at the origin, optional Z rotation (degrees).
-                var plane = Plane.WorldXY;
-                plane.Origin = new Point3d(x, y, z);
-                if (rotation != 0)
-                    plane.Rotate(RhinoMath.ToRadians(rotation), plane.ZAxis);
-
-                var objectId = doc.Objects.AddPictureFrame(
-                    plane, path, asMesh, width, height, selfIllumination, embedBitmap);
-                if (objectId == Guid.Empty)
-                    return ToolHelpers.ErrorResponse("AddPictureFrame failed to create the object");
-
                 // AddPictureFrame has no ObjectAttributes overload — set layer/name post-add.
+                // If attribute application fails, the picture exists but on the wrong layer or
+                // unnamed: surface that as a warning instead of silently claiming it.
+                string warning = null;
                 var newObj = doc.Objects.FindId(objectId);
-                if (newObj != null)
+                if (newObj == null)
+                {
+                    warning = "Picture added, but the object could not be re-found to apply layer/name attributes";
+                }
+                else
                 {
                     var attrs = newObj.Attributes.Duplicate();
                     attrs.LayerIndex = layerIndex;
                     if (!string.IsNullOrEmpty(name))
                         attrs.Name = name;
-                    doc.Objects.ModifyAttributes(newObj, attrs, true);
+                    if (!doc.Objects.ModifyAttributes(newObj, attrs, true))
+                        warning = "Picture added, but layer/name attributes could not be applied";
                 }
+
+                if (warning != null)
+                    DebugLog.Warn($"[place_image] {warning}");
 
                 doc.Views.Redraw();
 
@@ -94,7 +108,8 @@ namespace Cordyceps.Tools.Unified
                     objectId = objectId.ToString(),
                     layer = doc.Layers[layerIndex].Name,
                     replaced,
-                    note
+                    note,
+                    warning
                 });
             });
         }

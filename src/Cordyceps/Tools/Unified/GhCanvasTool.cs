@@ -177,7 +177,8 @@ namespace Cordyceps.Tools.Unified
                     Description = "Set component preview visibility",
                     Required = new[] { "enabled" },
                     Optional = new[] { "id", "ids" },
-                    Example = "action='preview', id='abc', enabled=false"
+                    Example = "action='preview', id='abc', enabled=false",
+                    Tips = new[] { "Returns per-id results with changedCount/failedCount; unresolvable ids or components without preview support are per-id failures and overall success is false" }
                 },
                 ["enable"] = new ActionInfo
                 {
@@ -185,7 +186,8 @@ namespace Cordyceps.Tools.Unified
                     Description = "Enable or disable component computation",
                     Required = new[] { "enabled" },
                     Optional = new[] { "id", "ids" },
-                    Example = "action='enable', id='abc', enabled=false"
+                    Example = "action='enable', id='abc', enabled=false",
+                    Tips = new[] { "Returns per-id results with changedCount/failedCount; unresolvable ids or components that can't be locked are per-id failures and overall success is false" }
                 },
                 // Group actions (from gh_group)
                 ["group_create"] = new ActionInfo

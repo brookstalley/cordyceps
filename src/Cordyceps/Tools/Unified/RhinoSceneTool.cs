@@ -90,7 +90,10 @@ namespace Cordyceps.Tools.Unified
                     Required = new[] { "name" },
                     Optional = new[] { "deleteObjects" },
                     Example = "action='layer_delete', name='MyLayer'",
-                    Tips = new[] { "deleteObjects=true deletes objects, false moves to default layer" }
+                    Tips = new[] {
+                        "deleteObjects=true deletes objects; false moves them to another layer (reported as movedToLayer)",
+                        "Deleting the current layer works: another layer is made current first; deleting the only layer fails without changing anything"
+                    }
                 },
                 ["hide"] = new ActionInfo
                 {
@@ -142,8 +145,9 @@ namespace Cordyceps.Tools.Unified
                         "width/height are model units along the plane's X/Y; both must be > 0",
                         "rotation is in-plane about Z in degrees (default 0); placement is flat on world-XY",
                         "layer auto-creates if missing; defaults to the current layer",
-                        "replace=true with a 'name' deletes prior same-named objects on the target layer first (idempotent re-placement); returns 'replaced' count",
-                        "selfIllumination (default true) keeps the picture visible without scene lights"
+                        "replace=true with a 'name' deletes prior same-named objects on the target layer once the new add succeeds (idempotent re-placement); returns 'replaced' count",
+                        "selfIllumination (default true) keeps the picture visible without scene lights",
+                        "If layer/name attributes can't be applied after the add, the response includes a 'warning' field"
                     }
                 },
                 ["script"] = new ActionInfo

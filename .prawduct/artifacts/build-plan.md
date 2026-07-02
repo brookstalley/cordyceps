@@ -29,54 +29,54 @@ Critic mode: chunk (per code chunk) + cumulative before PR.
 
 ### Chunk 01: Repo + governance hygiene (no product code)
 - [x] Commit the stranded `.work-model-index.json` untrack + gitignore entry.
-- [ ] Delete merged local branches (docs/readme-refresh, bug-report,
+- [x] Delete merged local branches (docs/readme-refresh, bug-report,
       docs/rhino-scriptcomponent-languagespec) and merged remote topic branches
       (feature/gitflow-release-refactor, fix/add-slider-params-and-configure-wires,
       fix/gh-save-overwrite-and-script-language, fix/ops-safety-stage1,
       fix/mcp-error-contract, chore/janitor-2026-06-20, docs/readme-refresh,
       docs/rhino-scriptcomponent-languagespec). All verified merged via PRs #17–#24.
-- [ ] Archive `incoming-bugs/place-raster-image-picture-frame-action.md` (feature shipped
+- [x] Archive `incoming-bugs/place-raster-image-picture-frame-action.md` (feature shipped
       as RSC-2H9K); resolve the `report-bug` advisory.
-- [ ] Mark `docs/place-image-action.md` as shipped/archival at top.
-- [ ] Delete 4 unreferenced images (~7 MB): cordyceps_showcase_trimmed.gif,
+- [x] Mark `docs/place-image-action.md` as shipped/archival at top.
+- [x] Delete 4 unreferenced images (~7 MB): cordyceps_showcase_trimmed.gif,
       cordyceps_logo.png, cordyceps_icon_large_transparent.png, cordyceps_icon_24.png.
-- [ ] sln: remove stale untracked `cordyceps.sln` (gitignored by `*.sln`, missing the test
+- [x] sln: remove stale untracked `cordyceps.sln` (gitignored by `*.sln`, missing the test
       project; both csprojs build directly). Note decision here.
 
 ### Chunk 02: Documentation-contract fixes (docs/metadata text only, no behavior)
-- [ ] GettingStartedGuide.md:25 — bulk-wire example keys → sourceId/sourceParam/targetId/targetParam.
-- [ ] GettingStartedGuide.md:46-49 — zoomable examples: remove invalid operation='list' and
+- [x] GettingStartedGuide.md:25 — bulk-wire example keys → sourceId/sourceParam/targetId/targetParam.
+- [x] GettingStartedGuide.md:46-49 — zoomable examples: remove invalid operation='list' and
       nonexistent param=; use add/remove/set_count with side/index/count. Also :12 add `clear` to gh_wire summary.
-- [ ] CanvasLayoutGuide.md:49-52 — remove nonexistent right/bottom response fields; document
+- [x] CanvasLayoutGuide.md:49-52 — remove nonexistent right/bottom response fields; document
       bounds{x,y,width,height}+pivot layout math.
-- [ ] Spacing guidance: pick 150px horizontal / 70px vertical (matches server instructions +
+- [x] Spacing guidance: pick 150px horizontal / 70px vertical (matches server instructions +
       gh_canvas tips) and align CanvasLayoutGuide + GettingStartedGuide + PlanDefinition.md.
-- [ ] gh_canvas list ActionInfo: `type` → `typeFilter` (code alias lands in Chunk 04).
-- [ ] Undo/redo: add "currently disabled — use snapshot/revert" to GhDocumentTool ActionInfo,
+- [x] gh_canvas list ActionInfo: `type` → `typeFilter` (code alias lands in Chunk 04).
+- [x] Undo/redo: add "currently disabled — use snapshot/revert" to GhDocumentTool ActionInfo,
       server instructions (McpServer.cs:593), README.md:150.
-- [ ] ResourceRegistry.cs:439 — `search_components` → gh_canvas(action='search').
-- [ ] RenderingGuide.md — add env_delete (:49) and `script` to rhino_scene list (:38).
-- [ ] DebugDataMismatch.md:16 — branchCount/dataCount → branches/count.
-- [ ] SetupScriptComponent.md — fix {{ }} brace-escaping (renders literally; GetPrompt does
+- [x] ResourceRegistry.cs:439 — `search_components` → gh_canvas(action='search').
+- [x] RenderingGuide.md — add env_delete (:49) and `script` to rhino_scene list (:38).
+- [x] DebugDataMismatch.md:16 — branchCount/dataCount → branches/count.
+- [x] SetupScriptComponent.md — fix {{ }} brace-escaping (renders literally; GetPrompt does
       plain Replace).
-- [ ] PlanDefinition.md:14-18 — point "Check for Patterns" at gh://patterns/* resources.
-- [ ] README.md — build command add `-c Release` (:179); csproj:21 BlockDebugBuilds message
+- [x] PlanDefinition.md:14-18 — point "Check for Patterns" at gh://patterns/* resources.
+- [x] README.md — build command add `-c Release` (:179); csproj:21 BlockDebugBuilds message
       corrected; "Port" → "HttpPort" (:47); "110+ actions" → accurate count (:142).
-- [ ] CHANGELOG under `## [Unreleased]`.
+- [x] CHANGELOG under `## [Unreleased]`.
 
 ### Chunk 03: HIGH code bugs (each with host-free regression tests where possible)
-- [ ] H1 CordycepsComponent: override DocumentContextChanged; stop server + release port on
+- [x] H1 CordycepsComponent: override DocumentContextChanged; stop server + release port on
       Close/Unloaded (fixes orphaned listener + permanently-bricked port on file reopen).
-- [ ] H2 GhScriptTool.ParseParamDefs: malformed inputs/outputs JSON → structured error before
+- [x] H2 GhScriptTool.ParseParamDefs: malformed inputs/outputs JSON → structured error before
       any mutation (never conflate unparseable with empty). Test via ParamSyncPlan-level seam
       or extracted pure parser.
-- [ ] H3 GhCanvasTool preview/enable: per-id results like delete; success only if all resolve.
-- [ ] H4 RhinoSceneTool layer_delete: validate + reassign current layer and pick a
+- [x] H3 GhCanvasTool preview/enable: per-id results like delete; success only if all resolve.
+- [x] H4 RhinoSceneTool layer_delete: validate + reassign current layer and pick a
       non-descendant destination BEFORE mutating objects.
-- [ ] H5 RhinoRenderTool material_create: apply PBR params to the material actually added to
+- [x] H5 RhinoRenderTool material_create: apply PBR params to the material actually added to
       the doc (BeginChange/EndChange on a PBR RenderMaterial, or Material.ToPhysicallyBased path).
-- [ ] H6 place_image replace=true: add new frame first, delete old ones only on success.
-- [ ] Doc-audit each (ActionInfo tips where behavior surface changed).
+- [x] H6 place_image replace=true: add new frame first, delete old ones only on success.
+- [x] Doc-audit each (ActionInfo tips where behavior surface changed).
 
 ### Chunk 04: MEDIUM sweep — Grasshopper tools + MCP boundary
 - [ ] gh_canvas list: dispatch alias `typeFilter ?? type`; search: seed providedParams so

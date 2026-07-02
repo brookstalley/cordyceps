@@ -205,6 +205,39 @@ namespace Cordyceps.Tools.Unified
                 var layerName = targetLayer.Name;
                 var objectsOnLayer = doc.Objects.FindByLayer(targetLayer);
 
+                // Resolve everything BEFORE mutating anything, so a doomed delete (e.g. the only
+                // layer, or the current layer with nowhere to go) fails cleanly with no side
+                // effects. A valid destination/current-layer replacement must not be the target,
+                // not deleted, and not a descendant of the target (descendants get deleted with
+                // it). Prefer an unlocked layer; SetCurrentLayerIndex normalizes the mode anyway.
+                var currentLayer = doc.Layers.CurrentLayer;
+                bool currentNeedsReplacement =
+                    currentLayer.Index == layerIndex || currentLayer.IsChildOf(targetLayer);
+                bool needDestination =
+                    currentNeedsReplacement || (!deleteObjects && objectsOnLayer.Length > 0);
+
+                Layer destLayer = null;
+                if (needDestination)
+                {
+                    destLayer = doc.Layers.FirstOrDefault(l =>
+                            l.Index != layerIndex && !l.IsDeleted && !l.IsChildOf(targetLayer) && !l.IsLocked)
+                        ?? doc.Layers.FirstOrDefault(l =>
+                            l.Index != layerIndex && !l.IsDeleted && !l.IsChildOf(targetLayer));
+
+                    if (destLayer == null)
+                        return ToolHelpers.ErrorResponse(
+                            $"Cannot delete layer '{layerName}': no other layer exists to become current or receive its objects. Create another layer first.");
+                }
+
+                // The current layer can never be deleted — repoint it first (before any object
+                // mutation, so a failure here leaves the document untouched).
+                if (currentNeedsReplacement)
+                {
+                    if (!doc.Layers.SetCurrentLayerIndex(destLayer.Index, true))
+                        return ToolHelpers.ErrorResponse(
+                            $"Cannot delete layer '{layerName}': failed to change the current layer to '{destLayer.Name}'.");
+                }
+
                 int objectsDeleted = 0, objectsMoved = 0;
 
                 if (deleteObjects)
@@ -217,20 +250,34 @@ namespace Cordyceps.Tools.Unified
                 }
                 else
                 {
-                    var defaultLayerIndex = doc.Layers.CurrentLayerIndex;
-                    if (defaultLayerIndex == layerIndex)
-                        defaultLayerIndex = doc.Layers.FirstOrDefault(l => l.Index != layerIndex && !l.IsDeleted)?.Index ?? 0;
-
                     foreach (var obj in objectsOnLayer)
                     {
                         var attrs = obj.Attributes.Duplicate();
-                        attrs.LayerIndex = defaultLayerIndex;
+                        attrs.LayerIndex = destLayer.Index;
                         if (doc.Objects.ModifyAttributes(obj, attrs, true))
                             objectsMoved++;
                     }
                 }
 
                 var deleted = doc.Layers.Delete(layerIndex, true);
+
+                // On failure, report the actual reason instead of guessing.
+                string deleteError = null;
+                if (!deleted)
+                {
+                    var refreshed = doc.Layers[layerIndex];
+                    var children = refreshed.GetChildren();
+                    if (doc.Layers.CurrentLayerIndex == layerIndex)
+                        deleteError = $"Failed to delete layer '{layerName}': it is still the current layer.";
+                    else if (children != null && children.Length > 0)
+                        deleteError = $"Failed to delete layer '{layerName}': it has {children.Length} child layer(s) that still contain objects or could not be removed.";
+                    else if (doc.Objects.FindByLayer(refreshed).Length > 0)
+                        deleteError = $"Failed to delete layer '{layerName}': it still contains objects that could not be deleted or moved.";
+                    else
+                        deleteError = $"Failed to delete layer '{layerName}': the layer table rejected the delete.";
+                    DebugLog.Warn($"[layer_delete] {deleteError}");
+                }
+
                 doc.Views.Redraw();
 
                 return JsonConvert.SerializeObject(new
@@ -240,7 +287,8 @@ namespace Cordyceps.Tools.Unified
                     layerName,
                     objectsDeleted,
                     objectsMoved,
-                    error = deleted ? null : "Failed to delete layer (may have child layers)"
+                    movedToLayer = objectsMoved > 0 ? destLayer.FullPath : null,
+                    error = deleteError
                 });
             });
         }
