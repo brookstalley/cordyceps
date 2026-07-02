@@ -42,9 +42,21 @@ namespace Cordyceps
         private DateTime _startTime;
 
         /// <summary>
-        /// Whether the server is currently running
+        /// Lifecycle single source of truth (MCP-9F3Q). All lifecycle reads and writes go
+        /// through this field; <see cref="IsRunning"/> is derived from it. Written only on the
+        /// UI thread (Start/Stop are host-component calls), read from worker threads.
         /// </summary>
-        public bool IsRunning { get; private set; }
+        private volatile Core.ServerState _state = Core.ServerState.Stopped;
+
+        /// <summary>
+        /// Current lifecycle state of the server.
+        /// </summary>
+        public Core.ServerState State => _state;
+
+        /// <summary>
+        /// Whether the server is currently running (derived from <see cref="State"/>)
+        /// </summary>
+        public bool IsRunning => _state == Core.ServerState.Running;
 
         /// <summary>
         /// Actionable reason the last <see cref="Start"/> failed (e.g. the port is held by another
@@ -81,12 +93,13 @@ namespace Cordyceps
         /// </summary>
         public void Start(int port = DEFAULT_PORT)
         {
-            if (IsRunning)
+            if (!Core.ServerStateTransitions.CanStart(_state))
             {
-                Core.DebugLog.WriteLine("MCP server already running", "INFO", 1);
+                Core.DebugLog.WriteLine($"MCP server Start() ignored: state is {_state}", "INFO", 1);
                 return;
             }
 
+            _state = Core.ServerState.Starting;
             _port = port;
             _cts = new CancellationTokenSource();
             StartError = null;
@@ -109,7 +122,7 @@ namespace Cordyceps
                 // Start listening in background
                 _listenerTask = Task.Run(() => ListenLoopAsync(_cts.Token), _cts.Token);
 
-                IsRunning = true;
+                _state = Core.ServerState.Running;
                 _startTime = DateTime.UtcNow;
                 Core.DebugLog.WriteLine($"MCP server started on http://127.0.0.1:{_port}/mcp", "INFO", 0);
             }
@@ -128,6 +141,7 @@ namespace Cordyceps
                 _cts = null;
                 _listener?.Close();
                 _listener = null;
+                _state = Core.ServerState.Failed;
             }
         }
 
@@ -136,8 +150,9 @@ namespace Cordyceps
         /// </summary>
         public void Stop()
         {
-            if (!IsRunning) return;
+            if (!Core.ServerStateTransitions.CanStop(_state)) return;
 
+            _state = Core.ServerState.Stopping;
             Core.DebugLog.WriteLine("Stopping MCP server...", "INFO", 1);
 
             try
@@ -171,7 +186,7 @@ namespace Cordyceps
                 _listener = null;
                 _listenerTask = null;
                 _context = null;
-                IsRunning = false;
+                _state = Core.ServerState.Stopped;
                 Core.DebugLog.WriteLine("MCP server stopped", "INFO", 0);
             }
         }

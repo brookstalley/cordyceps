@@ -39,6 +39,21 @@
      derived view. Don't hand-edit them — add/update a tagged entry here and
      run `prawduct-hook regen-views`. -->
 
+## 2026-07-02: ServerState enum as lifecycle single source of truth (reliability chunk 02)
+
+<!-- prawduct: type=refactor | chunks=02 | scope=reliability -->
+
+**Why:** [MCP-9F3Q] `McpServer` lifecycle was reconstructed from three interdependent signals
+(`IsRunning` + `StartError` + `_context`); upcoming teardown-topology work (chunk 03) adds a
+real Stopping window, which that combinatorial encoding can't represent safely.
+
+**What:** New host-free `Core/ServerState.cs` — `Stopped/Starting/Running/Stopping/Failed` enum
+plus a `ServerStateTransitions` predicate table (CanStart from Stopped|Failed only, CanStop from
+Running only) linked into the test project with a full transition-table test (10 cases).
+`McpServer` now holds one volatile `_state` field; `IsRunning` is derived, `StartError` is set
+only on the Failed transition, and Start/Stop guards go through the shared predicates.
+Behavior-preserving: component status output strings unchanged; 399/399 green.
+
 ## 2026-07-02: DrainWithin fault-vs-timeout contract pinned (reliability chunk 01)
 
 <!-- prawduct: type=bugfix | chunks=01 | scope=reliability -->
