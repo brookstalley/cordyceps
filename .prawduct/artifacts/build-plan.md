@@ -1,90 +1,143 @@
-# Build Plan — gitflow-release-refactor
+# Build Plan — janitor-2026-07-02 (full reliability audit execution)
 
-Branch: `feature/gitflow-release-refactor` (off `develop`)
-Scope: adopt gitflow (develop=integration, main=release surface, strict-protected) and
-refactor the release so it works when main rejects direct pushes.
-Critic mode: cumulative (gates the develop PR) after all chunks.
+Branch: `chore/janitor-2026-07-02` (off `develop`)
+Scope: execute the approved findings of the 2026-07-02 janitor audit (quality, bugs,
+consistency, gaps). Survey ran as 6 parallel investigations; user approved chunks 1–5
+(hygiene, doc contract, HIGH bugs, MEDIUM sweeps, testability). Larger redesigns are
+filed to the backlog, not built here.
+Critic mode: chunk (per code chunk) + cumulative before PR.
 
-## Context / decisions (already made)
-- v1.4.12 shipped via the old trunk flow; `develop` created from post-release main and is now
-  the GitHub **default branch**. This work lands on `develop` via a feature PR.
-- Release model (user-chosen): **lean develop→main PR**. `release.sh` splits into `prep` +
-  `publish`. No release branches, no back-merge (the develop→main merge is `--no-ff`, keeping
-  main's tree == develop's; main only ever gains merge commits + tags).
-- Strict main protection (require PR + `build-test`, block force-push/delete, **no bypass**) is
-  **Phase 2c — applied AFTER this PR merges**, so the documented+actual release flow is in place
-  before main locks. Not in this plan.
-- Key enabler: branch protection guards *branches*, not *tags* — so `publish` pushing only the
-  `vX.Y.Z` tag (not the main branch) works under strict protection.
+## Context / decisions
+- Prior plan (gitflow-release-refactor) was stale-complete: merged via PR #22, gated by
+  its cumulative Critic; change-log entries correctly `status=merged` (flip to shipped at
+  next release). Replaced by this plan per the janitor stale-plan rule.
+- Baseline: 224/224 tests green (519 ms); plugin Release build 0 warnings; develop pulled
+  to 7eb9e09.
+- Deliberate non-goals (filed to backlog instead): Stop() drain threading topology
+  (pairs with MCP-9F3Q), Rhino undo-record grouping, nested-layer resolution redesign,
+  VRF-001..005 live burn-down (needs operator in Rhino), api-contract.md artifact,
+  test-package version bumps, releases/.gha history strategy, Tools/Unified flatten.
 
 ## Confidence check
-1. Problem: `release.sh` does `git push origin main` (the Release commit) — strict-protected main
-   will reject it, breaking releases. prawduct's gates also still treat `origin/main` as the base.
-2. Success: a release is cuttable end-to-end under strict main protection via `prep` (develop-side
-   bump+CHANGELOG+.gha+PR) then `publish` (main-side tag+GH Release+yak); prawduct gates use
-   `develop` as base; `--dry-run` previews both halves with no side effects.
-3. Out of scope: applying main protection (Phase 2c); changing the yak/GH-release mechanics
-   themselves; CI matrix changes beyond adding the `develop` push trigger.
-
-## Verify
-- `release.sh prep --dry-run` and `release.sh publish --dry-run` preview every step, no changes.
-- `prawduct-hook resolve-base` returns `develop` after the config change.
-- Operator-verified at the next real release (a bash release script can't be unit-tested; the
-  next `1.4.13` cut is the live verification) — enqueue VRF.
+1. Problem: organic growth left silent-success bugs in the tool layer, drifted agent-facing
+   docs, and governance/verification debt — user wants "ultra reliable and stable".
+2. Success: every approved finding fixed with regression tests where host-free; docs match
+   dispatch reality; repo hygiene clean; suite green; Critic clean per chunk.
+3. Out of scope: new features, redesigns listed above, applying branch protection, releases.
 
 ## Chunks
 
-### Chunk 01: gitflow config + CI develop-trigger + untrack dist/manifest.yml
-- [ ] `.prawduct/project-state.yaml`: add top-level `base_branch: develop` (resolve-base / gates).
-- [ ] `.github/workflows/dotnet-ci.yml`: push trigger `branches: [main, develop]`.
-- [ ] `git rm --cached dist/manifest.yml` — it's gitignored (`.gitignore:6 dist/`) yet tracked, so
-      every release restamps it and dirties the tree. Untrack; `.gitignore` already covers it.
+### Chunk 01: Repo + governance hygiene (no product code)
+- [x] Commit the stranded `.work-model-index.json` untrack + gitignore entry.
+- [ ] Delete merged local branches (docs/readme-refresh, bug-report,
+      docs/rhino-scriptcomponent-languagespec) and merged remote topic branches
+      (feature/gitflow-release-refactor, fix/add-slider-params-and-configure-wires,
+      fix/gh-save-overwrite-and-script-language, fix/ops-safety-stage1,
+      fix/mcp-error-contract, chore/janitor-2026-06-20, docs/readme-refresh,
+      docs/rhino-scriptcomponent-languagespec). All verified merged via PRs #17–#24.
+- [ ] Archive `incoming-bugs/place-raster-image-picture-frame-action.md` (feature shipped
+      as RSC-2H9K); resolve the `report-bug` advisory.
+- [ ] Mark `docs/place-image-action.md` as shipped/archival at top.
+- [ ] Delete 4 unreferenced images (~7 MB): cordyceps_showcase_trimmed.gif,
+      cordyceps_logo.png, cordyceps_icon_large_transparent.png, cordyceps_icon_24.png.
+- [ ] sln: remove stale untracked `cordyceps.sln` (gitignored by `*.sln`, missing the test
+      project; both csprojs build directly). Note decision here.
 
-### Chunk 02: release.sh → prep/publish (lean develop→main model)
-- [ ] Restructure `scripts/release.sh` around a subcommand: `prep [X.Y.Z]` and `publish [X.Y.Z]`
-      (keep `--dry-run`, `--help`). Shared helpers (find_yak, version parse, changelog/readme
-      checks, prepare_dist, extract_changelog_notes) stay.
-- [ ] `prep`: guard on-branch==`develop` + clean tree; resolve version (auto-patch from csproj or
-      arg); bump csproj+manifest; rename CHANGELOG `[Unreleased]`→`[X.Y.Z] - DATE`; build the
-      `.gha` (Release); commit `Release vX.Y.Z` (csproj, manifest, CHANGELOG, releases/Cordyceps.gha);
-      push develop; `gh pr create` develop→main. STOPS for human merge.
-- [ ] `publish`: guard on-branch==`main` + pulled + clean; verify csproj version==X.Y.Z and
-      CHANGELOG has `[X.Y.Z]`; prepare_dist; yak build; `git tag -a vX.Y.Z` + **push only the tag**;
-      `gh release create` (.gha + notes); yak push. No version bump, no branch push.
-- [ ] Preserve the early prerequisite checks (gh auth, yak login/CLI) in both halves as relevant.
-- [ ] Enqueue VRF in `.prawduct/operator-verification.md` (next real release is the live test).
+### Chunk 02: Documentation-contract fixes (docs/metadata text only, no behavior)
+- [ ] GettingStartedGuide.md:25 — bulk-wire example keys → sourceId/sourceParam/targetId/targetParam.
+- [ ] GettingStartedGuide.md:46-49 — zoomable examples: remove invalid operation='list' and
+      nonexistent param=; use add/remove/set_count with side/index/count. Also :12 add `clear` to gh_wire summary.
+- [ ] CanvasLayoutGuide.md:49-52 — remove nonexistent right/bottom response fields; document
+      bounds{x,y,width,height}+pivot layout math.
+- [ ] Spacing guidance: pick 150px horizontal / 70px vertical (matches server instructions +
+      gh_canvas tips) and align CanvasLayoutGuide + GettingStartedGuide + PlanDefinition.md.
+- [ ] gh_canvas list ActionInfo: `type` → `typeFilter` (code alias lands in Chunk 04).
+- [ ] Undo/redo: add "currently disabled — use snapshot/revert" to GhDocumentTool ActionInfo,
+      server instructions (McpServer.cs:593), README.md:150.
+- [ ] ResourceRegistry.cs:439 — `search_components` → gh_canvas(action='search').
+- [ ] RenderingGuide.md — add env_delete (:49) and `script` to rhino_scene list (:38).
+- [ ] DebugDataMismatch.md:16 — branchCount/dataCount → branches/count.
+- [ ] SetupScriptComponent.md — fix {{ }} brace-escaping (renders literally; GetPrompt does
+      plain Replace).
+- [ ] PlanDefinition.md:14-18 — point "Check for Patterns" at gh://patterns/* resources.
+- [ ] README.md — build command add `-c Release` (:179); csproj:21 BlockDebugBuilds message
+      corrected; "Port" → "HttpPort" (:47); "110+ actions" → accurate count (:142).
+- [ ] CHANGELOG under `## [Unreleased]`.
 
-### Chunk 03: docs
-- [ ] `docs/release-process.md`: rewrite for gitflow two-step (prep → PR → publish); correct the
-      "status=shipped/release= … not used here" note (it IS the model now).
-- [ ] `CLAUDE.md` Publishing section: two-step flow + gitflow (develop default, main release surface).
-- [ ] CHANGELOG `[Unreleased]` entry; `.prawduct/change-log.md` statusless entry (PR gate needs it).
+### Chunk 03: HIGH code bugs (each with host-free regression tests where possible)
+- [ ] H1 CordycepsComponent: override DocumentContextChanged; stop server + release port on
+      Close/Unloaded (fixes orphaned listener + permanently-bricked port on file reopen).
+- [ ] H2 GhScriptTool.ParseParamDefs: malformed inputs/outputs JSON → structured error before
+      any mutation (never conflate unparseable with empty). Test via ParamSyncPlan-level seam
+      or extracted pure parser.
+- [ ] H3 GhCanvasTool preview/enable: per-id results like delete; success only if all resolve.
+- [ ] H4 RhinoSceneTool layer_delete: validate + reassign current layer and pick a
+      non-descendant destination BEFORE mutating objects.
+- [ ] H5 RhinoRenderTool material_create: apply PBR params to the material actually added to
+      the doc (BeginChange/EndChange on a PBR RenderMaterial, or Material.ToPhysicallyBased path).
+- [ ] H6 place_image replace=true: add new frame first, delete old ones only on success.
+- [ ] Doc-audit each (ActionInfo tips where behavior surface changed).
 
-### Chunk 04: harden the build-test gate (disable test parallelization)
-- [ ] `src/Cordyceps.Tests/AssemblyInfo.cs`: `[assembly: CollectionBehavior(DisableTestParallelization = true)]`.
-      Surfaced mid-build: PR #22 CI failed twice on the pre-existing flaky timing test
-      `InFlightRequestsTests.Count_ReflectsTrackedHandlers_AndDropsOnCompletion` — under xUnit's
-      default parallel collections the 2-core CI runner's thread pool is contended, starving the
-      removal continuation past the test's 2s budget (it passed on #21). A flaky `build-test` is
-      unacceptable for the *required* main-protection check this PR establishes, so disable
-      parallelization (suite is sub-second; no assertion weakened). Scope grew from
-      release-tooling to "reliable required gate" — documented here, not slipped in.
-      Alternatives considered: scoped `[Collection]` to serialize only the timing tests (more
-      surgical but needs attributes on several classes), or widening the 2s budget (band-aid,
-      still timing-based). Assembly-wide disable is one line, hardens all timing tests, and the
-      sub-second suite makes the lost parallelism negligible.
+### Chunk 04: MEDIUM sweep — Grasshopper tools + MCP boundary
+- [ ] gh_canvas list: dispatch alias `typeFilter ?? type`; search: seed providedParams so
+      query-or-type works as documented (or fix description).
+- [ ] gh_wire disconnect: error when wire didn't exist.
+- [ ] zoomable add: use indexed RegisterInput/OutputParam overloads.
+- [ ] Slider set: route value parse through invariant culture (SliderConfig path); config
+      reports unparseable value instead of silently ignoring.
+- [ ] Group protection: TryGetUnprotectedComponent* in group_remove/rename/color; filter
+      infraIds from member lists in group_create/group_add; group_add with unresolvable
+      explicit groupId errors instead of forking a new group; group_create errors on invalid
+      ids JSON (parity with group_add).
+- [ ] gh_document revert: error when no active canvas. clear: preserve cluster IO hooks (or
+      refuse inside cluster editor with clear error).
+- [ ] Bulk expire: expire every mutated object (delete/enable/wire connect), not just the last.
+- [ ] gh_script configure params+code path: surface SetSource failure machine-readably.
+- [ ] Capture: using/try-finally around bitmaps (3 sites).
+- [ ] Boundary (McpServer): echo JSON-RPC id losslessly + build before dispatch; wrap
+      binding/conversion in the structured-error path; JsonTypeConverter coerces
+      whole-valued doubles for int/long; chunked-body reject (ContentLength64 < 0);
+      Accept */* allowed; DebugLog.Error at level 0.
+- [ ] PluginRegistry: publish cache only when fully built; no permanent caching of failed
+      scan. DeprecationRegistry: initialized=true in finally; volatile.
+- [ ] UnifiedToolHelpers action validation case-insensitive; strict bool parse helper used by
+      gh_canvas enable/preview + gh_document solver (error on garbage).
+- [ ] gh_inspect trace: filter infraIds; guard Attributes?.GetTopLevel?.DocObject (also
+      GhWireTool:302); direction null-safe.
+- [ ] Doc-audit all of the above (ActionInfo/server instructions/CommonErrors as touched).
 
-## Status
-- [ ] Chunk 01
-- [ ] Chunk 02
-- [ ] Chunk 03
-- [ ] Chunk 04
-Context: Chunk 01 done (base_branch=develop, CI develop trigger, dist/manifest.yml untracked;
-resolve-base→origin/develop verified). Chunk 02 done (release.sh prep/publish rewrite; syntax +
-branch-guard + dispatch verified, mutating flows dry-run-guarded → VRF-006 enqueued). Next:
-Chunk 03 done (docs/release-process.md rewritten for gitflow two-step; CLAUDE.md Publishing
-updated; change-log entry added — no CHANGELOG.md entry, this is internal tooling not a
-user-facing plugin change). Chunk 04 added mid-build (disable test parallelization — flaky
-build-test on the 2-core CI runner blocked PR #22; the required gate must be reliable). All
-chunks complete; suite 224 green serially. Next: re-Critic over the new scope, re-review the
-PR delta, re-run CI, merge → develop. Phase 2c (protect main strict) follows after this merges.
+### Chunk 05: MEDIUM sweep — Rhino tools
+- [ ] TryParsePoint3d: InvariantCulture (fixes camera/light corruption on non-US locales).
+- [ ] select: count only successful Select(); require ≥1 filter (error on bare select-all).
+- [ ] light_set: validate inputs up front; honor Modify() return; error field on failure.
+      light_add: correct param names in errors; validate spotAngle 0–π/2; reject degenerate
+      direction vectors.
+- [ ] render wait>0: up-front doc/view/Raytraced validation before the poll loop.
+- [ ] sun: lat/long/dateTime turn ManualControlOn off (and report mode).
+- [ ] Missing error fields on success:false (view_save/load/delete, material_delete,
+      env_delete); view_save drop redundant pre-delete (Add replaces).
+- [ ] material_apply: legacy Materials.Find(name) fallback (parity with delete).
+- [ ] FindByLayer null guards (3 sites); objects truncated flag off-by-one + limit clamp.
+- [ ] place_image: absolute-path rule in PlaceImageValidation (+test); check
+      ModifyAttributes/FindId result and surface partial failure.
+- [ ] Layer name matching: FullPath first, then short name, error on ambiguity;
+      FindOrCreateLayer creates nested hierarchy for `A::B` paths.
+- [ ] Doc-audit (rhino_scene/rhino_render ActionInfo, RenderingGuide).
+
+### Chunk 06: Testability extraction + test hygiene
+- [ ] Extract host-free helpers from ToolHelpers.cs into linkable file(s)
+      (Core/ParseHelpers.cs + Core/ResponseHelpers.cs or similar): TryParseGuid,
+      Success/ErrorResponse, TryDeserializeList/Array, TryParseGuidArray, ColorToHex,
+      TryParseColor, ParseBool, TryParsePoint3d. Link + table-driven tests.
+- [ ] Extract ConvertToSnakeCase → Core/McpNaming.cs; pin the 7 tool names as contract tests.
+- [ ] PromptRegistry.GetPrompt: extract substitution as pure static; FIX the placeholder bug
+      (unfilled {goal} currently renders as literal "goal"); decide rendered form; tests.
+- [ ] Rename McpServerTypeTests.cs → JsonTypeConverterTests.cs; fix xUnit1031 blocking waits
+      (CommandStatsTests:88, InFlightRequestsTests:100-101); harden the
+      InFlightRequestsTests 250 ms snapshot race; drop hard-coded line/count refs in comments.
+- [ ] DebugLog: swappable console sink so ring buffer/level gating become testable (+tests).
+
+### Close-out
+- [ ] Backlog: file deferred items; update GHC-2N8K (resolved if dedup lands via Chunk 04),
+      note GHS-4D8M upstream filing still pending (user action).
+- [ ] Cumulative Critic; reflection; change-log entries per chunk (scope=janitor-2026-07-02).
