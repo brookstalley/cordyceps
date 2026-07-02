@@ -163,25 +163,13 @@ namespace Cordyceps.Prompts
                 return null;
             }
 
-            var result = prompt.Template;
-
-            // Substitute arguments
-            if (arguments != null)
-            {
-                foreach (var arg in arguments)
-                {
-                    result = result.Replace($"{{{arg.Key}}}", arg.Value);
-                }
-            }
-
-            // Replace any remaining placeholders with defaults or empty
-            if (prompt.Arguments != null)
-            {
-                foreach (var arg in prompt.Arguments)
-                {
-                    result = result.Replace($"{{{arg.Name}}}", arg.Name);
-                }
-            }
+            // Substitution logic lives in Core.PromptTemplate (host-free, unit-tested there):
+            // provided arguments fill their {placeholder}s; declared-but-unfilled placeholders
+            // render as explicit [argname] slots.
+            var result = Core.PromptTemplate.Render(
+                prompt.Template,
+                arguments,
+                prompt.Arguments?.Select(a => a.Name));
 
             return new PromptResult
             {

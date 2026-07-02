@@ -178,7 +178,7 @@ public class UnifiedToolHelpersGetParamTests
     public void ReturnsDefault_WhenConversionThrows()
     {
         // "abc" -> int goes through Convert.ToInt32, which throws FormatException;
-        // GetParam swallows it (UnifiedToolHelpers.cs:171) and returns the default.
+        // the catch in UnifiedToolHelpers.GetParam swallows it and returns the default.
         var p = new Dictionary<string, object> { ["n"] = "abc" };
         Assert.Equal(-1, UnifiedToolHelpers.GetParam(p, "n", -1));
     }

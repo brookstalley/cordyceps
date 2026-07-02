@@ -150,6 +150,27 @@
   operator-verification parity check (VRF-004) — that parity is what this item protects against future
   drift. Doc-audit: internal refactor, behavior-preserving; no user-facing surface expected to change.
 
+- **[GHC-8V3T]** Stop renaming/nicknaming components on the canvas — annotate via groups instead
+  `effort: M · impact: M · area: gh-canvas · source: user · added: 2026-07-02 · status: open · stage: requirements`
+
+  **User decision (2026-07-02, from user reports):** Cordyceps must NOT rename/nickname components —
+  renamed components are hard to find on the canvas. Most Grasshopper users never rename components;
+  the native convention is annotation via **groups with labels** (plus panels/scribbles), so Cordyceps
+  should snap to that convention. The decision is made; the contract-evolution path is not (hence
+  `stage: requirements`).
+
+  **Scope to work out during requirements/design:**
+  - (a) the `gh_canvas` `rename` action — deprecate or remove (external contract change; the
+    deprecation path needs deciding);
+  - (b) the `nickname` parameter on `gh_canvas` `add` (and anywhere else a nickname is set, e.g.
+    script configure) — stop applying/encouraging it, or keep it functional-but-undocumented;
+  - (c) documentation audit — server instructions (`McpServer.cs` `GetServerInstructions()`),
+    ActionInfo help metadata, Knowledge guides (CanvasLayoutGuide / BestPractices / GettingStarted),
+    and prompt templates must switch their annotation guidance to groups + group labels instead of
+    nicknames;
+  - (d) note groups already have create/rename/color actions that serve the annotation need — no new
+    capability required for the replacement convention.
+
 ## Promoted
 
 <!-- Items currently being addressed in an active build plan. /backlog pick

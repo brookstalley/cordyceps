@@ -9,7 +9,7 @@ using Xunit;
 // removal continuation past its budget, so `build-test` flakes (it passed on #21, failed
 // twice on #22 with no relevant code change). A flaky required check is unacceptable for the
 // strict main-protection gate, so we trade a little wall-clock for determinism: the suite is
-// tiny (224 tests, sub-second), and serial execution gives the timing tests an uncontended
+// small and fast (sub-second), and serial execution gives the timing tests an uncontended
 // pool. No assertion is weakened — the contracts still run, just without the contention that
 // made a valid assertion flaky.
 [assembly: CollectionBehavior(DisableTestParallelization = true)]

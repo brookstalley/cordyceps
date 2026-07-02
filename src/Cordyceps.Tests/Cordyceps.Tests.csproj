@@ -35,6 +35,11 @@
     <Compile Include="..\Cordyceps\Core\RequestValidator.cs" Link="RequestValidator.cs" />
     <Compile Include="..\Cordyceps\Core\UnifiedToolHelpers.cs" Link="UnifiedToolHelpers.cs" />
     <Compile Include="..\Cordyceps\Core\PlaceImageValidation.cs" Link="PlaceImageValidation.cs" />
+    <Compile Include="..\Cordyceps\Core\ParseHelpers.cs" Link="ParseHelpers.cs" />
+    <Compile Include="..\Cordyceps\Core\ResponseHelpers.cs" Link="ResponseHelpers.cs" />
+    <Compile Include="..\Cordyceps\Core\McpNaming.cs" Link="McpNaming.cs" />
+    <Compile Include="..\Cordyceps\Core\PromptTemplate.cs" Link="PromptTemplate.cs" />
+    <Compile Include="..\Cordyceps\Core\LogBuffer.cs" Link="LogBuffer.cs" />
   </ItemGroup>
 
 </Project>

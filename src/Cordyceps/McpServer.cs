@@ -223,17 +223,9 @@ namespace Cordyceps
             }
         }
 
-        private static string ConvertToSnakeCase(string name)
-        {
-            var sb = new StringBuilder();
-            for (int i = 0; i < name.Length; i++)
-            {
-                if (i > 0 && char.IsUpper(name[i]))
-                    sb.Append('_');
-                sb.Append(char.ToLower(name[i]));
-            }
-            return sb.ToString();
-        }
+        // The PascalCase -> snake_case tool-name mapping lives in Core.McpNaming (host-free,
+        // unit-tested there — the real tool names are pinned as a contract in Cordyceps.Tests).
+        private static string ConvertToSnakeCase(string name) => Core.McpNaming.ToSnakeCase(name);
 
         private static string GetJsonType(Type type) => Core.JsonTypeConverter.GetJsonType(type);
 

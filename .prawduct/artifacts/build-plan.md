@@ -125,17 +125,17 @@ Critic mode: chunk (per code chunk) + cumulative before PR.
 - [x] Doc-audit (rhino_scene/rhino_render ActionInfo, RenderingGuide).
 
 ### Chunk 06: Testability extraction + test hygiene
-- [ ] Extract host-free helpers from ToolHelpers.cs into linkable file(s)
+- [x] Extract host-free helpers from ToolHelpers.cs into linkable file(s)
       (Core/ParseHelpers.cs + Core/ResponseHelpers.cs or similar): TryParseGuid,
       Success/ErrorResponse, TryDeserializeList/Array, TryParseGuidArray, ColorToHex,
       TryParseColor, ParseBool, TryParsePoint3d. Link + table-driven tests.
-- [ ] Extract ConvertToSnakeCase → Core/McpNaming.cs; pin the 7 tool names as contract tests.
-- [ ] PromptRegistry.GetPrompt: extract substitution as pure static; FIX the placeholder bug
+- [x] Extract ConvertToSnakeCase → Core/McpNaming.cs; pin the 7 tool names as contract tests.
+- [x] PromptRegistry.GetPrompt: extract substitution as pure static; FIX the placeholder bug
       (unfilled {goal} currently renders as literal "goal"); decide rendered form; tests.
-- [ ] Rename McpServerTypeTests.cs → JsonTypeConverterTests.cs; fix xUnit1031 blocking waits
+- [x] Rename McpServerTypeTests.cs → JsonTypeConverterTests.cs; fix xUnit1031 blocking waits
       (CommandStatsTests:88, InFlightRequestsTests:100-101); harden the
       InFlightRequestsTests 250 ms snapshot race; drop hard-coded line/count refs in comments.
-- [ ] DebugLog: swappable console sink so ring buffer/level gating become testable (+tests).
+- [x] DebugLog: swappable console sink so ring buffer/level gating become testable (+tests).
 
 ### Close-out
 - [ ] Backlog: file deferred items; update GHC-2N8K (resolved if dedup lands via Chunk 04),
