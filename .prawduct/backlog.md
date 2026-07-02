@@ -163,8 +163,12 @@
 <!-- Items currently being addressed in an active build plan. /backlog pick
      skips these by default (work is already in flight). -->
 
+## Archive
+
+<!-- Shipped and dropped items, kept for searchability. Never deleted. -->
+
 - **[MCP-9F3Q]** Introduce a ServerState enum as the single source of truth for server lifecycle
-  `effort: M · impact: M · area: mcp-server · source: critic · added: 2026-06-21 · status: promoted · stage: ready · reviewed: 2026-07-02 · related: MCP-3D8V`
+  `effort: M · impact: M · area: mcp-server · source: critic · added: 2026-06-21 · status: shipped · stage: ready · reviewed: 2026-07-02 · closed-by: build-plan-reliability chunk-02 (PR #26) · related: MCP-3D8V`
 
   Stage-1 cumulative Critic NOTE (non-blocking, forward-looking, on Chunk 01/02 code). Server
   lifecycle state in `McpServer` is currently reconstructed from 3 interdependent signals —
@@ -178,8 +182,13 @@
 
   **[2026-07-02] Promoted** into the active build plan (today's triage).
 
+  **[2026-07-02] Shipped:** delivered by the reliability follow-through plan
+  (build-plan-reliability chunk 02); merged to develop via PR #26 (squash 04feba7, branch
+  `feat/reliability-follow-through`). Release-pending: change-log entry is `status=merged` and flips
+  to shipped at the next develop→main release.
+
 - **[MCP-3D8V]** McpServer.Stop() drain runs on the UI thread it is waiting for
-  `effort: M · impact: M · area: mcp-server · source: janitor · added: 2026-07-02 · status: promoted · stage: ready · reviewed: 2026-07-02 · related: MCP-9F3Q, MCP-5T7W`
+  `effort: M · impact: M · area: mcp-server · source: janitor · added: 2026-07-02 · status: shipped · stage: ready · reviewed: 2026-07-02 · closed-by: build-plan-reliability chunk-03 (PR #26) · related: MCP-9F3Q, MCP-5T7W`
 
   Surfaced by the 2026-07-02 janitor audit. `Stop()` is always invoked from the UI thread (the
   `SolveInstance` port-change path, `RemovedFromDocument`, and now `DocumentContextChanged`) while
@@ -196,8 +205,14 @@
 
   **[2026-07-02] Promoted** into the active build plan (today's triage).
 
+  **[2026-07-02] Shipped:** delivered by the reliability follow-through plan
+  (build-plan-reliability chunk 03); merged to develop via PR #26 (squash 04feba7, branch
+  `feat/reliability-follow-through`). Host-observable behavior queued as VRF-009 operator
+  verification. Release-pending: change-log entry is `status=merged` and flips to shipped at the
+  next develop→main release.
+
 - **[MCP-5T7W]** Decide + test InFlightRequests.DrainWithin timeout-coincident-with-fault behavior
-  `effort: S · impact: M · area: mcp-server · source: critic · added: 2026-06-21 · status: promoted · stage: ready · reviewed: 2026-07-02 · related: MCP-3D8V`
+  `effort: S · impact: M · area: mcp-server · source: critic · added: 2026-06-21 · status: shipped · stage: ready · reviewed: 2026-07-02 · closed-by: build-plan-reliability chunk-01 (PR #26) · related: MCP-3D8V`
 
   Stage-1 cumulative Critic NOTE (non-blocking, forward-looking, on Chunk 01/02 code).
   `Core/InFlightRequests.DrainWithin` returns `true` on any `AggregateException`, which can mask a
@@ -211,8 +226,13 @@
 
   **[2026-07-02] Promoted** into the active build plan (today's triage).
 
+  **[2026-07-02] Shipped:** delivered by the reliability follow-through plan
+  (build-plan-reliability chunk 01); merged to develop via PR #26 (squash 04feba7, branch
+  `feat/reliability-follow-through`). Release-pending: change-log entry is `status=merged` and flips
+  to shipped at the next develop→main release.
+
 - **[GHD-6M2J]** Bound or evict GhDocumentTool snapshot store (unbounded process-lifetime)
-  `effort: S · impact: M · area: gh-document · source: critic · added: 2026-06-21 · status: promoted · stage: ready · reviewed: 2026-07-02`
+  `effort: S · impact: M · area: gh-document · source: critic · added: 2026-06-21 · status: shipped · stage: ready · reviewed: 2026-07-02 · closed-by: build-plan-reliability chunk-04 (PR #26)`
 
   Stage-1 cumulative Critic NOTE (non-blocking, forward-looking, low priority). `GhDocumentTool._snapshots`
   is an unbounded process-lifetime store (pre-existing; Chunk 03 only changed the collection type for
@@ -232,8 +252,13 @@
 
   **[2026-07-02] Promoted** into the active build plan (today's triage).
 
+  **[2026-07-02] Shipped:** delivered by the reliability follow-through plan
+  (build-plan-reliability chunk 04); merged to develop via PR #26 (squash 04feba7, branch
+  `feat/reliability-follow-through`). Release-pending: change-log entry is `status=merged` and flips
+  to shipped at the next develop→main release.
+
 - **[RSC-6K1W]** Wrap multi-step Rhino mutations in undo records
-  `effort: M · impact: L · area: rhino-scene · source: janitor · added: 2026-07-02 · status: promoted · stage: ready · reviewed: 2026-07-02`
+  `effort: M · impact: L · area: rhino-scene · source: janitor · added: 2026-07-02 · status: shipped · stage: ready · reviewed: 2026-07-02 · closed-by: build-plan-reliability chunk-05 (PR #26)`
 
   Surfaced by the 2026-07-02 janitor audit. No code path calls
   `RhinoDoc.BeginUndoRecord`/`EndUndoRecord` (grep-verified), so each per-object mutation is its own
@@ -246,8 +271,14 @@
 
   **[2026-07-02] Promoted** into the active build plan (today's triage).
 
+  **[2026-07-02] Shipped:** delivered by the reliability follow-through plan
+  (build-plan-reliability chunk 05); merged to develop via PR #26 (squash 04feba7, branch
+  `feat/reliability-follow-through`). Host-observable behavior queued as VRF-010 operator
+  verification. Release-pending: change-log entry is `status=merged` and flips to shipped at the
+  next develop→main release.
+
 - **[GHC-8V3T]** Stop renaming/nicknaming components on the canvas — annotate via groups instead
-  `effort: M · impact: M · area: gh-canvas · source: user · added: 2026-07-02 · status: promoted · stage: ready · reviewed: 2026-07-02`
+  `effort: M · impact: M · area: gh-canvas · source: user · added: 2026-07-02 · status: shipped · stage: ready · reviewed: 2026-07-02 · closed-by: build-plan-reliability chunk-06 (PR #26)`
 
   **User decision (2026-07-02, from user reports):** Cordyceps must NOT rename/nickname components —
   renamed components are hard to find on the canvas. Most Grasshopper users never rename components;
@@ -276,9 +307,10 @@
 
   **[2026-07-02] Promoted** into the active build plan (today's triage).
 
-## Archive
-
-<!-- Shipped and dropped items, kept for searchability. Never deleted. -->
+  **[2026-07-02] Shipped:** delivered by the reliability follow-through plan
+  (build-plan-reliability chunk 06); merged to develop via PR #26 (squash 04feba7, branch
+  `feat/reliability-follow-through`). Release-pending: change-log entry is `status=merged` and flips
+  to shipped at the next develop→main release.
 
 - **[GHS-4D8M]** gh_script(set/configure) silently succeeds when it leaves a Script component unable to determine its language (Rhino LanguageSpec wipe — upstream)
   `effort: M · impact: M · area: gh-script · source: user · added: 2026-06-24 · status: shipped · stage: ready · reviewed: 2026-07-02 · closed-by: mcneel-upstream-filing · related: GHS-7K2P · refs: issue #15, docs/upstream-rhino-scriptcomponent-languagespec.md`
