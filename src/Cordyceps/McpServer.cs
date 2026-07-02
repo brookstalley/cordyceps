@@ -33,7 +33,9 @@ namespace Cordyceps
         private CancellationTokenSource _cts;
         private Task _listenerTask;
         private int _port;
-        private GrasshopperContext _context;
+        // volatile: written on the UI thread (Start) and nulled by Stop()'s background teardown
+        // task, read once (captured into a local, null-guarded) on HTTP worker threads.
+        private volatile GrasshopperContext _context;
         private readonly List<ToolInfo> _tools = new List<ToolInfo>();
         // In-flight request handlers, tracked so Stop() can drain them before tearing down
         // shared state instead of detaching them mid-request.
@@ -146,7 +148,11 @@ namespace Cordyceps
         }
 
         /// <summary>
-        /// Stop the MCP server
+        /// Stop the MCP server. The synchronous half (listener cancel/close) frees the port
+        /// before returning so a replacement server can bind immediately; the in-flight-handler
+        /// drain and final teardown run on a background task (see MCP-3D8V below). After this
+        /// returns the state is <see cref="Core.ServerState.Stopping"/> until the drain
+        /// completes, then <see cref="Core.ServerState.Stopped"/>.
         /// </summary>
         public void Stop()
         {
@@ -160,35 +166,51 @@ namespace Cordyceps
                 _cts?.Cancel();
                 _listener?.Stop();
                 _listener?.Close();
-
-                try { _listenerTask?.Wait(TimeSpan.FromSeconds(SHUTDOWN_TIMEOUT_SECONDS)); }
-                catch (AggregateException ex)
-                {
-                    Core.DebugLog.WriteLine($"Shutdown exception (expected): {ex.InnerException?.Message}", "DEBUG", 1);
-                }
-
-                // Drain in-flight request handlers within the shutdown budget so they finish
-                // against a still-valid context before the finally block releases it. A handler
-                // that outlives the budget is detached; it reads the context defensively (see
-                // HandleToolCallAsync) and the Chunk-01 document-lock timeout bounds any wedged
-                // work, so this wait stays finite.
-                if (!_inFlight.DrainWithin(TimeSpan.FromSeconds(SHUTDOWN_TIMEOUT_SECONDS)))
-                    Core.DebugLog.WriteLine($"Shutdown: {_inFlight.Count} request(s) still in flight after {SHUTDOWN_TIMEOUT_SECONDS}s; detaching", "WARN", 1);
             }
-            catch (Exception ex)
+            catch (Exception ex) // prawduct:allow prawduct/broad-except -- teardown boundary: a listener stop/close failure must never throw into the host component's solve; log and continue so the background teardown still releases state
             {
                 Core.DebugLog.WriteLine($"Error stopping server: {ex.Message}", "ERROR", 0);
             }
-            finally
+
+            // Hand the disposable pieces to the background task and clear the fields now, so a
+            // half-torn-down server never presents live-looking plumbing.
+            var cts = _cts;
+            var listenerTask = _listenerTask;
+            _cts = null;
+            _listener = null;
+            _listenerTask = null;
+
+            // Drain OFF the calling thread (MCP-3D8V). Stop() is invoked on the UI thread (the
+            // component's port-change, RemovedFromDocument, and DocumentContextChanged paths),
+            // while an in-flight handler is typically a worker blocked in RhinoApp.InvokeAndWait
+            // waiting for that same UI thread — so a synchronous drain here could never succeed
+            // for exactly the handlers it protects and stalled the UI for the full budget.
+            // Returning first lets the blocked handler's UI work run, so the drain genuinely
+            // observes handlers finishing against a still-valid context; only then is the
+            // context released. A handler that outlives the budget is detached; it reads the
+            // context defensively (see HandleToolCallAsync) and the document-lock timeout
+            // bounds any wedged work, so the background wait stays finite.
+            Task.Run(() =>
             {
-                _cts?.Dispose();
-                _cts = null;
-                _listener = null;
-                _listenerTask = null;
-                _context = null;
-                _state = Core.ServerState.Stopped;
-                Core.DebugLog.WriteLine("MCP server stopped", "INFO", 0);
-            }
+                try
+                {
+                    try { listenerTask?.Wait(TimeSpan.FromSeconds(SHUTDOWN_TIMEOUT_SECONDS)); }
+                    catch (AggregateException ex)
+                    {
+                        Core.DebugLog.WriteLine($"Shutdown exception (expected): {ex.InnerException?.Message}", "DEBUG", 1);
+                    }
+
+                    if (!_inFlight.DrainWithin(TimeSpan.FromSeconds(SHUTDOWN_TIMEOUT_SECONDS)))
+                        Core.DebugLog.WriteLine($"Shutdown: {_inFlight.Count} request(s) still in flight after {SHUTDOWN_TIMEOUT_SECONDS}s; detaching", "WARN", 1);
+                }
+                finally
+                {
+                    cts?.Dispose();
+                    _context = null;
+                    _state = Core.ServerState.Stopped;
+                    Core.DebugLog.WriteLine("MCP server stopped", "INFO", 0);
+                }
+            });
         }
 
         /// <summary>

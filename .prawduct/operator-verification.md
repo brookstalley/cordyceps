@@ -186,6 +186,30 @@ SliderConfig.ValueInvalid, place_image path rule) are CI-tested; the host glue b
   correct response (previously the response was destroyed after the tool ran); `Accept: */*`
   works (curl default).
 
+## VRF-009 — reliability Chunk 03 — Stop() drain moved off the UI thread
+
+**Status:** pending
+**Added:** 2026-07-02 (feat/reliability-follow-through, Chunk 03)
+**Where to verify:** live Rhino 8 + Grasshopper with an MCP client attached.
+
+**Why this needs a human:** the fix removes a guaranteed ~2s Rhino UI stall when server teardown
+overlaps an in-flight request (the old synchronous drain waited on handlers blocked in
+`RhinoApp.InvokeAndWait` on the very thread doing the waiting). UI responsiveness and the
+restart-while-draining path are host behavior no unit test can observe. Supersedes the
+drain/teardown bullets of VRF-002 (the lifecycle otherwise unchanged).
+
+**Verify:**
+- **Teardown under load:** issue a slow tool call (e.g. a large `gh_canvas` bake or a script
+  configure), and while it is in flight delete the Cordyceps component (or close the document).
+  Rhino must NOT freeze for ~2 seconds; the debug log should show "Stopping MCP server..."
+  immediately and "MCP server stopped" shortly after (the drain now finishes in the background —
+  a WARN "still in flight after 2s; detaching" is acceptable only for genuinely wedged work).
+- **Restart while draining:** with a request in flight, change the component's port input
+  (old server stops, new one starts). The new port must bind and serve immediately; the old
+  server's teardown completes in the background without errors in the log.
+- **Clean idle teardown:** delete the component with no requests in flight — server stops
+  cleanly, port is freed (re-placing the component on the same port works).
+
 ## VRF-006 — gitflow-release-refactor — `release.sh prep`/`publish` end-to-end
 
 **Status:** pending

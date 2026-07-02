@@ -39,6 +39,26 @@
      derived view. Don't hand-edit them — add/update a tagged entry here and
      run `prawduct-hook regen-views`. -->
 
+## 2026-07-02: Stop() drain moved off the UI thread (reliability chunk 03)
+
+<!-- prawduct: type=bugfix | chunks=03 | scope=reliability -->
+
+**Why:** [MCP-3D8V] `McpServer.Stop()` always runs on the UI thread (component port-change,
+`RemovedFromDocument`, `DocumentContextChanged`), while an in-flight handler is a worker blocked
+in `RhinoApp.InvokeAndWait` waiting for that same UI thread — so the synchronous
+`DrainWithin(2s)` could never succeed for exactly the handlers it protects: a guaranteed ~2s
+Rhino UI stall whenever teardown overlapped a request, and the drain's "handlers finish against
+a still-valid context" comment was wrong for that case.
+
+**What:** `Stop()` now splits: synchronously transition to `Stopping`, cancel the listener CTS,
+and stop/close the `HttpListener` (port freed immediately for a replacement server), then run
+the listener-task wait + `DrainWithin` + final teardown (`_context` release, `Stopped`
+transition) on a `Task.Run` background task that logs the drain outcome. With the UI thread
+returned, a handler blocked in `InvokeAndWait` can actually complete, so the drain now does what
+its comment always claimed. Correctness during the un-drained window remains protected by the
+captured-context guard in `HandleToolCallAsync`. Host-observable behavior (no UI freeze,
+restart-while-draining) queued as VRF-009; 399/399 green.
+
 ## 2026-07-02: ServerState enum as lifecycle single source of truth (reliability chunk 02)
 
 <!-- prawduct: type=refactor | chunks=02 | scope=reliability -->
