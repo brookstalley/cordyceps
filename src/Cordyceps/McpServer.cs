@@ -590,7 +590,7 @@ READ FIRST: gh://docs/getting-started (use resources/read)
 UNIFIED TOOLS (use action='help' for details):
 - gh_canvas: add, delete, move, rename, find, search, list, info, bounds, validate, constant, bake, zoom, view, get, set, config, preview, enable, group_create, group_delete, group_add, group_remove, group_list, group_rename, group_color, group_move, zoomable
 - gh_wire: connect, disconnect, list, clear, validate
-- gh_document: info, save, clear, solver, recompute, undo, redo, snapshot, revert, snapshots, capture_canvas, capture_viewport, capture_region, capture_views
+- gh_document: info, save, clear, solver, recompute, undo, redo (both disabled — use snapshot/revert), snapshot, revert, snapshots, capture_canvas, capture_viewport, capture_region, capture_views
 - gh_script: get, set, configure, info
 - gh_inspect: status, outputs, trace, disconnected, geometry, log, reports, categories, docs
 - rhino_scene: objects, select, deselect, set_layer, set_name, layers, layer_create, layer_set, layer_delete, hide, show, delete, set_color, bbox, place_image, script

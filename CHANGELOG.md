@@ -6,6 +6,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Documentation
+
+- **Agent-facing docs corrected to match the real tool contract** - A documentation audit fixed several places where embedded guides, tool help metadata, and server instructions had drifted from the actual code:
+  - Getting-started guide: bulk-wire example now uses the real connection keys (`sourceId`/`sourceParam`/`targetId`/`targetParam` instead of the nonexistent `source`/`target`), the zoomable examples use real operations (`add`/`remove`/`set_count` with `side`/`index`/`count` — the documented `operation='list'` and `param=` never existed), and the `gh_wire` summary now lists the `clear` action.
+  - Canvas-layout guide: the "Using Bounds" section now documents the real response shape (`bounds{x,y,width,height}` + `pivot{x,y}` from `action='bounds'`; list/find/info return pivot only) instead of nonexistent `right`/`bottom` fields.
+  - Spacing guidance unified at **150px horizontal / 70px vertical** across all surfaces (canvas-layout and getting-started guides previously said 60-80px horizontal, contradicting the server instructions and tool help).
+  - `gh_canvas(action='list')` help metadata now names the real `typeFilter` parameter (was `type`, which the tool does not accept).
+  - `gh_document` undo/redo are now advertised as disabled (they are permanently-stubbed with a "use snapshots" error) in the tool help, server instructions, and README.
+  - Prompt templates: `setup_script_component` no longer renders literal `{{...}}` malformed JSON (the renderer never unescaped doubled braces); `plan_definition`'s pattern step now reads the `gh://patterns/*` resources instead of misusing `gh_canvas(action='search')`; `debug_data_mismatch` names the real `gh_inspect(action='outputs')` fields (`branches`/`count`).
+  - Component-not-found text now suggests `gh_canvas(action='search', query='...')` instead of the nonexistent `search_components` tool; rendering guide action lists now include `rhino_scene` `script` and `rhino_render` `env_delete`.
+  - README: build command shows the required `-c Release` (Debug builds are blocked, and the csproj error message no longer claims `dotnet build` defaults to Release), the optional component input is correctly named **HttpPort**, and the tool count is stated accurately ("over 100 actions").
+
 ### Changed
 
 - **README install instructions** - Documented installation via the Rhino Package Manager (run `PackageManager`, search "Cordyceps", install) as the recommended method, with manual `.gha` download kept as the secondary option. Clarified that file-unblocking (Windows) / quarantine-clearing (macOS) is only needed for manual installs, and added the macOS `xattr` quarantine-clear command.

@@ -85,8 +85,8 @@ namespace Cordyceps.Tools.Unified
                 {
                     Name = "list",
                     Description = "List components currently on the canvas",
-                    Optional = new[] { "category", "type", "group" },
-                    Example = "action='list' OR action='list', category='Curve'"
+                    Optional = new[] { "category", "typeFilter", "group" },
+                    Example = "action='list' OR action='list', category='Curve' OR action='list', typeFilter='Number Slider'"
                 },
                 ["info"] = new ActionInfo
                 {

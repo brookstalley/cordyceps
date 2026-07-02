@@ -74,14 +74,14 @@ namespace Cordyceps.Tools.Unified
                 ["undo"] = new ActionInfo
                 {
                     Name = "undo",
-                    Description = "Undo the last action",
-                    Example = "action='undo'"
+                    Description = "DISABLED (threading issues) - always returns an error. Use action='snapshot' before changes and action='revert' to restore instead",
+                    Example = "action='snapshot', name='before_changes' (instead of undo)"
                 },
                 ["redo"] = new ActionInfo
                 {
                     Name = "redo",
-                    Description = "Redo a previously undone action",
-                    Example = "action='redo'"
+                    Description = "DISABLED (threading issues) - always returns an error. Use snapshots (action='snapshot'/'revert') instead",
+                    Example = "action='revert', name='before_changes' (instead of redo)"
                 },
                 ["snapshot"] = new ActionInfo
                 {

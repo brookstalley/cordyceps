@@ -436,7 +436,7 @@ namespace Cordyceps.Resources
                 {
                     sb.AppendLine($"Component '{componentName}' not found.");
                     sb.AppendLine();
-                    sb.AppendLine("Try searching with `search_components` to find available components.");
+                    sb.AppendLine("Try searching with `gh_canvas(action='search', query='...')` to find available components.");
                 }
             }
             catch (Exception ex)

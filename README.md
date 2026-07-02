@@ -45,7 +45,7 @@ The Package Manager downloads the plugin, places it in the right folder, and unb
 1. Drop the **Cordyceps** component on your canvas (*Params → Util → Cordyceps*)
 
    The server starts on port 26929 by default. Optional inputs:
-   - **Port**: Change the HTTP port
+   - **HttpPort**: Change the HTTP port
    - **DebugLevel**: Set to 1+ to see request/response traffic in Rhino
 
 2. Configure your MCP client:
@@ -139,7 +139,7 @@ See the [MCP Python SDK](https://github.com/modelcontextprotocol/python-sdk) for
 
 ## Tools
 
-Cordyceps provides **7 tools with 110+ actions** — consolidated to minimize context window usage. Related operations are grouped under a single tool with an `action` parameter.
+Cordyceps provides **7 tools with over 100 actions** — consolidated to minimize context window usage. Related operations are grouped under a single tool with an `action` parameter.
 
 ### Grasshopper
 
@@ -147,7 +147,7 @@ Cordyceps provides **7 tools with 110+ actions** — consolidated to minimize co
 |------|-------------|
 | `gh_canvas` | Components, values, groups, baking, variable parameters |
 | `gh_wire` | Connection management |
-| `gh_document` | Save, clear, undo/redo, snapshots, canvas capture |
+| `gh_document` | Save, clear, snapshots, solver control, canvas capture (undo/redo are disabled — use snapshots) |
 | `gh_script` | Script component configuration |
 | `gh_inspect` | Status, outputs, data tracing, debugging |
 
@@ -177,8 +177,10 @@ Browse the documentation directly: [`src/Cordyceps/Knowledge/`](src/Cordyceps/Kn
 ## Building
 
 ```bash
-dotnet build src/Cordyceps/Cordyceps.csproj
+dotnet build src/Cordyceps/Cordyceps.csproj -c Release
 ```
+
+Only Release builds are supported — a Debug build (the `dotnet build` default) fails with an error.
 
 ---
 
