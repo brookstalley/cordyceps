@@ -107,22 +107,22 @@ Critic mode: chunk (per code chunk) + cumulative before PR.
 - [x] Doc-audit all of the above (ActionInfo/server instructions/CommonErrors as touched).
 
 ### Chunk 05: MEDIUM sweep — Rhino tools
-- [ ] TryParsePoint3d: InvariantCulture (fixes camera/light corruption on non-US locales).
-- [ ] select: count only successful Select(); require ≥1 filter (error on bare select-all).
-- [ ] light_set: validate inputs up front; honor Modify() return; error field on failure.
+- [x] TryParsePoint3d: InvariantCulture (fixes camera/light corruption on non-US locales).
+- [x] select: count only successful Select(); require ≥1 filter (error on bare select-all).
+- [x] light_set: validate inputs up front; honor Modify() return; error field on failure.
       light_add: correct param names in errors; validate spotAngle 0–π/2; reject degenerate
       direction vectors.
-- [ ] render wait>0: up-front doc/view/Raytraced validation before the poll loop.
-- [ ] sun: lat/long/dateTime turn ManualControlOn off (and report mode).
-- [ ] Missing error fields on success:false (view_save/load/delete, material_delete,
+- [x] render wait>0: up-front doc/view/Raytraced validation before the poll loop.
+- [x] sun: lat/long/dateTime turn ManualControlOn off (and report mode).
+- [x] Missing error fields on success:false (view_save/load/delete, material_delete,
       env_delete); view_save drop redundant pre-delete (Add replaces).
-- [ ] material_apply: legacy Materials.Find(name) fallback (parity with delete).
-- [ ] FindByLayer null guards (3 sites); objects truncated flag off-by-one + limit clamp.
-- [ ] place_image: absolute-path rule in PlaceImageValidation (+test); check
+- [x] material_apply: legacy Materials.Find(name) fallback (parity with delete).
+- [x] FindByLayer null guards (3 sites); objects truncated flag off-by-one + limit clamp.
+- [x] place_image: absolute-path rule in PlaceImageValidation (+test); check
       ModifyAttributes/FindId result and surface partial failure.
-- [ ] Layer name matching: FullPath first, then short name, error on ambiguity;
+- [x] Layer name matching: FullPath first, then short name, error on ambiguity;
       FindOrCreateLayer creates nested hierarchy for `A::B` paths.
-- [ ] Doc-audit (rhino_scene/rhino_render ActionInfo, RenderingGuide).
+- [x] Doc-audit (rhino_scene/rhino_render ActionInfo, RenderingGuide).
 
 ### Chunk 06: Testability extraction + test hygiene
 - [ ] Extract host-free helpers from ToolHelpers.cs into linkable file(s)

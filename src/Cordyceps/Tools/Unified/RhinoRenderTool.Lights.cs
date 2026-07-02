@@ -20,21 +20,23 @@ namespace Cordyceps.Tools.Unified
                 if (doc == null)
                     return ToolHelpers.ErrorResponse("No active Rhino document");
 
-                if (string.IsNullOrEmpty(lightType))
-                    return ToolHelpers.ErrorResponse("lightType is required (point, spot, directional)");
-
-                if (string.IsNullOrEmpty(location))
-                    return ToolHelpers.ErrorResponse("lightLocation is required");
+                // 'type' and 'location' presence is enforced upstream by ValidateAction
+                // (they are Required params for light_add).
 
                 if (!ToolHelpers.TryParsePoint3d(location, out var loc))
-                    return ToolHelpers.ErrorResponse($"Invalid lightLocation: {location}");
+                    return ToolHelpers.ErrorResponse($"Invalid location: {location} (expected 'x,y,z')");
 
                 Point3d tgt = Point3d.Origin;
                 if (!string.IsNullOrEmpty(target))
                 {
                     if (!ToolHelpers.TryParsePoint3d(target, out tgt))
-                        return ToolHelpers.ErrorResponse($"Invalid lightTarget: {target}");
+                        return ToolHelpers.ErrorResponse($"Invalid target: {target} (expected 'x,y,z')");
                 }
+
+                // SpotAngleRadians contract is 0 to pi/2 (0 to 90 degrees); validate in degrees
+                // before converting.
+                if (!double.IsNaN(spotAngle) && (spotAngle <= 0 || spotAngle > 90))
+                    return ToolHelpers.ErrorResponse($"Invalid spotAngle: {spotAngle} (must be > 0 and <= 90 degrees)");
 
                 var light = new Light();
                 var lightTypeLower = lightType.ToLowerInvariant();
@@ -50,9 +52,14 @@ namespace Cordyceps.Tools.Unified
                         light.Location = loc;
                         if (string.IsNullOrEmpty(target))
                             tgt = new Point3d(loc.X, loc.Y, 0); // Default to looking down
-                        light.Direction = tgt - loc;
+                        var spotDir = tgt - loc;
+                        if (spotDir.IsZero)
+                            return ToolHelpers.ErrorResponse(
+                                "Spot light direction is zero-length: target equals location. " +
+                                "Note: with no target, a spot light aims straight down at z=0, so a spot placed AT z=0 needs an explicit target — pass target='x,y,z' distinct from location.");
+                        light.Direction = spotDir;
 
-                        // Set spot angle if provided
+                        // Set spot angle if provided (validated above)
                         if (!double.IsNaN(spotAngle))
                         {
                             var radians = spotAngle * Math.PI / 180.0;
@@ -64,17 +71,22 @@ namespace Cordyceps.Tools.Unified
                         light.Location = loc;
                         if (string.IsNullOrEmpty(target))
                             tgt = Point3d.Origin;
-                        light.Direction = tgt - loc;
+                        var dir = tgt - loc;
+                        if (dir.IsZero)
+                            return ToolHelpers.ErrorResponse(
+                                "Directional light direction is zero-length: target equals location. " +
+                                "Note: with no target, a directional light aims at the world origin, so a directional light placed AT the origin needs an explicit target — pass target='x,y,z' distinct from location.");
+                        light.Direction = dir;
                         break;
                     default:
-                        return ToolHelpers.ErrorResponse($"Invalid lightType: '{lightType}'. Use: point, spot, directional");
+                        return ToolHelpers.ErrorResponse($"Invalid type: '{lightType}'. Use: point, spot, directional");
                 }
 
                 // Set color if provided
                 if (!string.IsNullOrEmpty(color))
                 {
                     if (!ToolHelpers.TryParseColor(color, out var lightColor))
-                        return ToolHelpers.ErrorResponse($"Invalid lightColor: {color}");
+                        return ToolHelpers.ErrorResponse($"Invalid color: {color}");
                     light.Diffuse = lightColor;
                 }
                 else
@@ -172,86 +184,129 @@ namespace Cordyceps.Tools.Unified
                 if (!ToolHelpers.TryParseGuidArray(ids, out var guids, out var error))
                     return ToolHelpers.ErrorResponse(error);
 
+                // Validate every property up front so a bad value is a hard error instead of a
+                // silent per-light skip (consistent with layer_set).
+                var loc = Point3d.Unset;
+                if (!string.IsNullOrEmpty(location) && !ToolHelpers.TryParsePoint3d(location, out loc))
+                    return ToolHelpers.ErrorResponse($"Invalid location: {location} (expected 'x,y,z')");
+
+                var tgt = Point3d.Unset;
+                if (!string.IsNullOrEmpty(target) && !ToolHelpers.TryParsePoint3d(target, out tgt))
+                    return ToolHelpers.ErrorResponse($"Invalid target: {target} (expected 'x,y,z')");
+
+                var lightColor = System.Drawing.Color.Empty;
+                if (!string.IsNullOrEmpty(color) && !ToolHelpers.TryParseColor(color, out lightColor))
+                    return ToolHelpers.ErrorResponse($"Invalid color: {color}");
+
+                // SpotAngleRadians contract is 0 to pi/2 (0 to 90 degrees).
+                if (!double.IsNaN(spotAngle) && (spotAngle <= 0 || spotAngle > 90))
+                    return ToolHelpers.ErrorResponse($"Invalid spotAngle: {spotAngle} (must be > 0 and <= 90 degrees)");
+
+                bool enabledVal = false;
+                if (!string.IsNullOrEmpty(enabled) && !bool.TryParse(enabled, out enabledVal))
+                    return ToolHelpers.ErrorResponse($"Invalid enabled: {enabled} (expected 'true' or 'false')");
+
+                bool anyProperty = !string.IsNullOrEmpty(location) || !string.IsNullOrEmpty(target) ||
+                                   !string.IsNullOrEmpty(color) || !double.IsNaN(intensity) ||
+                                   !double.IsNaN(spotAngle) || !string.IsNullOrEmpty(enabled);
+                if (!anyProperty)
+                    return ToolHelpers.ErrorResponse("light_set requires at least one property to change: location, target, color, intensity, spotAngle, enabled");
+
                 int modifiedCount = 0;
                 var modified = new List<string>();
+                var notFound = new List<string>();
+                var failed = new List<string>();
 
                 foreach (var guid in guids)
                 {
                     var lightObj = doc.Lights.FindId(guid);
-                    if (lightObj == null) continue;
+                    var light = lightObj?.LightGeometry;
+                    if (light == null)
+                    {
+                        notFound.Add(guid.ToString());
+                        continue;
+                    }
 
-                    var light = lightObj.LightGeometry;
-                    if (light == null) continue;
-                    bool changed = false;
+                    bool anyApplied = false;
 
                     if (!string.IsNullOrEmpty(location))
                     {
-                        if (ToolHelpers.TryParsePoint3d(location, out var loc))
-                        {
-                            light.Location = loc;
-                            changed = true;
-                            if (!modified.Contains("location")) modified.Add("location");
-                        }
+                        light.Location = loc;
+                        if (!modified.Contains("location")) modified.Add("location");
+                        anyApplied = true;
                     }
 
                     if (!string.IsNullOrEmpty(target))
                     {
-                        if (ToolHelpers.TryParsePoint3d(target, out var tgt))
-                        {
-                            light.Direction = tgt - light.Location;
-                            changed = true;
-                            if (!modified.Contains("target")) modified.Add("target");
-                        }
+                        light.Direction = tgt - light.Location;
+                        if (!modified.Contains("target")) modified.Add("target");
+                        anyApplied = true;
                     }
 
                     if (!string.IsNullOrEmpty(color))
                     {
-                        if (ToolHelpers.TryParseColor(color, out var lightColor))
-                        {
-                            light.Diffuse = lightColor;
-                            changed = true;
-                            if (!modified.Contains("color")) modified.Add("color");
-                        }
+                        light.Diffuse = lightColor;
+                        if (!modified.Contains("color")) modified.Add("color");
+                        anyApplied = true;
                     }
 
                     if (!double.IsNaN(intensity))
                     {
                         light.Intensity = intensity;
-                        changed = true;
                         if (!modified.Contains("intensity")) modified.Add("intensity");
+                        anyApplied = true;
                     }
 
                     if (!double.IsNaN(spotAngle) && light.LightStyle == LightStyle.WorldSpot)
                     {
                         light.SpotAngleRadians = spotAngle * Math.PI / 180.0;
-                        changed = true;
                         if (!modified.Contains("spotAngle")) modified.Add("spotAngle");
+                        anyApplied = true;
                     }
 
                     if (!string.IsNullOrEmpty(enabled))
                     {
-                        if (bool.TryParse(enabled, out var val))
-                        {
-                            light.IsEnabled = val;
-                            changed = true;
-                            if (!modified.Contains("enabled")) modified.Add("enabled");
-                        }
+                        light.IsEnabled = enabledVal;
+                        if (!modified.Contains("enabled")) modified.Add("enabled");
+                        anyApplied = true;
                     }
 
-                    if (changed)
+                    // A light none of the requested properties apply to (e.g. spotAngle on a
+                    // non-spot light) is a per-light failure, not a no-op Modify "success".
+                    if (!anyApplied)
                     {
-                        doc.Lights.Modify(lightObj.Id, light);
-                        modifiedCount++;
+                        failed.Add($"{guid}: none of the requested properties apply to this light type");
+                        continue;
                     }
+
+                    // Modify can reject the change — only count lights it actually accepted.
+                    if (doc.Lights.Modify(lightObj.Id, light))
+                        modifiedCount++;
+                    else
+                        failed.Add(guid.ToString());
                 }
 
                 doc.Views.Redraw();
 
+                if (modifiedCount == 0 && guids.Count > 0)
+                    return JsonConvert.SerializeObject(new
+                    {
+                        success = false,
+                        error = notFound.Count == guids.Count
+                            ? "No lights were modified: none of the given ids match lights in the document"
+                            : "No lights were modified: the light table rejected every change",
+                        modifiedCount,
+                        notFound = notFound.Count > 0 ? notFound : null,
+                        failed = failed.Count > 0 ? failed : null
+                    });
+
                 return JsonConvert.SerializeObject(new
                 {
-                    success = modifiedCount > 0,
+                    success = true,
                     modifiedCount,
-                    modified
+                    modified,
+                    notFound = notFound.Count > 0 ? notFound : null,
+                    failed = failed.Count > 0 ? failed : null
                 });
             });
         }
@@ -269,16 +324,21 @@ namespace Cordyceps.Tools.Unified
 
                 // Collect indices first, then delete in reverse order to avoid index shifting
                 var indicesToDelete = new List<int>();
+                var notFound = new List<string>();
                 foreach (var guid in guids)
                 {
+                    bool found = false;
                     for (int i = 0; i < doc.Lights.Count; i++)
                     {
                         if (doc.Lights[i].Id == guid && !doc.Lights[i].IsDeleted)
                         {
                             indicesToDelete.Add(i);
+                            found = true;
                             break;
                         }
                     }
+                    if (!found)
+                        notFound.Add(guid.ToString());
                 }
 
                 // Sort descending and delete from highest index first
@@ -293,10 +353,22 @@ namespace Cordyceps.Tools.Unified
 
                 doc.Views.Redraw();
 
+                if (deletedCount == 0 && guids.Count > 0)
+                    return JsonConvert.SerializeObject(new
+                    {
+                        success = false,
+                        error = notFound.Count == guids.Count
+                            ? "No lights were deleted: none of the given ids match lights in the document"
+                            : "No lights were deleted: the light table rejected every delete",
+                        deletedCount,
+                        notFound = notFound.Count > 0 ? notFound : null
+                    });
+
                 return JsonConvert.SerializeObject(new
                 {
                     success = true,
-                    deletedCount
+                    deletedCount,
+                    notFound = notFound.Count > 0 ? notFound : null
                 });
             });
         }

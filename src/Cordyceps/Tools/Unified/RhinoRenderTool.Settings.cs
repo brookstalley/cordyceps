@@ -195,6 +195,18 @@ namespace Cordyceps.Tools.Unified
                     modified.Add("manualControl");
                 }
 
+                // Latitude/longitude/dateTime only affect the sun position while manual control
+                // is OFF. When they are provided without azimuth/altitude in the same call, the
+                // caller wants the computed position — switch manual control off so the values
+                // take effect instead of being silent no-ops.
+                bool hasManual = !double.IsNaN(azimuth) || !double.IsNaN(altitude);
+                bool hasComputed = !double.IsNaN(latitude) || !double.IsNaN(longitude) || !string.IsNullOrEmpty(dateTime);
+                if (hasComputed && !hasManual && sun.ManualControlOn)
+                {
+                    sun.ManualControlOn = false;
+                    modified.Add("manualControl");
+                }
+
                 if (!double.IsNaN(latitude))
                 {
                     if (latitude < -90 || latitude > 90)
@@ -226,6 +238,7 @@ namespace Cordyceps.Tools.Unified
                     success = true,
                     enabled = sun.Enabled,
                     manualControl = sun.ManualControlOn,
+                    mode = sun.ManualControlOn ? "manual" : "computed",
                     azimuth = sun.Azimuth,
                     altitude = sun.Altitude,
                     intensity = sun.Intensity,

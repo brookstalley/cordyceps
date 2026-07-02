@@ -12,6 +12,34 @@ namespace Cordyceps.Tools.Unified
     {
         #region Layer Actions
 
+        /// <summary>
+        /// Resolve an existing layer by name: exact full path ("Parent::Child") wins, then a
+        /// case-insensitive short-name match. A short name shared by multiple layers (under
+        /// different parents) is ambiguous and yields an error listing the candidate full paths
+        /// instead of nondeterministically picking the first. Returns the layer index, or -1
+        /// with <paramref name="error"/> set. Shared by layer_set and layer_delete.
+        /// </summary>
+        private static int ResolveLayerIndex(RhinoDoc doc, string name, out string error)
+        {
+            error = null;
+
+            var layerIndex = doc.Layers.FindByFullPath(name, -1);
+            if (layerIndex >= 0)
+                return layerIndex;
+
+            var matches = doc.Layers
+                .Where(l => !l.IsDeleted && l.Name.Equals(name, StringComparison.OrdinalIgnoreCase))
+                .ToList();
+
+            if (matches.Count == 1)
+                return matches[0].Index;
+
+            error = matches.Count > 1
+                ? $"Layer name '{name}' is ambiguous — multiple layers share it. Use a full path: {string.Join(", ", matches.Select(l => l.FullPath))}"
+                : $"Layer '{name}' not found";
+            return -1;
+        }
+
         private string ActionLayers()
         {
             return _context.ExecuteOnUiThread(() =>
@@ -30,7 +58,7 @@ namespace Cordyceps.Tools.Unified
                         visible = l.IsVisible,
                         locked = l.IsLocked,
                         color = $"#{l.Color.R:X2}{l.Color.G:X2}{l.Color.B:X2}",
-                        objectCount = doc.Objects.FindByLayer(l).Length
+                        objectCount = doc.Objects.FindByLayer(l)?.Length ?? 0
                     }).ToList();
 
                 return JsonConvert.SerializeObject(new { success = true, count = layers.Count, layers });
@@ -116,16 +144,9 @@ namespace Cordyceps.Tools.Unified
                 if (string.IsNullOrEmpty(name))
                     return ToolHelpers.ErrorResponse("Layer name is required");
 
-                var layerIndex = doc.Layers.FindByFullPath(name, -1);
+                var layerIndex = ResolveLayerIndex(doc, name, out var resolveError);
                 if (layerIndex < 0)
-                {
-                    var layer = doc.Layers.FirstOrDefault(l =>
-                        l.Name.Equals(name, StringComparison.OrdinalIgnoreCase));
-                    layerIndex = layer?.Index ?? -1;
-                }
-
-                if (layerIndex < 0)
-                    return ToolHelpers.ErrorResponse($"Layer '{name}' not found");
+                    return ToolHelpers.ErrorResponse(resolveError);
 
                 var targetLayer = doc.Layers[layerIndex];
                 var modified = new List<string>();
@@ -190,20 +211,14 @@ namespace Cordyceps.Tools.Unified
                 if (string.IsNullOrEmpty(name))
                     return ToolHelpers.ErrorResponse("Layer name is required");
 
-                var layerIndex = doc.Layers.FindByFullPath(name, -1);
+                var layerIndex = ResolveLayerIndex(doc, name, out var resolveError);
                 if (layerIndex < 0)
-                {
-                    var layer = doc.Layers.FirstOrDefault(l =>
-                        l.Name.Equals(name, StringComparison.OrdinalIgnoreCase));
-                    layerIndex = layer?.Index ?? -1;
-                }
-
-                if (layerIndex < 0)
-                    return ToolHelpers.ErrorResponse($"Layer '{name}' not found");
+                    return ToolHelpers.ErrorResponse(resolveError);
 
                 var targetLayer = doc.Layers[layerIndex];
                 var layerName = targetLayer.Name;
-                var objectsOnLayer = doc.Objects.FindByLayer(targetLayer);
+                // FindByLayer is documented to return null when no objects are found.
+                var objectsOnLayer = doc.Objects.FindByLayer(targetLayer) ?? Array.Empty<RhinoObject>();
 
                 // Resolve everything BEFORE mutating anything, so a doomed delete (e.g. the only
                 // layer, or the current layer with nowhere to go) fails cleanly with no side
@@ -271,7 +286,7 @@ namespace Cordyceps.Tools.Unified
                         deleteError = $"Failed to delete layer '{layerName}': it is still the current layer.";
                     else if (children != null && children.Length > 0)
                         deleteError = $"Failed to delete layer '{layerName}': it has {children.Length} child layer(s) that still contain objects or could not be removed.";
-                    else if (doc.Objects.FindByLayer(refreshed).Length > 0)
+                    else if ((doc.Objects.FindByLayer(refreshed)?.Length ?? 0) > 0)
                         deleteError = $"Failed to delete layer '{layerName}': it still contains objects that could not be deleted or moved.";
                     else
                         deleteError = $"Failed to delete layer '{layerName}': the layer table rejected the delete.";

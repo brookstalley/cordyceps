@@ -38,9 +38,9 @@ namespace Cordyceps.Tools.Unified
                 int layerIndex = doc.Layers.CurrentLayerIndex;
                 if (!string.IsNullOrEmpty(layer))
                 {
-                    layerIndex = FindOrCreateLayer(doc, layer);
+                    layerIndex = FindOrCreateLayer(doc, layer, out var layerError);
                     if (layerIndex < 0)
-                        return ToolHelpers.ErrorResponse($"Failed to create layer '{layer}'");
+                        return ToolHelpers.ErrorResponse(layerError ?? $"Failed to create layer '{layer}'");
                 }
 
                 // Build the placement plane: world-XY at the origin, optional Z rotation (degrees).
@@ -68,7 +68,8 @@ namespace Cordyceps.Tools.Unified
                     else
                     {
                         var targetLayer = doc.Layers[layerIndex];
-                        foreach (var existing in doc.Objects.FindByLayer(targetLayer))
+                        // FindByLayer is documented to return null when no objects are found.
+                        foreach (var existing in doc.Objects.FindByLayer(targetLayer) ?? Array.Empty<RhinoObject>())
                         {
                             if (existing.IsDeleted || existing.Id == objectId) continue;
                             if (string.Equals(existing.Attributes.Name, name, StringComparison.Ordinal)
@@ -115,21 +116,80 @@ namespace Cordyceps.Tools.Unified
         }
 
         /// <summary>
-        /// Find a layer by full path or name, creating it (default color) if absent.
-        /// Returns the layer index, or -1 if creation failed. Shared by set_layer and place_image.
+        /// Find a layer by exact full path ("Parent::Child"), then by case-insensitive short
+        /// name, creating it (default color) if absent. A multi-segment path that doesn't exist
+        /// is created segment by segment ("::" is illegal inside a layer NAME, so passing the
+        /// whole path to Layers.Add would fail); each missing segment is parented to the one
+        /// before it via <see cref="Layer.ParentLayerId"/>. A bare short name matching multiple
+        /// existing layers is ambiguous and returns -1 with <paramref name="error"/> listing the
+        /// candidate full paths. Shared by set_layer and place_image.
         /// </summary>
-        private static int FindOrCreateLayer(RhinoDoc doc, string layer)
+        private static int FindOrCreateLayer(RhinoDoc doc, string layer, out string error)
         {
+            error = null;
+
             var layerIndex = doc.Layers.FindByFullPath(layer, -1);
-            if (layerIndex < 0)
+            if (layerIndex >= 0)
+                return layerIndex;
+
+            var segments = layer.Split(new[] { "::" }, StringSplitOptions.None);
+
+            if (segments.Length == 1)
             {
-                var existing = doc.Layers.FirstOrDefault(l =>
-                    l.Name.Equals(layer, StringComparison.OrdinalIgnoreCase));
-                layerIndex = existing?.Index ?? -1;
+                // Short name: match an existing layer anywhere in the hierarchy before creating.
+                var matches = doc.Layers
+                    .Where(l => !l.IsDeleted && l.Name.Equals(layer, StringComparison.OrdinalIgnoreCase))
+                    .ToList();
+                if (matches.Count == 1)
+                    return matches[0].Index;
+                if (matches.Count > 1)
+                {
+                    error = $"Layer name '{layer}' is ambiguous — multiple layers share it. Use a full path: {string.Join(", ", matches.Select(l => l.FullPath))}";
+                    return -1;
+                }
             }
-            if (layerIndex < 0)
-                layerIndex = doc.Layers.Add(layer, System.Drawing.Color.Black);
-            return layerIndex;
+
+            // Create the (remaining) hierarchy: find or create each segment under its parent.
+            // The per-segment lookup is scoped to the parent and case-insensitive, so an
+            // existing 'a::b' satisfies a request for 'A::B' instead of Layers.Add rejecting
+            // the duplicate name.
+            int index = -1;
+            var parentId = Guid.Empty;
+            string pathSoFar = null;
+            foreach (var segment in segments)
+            {
+                if (string.IsNullOrWhiteSpace(segment))
+                {
+                    error = $"Invalid layer path '{layer}': empty segment";
+                    return -1;
+                }
+
+                pathSoFar = pathSoFar == null ? segment : pathSoFar + "::" + segment;
+                var segParentId = parentId;
+                var existing = doc.Layers.FirstOrDefault(l =>
+                    !l.IsDeleted && l.ParentLayerId == segParentId &&
+                    l.Name.Equals(segment, StringComparison.OrdinalIgnoreCase));
+                if (existing != null)
+                {
+                    index = existing.Index;
+                    parentId = existing.Id;
+                    continue;
+                }
+
+                var newLayer = new Layer { Name = segment, Color = System.Drawing.Color.Black };
+                if (parentId != Guid.Empty)
+                    newLayer.ParentLayerId = parentId;
+
+                index = doc.Layers.Add(newLayer);
+                if (index < 0)
+                {
+                    error = $"Failed to create layer '{pathSoFar}'";
+                    return -1;
+                }
+                parentId = doc.Layers[index].Id;
+            }
+
+            return index;
         }
 
         #endregion

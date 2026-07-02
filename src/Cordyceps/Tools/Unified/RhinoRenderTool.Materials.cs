@@ -464,9 +464,12 @@ namespace Cordyceps.Tools.Unified
                 int materialIndex = -1;
                 if (renderMaterial == null)
                 {
-                    if (int.TryParse(material, out var idx) && idx >= 0 && idx < rhinoDoc.Materials.Count)
+                    // Legacy materials: resolve by name first (same lookup material_delete
+                    // uses), then fall back to a numeric-index string.
+                    materialIndex = rhinoDoc.Materials.Find(material, true);
+                    if (materialIndex < 0 && int.TryParse(material, out var idx) && idx >= 0 && idx < rhinoDoc.Materials.Count)
                         materialIndex = idx;
-                    else
+                    if (materialIndex < 0)
                         return ToolHelpers.ErrorResponse($"Material '{material}' not found");
                 }
 
@@ -518,14 +521,18 @@ namespace Cordyceps.Tools.Unified
                 if (renderMaterial != null)
                 {
                     var deleted = rhinoDoc.RenderMaterials.Remove(renderMaterial);
-                    return JsonConvert.SerializeObject(new { success = deleted, name, deleted });
+                    if (!deleted)
+                        return ToolHelpers.ErrorResponse($"Failed to delete material '{name}' — it may be in use by objects or layers; unassign it first");
+                    return JsonConvert.SerializeObject(new { success = true, name, deleted = true });
                 }
 
                 var materialIndex = rhinoDoc.Materials.Find(name, true);
                 if (materialIndex >= 0)
                 {
                     var deleted = rhinoDoc.Materials.DeleteAt(materialIndex);
-                    return JsonConvert.SerializeObject(new { success = deleted, name, deleted });
+                    if (!deleted)
+                        return ToolHelpers.ErrorResponse($"Failed to delete legacy material '{name}' — it may be in use by objects or layers; unassign it first");
+                    return JsonConvert.SerializeObject(new { success = true, name, deleted = true });
                 }
 
                 return ToolHelpers.ErrorResponse($"Material '{name}' not found");
@@ -728,8 +735,10 @@ namespace Cordyceps.Tools.Unified
 
                 var envId = env.Id.ToString();
                 var deleted = rhinoDoc.RenderEnvironments.Remove(env);
+                if (!deleted)
+                    return ToolHelpers.ErrorResponse($"Failed to delete environment '{name}' — it may be in use (e.g. assigned as background, skylight, or reflection environment)");
 
-                return JsonConvert.SerializeObject(new { success = deleted, name, id = envId, deleted });
+                return JsonConvert.SerializeObject(new { success = true, name, id = envId, deleted = true });
             });
         }
 

@@ -81,7 +81,7 @@ namespace Cordyceps.Tools.Unified
                     Description = "Get raytraced render status or wait for passes",
                     Optional = new[] { "view", "wait", "timeout" },
                     Example = "action='render' OR action='render', wait=100, timeout=30",
-                    Tips = new[] { "wait: minimum passes to wait for", "Only for Raytraced mode" }
+                    Tips = new[] { "wait: minimum passes to wait for", "Only for Raytraced mode — wait>0 errors immediately if the view is missing or not in Raytraced mode" }
                 },
                 ["settings"] = new ActionInfo
                 {
@@ -105,7 +105,10 @@ namespace Cordyceps.Tools.Unified
                     Description = "Get/set sun settings",
                     Optional = new[] { "sunEnabled", "azimuth", "sunAltitude", "intensity", "latitude", "longitude", "dateTime" },
                     Example = "action='sun', sunEnabled='true', azimuth='180', sunAltitude='45'",
-                    Tips = new[] { "sunAltitude is in degrees (-90 to 90)" }
+                    Tips = new[] {
+                        "sunAltitude is in degrees (-90 to 90)",
+                        "azimuth/sunAltitude put the sun in manual mode; latitude/longitude/dateTime (without azimuth/sunAltitude in the same call) switch it back to computed mode — the response reports 'mode'"
+                    }
                 },
                 ["skylight"] = new ActionInfo
                 {
@@ -157,7 +160,12 @@ namespace Cordyceps.Tools.Unified
                     Required = new[] { "type", "location" },
                     Optional = new[] { "target", "color", "intensity", "spotAngle", "name" },
                     Example = "action='light_add', type='point', location='10,10,20', color='#FFFFFF'",
-                    Tips = new[] { "type: point, spot, directional", "spot requires target", "location/target as 'x,y,z'" }
+                    Tips = new[] {
+                        "type: point, spot, directional",
+                        "location/target as 'x,y,z'",
+                        "spot/directional need a target distinct from location (defaults: spot aims straight down to z=0, directional aims at the world origin)",
+                        "spotAngle in degrees, > 0 and <= 90"
+                    }
                 },
                 ["light_list"] = new ActionInfo
                 {
@@ -171,14 +179,19 @@ namespace Cordyceps.Tools.Unified
                     Description = "Modify a light's properties",
                     Required = new[] { "ids" },
                     Optional = new[] { "location", "target", "color", "intensity", "spotAngle", "enabled" },
-                    Example = "action='light_set', ids='[\"abc\"]', intensity=2.0"
+                    Example = "action='light_set', ids='[\"abc\"]', intensity=2.0",
+                    Tips = new[] {
+                        "At least one property is required; invalid values are rejected before any light is touched",
+                        "Ids that match no light are reported in notFound; success:false with an error when no light was modified"
+                    }
                 },
                 ["light_delete"] = new ActionInfo
                 {
                     Name = "light_delete",
                     Description = "Delete lights from the scene",
                     Required = new[] { "ids" },
-                    Example = "action='light_delete', ids='[\"abc\"]'"
+                    Example = "action='light_delete', ids='[\"abc\"]'",
+                    Tips = new[] { "Ids that match no light are reported in notFound; success:false with an error when no light was deleted" }
                 },
                 // Material actions (from rhino_material)
                 ["material_list"] = new ActionInfo
@@ -228,7 +241,8 @@ namespace Cordyceps.Tools.Unified
                     Name = "material_apply",
                     Description = "Apply material to objects",
                     Required = new[] { "ids", "material" },
-                    Example = "action='material_apply', ids='[\"abc\"]', material='Red Metal'"
+                    Example = "action='material_apply', ids='[\"abc\"]', material='Red Metal'",
+                    Tips = new[] { "material accepts a render material name, a legacy material name, or a legacy material table index" }
                 },
                 ["material_delete"] = new ActionInfo
                 {
@@ -670,7 +684,34 @@ namespace Cordyceps.Tools.Unified
         private string ActionRender(string view, int wait, int timeout)
         {
             if (wait > 0)
+            {
+                // Validate up front (single UI-thread hop) so a missing view or a non-Raytraced
+                // display mode fails immediately instead of burning the whole timeout in the
+                // poll loop and then reporting success. WaitForRender itself stays off the UI
+                // thread and only hops per poll.
+                var precheckError = _context.ExecuteOnUiThread<string>(() =>
+                {
+                    var doc = RhinoDoc.ActiveDoc;
+                    if (doc == null)
+                        return ToolHelpers.ErrorResponse("No active Rhino document");
+
+                    var targetView = GetView(doc, view);
+                    if (targetView == null)
+                        return ToolHelpers.ErrorResponse($"View not found: {view ?? "active"}");
+
+                    var vp = targetView.ActiveViewport;
+                    bool isRaytraced = vp.DisplayMode?.EnglishName?.Equals("Raytraced", StringComparison.OrdinalIgnoreCase) ?? false;
+                    if (!isRaytraced)
+                        return ToolHelpers.ErrorResponse(
+                            $"View '{vp.Name}' is not in Raytraced display mode (current: {vp.DisplayMode?.EnglishName ?? "Unknown"}) — there are no render passes to wait for. Switch first with action='display', mode='Raytraced'.");
+
+                    return null;
+                });
+                if (precheckError != null)
+                    return precheckError;
+
                 return WaitForRender(view, wait, timeout);
+            }
 
             return _context.ExecuteOnUiThread(() =>
             {

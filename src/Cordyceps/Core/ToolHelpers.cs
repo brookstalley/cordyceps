@@ -1010,6 +1010,9 @@ namespace Cordyceps.Core
 
         /// <summary>
         /// Try to parse a Point3d from a comma-separated string "x,y,z".
+        /// Components are parsed with the invariant culture ('.' decimal separator) so the
+        /// wire format is stable regardless of the host machine's locale — current-culture
+        /// parsing on comma-decimal locales would mis-split "10.5,0,3.2" catastrophically.
         /// </summary>
         /// <param name="value">String in "x,y,z" format</param>
         /// <param name="result">Output: parsed Point3d if successful</param>
@@ -1022,9 +1025,9 @@ namespace Cordyceps.Core
             var parts = value.Split(',');
             if (parts.Length != 3) return false;
 
-            if (!double.TryParse(parts[0].Trim(), out var x)) return false;
-            if (!double.TryParse(parts[1].Trim(), out var y)) return false;
-            if (!double.TryParse(parts[2].Trim(), out var z)) return false;
+            if (!double.TryParse(parts[0].Trim(), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var x)) return false;
+            if (!double.TryParse(parts[1].Trim(), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var y)) return false;
+            if (!double.TryParse(parts[2].Trim(), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var z)) return false;
 
             result = new Rhino.Geometry.Point3d(x, y, z);
             return true;
