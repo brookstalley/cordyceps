@@ -359,6 +359,13 @@ build_state:
 # it's fixed (STH-5P2W).
 #
 # active_build_plan: artifacts/build-plan-my-scope.md
+#
+# Repointed 2026-07-02 when the reliability follow-through build started (janitor
+# PR #25 merged the prior plan's work to develop). The janitor plan
+# (artifacts/build-plan.md) is retained until the next develop->main release per
+# the gitflow plan lifecycle; it has no derived `## Status` block, so repointing
+# early loses nothing for release regen-views.
+active_build_plan: artifacts/build-plan-reliability.md
 
 # =============================================================================
 # DERIVED VIEWS (enabled by default, v1.4+)
