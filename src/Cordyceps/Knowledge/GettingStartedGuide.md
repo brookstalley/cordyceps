@@ -21,7 +21,7 @@ Use `action='help'` on any tool for parameters.
 
 ```
 gh_document(action='solver', enabled=false)
-gh_canvas(action='add', type='...', x=..., y=..., nickname='...')
+gh_canvas(action='add', type='...', x=..., y=...)
 gh_wire(action='connect', connections='[{"sourceId":"id1","sourceParam":"0","targetId":"id2","targetParam":"R"}]')
 gh_document(action='solver', enabled=true)
 gh_inspect(action='status')

@@ -295,7 +295,8 @@ namespace Cordyceps.Tools.Unified
             Notes = new[]
             {
                 "view defaults to active view if not specified",
-                "Use gh_document(action='capture_viewport') to capture images"
+                "Use gh_document(action='capture_viewport') to capture images",
+                "Mutating actions (lights, materials, environments, settings, saved views) run inside one undo record ('Cordyceps <action>'), so a single Ctrl-Z in Rhino reverts the whole action"
             }
         };
 

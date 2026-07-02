@@ -135,3 +135,10 @@ Raytraced: `wait=100` for preview, `wait=500` for final quality.
 ## Coordinate Format
 
 All Point3d as comma-separated: `"x,y,z"` (e.g., `"100.5,50.25,30.0"`)
+
+## Undo Behavior
+
+Every mutating `rhino_scene`/`rhino_render` action (objects, layers, lights, materials,
+environments, settings, saved views) and `gh_canvas(action='bake')` runs inside a single named
+undo record (`Cordyceps <action>`), so one Ctrl-Z in Rhino reverts the whole action — a bulk
+`set_layer` of fifty objects undoes as one step, not fifty.

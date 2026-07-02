@@ -38,7 +38,8 @@ namespace Cordyceps.Tools.Unified
                         "Use GUID for guaranteed accuracy",
                         "Adding a slider: pass min/max/value/decimals to configure it in one call (e.g. type='slider', min=0, max=100, value=50, decimals=2). Non-slider components ignore these.",
                         "Set min/max before value: value is clamped to the range. Same slider config as action='config'.",
-                        "A slider value that doesn't parse as a number is an error — the component is NOT added (parity with action='config')."
+                        "A slider value that doesn't parse as a number is an error — the component is NOT added (parity with action='config').",
+                        "Leave 'nickname' unset during normal building — renamed components are hard to find on the canvas. Annotate with labeled groups (group_create) instead and track the returned id."
                     }
                 },
                 ["delete"] = new ActionInfo
@@ -64,7 +65,11 @@ namespace Cordyceps.Tools.Unified
                     Name = "rename",
                     Description = "Change a component's nickname (display name)",
                     Required = new[] { "id", "nickname" },
-                    Example = "action='rename', id='abc-123', nickname='MyCircle'"
+                    Example = "action='rename', id='abc-123', nickname='MyCircle'",
+                    Tips = new[]
+                    {
+                        "Avoid renaming components as part of normal building — renamed components are hard to find on the canvas and it is not the Grasshopper convention. Annotate with labeled groups (group_create), panels, or scribbles instead; only rename when the user explicitly asks for it"
+                    }
                 },
                 ["find"] = new ActionInfo
                 {
@@ -72,7 +77,8 @@ namespace Cordyceps.Tools.Unified
                     Description = "Find component(s) by nickname",
                     Required = new[] { "nickname" },
                     Optional = new[] { "exact" },
-                    Example = "action='find', nickname='MyCircle'"
+                    Example = "action='find', nickname='Circle'",
+                    Tips = new[] { "Matches default nicknames too (e.g. 'Circle', 'Slider') — no need to rename components to make them findable; prefer tracking the id returned from add" }
                 },
                 ["search"] = new ActionInfo
                 {
@@ -125,7 +131,7 @@ namespace Cordyceps.Tools.Unified
                     Required = new[] { "id" },
                     Optional = new[] { "layer", "name" },
                     Example = "action='bake', id='abc-123', layer='Baked'",
-                    Tips = new[] { "Creates permanent Rhino objects from component output", "Specify layer to organize baked geometry" }
+                    Tips = new[] { "Creates permanent Rhino objects from component output", "Specify layer to organize baked geometry", "All baked objects land in one undo record — a single Ctrl-Z in Rhino removes the whole bake" }
                 },
                 ["zoom"] = new ActionInfo
                 {
@@ -978,7 +984,7 @@ namespace Cordyceps.Tools.Unified
 
         private string ActionBake(string id, string layer, string name)
         {
-            return _context.ExecuteOnUiThread(() =>
+            return _context.ExecuteOnUiThread(() => ToolHelpers.WithUndoRecord(Rhino.RhinoDoc.ActiveDoc, "bake", () =>
             {
                 if (!ToolHelpers.TryGetUnprotectedComponent(_context, id, out var component, out var error))
                     return ToolHelpers.ErrorResponse(error);
@@ -1061,7 +1067,7 @@ namespace Cordyceps.Tools.Unified
                     layer = layer ?? "Default",
                     objectIds = bakedIds
                 });
-            });
+            }));
         }
 
         private string ActionZoom(string id, int padding)

@@ -186,6 +186,58 @@ SliderConfig.ValueInvalid, place_image path rule) are CI-tested; the host glue b
   correct response (previously the response was destroyed after the tool ran); `Accept: */*`
   works (curl default).
 
+## VRF-009 — reliability Chunk 03 — Stop() drain moved off the UI thread
+
+**Status:** pending
+**Added:** 2026-07-02 (feat/reliability-follow-through, Chunk 03)
+**Where to verify:** live Rhino 8 + Grasshopper with an MCP client attached.
+
+**Why this needs a human:** the fix removes a guaranteed ~2s Rhino UI stall when server teardown
+overlaps an in-flight request (the old synchronous drain waited on handlers blocked in
+`RhinoApp.InvokeAndWait` on the very thread doing the waiting). UI responsiveness and the
+restart-while-draining path are host behavior no unit test can observe. Supersedes the
+drain/teardown bullets of VRF-002 (the lifecycle otherwise unchanged).
+
+**Verify:**
+- **Teardown under load:** issue a slow tool call (e.g. a large `gh_canvas` bake or a script
+  configure), and while it is in flight delete the Cordyceps component (or close the document).
+  Rhino must NOT freeze for ~2 seconds; the debug log should show "Stopping MCP server..."
+  immediately and "MCP server stopped" shortly after (the drain now finishes in the background —
+  a WARN "still in flight after 2s; detaching" is acceptable only for genuinely wedged work).
+- **Restart while draining:** with a request in flight, change the component's port input
+  (old server stops, new one starts). The new port must bind and serve immediately; the old
+  server's teardown completes in the background without errors in the log.
+- **Clean idle teardown:** delete the component with no requests in flight — server stops
+  cleanly, port is freed (re-placing the component on the same port works).
+
+## VRF-010 — reliability Chunk 05 — undo records around mutating Rhino actions
+
+**Status:** pending
+**Added:** 2026-07-02 (feat/reliability-follow-through, Chunk 05)
+**Where to verify:** live Rhino 8 + Grasshopper with an MCP client attached.
+
+**Why this needs a human:** `RhinoDoc.BeginUndoRecord`/`EndUndoRecord` grouping is host behavior
+— no unit test can observe Rhino's undo stack. The API surface was verified by reflection
+(api-notes-rhinocommon.md), but the actual grouping and record naming need eyes.
+
+**Verify:**
+- **Bulk undo as one step:** create ~10 objects, `rhino_scene(action='set_layer', ids=[all], layer='X')`,
+  then a single Ctrl-Z in Rhino — ALL objects return to their original layers at once. Rhino's
+  undo menu shows "Cordyceps set_layer".
+- **layer_delete:** delete a layer with objects (moved to another layer) — one Ctrl-Z restores
+  the layer and its objects together.
+- **bake:** `gh_canvas(action='bake')` on a component producing many items — one Ctrl-Z removes
+  every baked object.
+- **Error path:** trigger a failing mutation (e.g. `set_layer` to a bogus layer) — no dangling
+  open undo record afterward (subsequent manual edits undo normally, one at a time).
+- **script action untouched:** `rhino_scene(action='script', ...)` undo behavior matches the
+  native command's own record (not wrapped by Cordyceps).
+- **Settings/environment undo actually records:** change render settings or the environment
+  (`rhino_render(action='settings'/'env_set')`) and press Ctrl-Z — confirm Rhino's undo stack
+  actually records these (the wrapper is in place, but whether RenderSettings/Sun/NamedView
+  changes participate in document undo is unverified). If Rhino does NOT record them, soften
+  the RenderingGuide "Undo Behavior" section and the rhino_render tool note accordingly.
+
 ## VRF-006 — gitflow-release-refactor — `release.sh prep`/`publish` end-to-end
 
 **Status:** pending

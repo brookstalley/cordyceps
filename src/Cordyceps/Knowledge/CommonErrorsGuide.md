@@ -4,7 +4,7 @@
 
 | Error | Cause | Fix |
 |-------|-------|-----|
-| "Component not found" | ID doesn't exist | `gh_canvas(action='list')` or `gh_canvas(action='find', nickname='...')` |
+| "Component not found" | ID doesn't exist | `gh_canvas(action='list')` (optionally with `typeFilter`/`group`), or `gh_canvas(action='find', nickname='...')` — find matches default nicknames like 'Circle'; no need to rename components |
 | "Unknown component type" | Name doesn't match | `gh_canvas(action='search', query='...')` or use GUID |
 | "Ambiguous component name" | Multiple matches | Use `Category/Name` format or GUID |
 

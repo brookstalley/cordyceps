@@ -109,6 +109,42 @@ namespace Cordyceps.Tests
         }
 
         [Fact]
+        public void DrainWithin_FaultCoincidingWithTimeout_ReturnsFalse()
+        {
+            // MCP-5T7W regression: a handler fault must not mask a budget timeout. With one
+            // handler faulted and another still running when the budget expires, the drain did
+            // NOT complete — DrainWithin must say so, whatever exception plumbing Task.WaitAll
+            // uses for the fault.
+            var inflight = new InFlightRequests();
+            var stillRunning = new TaskCompletionSource<bool>();
+            inflight.Track(Task.FromException(new InvalidOperationException("boom")));
+            inflight.Track(stillRunning.Task); // never completes during the assertion window
+
+            Assert.False(inflight.DrainWithin(ShortBudget));
+
+            stillRunning.SetResult(true); // cleanup: leave nothing running
+        }
+
+        [Fact]
+        public async Task DrainWithin_FaultedPlusLateCompleting_WithinBudget_ReturnsTrue()
+        {
+            // Companion to the timeout case: when the faulted handler's peers DO finish inside
+            // the budget, the drain succeeded — the fault alone must not flip the result either
+            // way. Drives the mixed fault+success completion path with real concurrency.
+            var inflight = new InFlightRequests();
+            var gate = new TaskCompletionSource<bool>();
+            inflight.Track(Task.FromException(new InvalidOperationException("boom")));
+            inflight.Track(gate.Task);
+
+            var drain = Task.Run(() => inflight.DrainWithin(AmpleBudget));
+            _ = Task.Run(async () => { await Task.Delay(20); gate.SetResult(true); });
+
+            Assert.True(await Task.WhenAny(drain, Task.Delay(TimeSpan.FromSeconds(3))) == drain,
+                "drain did not return within its budget");
+            Assert.True(await drain);
+        }
+
+        [Fact]
         public void Track_NullTask_Throws()
         {
             var inflight = new InFlightRequests();

@@ -14,7 +14,7 @@ namespace Cordyceps.Tools.Unified
 
         private string ActionLightAdd(string lightType, string location, string target, string color, double intensity, double spotAngle, string name)
         {
-            return _context.ExecuteOnUiThread(() =>
+            return _context.ExecuteOnUiThread(() => ToolHelpers.WithUndoRecord(RhinoDoc.ActiveDoc, "light_add", () =>
             {
                 var doc = RhinoDoc.ActiveDoc;
                 if (doc == null)
@@ -122,7 +122,7 @@ namespace Cordyceps.Tools.Unified
                     intensity = light.Intensity,
                     enabled = light.IsEnabled
                 });
-            });
+            }));
         }
 
         private string ActionLightList()
@@ -175,7 +175,7 @@ namespace Cordyceps.Tools.Unified
 
         private string ActionLightSet(string ids, string location, string target, string color, double intensity, double spotAngle, string enabled)
         {
-            return _context.ExecuteOnUiThread(() =>
+            return _context.ExecuteOnUiThread(() => ToolHelpers.WithUndoRecord(RhinoDoc.ActiveDoc, "light_set", () =>
             {
                 var doc = RhinoDoc.ActiveDoc;
                 if (doc == null)
@@ -308,12 +308,12 @@ namespace Cordyceps.Tools.Unified
                     notFound = notFound.Count > 0 ? notFound : null,
                     failed = failed.Count > 0 ? failed : null
                 });
-            });
+            }));
         }
 
         private string ActionLightDelete(string ids)
         {
-            return _context.ExecuteOnUiThread(() =>
+            return _context.ExecuteOnUiThread(() => ToolHelpers.WithUndoRecord(RhinoDoc.ActiveDoc, "light_delete", () =>
             {
                 var doc = RhinoDoc.ActiveDoc;
                 if (doc == null)
@@ -370,7 +370,7 @@ namespace Cordyceps.Tools.Unified
                     deletedCount,
                     notFound = notFound.Count > 0 ? notFound : null
                 });
-            });
+            }));
         }
 
         private static string GetLightTypeName(LightStyle style)

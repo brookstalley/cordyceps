@@ -33,7 +33,9 @@ namespace Cordyceps
         private CancellationTokenSource _cts;
         private Task _listenerTask;
         private int _port;
-        private GrasshopperContext _context;
+        // volatile: written on the UI thread (Start) and nulled by Stop()'s background teardown
+        // task, read once (captured into a local, null-guarded) on HTTP worker threads.
+        private volatile GrasshopperContext _context;
         private readonly List<ToolInfo> _tools = new List<ToolInfo>();
         // In-flight request handlers, tracked so Stop() can drain them before tearing down
         // shared state instead of detaching them mid-request.
@@ -42,9 +44,22 @@ namespace Cordyceps
         private DateTime _startTime;
 
         /// <summary>
-        /// Whether the server is currently running
+        /// Lifecycle single source of truth (MCP-9F3Q). All lifecycle reads and writes go
+        /// through this field; <see cref="IsRunning"/> is derived from it. Written on the UI
+        /// thread (Start, and Stop's synchronous half) and by Stop()'s background teardown task
+        /// (the final Stopped transition); read from worker threads — hence volatile.
         /// </summary>
-        public bool IsRunning { get; private set; }
+        private volatile Core.ServerState _state = Core.ServerState.Stopped;
+
+        /// <summary>
+        /// Current lifecycle state of the server.
+        /// </summary>
+        public Core.ServerState State => _state;
+
+        /// <summary>
+        /// Whether the server is currently running (derived from <see cref="State"/>)
+        /// </summary>
+        public bool IsRunning => _state == Core.ServerState.Running;
 
         /// <summary>
         /// Actionable reason the last <see cref="Start"/> failed (e.g. the port is held by another
@@ -81,12 +96,13 @@ namespace Cordyceps
         /// </summary>
         public void Start(int port = DEFAULT_PORT)
         {
-            if (IsRunning)
+            if (!Core.ServerStateTransitions.CanStart(_state))
             {
-                Core.DebugLog.WriteLine("MCP server already running", "INFO", 1);
+                Core.DebugLog.WriteLine($"MCP server Start() ignored: state is {_state}", "INFO", 1);
                 return;
             }
 
+            _state = Core.ServerState.Starting;
             _port = port;
             _cts = new CancellationTokenSource();
             StartError = null;
@@ -109,7 +125,7 @@ namespace Cordyceps
                 // Start listening in background
                 _listenerTask = Task.Run(() => ListenLoopAsync(_cts.Token), _cts.Token);
 
-                IsRunning = true;
+                _state = Core.ServerState.Running;
                 _startTime = DateTime.UtcNow;
                 Core.DebugLog.WriteLine($"MCP server started on http://127.0.0.1:{_port}/mcp", "INFO", 0);
             }
@@ -128,52 +144,83 @@ namespace Cordyceps
                 _cts = null;
                 _listener?.Close();
                 _listener = null;
+                _context = null; // Failed carries the same no-live-plumbing invariant as Stopped
+                _state = Core.ServerState.Failed;
             }
         }
 
         /// <summary>
-        /// Stop the MCP server
+        /// Stop the MCP server. The synchronous half (listener cancel/close) frees the port
+        /// before returning so a replacement server can bind immediately; the in-flight-handler
+        /// drain and final teardown run on a background task (see MCP-3D8V below). After this
+        /// returns the state is <see cref="Core.ServerState.Stopping"/> until the drain
+        /// completes, then <see cref="Core.ServerState.Stopped"/>.
         /// </summary>
         public void Stop()
         {
-            if (!IsRunning) return;
+            if (!Core.ServerStateTransitions.CanStop(_state)) return;
 
-            Core.DebugLog.WriteLine("Stopping MCP server...", "INFO", 1);
+            _state = Core.ServerState.Stopping;
+            Core.DebugLog.WriteLine($"Stopping MCP server (port {_port})...", "INFO", 1);
 
             try
             {
                 _cts?.Cancel();
                 _listener?.Stop();
                 _listener?.Close();
-
-                try { _listenerTask?.Wait(TimeSpan.FromSeconds(SHUTDOWN_TIMEOUT_SECONDS)); }
-                catch (AggregateException ex)
-                {
-                    Core.DebugLog.WriteLine($"Shutdown exception (expected): {ex.InnerException?.Message}", "DEBUG", 1);
-                }
-
-                // Drain in-flight request handlers within the shutdown budget so they finish
-                // against a still-valid context before the finally block releases it. A handler
-                // that outlives the budget is detached; it reads the context defensively (see
-                // HandleToolCallAsync) and the Chunk-01 document-lock timeout bounds any wedged
-                // work, so this wait stays finite.
-                if (!_inFlight.DrainWithin(TimeSpan.FromSeconds(SHUTDOWN_TIMEOUT_SECONDS)))
-                    Core.DebugLog.WriteLine($"Shutdown: {_inFlight.Count} request(s) still in flight after {SHUTDOWN_TIMEOUT_SECONDS}s; detaching", "WARN", 1);
             }
-            catch (Exception ex)
+            catch (Exception ex) // prawduct:allow prawduct/broad-except -- teardown boundary: a listener stop/close failure must never throw into the host component's solve; log and continue so the background teardown still releases state
             {
                 Core.DebugLog.WriteLine($"Error stopping server: {ex.Message}", "ERROR", 0);
             }
-            finally
+
+            // Hand the disposable pieces to the background task and clear the fields now, so a
+            // half-torn-down server never presents live-looking plumbing.
+            var cts = _cts;
+            var listenerTask = _listenerTask;
+            _cts = null;
+            _listener = null;
+            _listenerTask = null;
+
+            // Drain OFF the calling thread (MCP-3D8V). Stop() is invoked on the UI thread (the
+            // component's port-change, RemovedFromDocument, and DocumentContextChanged paths),
+            // while an in-flight handler is typically a worker blocked in RhinoApp.InvokeAndWait
+            // waiting for that same UI thread — so a synchronous drain here could never succeed
+            // for exactly the handlers it protects and stalled the UI for the full budget.
+            // Returning first lets the blocked handler's UI work run, so the drain genuinely
+            // observes handlers finishing against a still-valid context; only then is the
+            // context released. A handler that outlives the budget is detached; it reads the
+            // context defensively (see HandleToolCallAsync) and the document-lock timeout
+            // bounds any wedged work, so the background wait stays finite.
+            Task.Run(() =>
             {
-                _cts?.Dispose();
-                _cts = null;
-                _listener = null;
-                _listenerTask = null;
-                _context = null;
-                IsRunning = false;
-                Core.DebugLog.WriteLine("MCP server stopped", "INFO", 0);
-            }
+                try
+                {
+                    try { listenerTask?.Wait(TimeSpan.FromSeconds(SHUTDOWN_TIMEOUT_SECONDS)); }
+                    catch (AggregateException ex)
+                    {
+                        Core.DebugLog.WriteLine($"Shutdown exception (expected): {ex.InnerException?.Message}", "DEBUG", 1);
+                    }
+
+                    if (_inFlight.DrainWithin(TimeSpan.FromSeconds(SHUTDOWN_TIMEOUT_SECONDS)))
+                        Core.DebugLog.WriteLine($"Shutdown (port {_port}): all in-flight requests drained", "DEBUG", 1);
+                    else
+                        Core.DebugLog.WriteLine($"Shutdown (port {_port}): {_inFlight.Count} request(s) still in flight after {SHUTDOWN_TIMEOUT_SECONDS}s; detaching", "WARN", 1);
+                }
+                catch (Exception ex) // prawduct:allow prawduct/broad-except -- background teardown: an unexpected failure here would otherwise vanish as an unobserved task exception; log it, then let finally release state regardless
+                {
+                    Core.DebugLog.WriteLine($"Shutdown (port {_port}): background teardown error: {ex.Message}", "ERROR", 0);
+                }
+                finally
+                {
+                    // State transition BEFORE disposal: if Dispose ever threw, the instance
+                    // must not be left stuck in Stopping with the context still pinned.
+                    _context = null;
+                    _state = Core.ServerState.Stopped;
+                    Core.DebugLog.WriteLine($"MCP server (port {_port}) stopped", "INFO", 0);
+                    cts?.Dispose();
+                }
+            });
         }
 
         /// <summary>
@@ -574,7 +621,7 @@ READ FIRST: gh://docs/getting-started (use resources/read)
 UNIFIED TOOLS (use action='help' for details):
 - gh_canvas: add, delete, move, rename, find, search, list, info, bounds, validate, constant, bake, zoom, view, get, set, config, preview, enable, group_create, group_delete, group_add, group_remove, group_list, group_rename, group_color, group_move, zoomable
 - gh_wire: connect, disconnect, list, clear, validate
-- gh_document: info, save, clear, solver, recompute, undo, redo (both disabled — use snapshot/revert), snapshot, revert, snapshots, capture_canvas, capture_viewport, capture_region, capture_views
+- gh_document: info, save, clear, solver, recompute, undo, redo (both disabled — use snapshot/revert), snapshot, revert, snapshots, snapshot_delete (max 20 snapshots kept; oldest evicted), capture_canvas, capture_viewport, capture_region, capture_views
 - gh_script: get, set, configure, info
 - gh_inspect: status, outputs, trace, disconnected, geometry, log, reports, categories, docs
 - rhino_scene: objects, select, deselect, set_layer, set_name, layers, layer_create, layer_set, layer_delete, hide, show, delete, set_color, bbox, place_image, script
@@ -584,6 +631,7 @@ Key points:
 - Disable solver: gh_document(action='solver', enabled=false)
 - Ambiguous names: use GUID or Category/Name format
 - Spacing: 150px horizontal, 70px vertical
+- Annotate with labeled groups (group_create with name/color), panels, or scribbles — do NOT rename components while building; renamed components are hard to find on the canvas and it is not the Grasshopper convention. Track components by the returned id
 - CRITICAL: Inside a cluster editor, NEVER advise the user to press F5 or use Grasshopper's native recompute. It will destroy cluster inputs. Use gh_document(action='recompute') instead — it is cluster-safe.
 
 VERIFY PERIODICALLY: After completing a section of work, run gh_inspect(action='status')

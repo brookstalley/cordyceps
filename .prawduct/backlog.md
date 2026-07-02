@@ -64,79 +64,6 @@
 
 <!-- Items available to pick up. -->
 
-- **[MCP-9F3Q]** Introduce a ServerState enum as the single source of truth for server lifecycle
-  `effort: M · impact: M · area: mcp-server · source: critic · added: 2026-06-21 · status: open · stage: ready`
-
-  Stage-1 cumulative Critic NOTE (non-blocking, forward-looking, on Chunk 01/02 code). Server
-  lifecycle state in `McpServer` is currently reconstructed from 3 interdependent signals —
-  `IsRunning` + `StartError` + `_context` — with no single source of truth. No invalid combination
-  is currently reachable, but Stage 2+ will add conditions that increase the combinatorial surface.
-
-  **Fix shape:** introduce a `ServerState` enum (e.g. Stopped/Starting/Running/Failed) as the single
-  source of truth, and derive `IsRunning`/`StartError` from it, before that Stage 2+ complexity lands.
-  Refactor, behavior-preserving. Doc-audit: internal lifecycle only; check whether any tool surfaces
-  server status to clients.
-
-- **[MCP-5T7W]** Decide + test InFlightRequests.DrainWithin timeout-coincident-with-fault behavior
-  `effort: S · impact: M · area: mcp-server · source: critic · added: 2026-06-21 · status: open · stage: ready`
-
-  Stage-1 cumulative Critic NOTE (non-blocking, forward-looking, on Chunk 01/02 code).
-  `Core/InFlightRequests.DrainWithin` returns `true` on any `AggregateException`, which can mask a
-  budget-timeout that coincided with a handler fault. The masking loses only a WARN log — correctness
-  is still protected by the `_context == null` guard — but the timeout+fault combination is currently
-  untested.
-
-  **Fix shape:** make an explicit decision about the correct return value when a drain timeout
-  coincides with a handler fault, then add a regression test covering that combination. Touches
-  `Core/InFlightRequests.cs` + the test project.
-
-- **[GHD-6M2J]** Bound or evict GhDocumentTool snapshot store (unbounded process-lifetime)
-  `effort: S · impact: M · area: gh-document · source: critic · added: 2026-06-21 · status: open · stage: ready · reviewed: 2026-07-02`
-
-  Stage-1 cumulative Critic NOTE (non-blocking, forward-looking, low priority). `GhDocumentTool._snapshots`
-  is an unbounded process-lifetime store (pre-existing; Chunk 03 only changed the collection type for
-  thread-safety). Snapshots accumulate for the life of the Rhino session with no eviction or cap.
-
-  **Fix shape:** consider a bound (max snapshot count) or an eviction policy (e.g. LRU / oldest-first).
-  Gated by explicit user action, so memory growth is operator-driven and low priority. Doc-audit: if a
-  cap is introduced, check `gh_document` snapshot ActionInfo for the new limit semantics.
-
-  **[2026-07-02] Impact raised S→M (cumulative Critic, sustainability).** The 2026-07-02 janitor
-  branch materially increases pressure on this store: undo/redo are now advertised as DISABLED in
-  ActionInfo/server-instructions/README with explicit "use action='snapshot' before changes and
-  action='revert'" guidance, steering every agent mutation workflow into this unbounded
-  process-lifetime ConcurrentDictionary of full document serializations. Auto-timestamped names mean
-  repeated unnamed snapshots never overwrite. Fix shape unchanged (cap + oldest-first eviction — the
-  LogBuffer pattern is now in-tree — and/or a snapshot_delete action).
-
-- **[GHS-4D8M]** gh_script(set/configure) silently succeeds when it leaves a Script component unable to determine its language (Rhino LanguageSpec wipe — upstream)
-  `effort: M · impact: M · area: gh-script · source: user · added: 2026-06-24 · status: open · stage: ready · reviewed: 2026-06-24 · related: GHS-7K2P · refs: issue #15, docs/upstream-rhino-scriptcomponent-languagespec.md`
-
-  `gh_script(set/configure)` silently returns `{"success": true}` in a case where it leaves a unified
-  `ScriptComponent` unable to determine its language — the component then fails at solve time (the same
-  class of failure as GHS-7K2P, but via a different mechanism). A partial fix landed this session: a
-  `languageWarning` guard was added so the tool now surfaces a warning instead of silently reporting
-  success (issue #15, partial).
-
-  **[2026-06-24] Investigation + upstream report drafted.** A McNeel bug report is drafted at
-  `docs/upstream-rhino-scriptcomponent-languagespec.md`, pending filing on McNeel Discourse/YouTrack
-  (next action). Investigation findings:
-  - The unified `ScriptComponent` silently loses its language on a **directive-less `SetSource`** — the
-    error surfaces only at solve time, **not** from `SetSource` itself.
-  - It **IS recoverable** via a directive-bearing `SetSource` — this **corrects the original
-    "permanently broken" claim**.
-  - Setting `LanguageSpec` via reflection **does not stick**.
-
-  **Cordyceps mitigation shipped in v1.4.11:** the `languageWarning` guard + directive preservation
-  (the latter via `Core/ScriptDirective.cs`, GHS-7K2P). The remaining root cause — Rhino's
-  `LanguageSpec` being wiped — is **upstream in Rhino 8's `ScriptComponent` and is not
-  cordyceps-fixable**. This item now tracks the upstream report through filing.
-
-  **Next action:** file the drafted report with McNeel (Discourse / YouTrack). Related to GHS-7K2P
-  (the directive-preservation fix via `Core/ScriptDirective.cs`); distinct mechanism, same `gh-script`
-  area. Doc-audit: if the warning surfaces in tool responses, check `gh_script` ActionInfo + server
-  instructions.
-
 - **[GHC-2N8K]** De-duplicate the host-bound slider-apply block shared by gh_canvas add and config
   `effort: S · impact: S · area: gh-canvas · source: critic · added: 2026-06-24 · status: open · stage: ready · related: GHC-7X4B, GHS-3W9N`
 
@@ -157,62 +84,6 @@
   requested. Add and config are currently verified to produce identical sliders by the
   operator-verification parity check (VRF-004) — that parity is what this item protects against future
   drift. Doc-audit: internal refactor, behavior-preserving; no user-facing surface expected to change.
-
-- **[GHC-8V3T]** Stop renaming/nicknaming components on the canvas — annotate via groups instead
-  `effort: M · impact: M · area: gh-canvas · source: user · added: 2026-07-02 · status: open · stage: ready · reviewed: 2026-07-02`
-
-  **User decision (2026-07-02, from user reports):** Cordyceps must NOT rename/nickname components —
-  renamed components are hard to find on the canvas. Most Grasshopper users never rename components;
-  the native convention is annotation via **groups with labels** (plus panels/scribbles), so Cordyceps
-  should snap to that convention.
-
-  **Scope resolution (user decision, 2026-07-02):** the main open contract question is decided — do
-  **NOT** remove or deprecate the rename capability. The `gh_canvas` `rename` action and the
-  `nickname` parameter stay fully functional (a user/agent who explicitly wants to rename still can).
-  What changes is the **propensity** to rename as part of building: Cordyceps guidance must stop
-  encouraging renaming/nicknaming during normal canvas construction. This supersedes the earlier
-  deprecate-or-remove question in (a)/(b) below; the contract question is closed, so the item is now
-  implementable (`stage: ready`).
-
-  **Remaining scope (implementable):**
-  - (a) audit all guidance surfaces — server instructions (`McpServer.cs` `GetServerInstructions()`),
-    ActionInfo descriptions/tips/examples, Knowledge guides (CanvasLayoutGuide / BestPractices /
-    GettingStarted), and prompt templates — and remove anything that encourages nicknaming components
-    while building; recommend groups with labels (and panels/scribbles) for annotation instead;
-  - (b) check whether any Cordyceps code path auto-applies nicknames unprompted (e.g. `add` or script
-    `configure` defaulting a nickname) and stop doing so;
-  - (c) add an explicit note in the rename/add ActionInfo that renaming makes components hard to find
-    and groups are the preferred annotation mechanism;
-  - (d) note groups already have create/rename/color actions that serve the annotation need — no new
-    capability required for the replacement convention.
-
-- **[MCP-3D8V]** McpServer.Stop() drain runs on the UI thread it is waiting for
-  `effort: M · impact: M · area: mcp-server · source: janitor · added: 2026-07-02 · status: open · stage: ready · related: MCP-9F3Q, MCP-5T7W`
-
-  Surfaced by the 2026-07-02 janitor audit. `Stop()` is always invoked from the UI thread (the
-  `SolveInstance` port-change path, `RemovedFromDocument`, and now `DocumentContextChanged`) while
-  holding `CordycepsComponent._lock`. An in-flight tool handler is a worker blocked in
-  `RhinoApp.InvokeAndWait` waiting for that same UI thread — so `_inFlight.DrainWithin(2s)` can
-  **never** succeed for exactly the handlers it protects. Result: a guaranteed ~2s UI stall + detach
-  whenever teardown overlaps a request, and the `McpServer.cs` comment claiming handlers finish
-  against a still-valid context is wrong for that case.
-
-  Correctness is protected by the captured-context guard (no NRE), so this is a **latency/topology
-  fix**, not a correctness fix: run the drain off the UI thread (cancel + fire-and-forget teardown
-  task) or skip the drain when `!RhinoApp.InvokeRequired`. Pairs naturally with MCP-9F3Q's
-  ServerState enum; MCP-5T7W covers the adjacent DrainWithin timeout-vs-fault return-value question.
-
-- **[RSC-6K1W]** Wrap multi-step Rhino mutations in undo records
-  `effort: M · impact: L · area: rhino-scene · source: janitor · added: 2026-07-02 · status: open · stage: ready`
-
-  Surfaced by the 2026-07-02 janitor audit. No code path calls
-  `RhinoDoc.BeginUndoRecord`/`EndUndoRecord` (grep-verified), so each per-object mutation is its own
-  undo step: a user pressing Ctrl-Z after an MCP `layer_delete` gets back one object of fifty.
-  User-felt impact.
-
-  **Fix shape:** wrap each mutating `rhino_scene`/`rhino_render` action body in
-  `BeginUndoRecord("Cordyceps <action>")` / `EndUndoRecord` in a `finally`. Doc-audit: mention undo
-  grouping in tool notes.
 
 - **[DOC-4Q7N]** Author api-contract.md for the MCP tool surface
   `effort: M · impact: M · area: documentation · source: janitor · added: 2026-07-02 · status: open · stage: requirements`
@@ -275,16 +146,169 @@
     `Layers.ResolveLayerIndex` so the two ambiguity contracts (including the verbatim error string)
     can't drift.
 
+- **[MCP-7D2N]** Fold `_disposed` into the ServerState model or guard Start() after Dispose()
+  `effort: S · impact: S · area: mcp-server · source: critic · added: 2026-07-02 · status: open · stage: ready · related: MCP-9F3Q, MCP-3D8V`
+
+  From the reliability cumulative Critic (2026-07-02, NOTE severity): `McpServer._disposed` remains
+  an independent bool the `ServerState` enum never consults — a disposed instance ends in `Stopped`,
+  where `CanStart` returns true, so `Start()` on a disposed server would proceed. Pre-existing and
+  unreachable via `CordycepsComponent` (stopped instances are removed from `_servers` and restart
+  paths construct fresh instances), so no user-reachable invalid state today.
+
+  **Fix shape:** either add a `Disposed` terminal state to `Core/ServerState` (`CanStart` false) or
+  guard `Start()` on `_disposed`; add a transition-table test either way.
+
 ## Promoted
 
 <!-- Items currently being addressed in an active build plan. /backlog pick
      skips these by default (work is already in flight). -->
 
-_(none currently in flight)_
+- **[MCP-9F3Q]** Introduce a ServerState enum as the single source of truth for server lifecycle
+  `effort: M · impact: M · area: mcp-server · source: critic · added: 2026-06-21 · status: promoted · stage: ready · reviewed: 2026-07-02 · related: MCP-3D8V`
+
+  Stage-1 cumulative Critic NOTE (non-blocking, forward-looking, on Chunk 01/02 code). Server
+  lifecycle state in `McpServer` is currently reconstructed from 3 interdependent signals —
+  `IsRunning` + `StartError` + `_context` — with no single source of truth. No invalid combination
+  is currently reachable, but Stage 2+ will add conditions that increase the combinatorial surface.
+
+  **Fix shape:** introduce a `ServerState` enum (e.g. Stopped/Starting/Running/Failed) as the single
+  source of truth, and derive `IsRunning`/`StartError` from it, before that Stage 2+ complexity lands.
+  Refactor, behavior-preserving. Doc-audit: internal lifecycle only; check whether any tool surfaces
+  server status to clients.
+
+  **[2026-07-02] Promoted** into the active build plan (today's triage).
+
+- **[MCP-3D8V]** McpServer.Stop() drain runs on the UI thread it is waiting for
+  `effort: M · impact: M · area: mcp-server · source: janitor · added: 2026-07-02 · status: promoted · stage: ready · reviewed: 2026-07-02 · related: MCP-9F3Q, MCP-5T7W`
+
+  Surfaced by the 2026-07-02 janitor audit. `Stop()` is always invoked from the UI thread (the
+  `SolveInstance` port-change path, `RemovedFromDocument`, and now `DocumentContextChanged`) while
+  holding `CordycepsComponent._lock`. An in-flight tool handler is a worker blocked in
+  `RhinoApp.InvokeAndWait` waiting for that same UI thread — so `_inFlight.DrainWithin(2s)` can
+  **never** succeed for exactly the handlers it protects. Result: a guaranteed ~2s UI stall + detach
+  whenever teardown overlaps a request, and the `McpServer.cs` comment claiming handlers finish
+  against a still-valid context is wrong for that case.
+
+  Correctness is protected by the captured-context guard (no NRE), so this is a **latency/topology
+  fix**, not a correctness fix: run the drain off the UI thread (cancel + fire-and-forget teardown
+  task) or skip the drain when `!RhinoApp.InvokeRequired`. Pairs naturally with MCP-9F3Q's
+  ServerState enum; MCP-5T7W covers the adjacent DrainWithin timeout-vs-fault return-value question.
+
+  **[2026-07-02] Promoted** into the active build plan (today's triage).
+
+- **[MCP-5T7W]** Decide + test InFlightRequests.DrainWithin timeout-coincident-with-fault behavior
+  `effort: S · impact: M · area: mcp-server · source: critic · added: 2026-06-21 · status: promoted · stage: ready · reviewed: 2026-07-02 · related: MCP-3D8V`
+
+  Stage-1 cumulative Critic NOTE (non-blocking, forward-looking, on Chunk 01/02 code).
+  `Core/InFlightRequests.DrainWithin` returns `true` on any `AggregateException`, which can mask a
+  budget-timeout that coincided with a handler fault. The masking loses only a WARN log — correctness
+  is still protected by the `_context == null` guard — but the timeout+fault combination is currently
+  untested.
+
+  **Fix shape:** make an explicit decision about the correct return value when a drain timeout
+  coincides with a handler fault, then add a regression test covering that combination. Touches
+  `Core/InFlightRequests.cs` + the test project.
+
+  **[2026-07-02] Promoted** into the active build plan (today's triage).
+
+- **[GHD-6M2J]** Bound or evict GhDocumentTool snapshot store (unbounded process-lifetime)
+  `effort: S · impact: M · area: gh-document · source: critic · added: 2026-06-21 · status: promoted · stage: ready · reviewed: 2026-07-02`
+
+  Stage-1 cumulative Critic NOTE (non-blocking, forward-looking, low priority). `GhDocumentTool._snapshots`
+  is an unbounded process-lifetime store (pre-existing; Chunk 03 only changed the collection type for
+  thread-safety). Snapshots accumulate for the life of the Rhino session with no eviction or cap.
+
+  **Fix shape:** consider a bound (max snapshot count) or an eviction policy (e.g. LRU / oldest-first).
+  Gated by explicit user action, so memory growth is operator-driven and low priority. Doc-audit: if a
+  cap is introduced, check `gh_document` snapshot ActionInfo for the new limit semantics.
+
+  **[2026-07-02] Impact raised S→M (cumulative Critic, sustainability).** The 2026-07-02 janitor
+  branch materially increases pressure on this store: undo/redo are now advertised as DISABLED in
+  ActionInfo/server-instructions/README with explicit "use action='snapshot' before changes and
+  action='revert'" guidance, steering every agent mutation workflow into this unbounded
+  process-lifetime ConcurrentDictionary of full document serializations. Auto-timestamped names mean
+  repeated unnamed snapshots never overwrite. Fix shape unchanged (cap + oldest-first eviction — the
+  LogBuffer pattern is now in-tree — and/or a snapshot_delete action).
+
+  **[2026-07-02] Promoted** into the active build plan (today's triage).
+
+- **[RSC-6K1W]** Wrap multi-step Rhino mutations in undo records
+  `effort: M · impact: L · area: rhino-scene · source: janitor · added: 2026-07-02 · status: promoted · stage: ready · reviewed: 2026-07-02`
+
+  Surfaced by the 2026-07-02 janitor audit. No code path calls
+  `RhinoDoc.BeginUndoRecord`/`EndUndoRecord` (grep-verified), so each per-object mutation is its own
+  undo step: a user pressing Ctrl-Z after an MCP `layer_delete` gets back one object of fifty.
+  User-felt impact.
+
+  **Fix shape:** wrap each mutating `rhino_scene`/`rhino_render` action body in
+  `BeginUndoRecord("Cordyceps <action>")` / `EndUndoRecord` in a `finally`. Doc-audit: mention undo
+  grouping in tool notes.
+
+  **[2026-07-02] Promoted** into the active build plan (today's triage).
+
+- **[GHC-8V3T]** Stop renaming/nicknaming components on the canvas — annotate via groups instead
+  `effort: M · impact: M · area: gh-canvas · source: user · added: 2026-07-02 · status: promoted · stage: ready · reviewed: 2026-07-02`
+
+  **User decision (2026-07-02, from user reports):** Cordyceps must NOT rename/nickname components —
+  renamed components are hard to find on the canvas. Most Grasshopper users never rename components;
+  the native convention is annotation via **groups with labels** (plus panels/scribbles), so Cordyceps
+  should snap to that convention.
+
+  **Scope resolution (user decision, 2026-07-02):** the main open contract question is decided — do
+  **NOT** remove or deprecate the rename capability. The `gh_canvas` `rename` action and the
+  `nickname` parameter stay fully functional (a user/agent who explicitly wants to rename still can).
+  What changes is the **propensity** to rename as part of building: Cordyceps guidance must stop
+  encouraging renaming/nicknaming during normal canvas construction. This supersedes the earlier
+  deprecate-or-remove question in (a)/(b) below; the contract question is closed, so the item is now
+  implementable (`stage: ready`).
+
+  **Remaining scope (implementable):**
+  - (a) audit all guidance surfaces — server instructions (`McpServer.cs` `GetServerInstructions()`),
+    ActionInfo descriptions/tips/examples, Knowledge guides (CanvasLayoutGuide / BestPractices /
+    GettingStarted), and prompt templates — and remove anything that encourages nicknaming components
+    while building; recommend groups with labels (and panels/scribbles) for annotation instead;
+  - (b) check whether any Cordyceps code path auto-applies nicknames unprompted (e.g. `add` or script
+    `configure` defaulting a nickname) and stop doing so;
+  - (c) add an explicit note in the rename/add ActionInfo that renaming makes components hard to find
+    and groups are the preferred annotation mechanism;
+  - (d) note groups already have create/rename/color actions that serve the annotation need — no new
+    capability required for the replacement convention.
+
+  **[2026-07-02] Promoted** into the active build plan (today's triage).
 
 ## Archive
 
 <!-- Shipped and dropped items, kept for searchability. Never deleted. -->
+
+- **[GHS-4D8M]** gh_script(set/configure) silently succeeds when it leaves a Script component unable to determine its language (Rhino LanguageSpec wipe — upstream)
+  `effort: M · impact: M · area: gh-script · source: user · added: 2026-06-24 · status: shipped · stage: ready · reviewed: 2026-07-02 · closed-by: mcneel-upstream-filing · related: GHS-7K2P · refs: issue #15, docs/upstream-rhino-scriptcomponent-languagespec.md`
+
+  `gh_script(set/configure)` silently returns `{"success": true}` in a case where it leaves a unified
+  `ScriptComponent` unable to determine its language — the component then fails at solve time (the same
+  class of failure as GHS-7K2P, but via a different mechanism). A partial fix landed this session: a
+  `languageWarning` guard was added so the tool now surfaces a warning instead of silently reporting
+  success (issue #15, partial).
+
+  **[2026-06-24] Investigation + upstream report drafted.** A McNeel bug report is drafted at
+  `docs/upstream-rhino-scriptcomponent-languagespec.md`, pending filing on McNeel Discourse/YouTrack
+  (next action). Investigation findings:
+  - The unified `ScriptComponent` silently loses its language on a **directive-less `SetSource`** — the
+    error surfaces only at solve time, **not** from `SetSource` itself.
+  - It **IS recoverable** via a directive-bearing `SetSource` — this **corrects the original
+    "permanently broken" claim**.
+  - Setting `LanguageSpec` via reflection **does not stick**.
+
+  **Cordyceps mitigation shipped in v1.4.11:** the `languageWarning` guard + directive preservation
+  (the latter via `Core/ScriptDirective.cs`, GHS-7K2P). The remaining root cause — Rhino's
+  `LanguageSpec` being wiped — is **upstream in Rhino 8's `ScriptComponent` and is not
+  cordyceps-fixable**. This item then tracked the upstream report through filing.
+
+  **[2026-07-02] Closed — filed upstream, McNeel acknowledged.** The drafted report was filed with
+  McNeel; McNeel acknowledged it and promised a fix in a future Rhino release (user-reported
+  2026-07-02). All Cordyceps-side work is done (mitigation shipped in v1.4.11; upstream report filed
+  and accepted) — the remaining wait is on McNeel's fix, not on us, so the item is archived. If the
+  upstream fix lands and warrants verification or removal of the `languageWarning` mitigation, file a
+  fresh item then. Related to GHS-7K2P (directive-preservation fix via `Core/ScriptDirective.cs`).
 
 - **[GHC-7X4B]** gh_canvas(action='add') silently drops slider min/max/value/decimals
   `effort: S · impact: M · area: gh-canvas · source: user · added: 2026-06-24 · status: shipped · stage: ready · reviewed: 2026-06-24 · closed-by: fix/add-slider-params-and-configure-wires`

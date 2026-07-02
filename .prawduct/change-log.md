@@ -39,6 +39,120 @@
      derived view. Don't hand-edit them — add/update a tagged entry here and
      run `prawduct-hook regen-views`. -->
 
+## 2026-07-02: stop encouraging component renames — annotate via groups (reliability chunk 06)
+
+<!-- prawduct: type=feature | chunks=06 | scope=reliability -->
+
+**Why:** [GHC-8V3T, user decision 2026-07-02] Renamed components are hard to find on the canvas
+and renaming is not the Grasshopper convention (labeled groups, panels, scribbles are). Cordyceps
+guidance actively encouraged nicknaming while building. The rename capability stays (explicit
+user/agent use); only the propensity changes.
+
+**What:** (a) Guidance surfaces rewritten: server instructions gain an annotate-with-groups key
+point; BestPracticesGuide #2 flipped from "Name components" to "Annotate with labeled groups,
+not renames"; GettingStartedGuide workflow example de-nicknamed; CreateParametricGeometry prompt
+replaces its rename step with group_create. (b) Verified no code path auto-applies nicknames
+unprompted (add applies only an explicit nickname; script-param and group naming are functional;
+panel default annotation unchanged). (c) Discouragement notes on rename/add ActionInfo; find tip
+clarifies default nicknames match so renaming isn't needed for findability. (d) No new
+capability — group_create/rename/color already serve annotation. Kept: panel nicknames
+(annotation convention), script-param rename docs (different concern), McpTestingGuide
+capability mention. CHANGELOG under [Unreleased].
+
+**[2026-07-02] Cumulative-Critic close-out:** CommonErrorsGuide find-by-nickname row —
+initially skipped without a recorded descope (Critic warning) — reframed to lead with
+list/typeFilter/group and note that find matches default nicknames.
+
+## 2026-07-02: Rhino undo records around mutating actions (reliability chunk 05)
+
+<!-- prawduct: type=feature | chunks=05 | scope=reliability -->
+
+**Why:** [RSC-6K1W] No code path called `RhinoDoc.BeginUndoRecord`/`EndUndoRecord`, so each
+per-object mutation was its own undo step — Ctrl-Z after a bulk MCP `set_layer` reverted one
+object of fifty. User-felt.
+
+**What:** verify-api probe (MetadataLoadContext on RhinoCommon 8.0.23304.9001) confirmed
+`uint BeginUndoRecord(string)` / `bool EndUndoRecord(uint)` and that Begin returns 0 when a
+record is already active — nesting-safe by skipping End on 0 (recorded in
+api-notes-rhinocommon.md). New `ToolHelpers.WithUndoRecord(doc, action, body)` brackets the
+UI-thread lambda of all 28 doc-mutating actions: rhino_scene (set_layer, set_name, set_color,
+layer_create/set/delete, hide, show, delete, place_image), rhino_render (lights, materials,
+environments, settings/ground/sun/skylight, view_save/view_delete), and — found by behavior
+trace, outside the item's literal file list — `gh_canvas(action='bake')`, which bulk-adds
+objects in a loop. Exclusions by decision: `script` (native commands own their records),
+select/deselect (selection isn't undoable), camera/zoom/display/view_load (viewport state),
+reads. Doc-audit: tool Notes (both Rhino tools), bake Tips, RenderingGuide "Undo Behavior"
+section, CHANGELOG. Host behavior queued as VRF-010.
+
+## 2026-07-02: bounded snapshot store + snapshot_delete (reliability chunk 04)
+
+<!-- prawduct: type=feature | chunks=04 | scope=reliability -->
+
+**Why:** [GHD-6M2J] `GhDocumentTool._snapshots` was an unbounded process-lifetime dictionary of
+full document serializations — and with undo/redo formally cut, every documented mutation
+workflow ("snapshot before changes, revert to restore") funnels into it, so memory grew for the
+life of the Rhino session.
+
+**What:** New host-free `Core/SnapshotStore.cs` (LogBuffer pattern): cap 20, oldest-first
+eviction, same-name re-save replaces in place (refreshing its age) without eviction, oldest-first
+listing with `createdAtUtc`, `Remove` — linked into the test project with 7 tests including a
+concurrent hammer. `gh_document` swapped onto it; new `snapshot_delete` action (missing name is
+an error); `snapshot` response gains `maxSnapshots` + `evicted`. Doc-audit: ActionInfo
+(snapshot/snapshots/snapshot_delete), server instructions, README, CHANGELOG (also added the
+missed user-facing CHANGELOG entry for chunk 03's teardown change); stale undo/redo `TODO`
+comments retired (PR #25 reviewer note). 406/406 green.
+
+## 2026-07-02: Stop() drain moved off the UI thread (reliability chunk 03)
+
+<!-- prawduct: type=bugfix | chunks=03 | scope=reliability -->
+
+**Why:** [MCP-3D8V] `McpServer.Stop()` always runs on the UI thread (component port-change,
+`RemovedFromDocument`, `DocumentContextChanged`), while an in-flight handler is a worker blocked
+in `RhinoApp.InvokeAndWait` waiting for that same UI thread — so the synchronous
+`DrainWithin(2s)` could never succeed for exactly the handlers it protects: a guaranteed ~2s
+Rhino UI stall whenever teardown overlapped a request, and the drain's "handlers finish against
+a still-valid context" comment was wrong for that case.
+
+**What:** `Stop()` now splits: synchronously transition to `Stopping`, cancel the listener CTS,
+and stop/close the `HttpListener` (port freed immediately for a replacement server), then run
+the listener-task wait + `DrainWithin` + final teardown (`_context` release, `Stopped`
+transition) on a `Task.Run` background task that logs the drain outcome. With the UI thread
+returned, a handler blocked in `InvokeAndWait` can actually complete, so the drain now does what
+its comment always claimed. Correctness during the un-drained window remains protected by the
+captured-context guard in `HandleToolCallAsync`. Host-observable behavior (no UI freeze,
+restart-while-draining) queued as VRF-009; 399/399 green.
+
+## 2026-07-02: ServerState enum as lifecycle single source of truth (reliability chunk 02)
+
+<!-- prawduct: type=refactor | chunks=02 | scope=reliability -->
+
+**Why:** [MCP-9F3Q] `McpServer` lifecycle was reconstructed from three interdependent signals
+(`IsRunning` + `StartError` + `_context`); upcoming teardown-topology work (chunk 03) adds a
+real Stopping window, which that combinatorial encoding can't represent safely.
+
+**What:** New host-free `Core/ServerState.cs` — `Stopped/Starting/Running/Stopping/Failed` enum
+plus a `ServerStateTransitions` predicate table (CanStart from Stopped|Failed only, CanStop from
+Running only) linked into the test project with a full transition-table test (10 cases).
+`McpServer` now holds one volatile `_state` field; `IsRunning` is derived, `StartError` is set
+only on the Failed transition, and Start/Stop guards go through the shared predicates.
+Behavior-preserving: component status output strings unchanged; 399/399 green.
+
+## 2026-07-02: DrainWithin fault-vs-timeout contract pinned (reliability chunk 01)
+
+<!-- prawduct: type=bugfix | chunks=01 | scope=reliability -->
+
+**Why:** [MCP-5T7W] `InFlightRequests.DrainWithin` returned `true` on any `AggregateException`,
+which could mask a drain-budget timeout coinciding with a handler fault — the combination was
+undecided and untested.
+
+**What:** Decision recorded at the catch site: a faulted handler counts as drained, but drain
+success requires every snapshotted handler to have completed — on `AggregateException` the
+method now returns `pending.All(t => t.IsCompleted)` instead of `true`. Empirically
+`Task.WaitAll` only throws that exception when all observed tasks completed (a timeout returns
+`false` instead), so behavior is unchanged today; the check makes the contract independent of
+that undocumented BCL nuance. Two regression tests added (fault+timeout → false;
+fault+late-completion within budget → true), 389/389 green.
+
 ## 2026-07-02: janitor full reliability audit — hygiene, doc contract, HIGH bugs, MEDIUM sweeps, testability
 
 <!-- prawduct: type=maintenance | chunks=01,02,03,04,05,06 | scope=janitor-2026-07-02 | status=merged -->

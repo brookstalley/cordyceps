@@ -219,6 +219,18 @@ technical_decisions:
       rationale: "RhinoApp.InvokeAndWait cannot be cancelled (verified by reflection, .prawduct/artifacts/api-notes-rhinocommon.md), so the timeout bounds WAITERS, not the holder; bounding waiters keeps the server responsive even when one operation is stuck"
       alternatives_considered: "Post-action + ManualResetEvent(timeout) to also free the holder — rejected: risks delayed/stale mutation after a reported timeout. Unbounded wait (prior behavior) — rejected: one stuck op wedged the whole server until a Rhino restart."
       date: 2026-06-21
+    - decision: "Server lifecycle is a single volatile ServerState enum (Stopped/Starting/Running/Stopping/Failed) in McpServer; IsRunning/StartError are derived, transitions guarded by host-free Core/ServerStateTransitions predicates"
+      rationale: "The prior 3-signal encoding (IsRunning + StartError + _context) made invalid combinations representable and could not express the Stopping window the async teardown needs"
+      alternatives_considered: "Keep booleans and add a fourth flag for Stopping — rejected: combinatorial surface grows with each condition"
+      date: 2026-07-02
+    - decision: "McpServer.Stop() splits into a synchronous half (cancel + listener stop/close, so the port is freed before returning) and a background Task.Run half (listener wait + in-flight drain + context release + Stopped transition)"
+      rationale: "Stop() always runs on the UI thread while in-flight handlers block in RhinoApp.InvokeAndWait waiting for that same thread — a synchronous drain could never succeed for exactly the handlers it protects and guaranteed a ~2s UI stall on teardown-during-request"
+      alternatives_considered: "Skip the drain when called on the UI thread — rejected: loses the drain's protective intent for off-UI-thread callers and still releases the context under running handlers"
+      date: 2026-07-02
+    - decision: "Snapshot store is bounded (Core/SnapshotStore, cap 20, oldest-first eviction, evictions reported in the snapshot response and debug log)"
+      rationale: "Snapshots are full document serializations and, with undo/redo cut, the documented mutation workflow funnels every agent through the store — unbounded process-lifetime growth was operator-invisible"
+      alternatives_considered: "Byte-size cap — rejected for now: count cap is predictable for agents and matches the LogBuffer pattern; revisit if document sizes make 20 snapshots too heavy"
+      date: 2026-07-02
     - decision: "Unified action-dispatch tools (7 classes, each dispatching on an 'action' param) with reflection-based discovery via [McpServerToolType]/[McpServerTool]"
       rationale: "Keeps the agent-visible tool list small and navigable; one class per domain area"
       alternatives_considered: "One MCP tool per operation — rejected: too many tools, harder for agents to navigate"
@@ -359,6 +371,13 @@ build_state:
 # it's fixed (STH-5P2W).
 #
 # active_build_plan: artifacts/build-plan-my-scope.md
+#
+# Repointed 2026-07-02 when the reliability follow-through build started (janitor
+# PR #25 merged the prior plan's work to develop). The janitor plan
+# (artifacts/build-plan.md) is retained until the next develop->main release per
+# the gitflow plan lifecycle; it has no derived `## Status` block, so repointing
+# early loses nothing for release regen-views.
+active_build_plan: artifacts/build-plan-reliability.md
 
 # =============================================================================
 # DERIVED VIEWS (enabled by default, v1.4+)
@@ -469,7 +488,7 @@ operator_verification_required: false
 # backlog_format_version:
 # backlog_prefixes: []
 # backlog_external_imports: []
-backlog_last_groomed_at: 2026-06-21
+backlog_last_groomed_at: 2026-07-02
 
 # =============================================================================
 # CHANGE LOG

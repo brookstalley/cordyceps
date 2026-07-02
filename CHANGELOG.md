@@ -6,6 +6,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+
+- **`gh_document(action='snapshot_delete')`** - Delete a named snapshot to free memory or make room under the snapshot cap. A missing name is an error, never silent success.
+
+### Changed
+
+- **Guidance no longer encourages renaming components** - All agent-facing guidance (server instructions, action help, embedded guides, prompt templates) now recommends annotating with labeled groups (plus panels/scribbles) instead of nicknaming components while building — renamed components are hard to find on the canvas and it is not the Grasshopper convention. The `rename` action and `nickname` parameter remain fully functional for explicit use.
+- **One Ctrl-Z now reverts a whole MCP action** - Every mutating `rhino_scene`/`rhino_render` action and `gh_canvas(action='bake')` runs inside a single named undo record (`Cordyceps <action>`). Previously each internal step was its own undo entry, so undoing a bulk operation (e.g. `set_layer` on fifty objects) reverted one object at a time.
+- **The snapshot store is bounded (max 20 snapshots, oldest evicted)** - Snapshots are full document serializations that previously accumulated unbounded for the life of the Rhino session. Saving a new name beyond the cap now evicts the oldest snapshot and reports it in the response's `evicted` field; re-using a name replaces that snapshot in place. `snapshot`/`snapshots` responses now include `maxSnapshots`, and listed snapshots carry `createdAtUtc`.
+- **Server teardown no longer stalls the Rhino UI** - Stopping the MCP server (deleting the component, changing its port, or closing the document) while a request was in flight previously froze Rhino for ~2 seconds waiting on handlers that could not finish until the UI thread was released. The port is still freed immediately; the wait for in-flight requests now happens in the background.
+
 ### Fixed
 
 - **Closing a Grasshopper document now stops the MCP server** - Previously the server only shut down when the component was deleted from the canvas; closing the `.gh` file left an orphaned server holding the port, so reopening the same file failed permanently with "port is already in use by another Cordyceps component" until Rhino restarted. The component now releases the server and port on document close/unload and restarts cleanly on reopen (including tab-switching between documents).
