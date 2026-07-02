@@ -41,7 +41,7 @@
 
 ## 2026-07-02: stop encouraging component renames — annotate via groups (reliability chunk 06)
 
-<!-- prawduct: type=feature | chunks=06 | scope=reliability -->
+<!-- prawduct: type=feature | chunks=06 | scope=reliability | status=merged -->
 
 **Why:** [GHC-8V3T, user decision 2026-07-02] Renamed components are hard to find on the canvas
 and renaming is not the Grasshopper convention (labeled groups, panels, scribbles are). Cordyceps
@@ -65,7 +65,7 @@ list/typeFilter/group and note that find matches default nicknames.
 
 ## 2026-07-02: Rhino undo records around mutating actions (reliability chunk 05)
 
-<!-- prawduct: type=feature | chunks=05 | scope=reliability -->
+<!-- prawduct: type=feature | chunks=05 | scope=reliability | status=merged -->
 
 **Why:** [RSC-6K1W] No code path called `RhinoDoc.BeginUndoRecord`/`EndUndoRecord`, so each
 per-object mutation was its own undo step — Ctrl-Z after a bulk MCP `set_layer` reverted one
@@ -86,7 +86,7 @@ section, CHANGELOG. Host behavior queued as VRF-010.
 
 ## 2026-07-02: bounded snapshot store + snapshot_delete (reliability chunk 04)
 
-<!-- prawduct: type=feature | chunks=04 | scope=reliability -->
+<!-- prawduct: type=feature | chunks=04 | scope=reliability | status=merged -->
 
 **Why:** [GHD-6M2J] `GhDocumentTool._snapshots` was an unbounded process-lifetime dictionary of
 full document serializations — and with undo/redo formally cut, every documented mutation
@@ -104,7 +104,7 @@ comments retired (PR #25 reviewer note). 406/406 green.
 
 ## 2026-07-02: Stop() drain moved off the UI thread (reliability chunk 03)
 
-<!-- prawduct: type=bugfix | chunks=03 | scope=reliability -->
+<!-- prawduct: type=bugfix | chunks=03 | scope=reliability | status=merged -->
 
 **Why:** [MCP-3D8V] `McpServer.Stop()` always runs on the UI thread (component port-change,
 `RemovedFromDocument`, `DocumentContextChanged`), while an in-flight handler is a worker blocked
@@ -124,7 +124,7 @@ restart-while-draining) queued as VRF-009; 399/399 green.
 
 ## 2026-07-02: ServerState enum as lifecycle single source of truth (reliability chunk 02)
 
-<!-- prawduct: type=refactor | chunks=02 | scope=reliability -->
+<!-- prawduct: type=refactor | chunks=02 | scope=reliability | status=merged -->
 
 **Why:** [MCP-9F3Q] `McpServer` lifecycle was reconstructed from three interdependent signals
 (`IsRunning` + `StartError` + `_context`); upcoming teardown-topology work (chunk 03) adds a
@@ -139,7 +139,7 @@ Behavior-preserving: component status output strings unchanged; 399/399 green.
 
 ## 2026-07-02: DrainWithin fault-vs-timeout contract pinned (reliability chunk 01)
 
-<!-- prawduct: type=bugfix | chunks=01 | scope=reliability -->
+<!-- prawduct: type=bugfix | chunks=01 | scope=reliability | status=merged -->
 
 **Why:** [MCP-5T7W] `InFlightRequests.DrainWithin` returned `true` on any `AggregateException`,
 which could mask a drain-budget timeout coinciding with a handler fault — the combination was
