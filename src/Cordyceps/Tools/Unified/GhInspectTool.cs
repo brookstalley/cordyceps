@@ -258,22 +258,25 @@ namespace Cordyceps.Tools.Unified
         {
             return _context.ExecuteOnUiThread(() =>
             {
-                if (!ToolHelpers.TryGetUnprotectedComponent(_context, id, out var component, out var error))
+                if (!ToolHelpers.TryGetUnprotectedComponentWithDoc(_context, id, out var doc, out var component, out var error))
                     return ToolHelpers.ErrorResponse(error);
 
                 var traced = new List<object>();
                 var visited = new HashSet<Guid>();
+                // Infrastructure stays invisible in trace results, like everywhere else.
+                var infraIds = ToolHelpers.GetCordycepsInfrastructureIds(doc);
+                var effectiveDirection = direction?.ToLowerInvariant() ?? "upstream";
 
-                if (direction.ToLowerInvariant() == "downstream")
-                    TraceDownstream(component, traced, visited, 0);
+                if (effectiveDirection == "downstream")
+                    TraceDownstream(component, traced, visited, 0, infraIds);
                 else
-                    TraceUpstream(component, traced, visited, 0);
+                    TraceUpstream(component, traced, visited, 0, infraIds);
 
                 return JsonConvert.SerializeObject(new
                 {
                     success = true,
                     start = new { id = component.InstanceGuid.ToString(), name = component.Name },
-                    direction,
+                    direction = effectiveDirection,
                     count = traced.Count,
                     trace = traced
                 });
@@ -505,7 +508,7 @@ namespace Cordyceps.Tools.Unified
             return new { type = val.GetType().Name, value = val.ToString() };
         }
 
-        private void TraceUpstream(IGH_DocumentObject obj, List<object> traced, HashSet<Guid> visited, int depth)
+        private void TraceUpstream(IGH_DocumentObject obj, List<object> traced, HashSet<Guid> visited, int depth, HashSet<Guid> infraIds)
         {
             if (visited.Contains(obj.InstanceGuid) || depth > MAX_TRACE_DEPTH) return;
             visited.Add(obj.InstanceGuid);
@@ -517,14 +520,18 @@ namespace Cordyceps.Tools.Unified
             {
                 foreach (var source in input.Sources)
                 {
-                    var src = source.Attributes.GetTopLevel.DocObject;
+                    // Null-safe like ToolHelpers.GetActiveObjects: phantom params can lack
+                    // attributes/owner. Infrastructure stays invisible to callers.
+                    var src = source.Attributes?.GetTopLevel?.DocObject;
+                    if (src == null) continue;
+                    if (infraIds.Contains(src.InstanceGuid)) continue;
                     traced.Add(new { id = src.InstanceGuid.ToString(), name = src.Name, depth = depth + 1, via = $"{source.Name}->{input.Name}" });
-                    TraceUpstream(src, traced, visited, depth + 1);
+                    TraceUpstream(src, traced, visited, depth + 1, infraIds);
                 }
             }
         }
 
-        private void TraceDownstream(IGH_DocumentObject obj, List<object> traced, HashSet<Guid> visited, int depth)
+        private void TraceDownstream(IGH_DocumentObject obj, List<object> traced, HashSet<Guid> visited, int depth, HashSet<Guid> infraIds)
         {
             if (visited.Contains(obj.InstanceGuid) || depth > MAX_TRACE_DEPTH) return;
             visited.Add(obj.InstanceGuid);
@@ -536,9 +543,13 @@ namespace Cordyceps.Tools.Unified
             {
                 foreach (var recipient in output.Recipients)
                 {
-                    var rec = recipient.Attributes.GetTopLevel.DocObject;
+                    // Null-safe like ToolHelpers.GetActiveObjects: phantom params can lack
+                    // attributes/owner. Infrastructure stays invisible to callers.
+                    var rec = recipient.Attributes?.GetTopLevel?.DocObject;
+                    if (rec == null) continue;
+                    if (infraIds.Contains(rec.InstanceGuid)) continue;
                     traced.Add(new { id = rec.InstanceGuid.ToString(), name = rec.Name, depth = depth + 1, via = $"{output.Name}->{recipient.Name}" });
-                    TraceDownstream(rec, traced, visited, depth + 1);
+                    TraceDownstream(rec, traced, visited, depth + 1, infraIds);
                 }
             }
         }

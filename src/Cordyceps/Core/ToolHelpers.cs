@@ -978,6 +978,37 @@ namespace Cordyceps.Core
         }
 
         /// <summary>
+        /// Strictly parse a boolean string. Accepts true/false, 1/0, yes/no (case-insensitive,
+        /// trimmed); anything else fails. Use this where an unrecognized value must surface as a
+        /// validation error; use <see cref="ParseBool"/> where a default is genuinely wanted.
+        /// </summary>
+        /// <param name="value">String value to parse</param>
+        /// <param name="result">Output: parsed boolean if successful</param>
+        /// <returns>True if the value was recognized, false otherwise</returns>
+        public static bool TryParseBool(string value, out bool result)
+        {
+            result = false;
+            if (string.IsNullOrWhiteSpace(value))
+                return false;
+
+            switch (value.Trim().ToLowerInvariant())
+            {
+                case "true":
+                case "1":
+                case "yes":
+                    result = true;
+                    return true;
+                case "false":
+                case "0":
+                case "no":
+                    result = false;
+                    return true;
+                default:
+                    return false;
+            }
+        }
+
+        /// <summary>
         /// Try to parse a Point3d from a comma-separated string "x,y,z".
         /// </summary>
         /// <param name="value">String in "x,y,z" format</param>

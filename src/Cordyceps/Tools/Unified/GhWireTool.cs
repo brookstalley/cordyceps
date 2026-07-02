@@ -37,7 +37,8 @@ namespace Cordyceps.Tools.Unified
                     Name = "disconnect",
                     Description = "Remove a wire between components",
                     Required = new[] { "sourceId", "sourceParam", "targetId", "targetParam" },
-                    Example = "action='disconnect', sourceId='a', sourceParam='0', targetId='b', targetParam='R'"
+                    Example = "action='disconnect', sourceId='a', sourceParam='0', targetId='b', targetParam='R'",
+                    Tips = new[] { "If the wire doesn't exist, the error lists the target input's current sources (currentSources) so you can correct the call" }
                 },
                 ["list"] = new ActionInfo
                 {
@@ -144,7 +145,9 @@ namespace Cordyceps.Tools.Unified
 
                 var results = new List<object>();
                 int successCount = 0, failCount = 0;
-                IGH_DocumentObject lastTarget = null;
+                // Every distinct target must be expired — expiring only the last one leaves the
+                // other targets of a bulk connect stale until something else recomputes them.
+                var targetsToExpire = new Dictionary<Guid, IGH_DocumentObject>();
 
                 foreach (var conn in connectionList)
                 {
@@ -215,7 +218,7 @@ namespace Cordyceps.Tools.Unified
                     }
 
                     targetInput.AddSource(sourceOutput);
-                    lastTarget = tgtObj;
+                    targetsToExpire[tgtObj.InstanceGuid] = tgtObj;
                     results.Add(new
                     {
                         success = true,
@@ -225,8 +228,11 @@ namespace Cordyceps.Tools.Unified
                     successCount++;
                 }
 
-                if (lastTarget is IGH_ActiveObject activeTarget)
-                    activeTarget.ExpireSolution(false);
+                foreach (var target in targetsToExpire.Values)
+                {
+                    if (target is IGH_ActiveObject activeTarget)
+                        activeTarget.ExpireSolution(false);
+                }
 
                 if (connectionList.Count == 1)
                     return JsonConvert.SerializeObject(results[0]);
@@ -252,6 +258,30 @@ namespace Cordyceps.Tools.Unified
                 var targetInput = GetInputParameter(tgtObj, targetParam);
                 if (targetInput == null)
                     return ToolHelpers.ErrorResponse($"Target input not found: {targetParam}");
+
+                // Verify the wire actually exists before RemoveSource — otherwise report the
+                // input's current sources so the caller can correct itself instead of getting
+                // a silent no-op success.
+                if (!targetInput.Sources.Contains(sourceOutput))
+                {
+                    var currentSources = targetInput.Sources.Select(s =>
+                    {
+                        var owner = s.Attributes?.GetTopLevel?.DocObject;
+                        return new
+                        {
+                            componentId = owner?.InstanceGuid.ToString(),
+                            componentName = owner == null ? null : (owner.NickName ?? owner.Name),
+                            param = s.Name
+                        };
+                    }).ToList();
+
+                    return JsonConvert.SerializeObject(new
+                    {
+                        success = false,
+                        error = $"No wire from '{sourceOutput.Name}' on {sourceId} to input '{targetInput.Name}' on {targetId}",
+                        currentSources
+                    });
+                }
 
                 targetInput.RemoveSource(sourceOutput);
                 if (tgtObj is IGH_ActiveObject activeDisc)
@@ -299,7 +329,10 @@ namespace Cordyceps.Tools.Unified
                     {
                         foreach (var source in input.Sources)
                         {
-                            var sourceObj = source.Attributes.GetTopLevel.DocObject;
+                            // Null-safe like ToolHelpers.GetActiveObjects: phantom params (left
+                            // over from undo/teardown) can have no attributes/owner — skip them.
+                            var sourceObj = source.Attributes?.GetTopLevel?.DocObject;
+                            if (sourceObj == null) continue;
                             if (ToolHelpers.IsCordycepsInfrastructure(sourceObj, infraIds)) continue;
 
                             if (filterGuid.HasValue &&

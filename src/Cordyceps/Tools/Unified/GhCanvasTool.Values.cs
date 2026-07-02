@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.Linq;
 using Cordyceps.Core;
 using Grasshopper.Kernel;
@@ -69,7 +70,11 @@ namespace Cordyceps.Tools.Unified
                 }
                 else if (component is GH_NumberSlider slider)
                 {
-                    if (!double.TryParse(value, out double numValue))
+                    // InvariantCulture: MCP/JSON-sourced numeric strings are always invariant;
+                    // a current-culture parse breaks on hosts where ',' is the decimal separator
+                    // (same locale bug Core.SliderConfig fixed for 'add'/'config').
+                    if (!double.TryParse(value, NumberStyles.Float | NumberStyles.AllowThousands,
+                            CultureInfo.InvariantCulture, out double numValue))
                         return ToolHelpers.ErrorResponse($"Invalid number: {value}");
 
                     if (numValue < (double)slider.Slider.Minimum || numValue > (double)slider.Slider.Maximum)
@@ -123,6 +128,12 @@ namespace Cordyceps.Tools.Unified
                     // identically (GHC-7X4B). Range is applied before value because SetSliderValue
                     // clamps to the current range.
                     var plan = SliderConfig.Plan(min, max, value, decimals);
+
+                    // Parity with action='set': an unparseable value is an explicit error, applied
+                    // before any mutation — never a silent success with the value ignored.
+                    if (plan.ValueInvalid)
+                        return ToolHelpers.ErrorResponse($"Invalid number: {value}");
+
                     if (plan.SetMinimum) slider.Slider.Minimum = plan.Minimum;
                     if (plan.SetMaximum) slider.Slider.Maximum = plan.Maximum;
                     if (plan.SetDecimals) slider.Slider.DecimalPlaces = plan.Decimals;
@@ -247,7 +258,7 @@ namespace Cordyceps.Tools.Unified
                 // can't be enabled/disabled are reported as failures, not silently skipped.
                 var results = new List<object>();
                 int changed = 0, failed = 0;
-                IGH_DocumentObject lastComp = null;
+                var toggled = new List<IGH_ActiveObject>();
                 foreach (var compId in idList)
                 {
                     if (!ToolHelpers.TryGetUnprotectedComponent(_context, compId, out var comp, out var compError))
@@ -261,7 +272,7 @@ namespace Cordyceps.Tools.Unified
                     {
                         active.Locked = !enabled;
                         changed++;
-                        lastComp = comp;
+                        toggled.Add(active);
                         results.Add(new { id = compId, success = true });
                     }
                     else
@@ -271,8 +282,10 @@ namespace Cordyceps.Tools.Unified
                     }
                 }
 
-                if (lastComp is IGH_ActiveObject activeEnable)
-                    activeEnable.ExpireSolution(false);
+                // Expire every toggled component (not just the last) so a bulk enable/disable
+                // recomputes all affected branches on the next solution.
+                foreach (var active in toggled)
+                    active.ExpireSolution(false);
 
                 return JsonConvert.SerializeObject(new
                 {

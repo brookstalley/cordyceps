@@ -60,10 +60,18 @@ namespace Cordyceps.Tools.Unified
                     if (bitmap == null)
                         return ToolHelpers.ErrorResponse("Canvas capture returned black image. Ensure the Grasshopper window is visible and not minimized.");
 
-                    bitmap.Save(actualPath, format);
-                    var result = new { success = true, filePath = actualPath, width = bitmap.Width, height = bitmap.Height, hint = "Use Read tool to view image" };
-                    bitmap.Dispose();
-                    return JsonConvert.SerializeObject(result);
+                    // try/finally so the bitmap is disposed even when Save throws (the outer
+                    // catch turns that into an error response).
+                    try
+                    {
+                        bitmap.Save(actualPath, format);
+                        var result = new { success = true, filePath = actualPath, width = bitmap.Width, height = bitmap.Height, hint = "Use Read tool to view image" };
+                        return JsonConvert.SerializeObject(result);
+                    }
+                    finally
+                    {
+                        bitmap.Dispose();
+                    }
                 }
                 catch (Exception ex)
                 {
@@ -130,18 +138,26 @@ namespace Cordyceps.Tools.Unified
                     if (bitmap == null)
                         return ToolHelpers.ErrorResponse("Failed to capture viewport");
 
-                    bitmap.Save(actualPath, format);
-                    var result = new
+                    // try/finally so the bitmap is disposed even when Save throws (the outer
+                    // catch turns that into an error response).
+                    try
                     {
-                        success = true,
-                        filePath = actualPath,
-                        viewName = targetView.MainViewport.Name,
-                        width = bitmap.Width,
-                        height = bitmap.Height,
-                        hint = "Use Read tool to view image"
-                    };
-                    bitmap.Dispose();
-                    return JsonConvert.SerializeObject(result);
+                        bitmap.Save(actualPath, format);
+                        var result = new
+                        {
+                            success = true,
+                            filePath = actualPath,
+                            viewName = targetView.MainViewport.Name,
+                            width = bitmap.Width,
+                            height = bitmap.Height,
+                            hint = "Use Read tool to view image"
+                        };
+                        return JsonConvert.SerializeObject(result);
+                    }
+                    finally
+                    {
+                        bitmap.Dispose();
+                    }
                 }
                 catch (Exception ex)
                 {
@@ -176,18 +192,26 @@ namespace Cordyceps.Tools.Unified
                     if (bitmap == null)
                         return ToolHelpers.ErrorResponse("Region capture returned black image. Ensure the Grasshopper window is visible and not minimized.");
 
-                    bitmap.Save(actualPath, format);
-                    var result = new
+                    // try/finally so the bitmap is disposed even when Save throws (the outer
+                    // catch turns that into an error response).
+                    try
                     {
-                        success = true,
-                        filePath = actualPath,
-                        region = new { xMin, yMin, xMax, yMax },
-                        width = bitmap.Width,
-                        height = bitmap.Height,
-                        hint = "Use Read tool to view image"
-                    };
-                    bitmap.Dispose();
-                    return JsonConvert.SerializeObject(result);
+                        bitmap.Save(actualPath, format);
+                        var result = new
+                        {
+                            success = true,
+                            filePath = actualPath,
+                            region = new { xMin, yMin, xMax, yMax },
+                            width = bitmap.Width,
+                            height = bitmap.Height,
+                            hint = "Use Read tool to view image"
+                        };
+                        return JsonConvert.SerializeObject(result);
+                    }
+                    finally
+                    {
+                        bitmap.Dispose();
+                    }
                 }
                 catch (Exception ex)
                 {

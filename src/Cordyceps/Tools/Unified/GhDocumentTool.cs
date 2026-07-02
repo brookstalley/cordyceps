@@ -55,7 +55,8 @@ namespace Cordyceps.Tools.Unified
                 {
                     Name = "clear",
                     Description = "Clear all components (except Cordyceps infrastructure)",
-                    Example = "action='clear'"
+                    Example = "action='clear'",
+                    Tips = new[] { "Inside a cluster editor, cluster input/output hooks are preserved (reported as preservedClusterHooks) so the cluster interface stays intact" }
                 },
                 ["solver"] = new ActionInfo
                 {
@@ -63,7 +64,10 @@ namespace Cordyceps.Tools.Unified
                     Description = "Enable or disable the solver",
                     Required = new[] { "enabled" },
                     Example = "action='solver', enabled=false",
-                    Tips = new[] { "Disable before bulk operations for performance" }
+                    Tips = new[] {
+                        "Disable before bulk operations for performance",
+                        "enabled accepts true/false, 1/0, yes/no (case-insensitive); anything else is a validation error"
+                    }
                 },
                 ["recompute"] = new ActionInfo
                 {
@@ -198,15 +202,13 @@ namespace Cordyceps.Tools.Unified
             if (validationError != null)
                 return validationError;
 
-            // Parse enabled as bool for solver action
+            // Parse enabled strictly for solver ('enabled' is required for it): an unrecognized
+            // string must be a validation error, not silently coerced to false.
             bool enabledBool = true;
-            if (!string.IsNullOrEmpty(enabled))
+            if (string.Equals(action, "solver", StringComparison.OrdinalIgnoreCase))
             {
-                if (!bool.TryParse(enabled, out enabledBool))
-                {
-                    // Also accept "1"/"0" and case variations
-                    enabledBool = enabled.Equals("1") || enabled.Equals("true", StringComparison.OrdinalIgnoreCase);
-                }
+                if (!ToolHelpers.TryParseBool(enabled, out enabledBool))
+                    return ToolHelpers.ErrorResponse($"Invalid 'enabled' value: '{enabled}'. Use true/false, 1/0, or yes/no.");
             }
 
             return action.ToLowerInvariant() switch
@@ -302,8 +304,21 @@ namespace Cordyceps.Tools.Unified
                     return ToolHelpers.ErrorResponse(error);
 
                 var infraIds = ToolHelpers.GetCordycepsInfrastructureIds(doc);
+
+                // Inside a cluster editor, doc.Objects includes the cluster's input/output hooks.
+                // They are not Cordyceps infrastructure but deleting them destroys the cluster's
+                // interface — exclude them and report the exclusion.
+                HashSet<Guid> hookIds = null;
+                if (doc.Owner != null)
+                {
+                    hookIds = new HashSet<Guid>(doc.ClusterInputHooks().Select(h => h.InstanceGuid));
+                    foreach (var hook in doc.ClusterOutputHooks())
+                        hookIds.Add(hook.InstanceGuid);
+                }
+
                 var toRemove = doc.Objects
-                    .Where(o => !ToolHelpers.IsCordycepsInfrastructure(o, infraIds))
+                    .Where(o => !ToolHelpers.IsCordycepsInfrastructure(o, infraIds)
+                                && (hookIds == null || !hookIds.Contains(o.InstanceGuid)))
                     .ToList();
 
                 int count = toRemove.Count;
@@ -313,6 +328,17 @@ namespace Cordyceps.Tools.Unified
                 }
 
                 doc.NewSolution(false);
+
+                if (hookIds != null)
+                {
+                    return JsonConvert.SerializeObject(new
+                    {
+                        success = true,
+                        removedCount = count,
+                        preservedClusterHooks = hookIds.Count,
+                        note = "Inside a cluster editor: cluster input/output hooks were preserved to keep the cluster interface intact"
+                    });
+                }
 
                 return JsonConvert.SerializeObject(new
                 {
@@ -429,6 +455,11 @@ namespace Cordyceps.Tools.Unified
 
                 if (!_snapshots.TryGetValue(name, out var data))
                     return ToolHelpers.ErrorResponse($"Snapshot not found: {name}. Available: {string.Join(", ", _snapshots.Keys)}");
+
+                // Without a canvas there is nothing to install the reverted document into —
+                // fail up front instead of deserializing and silently reporting success.
+                if (Instances.ActiveCanvas == null)
+                    return ToolHelpers.ErrorResponse("No active Grasshopper canvas");
 
                 try
                 {

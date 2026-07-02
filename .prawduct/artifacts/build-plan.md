@@ -79,32 +79,32 @@ Critic mode: chunk (per code chunk) + cumulative before PR.
 - [x] Doc-audit each (ActionInfo tips where behavior surface changed).
 
 ### Chunk 04: MEDIUM sweep — Grasshopper tools + MCP boundary
-- [ ] gh_canvas list: dispatch alias `typeFilter ?? type`; search: seed providedParams so
+- [x] gh_canvas list: dispatch alias `typeFilter ?? type`; search: seed providedParams so
       query-or-type works as documented (or fix description).
-- [ ] gh_wire disconnect: error when wire didn't exist.
-- [ ] zoomable add: use indexed RegisterInput/OutputParam overloads.
-- [ ] Slider set: route value parse through invariant culture (SliderConfig path); config
+- [x] gh_wire disconnect: error when wire didn't exist.
+- [x] zoomable add: use indexed RegisterInput/OutputParam overloads.
+- [x] Slider set: route value parse through invariant culture (SliderConfig path); config
       reports unparseable value instead of silently ignoring.
-- [ ] Group protection: TryGetUnprotectedComponent* in group_remove/rename/color; filter
+- [x] Group protection: TryGetUnprotectedComponent* in group_remove/rename/color; filter
       infraIds from member lists in group_create/group_add; group_add with unresolvable
       explicit groupId errors instead of forking a new group; group_create errors on invalid
       ids JSON (parity with group_add).
-- [ ] gh_document revert: error when no active canvas. clear: preserve cluster IO hooks (or
+- [x] gh_document revert: error when no active canvas. clear: preserve cluster IO hooks (or
       refuse inside cluster editor with clear error).
-- [ ] Bulk expire: expire every mutated object (delete/enable/wire connect), not just the last.
-- [ ] gh_script configure params+code path: surface SetSource failure machine-readably.
-- [ ] Capture: using/try-finally around bitmaps (3 sites).
-- [ ] Boundary (McpServer): echo JSON-RPC id losslessly + build before dispatch; wrap
+- [x] Bulk expire: expire every mutated object (delete/enable/wire connect), not just the last.
+- [x] gh_script configure params+code path: surface SetSource failure machine-readably.
+- [x] Capture: using/try-finally around bitmaps (3 sites).
+- [x] Boundary (McpServer): echo JSON-RPC id losslessly + build before dispatch; wrap
       binding/conversion in the structured-error path; JsonTypeConverter coerces
       whole-valued doubles for int/long; chunked-body reject (ContentLength64 < 0);
       Accept */* allowed; DebugLog.Error at level 0.
-- [ ] PluginRegistry: publish cache only when fully built; no permanent caching of failed
+- [x] PluginRegistry: publish cache only when fully built; no permanent caching of failed
       scan. DeprecationRegistry: initialized=true in finally; volatile.
-- [ ] UnifiedToolHelpers action validation case-insensitive; strict bool parse helper used by
+- [x] UnifiedToolHelpers action validation case-insensitive; strict bool parse helper used by
       gh_canvas enable/preview + gh_document solver (error on garbage).
-- [ ] gh_inspect trace: filter infraIds; guard Attributes?.GetTopLevel?.DocObject (also
+- [x] gh_inspect trace: filter infraIds; guard Attributes?.GetTopLevel?.DocObject (also
       GhWireTool:302); direction null-safe.
-- [ ] Doc-audit all of the above (ActionInfo/server instructions/CommonErrors as touched).
+- [x] Doc-audit all of the above (ActionInfo/server instructions/CommonErrors as touched).
 
 ### Chunk 05: MEDIUM sweep — Rhino tools
 - [ ] TryParsePoint3d: InvariantCulture (fixes camera/light corruption on non-US locales).

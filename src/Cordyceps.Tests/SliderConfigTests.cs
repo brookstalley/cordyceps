@@ -104,6 +104,23 @@ namespace Cordyceps.Tests
                 Assert.Equal((decimal)expected, plan.Value);
         }
 
+        [Theory]
+        [InlineData("abc", true)]      // substantive but unparseable → caller error
+        [InlineData("1,5x", true)]
+        [InlineData(null, false)]      // not provided
+        [InlineData("", false)]        // not provided
+        [InlineData("   ", false)]     // whitespace counts as not provided, not invalid
+        [InlineData("50", false)]      // parses → valid
+        [InlineData("3.14", false)]
+        public void Plan_ValueInvalid_FlagsOnlySubstantiveUnparseableValues(string value, bool expectedInvalid)
+        {
+            var plan = SliderConfig.Plan(NoMin, NoMax, value, NoDecimals);
+
+            Assert.Equal(expectedInvalid, plan.ValueInvalid);
+            if (expectedInvalid)
+                Assert.False(plan.SetValue); // invalid implies not applied
+        }
+
         [Fact]
         public void Plan_NegativeRange_IsApplied()
         {

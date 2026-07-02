@@ -59,7 +59,8 @@ namespace Cordyceps.Tools.Unified
                         "Malformed inputs/outputs JSON is rejected with an error before anything changes — it is never treated as an empty array",
                         "Params matching by name keep their wires (like 'set'); renamed/removed params lose connections, reported in lostConnections — pass it to gh_wire(action='connect') to restore",
                         "Script language is preserved automatically; start code with '#! python 3' or '// #! csharp' to set it explicitly",
-                        "A bare unified 'Script' component (no language picked) returns a languageWarning until code starts with a directive — add '#! python 3' or '// #! csharp'"
+                        "A bare unified 'Script' component (no language picked) returns a languageWarning until code starts with a directive — add '#! python 3' or '// #! csharp'",
+                        "When 'code' is provided the response includes codeSet (bool); if setting the source fails after params were applied, success is false, codeSet=false, and sourceError holds the reason — the params DID change"
                     }
                 },
                 ["info"] = new ActionInfo
@@ -265,6 +266,11 @@ namespace Cordyceps.Tools.Unified
                 string message = "";
                 string languageWarning = null;
                 List<object> lostConnections = null;
+                // Partial-apply detectability: when 'code' is provided, codeSet records whether
+                // SetSource succeeded and sourceError carries the failure, so a params-applied /
+                // code-failed outcome is machine-readable (and overall success is false).
+                bool? codeSet = null;
+                string sourceError = null;
 
                 try
                 {
@@ -287,11 +293,14 @@ namespace Cordyceps.Tools.Unified
                                 var finalSource = PreserveLanguageDirective(component, code);
                                 scriptComp.SetSource(finalSource);
                                 languageWarning = ScriptDirective.LanguageWarning(component.GetType().Name, finalSource);
+                                codeSet = true;
                                 message += ", source set";
                             }
                             catch (Exception srcEx)
                             {
-                                message += $", source failed: {srcEx.Message}";
+                                codeSet = false;
+                                sourceError = srcEx.Message;
+                                message += $", source failed: {srcEx.Message} (parameter changes WERE applied — the component's params reflect the new configuration but its code is unchanged)";
                             }
                         }
 
@@ -328,10 +337,13 @@ namespace Cordyceps.Tools.Unified
 
                             ghComponent.ExpireSolution(false);
                             configured = true;
+                            codeSet = true;
                             message = $"Source set ({ghComponent.Params.Input.Count} inputs, {ghComponent.Params.Output.Count} outputs)";
                         }
                         catch (Exception ex)
                         {
+                            codeSet = false;
+                            sourceError = ex.Message;
                             message = $"Configuration failed: {ex.Message}";
                         }
                     }
@@ -353,14 +365,20 @@ namespace Cordyceps.Tools.Unified
                 foreach (var param in ghComponent.Params.Output)
                     finalOutputs.Add(new { name = param.Name, type = param.TypeName });
 
+                // A failed SetSource makes the overall call a failure even when the params were
+                // applied — a partial apply must be detectable, not reported as success:true.
                 var configureResponse = new Dictionary<string, object>
                 {
-                    ["success"] = configured,
+                    ["success"] = configured && codeSet != false,
                     ["id"] = component.InstanceGuid.ToString(),
                     ["message"] = message,
                     ["inputs"] = finalInputs,
                     ["outputs"] = finalOutputs
                 };
+                if (codeSet.HasValue)
+                    configureResponse["codeSet"] = codeSet.Value;
+                if (sourceError != null)
+                    configureResponse["sourceError"] = sourceError;
                 if (languageWarning != null)
                     configureResponse["languageWarning"] = languageWarning;
 

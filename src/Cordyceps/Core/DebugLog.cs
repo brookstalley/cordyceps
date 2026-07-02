@@ -72,9 +72,10 @@ namespace Cordyceps.Core
         public static void Warn(string message) => WriteLine(message, "WARN");
 
         /// <summary>
-        /// Write an error message
+        /// Write an error message. messageLevel 0 so errors always reach the Rhino command
+        /// line regardless of the configured DebugLevel (warnings stay at level 1).
         /// </summary>
-        public static void Error(string message) => WriteLine(message, "ERROR");
+        public static void Error(string message) => WriteLine(message, "ERROR", 0);
 
         /// <summary>
         /// Write a debug message

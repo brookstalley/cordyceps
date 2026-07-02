@@ -79,7 +79,8 @@ namespace Cordyceps.Tools.Unified
                     Description = "Search available component types (not on canvas)",
                     Required = new[] { "query" },
                     Optional = new[] { "category", "limit" },
-                    Example = "action='search', query='circle', category='Curve'"
+                    Example = "action='search', query='circle', category='Curve'",
+                    Tips = new[] { "'type' is accepted as an alias for 'query'" }
                 },
                 ["list"] = new ActionInfo
                 {
@@ -169,7 +170,10 @@ namespace Cordyceps.Tools.Unified
                     Required = new[] { "id" },
                     Optional = new[] { "min", "max", "value", "decimals", "items" },
                     Example = "action='config', id='abc', min=0, max=100, value=50",
-                    Tips = new[] { "For value lists: items='[{\"name\":\"A\",\"value\":\"0\"}]'" }
+                    Tips = new[] {
+                        "For value lists: items='[{\"name\":\"A\",\"value\":\"0\"}]'",
+                        "A non-numeric 'value' is rejected with an error before anything is applied (parity with action='set')"
+                    }
                 },
                 ["preview"] = new ActionInfo
                 {
@@ -178,7 +182,10 @@ namespace Cordyceps.Tools.Unified
                     Required = new[] { "enabled" },
                     Optional = new[] { "id", "ids" },
                     Example = "action='preview', id='abc', enabled=false",
-                    Tips = new[] { "Returns per-id results with changedCount/failedCount; unresolvable ids or components without preview support are per-id failures and overall success is false" }
+                    Tips = new[] {
+                        "Returns per-id results with changedCount/failedCount; unresolvable ids or components without preview support are per-id failures and overall success is false",
+                        "enabled accepts true/false, 1/0, yes/no (case-insensitive); anything else is a validation error"
+                    }
                 },
                 ["enable"] = new ActionInfo
                 {
@@ -187,7 +194,10 @@ namespace Cordyceps.Tools.Unified
                     Required = new[] { "enabled" },
                     Optional = new[] { "id", "ids" },
                     Example = "action='enable', id='abc', enabled=false",
-                    Tips = new[] { "Returns per-id results with changedCount/failedCount; unresolvable ids or components that can't be locked are per-id failures and overall success is false" }
+                    Tips = new[] {
+                        "Returns per-id results with changedCount/failedCount; unresolvable ids or components that can't be locked are per-id failures and overall success is false",
+                        "enabled accepts true/false, 1/0, yes/no (case-insensitive); anything else is a validation error"
+                    }
                 },
                 // Group actions (from gh_group)
                 ["group_create"] = new ActionInfo
@@ -196,7 +206,8 @@ namespace Cordyceps.Tools.Unified
                     Description = "Create a visual group",
                     Required = new[] { "name" },
                     Optional = new[] { "ids", "color" },
-                    Example = "action='group_create', name='Inputs', ids='[\"a\",\"b\"]', color='#FF6B6B'"
+                    Example = "action='group_create', name='Inputs', ids='[\"a\",\"b\"]', color='#FF6B6B'",
+                    Tips = new[] { "Malformed 'ids' JSON is rejected with an error — no group is created" }
                 },
                 ["group_delete"] = new ActionInfo
                 {
@@ -211,7 +222,8 @@ namespace Cordyceps.Tools.Unified
                     Description = "Add components to a group",
                     Required = new[] { "ids" },
                     Optional = new[] { "id", "name", "color" },
-                    Example = "action='group_add', ids='[\"a\",\"b\"]', name='MyGroup'"
+                    Example = "action='group_add', ids='[\"a\",\"b\"]', name='MyGroup'",
+                    Tips = new[] { "If 'id' is provided it must resolve to an existing group (error otherwise); omit 'id' to create a new group" }
                 },
                 ["group_remove"] = new ActionInfo
                 {
@@ -279,7 +291,7 @@ namespace Cordyceps.Tools.Unified
         [McpServerTool, Description("Component operations. Actions: add|delete|move|rename|find|search|list|info|bounds|validate|constant|bake|zoom|view|get|set|config|preview|enable|group_create|group_delete|group_add|group_remove|group_list|group_rename|group_color|group_move|zoomable|help")]
         public string GhCanvas(
             [Description("Action to perform")] string action,
-            [Description("Component type for 'add', or search query for 'search'")] string type = null,
+            [Description("Component type for 'add', search query for 'search', or type filter for 'list'")] string type = null,
             [Description("X position")] double x = double.NaN,
             [Description("Y position")] double y = double.NaN,
             [Description("Component GUID")] string id = null,
@@ -360,13 +372,29 @@ namespace Cordyceps.Tools.Unified
                 ("index", index >= 0 ? (object)index : null)
             );
 
+            // 'type' doubles as the search query (documented on the param), so let a provided
+            // 'type' satisfy the 'search' action's required 'query' — keeping the query??type
+            // fallback in the dispatch reachable.
+            if (string.Equals(action, "search", StringComparison.OrdinalIgnoreCase)
+                && !providedParams.ContainsKey("query") && type != null)
+            {
+                providedParams["query"] = type;
+            }
+
             // Validate action and required params
             var validationError = UnifiedToolHelpers.ValidateAction(ToolInfo, action, providedParams);
             if (validationError != null)
                 return validationError;
 
-            // Parse enabled - default to true if not specified (for preview/enable actions)
-            bool enabledBool = string.IsNullOrEmpty(enabled) || ToolHelpers.ParseBool(enabled, true);
+            // Parse enabled strictly for preview/enable ('enabled' is required for both):
+            // an unrecognized string must be a validation error, not silently coerced to true.
+            bool enabledBool = true;
+            if (string.Equals(action, "preview", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(action, "enable", StringComparison.OrdinalIgnoreCase))
+            {
+                if (!ToolHelpers.TryParseBool(enabled, out enabledBool))
+                    return ToolHelpers.ErrorResponse($"Invalid 'enabled' value: '{enabled}'. Use true/false, 1/0, or yes/no.");
+            }
 
             // Dispatch to action handler
             return action.ToLowerInvariant() switch
@@ -377,7 +405,7 @@ namespace Cordyceps.Tools.Unified
                 "rename" => ActionRename(id, nickname),
                 "find" => ActionFind(nickname, exact),
                 "search" => ActionSearch(query ?? type, category, limit),
-                "list" => ActionList(category, typeFilter, group),
+                "list" => ActionList(category, typeFilter ?? type, group),
                 "info" => ActionInfo(id),
                 "bounds" => ActionBounds(id),
                 "validate" => ActionValidate(),
@@ -545,7 +573,11 @@ namespace Cordyceps.Tools.Unified
                 var deletedIds = new List<string>();
                 int succeeded = 0, failed = 0;
 
-                IGH_DocumentObject lastDeleted = null;
+                // Recipients must be captured BEFORE RemoveObject severs the wires — expiring the
+                // deleted object afterwards reaches nothing. Collect every deleted object's former
+                // recipients (top-level owners) and expire the survivors once all deletions are done.
+                var deletedGuids = new HashSet<Guid>();
+                var formerRecipients = new Dictionary<Guid, IGH_DocumentObject>();
                 foreach (var compId in idList)
                 {
                     if (!ToolHelpers.TryGetUnprotectedComponent(_context, compId, out var component, out var compError))
@@ -557,9 +589,22 @@ namespace Cordyceps.Tools.Unified
 
                     try
                     {
+                        IEnumerable<IGH_Param> outputs = component is IGH_Component comp
+                            ? comp.Params.Output
+                            : component is IGH_Param param ? new[] { param } : Enumerable.Empty<IGH_Param>();
+                        foreach (var output in outputs)
+                        {
+                            foreach (var recipient in output.Recipients)
+                            {
+                                var recObj = recipient.Attributes?.GetTopLevel?.DocObject;
+                                if (recObj != null)
+                                    formerRecipients[recObj.InstanceGuid] = recObj;
+                            }
+                        }
+
                         var ownerDoc = ToolHelpers.GetOwnerDocument(component, doc);
                         ownerDoc.RemoveObject(component, true);
-                        lastDeleted = component;
+                        deletedGuids.Add(component.InstanceGuid);
                         deletedIds.Add(compId);
                         results.Add(new { id = compId, success = true });
                         succeeded++;
@@ -571,8 +616,12 @@ namespace Cordyceps.Tools.Unified
                     }
                 }
 
-                if (succeeded > 0 && lastDeleted is IGH_ActiveObject activeDel)
-                    activeDel.ExpireSolution(false);
+                foreach (var kvp in formerRecipients)
+                {
+                    if (deletedGuids.Contains(kvp.Key)) continue;
+                    if (kvp.Value is IGH_ActiveObject activeRec)
+                        activeRec.ExpireSolution(false);
+                }
 
                 if (idList.Count == 1)
                 {

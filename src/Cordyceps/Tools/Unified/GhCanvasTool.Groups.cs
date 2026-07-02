@@ -21,6 +21,17 @@ namespace Cordyceps.Tools.Unified
                 if (!ToolHelpers.TryGetActiveDocument(_context, out var doc, out var error))
                     return ToolHelpers.ErrorResponse(error);
 
+                // Parse member ids BEFORE creating the group: malformed JSON is a hard error
+                // (parity with group_add), never a silently-empty group under success:true.
+                List<Guid> guids = null;
+                if (!string.IsNullOrEmpty(componentIds))
+                {
+                    if (!ToolHelpers.TryParseGuidArray(componentIds, out guids, out var parseError))
+                        return ToolHelpers.ErrorResponse(parseError);
+                }
+
+                var infraIds = ToolHelpers.GetCordycepsInfrastructureIds(doc);
+
                 var group = new GH_Group();
                 group.NickName = name;
                 group.Name = name;
@@ -31,21 +42,23 @@ namespace Cordyceps.Tools.Unified
                 doc.AddObject(group, false);
 
                 var addedIds = new List<string>();
-                if (!string.IsNullOrEmpty(componentIds))
+                if (guids != null)
                 {
-                    if (ToolHelpers.TryParseGuidArray(componentIds, out var guids, out _))
+                    foreach (var guid in guids)
                     {
-                        foreach (var guid in guids)
+                        // Infrastructure ids are invisible to callers (treated as not found) —
+                        // grouping the Cordyceps component would silently turn the whole user
+                        // group into hidden infrastructure.
+                        if (infraIds.Contains(guid)) continue;
+
+                        var obj = doc.FindObject(guid, true);
+                        if (obj != null)
                         {
-                            var obj = doc.FindObject(guid, true);
-                            if (obj != null)
-                            {
-                                group.AddObject(obj.InstanceGuid);
-                                addedIds.Add(guid.ToString());
-                            }
+                            group.AddObject(obj.InstanceGuid);
+                            addedIds.Add(guid.ToString());
                         }
-                        group.ExpireCaches();
                     }
+                    group.ExpireCaches();
                 }
 
                 Instances.ActiveCanvas?.Invalidate();
@@ -92,9 +105,16 @@ namespace Cordyceps.Tools.Unified
                 if (!ToolHelpers.TryParseGuidArray(componentIds, out var guids, out error))
                     return ToolHelpers.ErrorResponse(error);
 
+                var infraIds = ToolHelpers.GetCordycepsInfrastructureIds(doc);
+
                 var objects = new List<IGH_DocumentObject>();
                 foreach (var guid in guids)
                 {
+                    // Infrastructure ids are invisible to callers (treated as not found) —
+                    // grouping the Cordyceps component would silently turn the whole user
+                    // group into hidden infrastructure.
+                    if (infraIds.Contains(guid)) continue;
+
                     var obj = doc.FindObject(guid, true);
                     if (obj != null)
                         objects.Add(obj);
@@ -104,8 +124,19 @@ namespace Cordyceps.Tools.Unified
                     return ToolHelpers.ErrorResponse("No valid components found");
 
                 GH_Group group = null;
-                if (!string.IsNullOrEmpty(groupId) && Guid.TryParse(groupId, out Guid gGuid))
-                    group = doc.FindObject(gGuid, true) as GH_Group;
+                if (!string.IsNullOrEmpty(groupId))
+                {
+                    // An explicit groupId must resolve — silently creating a new group here
+                    // would hide typos and duplicate groups. Omit groupId to create a group.
+                    if (!Guid.TryParse(groupId, out Guid gGuid))
+                        return ToolHelpers.ErrorResponse($"Invalid group id format: {groupId}");
+
+                    if (!infraIds.Contains(gGuid))
+                        group = doc.FindObject(gGuid, true) as GH_Group;
+
+                    if (group == null)
+                        return ToolHelpers.ErrorResponse($"Group not found: {groupId}. Omit 'id' (and pass 'name') to create a new group.");
+                }
 
                 if (group == null)
                 {
@@ -142,7 +173,7 @@ namespace Cordyceps.Tools.Unified
         {
             return _context.ExecuteOnUiThread(() =>
             {
-                if (!ToolHelpers.TryGetComponent(_context, groupId, out var obj, out var error))
+                if (!ToolHelpers.TryGetUnprotectedComponent(_context, groupId, out var obj, out var error))
                     return ToolHelpers.ErrorResponse(error);
 
                 if (!(obj is GH_Group group))
@@ -223,7 +254,7 @@ namespace Cordyceps.Tools.Unified
         {
             return _context.ExecuteOnUiThread(() =>
             {
-                if (!ToolHelpers.TryGetComponent(_context, id, out var obj, out var error))
+                if (!ToolHelpers.TryGetUnprotectedComponent(_context, id, out var obj, out var error))
                     return ToolHelpers.ErrorResponse(error);
 
                 if (!(obj is GH_Group group))
@@ -248,7 +279,7 @@ namespace Cordyceps.Tools.Unified
         {
             return _context.ExecuteOnUiThread(() =>
             {
-                if (!ToolHelpers.TryGetComponent(_context, id, out var obj, out var error))
+                if (!ToolHelpers.TryGetUnprotectedComponent(_context, id, out var obj, out var error))
                     return ToolHelpers.ErrorResponse(error);
 
                 if (!(obj is GH_Group group))

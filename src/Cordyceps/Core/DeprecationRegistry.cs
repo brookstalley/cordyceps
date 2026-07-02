@@ -13,12 +13,15 @@ namespace Cordyceps.Core
     /// </summary>
     public class DeprecationRegistry
     {
-        private static DeprecationRegistry _instance;
+        // volatile: the double-checked Instance read happens off-lock on concurrent HTTP
+        // worker threads; without it a thread could observe a partially-published reference.
+        private static volatile DeprecationRegistry _instance;
         private static readonly object _lock = new object();
 
         private readonly Dictionary<Guid, UpgradeInfo> _upgrades = new Dictionary<Guid, UpgradeInfo>();
         private readonly HashSet<Guid> _hiddenComponents = new HashSet<Guid>();
-        private bool _initialized;
+        // volatile: fast-path read in Initialize() happens off-lock.
+        private volatile bool _initialized;
 
         /// <summary>
         /// Singleton instance
@@ -58,12 +61,18 @@ namespace Cordyceps.Core
                 {
                     ScanForUpgradeObjects();
                     ScanForHiddenComponents();
-                    _initialized = true;
                     DebugLog.Info($"DeprecationRegistry: Found {_upgrades.Count} upgrade paths, {_hiddenComponents.Count} hidden components");
                 }
                 catch (Exception ex)
                 {
-                    DebugLog.Error($"DeprecationRegistry initialization failed: {ex.Message}");
+                    // Logged once; empty registries are an acceptable degraded state.
+                    DebugLog.Error($"DeprecationRegistry initialization failed: {ex.Message}. Deprecation info unavailable for this session.");
+                }
+                finally
+                {
+                    // Always mark initialized — a failed scan must not re-run the full
+                    // AppDomain assembly scan on every subsequent query.
+                    _initialized = true;
                 }
             }
         }

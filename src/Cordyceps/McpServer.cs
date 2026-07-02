@@ -423,9 +423,10 @@ namespace Cordyceps
 
             try
             {
-                // Validate Accept header - require application/json (SSE optional since we're stateless)
+                // Validate Accept header - require application/json (SSE optional since we're
+                // stateless). Wildcards ("*/*", "application/*") accept JSON too.
                 var accept = request.Headers["Accept"] ?? "";
-                if (!accept.Contains("application/json"))
+                if (!accept.Contains("application/json") && !accept.Contains("*/*") && !accept.Contains("application/*"))
                 {
                     Core.DebugLog.WriteLine($"Invalid Accept header (must include application/json): {accept}", "WARN", 1);
                     response.StatusCode = 406; // Not Acceptable
@@ -436,8 +437,17 @@ namespace Cordyceps
                 // Add CORS header for actual requests (echo validated origin)
                 response.Headers.Add("Access-Control-Allow-Origin", origin ?? "*");
 
-                // Check request body size limit (10MB) to prevent memory exhaustion
+                // Check request body size limit (10MB) to prevent memory exhaustion.
+                // ContentLength64 < 0 means no Content-Length header (e.g. chunked transfer),
+                // which would bypass the cap entirely — require a declared length (411).
                 const long MAX_BODY_SIZE = 10 * 1024 * 1024;
+                if (request.ContentLength64 < 0)
+                {
+                    Core.DebugLog.WriteLine("Request without Content-Length (chunked?) rejected: body size cap cannot be enforced", "WARN", 1);
+                    response.StatusCode = 411; // Length Required
+                    response.Close();
+                    return;
+                }
                 if (request.ContentLength64 > MAX_BODY_SIZE)
                 {
                     Core.DebugLog.WriteLine($"Request body too large: {request.ContentLength64} bytes (max {MAX_BODY_SIZE})", "WARN", 1);
@@ -458,8 +468,17 @@ namespace Cordyceps
                 var hasId = root.TryGetProperty("id", out var id);
                 var paramsEl = root.TryGetProperty("params", out var p) ? p : default;
 
-                // JSON-RPC 2.0: Notifications (no id) MUST NOT receive a response
+                // JSON-RPC 2.0: Notifications (ABSENT id) MUST NOT receive a response.
+                // An explicit "id": null is NOT a notification — it still gets a response
+                // (with "id": null echoed back).
                 bool isNotification = !hasId || id.ValueKind == JsonValueKind.Undefined;
+
+                // Compute the response id BEFORE dispatch: echoing is lossless (Clone preserves
+                // long/fractional/string/null exactly as sent), and doing it up front means a
+                // malformed id can never destroy the response after the tool's side effects ran.
+                // A boxed JsonElement of ValueKind.Null serializes as null but is not a null
+                // reference, so WhenWritingNull doesn't strip the "id" property.
+                JsonElement? responseId = isNotification ? (JsonElement?)null : id.Clone();
 
                 object result = null;
                 string errorMessage = null;
@@ -490,11 +509,10 @@ namespace Cordyceps
 
                 var responseObj = new Dictionary<string, object> { ["jsonrpc"] = "2.0" };
 
-                // Add id to response (required for non-notification responses)
-                if (id.ValueKind == JsonValueKind.Number)
-                    responseObj["id"] = id.GetInt32();
-                else if (id.ValueKind == JsonValueKind.String)
-                    responseObj["id"] = id.GetString();
+                // Echo the request id losslessly (required for non-notification responses),
+                // including an explicit "id": null when the client sent null.
+                if (responseId.HasValue)
+                    responseObj["id"] = responseId.Value;
 
                 if (errorMessage != null)
                 {
@@ -652,39 +670,42 @@ Resources: gh://docs/getting-started, gh://docs/data-trees, gh://docs/common-err
 
             RecordCommand(name);
 
+            // Unknown tool stays a protocol error (the client addressed a tool that doesn't
+            // exist); everything past this point concerns a KNOWN tool, so failures become
+            // structured {success:false} tool results instead.
             var tool = _tools.FirstOrDefault(t => t.Name == name);
             if (tool == null)
                 throw new Exception($"Unknown tool: {name}");
 
-            // Create tool instance (all tool classes take GrasshopperContext)
-            var instance = Activator.CreateInstance(tool.DeclaringType, ctx);
-
-            // Build method arguments
-            var methodParams = tool.Method.GetParameters();
-            var args = new object[methodParams.Length];
-
-            for (int i = 0; i < methodParams.Length; i++)
-            {
-                var param = methodParams[i];
-                if (arguments.ValueKind == JsonValueKind.Object &&
-                    arguments.TryGetProperty(param.Name, out var argVal))
-                {
-                    args[i] = ConvertJsonValue(argVal, param.ParameterType);
-                }
-                else if (param.HasDefaultValue)
-                {
-                    args[i] = param.DefaultValue;
-                }
-                else
-                {
-                    // Required parameter is missing - throw a clear error
-                    throw new Exception($"Missing required parameter: {param.Name}");
-                }
-            }
-
             object result;
             try
             {
+                // Create tool instance (all tool classes take GrasshopperContext)
+                var instance = Activator.CreateInstance(tool.DeclaringType, ctx);
+
+                // Build method arguments
+                var methodParams = tool.Method.GetParameters();
+                var args = new object[methodParams.Length];
+
+                for (int i = 0; i < methodParams.Length; i++)
+                {
+                    var param = methodParams[i];
+                    if (arguments.ValueKind == JsonValueKind.Object &&
+                        arguments.TryGetProperty(param.Name, out var argVal))
+                    {
+                        args[i] = ConvertJsonValue(argVal, param.ParameterType);
+                    }
+                    else if (param.HasDefaultValue)
+                    {
+                        args[i] = param.DefaultValue;
+                    }
+                    else
+                    {
+                        // Required parameter is missing - throw a clear error
+                        throw new InvalidOperationException($"Missing required parameter: {param.Name}");
+                    }
+                }
+
                 // Invoke the tool method
                 result = tool.Method.Invoke(instance, args);
 
@@ -696,7 +717,7 @@ Resources: gh://docs/getting-started, gh://docs/data-trees, gh://docs/common-err
                     result = resultProperty?.GetValue(task);
                 }
             }
-            catch (Exception ex) // prawduct:allow prawduct/broad-except -- tool-invocation boundary: any tool-body failure must become a structured {success:false} result, not a JSON-RPC protocol error (project error-handling contract)
+            catch (Exception ex) // prawduct:allow prawduct/broad-except -- tool-invocation boundary: any failure for a KNOWN tool (construction, argument coercion, missing required param, tool body) must become a structured {success:false} result, not a JSON-RPC protocol error (project error-handling contract)
             {
                 // Log the full exception (type + stack) operator-side for root-causing; the client
                 // payload stays message-only via FormatExceptionResult.

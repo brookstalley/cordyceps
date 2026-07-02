@@ -36,7 +36,17 @@ namespace Cordyceps.Core
             if (targetType == typeof(int))
             {
                 if (element.ValueKind == JsonValueKind.Number)
-                    return element.GetInt32();
+                {
+                    if (element.TryGetInt32(out var i))
+                        return i;
+                    // Accept whole-valued doubles (clients often send 300.0 for 300);
+                    // reject true fractions with a clear error instead of a FormatException.
+                    if (element.TryGetDouble(out var d) && !double.IsNaN(d) && !double.IsInfinity(d)
+                        && d == Math.Floor(d) && d >= int.MinValue && d <= int.MaxValue)
+                        return (int)d;
+                    throw new InvalidOperationException(
+                        $"Cannot convert number '{element}' to int: not a whole number in the int range");
+                }
                 if (element.ValueKind == JsonValueKind.String &&
                     int.TryParse(element.GetString(), NumberStyles.Integer, CultureInfo.InvariantCulture, out var intVal))
                     return intVal;
@@ -47,7 +57,18 @@ namespace Cordyceps.Core
             if (targetType == typeof(long))
             {
                 if (element.ValueKind == JsonValueKind.Number)
-                    return element.GetInt64();
+                {
+                    if (element.TryGetInt64(out var l))
+                        return l;
+                    // Accept whole-valued doubles (300.0 → 300); reject true fractions.
+                    // Upper bound is exclusive: long.MaxValue rounds UP to 2^63 as a double,
+                    // so d <= long.MaxValue would admit 2^63 and overflow on the cast.
+                    if (element.TryGetDouble(out var d) && !double.IsNaN(d) && !double.IsInfinity(d)
+                        && d == Math.Floor(d) && d >= long.MinValue && d < 9223372036854775808.0)
+                        return (long)d;
+                    throw new InvalidOperationException(
+                        $"Cannot convert number '{element}' to long: not a whole number in the long range");
+                }
                 if (element.ValueKind == JsonValueKind.String &&
                     long.TryParse(element.GetString(), NumberStyles.Integer, CultureInfo.InvariantCulture, out var longVal))
                     return longVal;
@@ -83,8 +104,11 @@ namespace Cordyceps.Core
                 if (element.ValueKind == JsonValueKind.False) return false;
                 if (element.ValueKind == JsonValueKind.String && bool.TryParse(element.GetString(), out var boolVal))
                     return boolVal;
+                // Number → bool: nonzero is true, zero is false, for ANY numeric value.
+                // (GetInt32 here used to throw FormatException on non-int32 numbers like 1.5
+                // or 2^40 — number→bool never fails now, matching C-style truthiness.)
                 if (element.ValueKind == JsonValueKind.Number)
-                    return element.GetInt32() != 0;
+                    return element.GetDouble() != 0;
                 throw new InvalidOperationException(
                     $"Cannot convert {element.ValueKind} '{element}' to bool");
             }
