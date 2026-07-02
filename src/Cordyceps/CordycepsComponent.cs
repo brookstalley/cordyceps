@@ -133,7 +133,54 @@ namespace Cordyceps
         public override void RemovedFromDocument(GH_Document document)
         {
             base.RemovedFromDocument(document);
+            ReleaseServer();
+        }
 
+        /// <summary>
+        /// Called when the owner document moves into a different context. Grasshopper does NOT
+        /// call RemovedFromDocument when a document is closed/unloaded, so without this hook a
+        /// closed document left the server running and the port owned — re-opening the file then
+        /// blocked the port. Stop the server on Close/Unloaded; on Open/Loaded a solution is
+        /// scheduled so the normal SolveInstance lifecycle (the single startup path) restarts it.
+        /// </summary>
+        public override void DocumentContextChanged(GH_Document document, GH_DocumentContext context)
+        {
+            base.DocumentContextChanged(document, context);
+
+            switch (context)
+            {
+                case GH_DocumentContext.Close:
+                case GH_DocumentContext.Unloaded:
+                    DebugLog.WriteLine($"Document context '{context}' — releasing MCP server on port {_myPort}", "INFO", 1);
+                    ReleaseServer();
+                    break;
+
+                case GH_DocumentContext.Open:
+                case GH_DocumentContext.Loaded:
+                    // A document re-entering the canvas doesn't necessarily re-solve, so expire
+                    // this component via a scheduled solution; SolveInstance restarts the server.
+                    bool needsRestart;
+                    lock (_lock)
+                    {
+                        // Restart when we hold no port (normal reopen path) OR when we still
+                        // own a port whose cached server isn't running (StartServer caches a
+                        // failed instance while _portOwners/_myPort stay set — without this,
+                        // a dead server isn't restarted until a manual recompute).
+                        needsRestart = _myPort == 0
+                            || !(_servers.TryGetValue(_myPort, out var s) && s.IsRunning);
+                    }
+                    if (needsRestart && document != null)
+                        document.ScheduleSolution(10, d => ExpireSolution(false));
+                    break;
+            }
+        }
+
+        /// <summary>
+        /// Shared teardown for RemovedFromDocument and document Close/Unloaded: stop the server
+        /// (if this instance owns the port) and release port ownership.
+        /// </summary>
+        private void ReleaseServer()
+        {
             lock (_lock)
             {
                 if (_myPort != 0)

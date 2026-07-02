@@ -58,7 +58,7 @@ namespace Cordyceps.Tests
         }
 
         [Fact]
-        public void Record_UnderConcurrency_LosesNoIncrements()
+        public async Task Record_UnderConcurrency_LosesNoIncrements()
         {
             // The whole point of the Chunk 03 fix: concurrent HTTP worker threads must not lose
             // increments. With a plain `_count++` (read-modify-write) this assertion fails reliably
@@ -85,7 +85,7 @@ namespace Cordyceps.Tests
 
             ready.Wait();   // all workers spun up and parked on the gate
             go.Set();       // release them simultaneously
-            Task.WaitAll(tasks);
+            await Task.WhenAll(tasks);
 
             Assert.Equal(threads * perThread, stats.Count);
             Assert.Equal("hammer", stats.Last);

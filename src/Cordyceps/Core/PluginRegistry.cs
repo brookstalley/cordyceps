@@ -11,7 +11,9 @@ namespace Cordyceps.Core
     /// </summary>
     public class PluginRegistry
     {
-        private static PluginRegistry _instance;
+        // volatile: the double-checked Instance read happens off-lock on concurrent HTTP
+        // worker threads; without it a thread could observe a partially-published reference.
+        private static volatile PluginRegistry _instance;
         private static readonly object _lock = new object();
 
         /// <summary>
@@ -182,7 +184,8 @@ namespace Cordyceps.Core
             }
         };
 
-        private Dictionary<string, string> _installedPlugins;
+        // Published only on a fully-successful scan (volatile: read off-lock by callers).
+        private volatile Dictionary<string, string> _installedPlugins;
 
         /// <summary>
         /// Singleton instance
@@ -254,9 +257,12 @@ namespace Cordyceps.Core
         /// </summary>
         public Dictionary<string, string> GetInstalledPlugins()
         {
-            if (_installedPlugins != null) return _installedPlugins;
+            var cached = _installedPlugins;
+            if (cached != null) return cached;
 
-            _installedPlugins = new Dictionary<string, string>();
+            // Build into a local and publish only on a fully-successful scan — an exception
+            // mid-scan must not leave a partial dictionary cached as if it were complete.
+            var scanned = new Dictionary<string, string>();
 
             try
             {
@@ -273,18 +279,26 @@ namespace Cordyceps.Core
                 foreach (var category in categories)
                 {
                     var plugin = GetPluginForCategory(category);
-                    if (plugin != null && !_installedPlugins.ContainsKey(plugin.Name))
+                    if (plugin != null && !scanned.ContainsKey(plugin.Name))
                     {
-                        _installedPlugins[plugin.Name] = plugin.DocumentationUrl;
+                        scanned[plugin.Name] = plugin.DocumentationUrl;
                     }
                 }
             }
             catch (Exception ex)
             {
                 DebugLog.Warn($"Error scanning installed plugins: {ex.Message}");
+                // Return the partial result for this call, but don't cache it — the next
+                // call retries the scan.
+                return scanned;
             }
 
-            return _installedPlugins;
+            lock (_lock)
+            {
+                if (_installedPlugins == null)
+                    _installedPlugins = scanned;
+                return _installedPlugins;
+            }
         }
 
         /// <summary>

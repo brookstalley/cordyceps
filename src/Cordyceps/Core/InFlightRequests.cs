@@ -26,6 +26,14 @@ namespace Cordyceps.Core
         public int Count => _tasks.Count;
 
         /// <summary>
+        /// Test seam: invoked by <see cref="DrainWithin"/> immediately after it captures its
+        /// snapshot of the tracked set, before it starts waiting. Lets the snapshot test track
+        /// a late task at a deterministic point instead of sleeping and hoping the drain has
+        /// started. Null (a no-op) in production.
+        /// </summary>
+        internal Action OnDrainSnapshot;
+
+        /// <summary>
         /// Begin tracking a handler task. The task removes itself once it completes (success,
         /// fault, or cancellation), so the set does not grow without bound under normal traffic.
         /// </summary>
@@ -49,6 +57,7 @@ namespace Cordyceps.Core
         public bool DrainWithin(TimeSpan budget)
         {
             var pending = _tasks.Keys.ToArray();
+            OnDrainSnapshot?.Invoke();
             if (pending.Length == 0)
                 return true;
 

@@ -120,6 +120,72 @@ applying type hints + access — only exists with a running Grasshopper document
   with a `reconnectHint`, and that hint is directly usable with `gh_wire(action='connect')` to restore it.
 - **Response shape matches `set`:** `lostConnections` + `reconnectHint` look identical to what `set` returns.
 
+## VRF-007 — janitor-2026-07-02 Chunk 03 — six HIGH bug fixes (host-bound halves)
+
+**Status:** pending
+**Added:** 2026-07-02 (janitor-2026-07-02, Chunk 03)
+**Where to verify:** Rhino 8 + Grasshopper with the Cordyceps component placed and an MCP client connected.
+
+**Why this needs a human:** five of the six fixes are document/host-bound (Grasshopper lifecycle
+events, LayerTable/RenderMaterial/PictureFrame behavior) and cannot run off the UI thread in a unit
+test. Only the `ScriptParamDefs.TryParse` decision (BUG 2) is host-free and CI-tested.
+
+**Verify:**
+- **Server survives document close/reopen (BUG 1):** place the component, close the `.gh` file,
+  reopen the same file. Expected: no "port in use by another Cordyceps component" error — the
+  server restarts cleanly on the same port. Also tab-switch between two open GH documents and back;
+  the server should stop on unload and restart on return.
+- **configure rejects malformed JSON before mutating (BUG 2, host glue):** wire a script component,
+  then `gh_script(action='configure', inputs='[{"name":"x"')` (broken JSON). Expected:
+  `success:false, "Invalid inputs JSON: …"` and ALL existing params/wires intact.
+- **preview/enable per-id errors (BUG 3):** `gh_canvas(action='preview', id='<bogus-guid>',
+  enabled=false)`. Expected: `success:false` with a per-id error entry, not `success:true`.
+- **layer_delete of the current layer (BUG 4):** make a layer current, add objects, delete it with
+  `deleteObjects=false`. Expected: objects moved to a non-descendant destination (echoed as
+  `movedToLayer`), current layer reassigned, layer actually deleted. Also: deleting the only layer
+  errors with no side effects.
+- **material_create applies PBR (BUG 5):** `material_create name='Chrome' color='#CCCCCC'
+  metallic=1 roughness=0.05`, then `material_list`. Expected: the listed material shows
+  metallic≈1, roughness≈0.05 (previously silently dropped); render preview looks metallic.
+- **place_image failed replace keeps the old image (BUG 6):** `place_image` once, then
+  `place_image replace=true` with a corrupt/unreadable image path. Expected: error returned AND the
+  original picture frame still present.
+
+## VRF-008 — janitor-2026-07-02 Chunks 04/05 — MEDIUM-sweep host-bound behavior changes
+
+**Status:** pending
+**Added:** 2026-07-02 (janitor-2026-07-02, Chunks 04–05; enqueued at close-out per cumulative Critic)
+**Where to verify:** Rhino 8 + Grasshopper with the Cordyceps component placed and an MCP client connected.
+
+**Why this needs a human:** Chunks 04/05 changed dozens of host-bound behaviors that unit tests
+cannot reach. The pure decision halves (bool grammar, coercion, culture parsing, id echo,
+SliderConfig.ValueInvalid, place_image path rule) are CI-tested; the host glue below is not.
+
+**Verify (spot-check at least the starred items):**
+- ★ **select safety:** bare `rhino_scene(action='select')` errors telling you to pass
+  `type='all'`; `type='all'` selects everything; a locked object lands in `notSelectable`.
+- ★ **disconnect existence check:** `gh_wire(action='disconnect')` on a wire that doesn't exist
+  returns `success:false` with `currentSources` listing the real sources; a real wire disconnects.
+- ★ **cluster-safe clear:** inside a cluster editor, `gh_document(action='clear')` preserves the
+  cluster input/output hooks (reports `preservedClusterHooks`).
+- ★ **nested layers:** `set_layer` / `place_image` with `layer='A::B::C'` creates the hierarchy;
+  an ambiguous short name errors listing candidate full paths.
+- **group protection:** `group_rename`/`group_color`/`group_remove` refuse the Cordyceps
+  infrastructure group; `group_add` with a typo'd groupId errors instead of creating a new group.
+- **bulk expire:** delete/enable/connect over multiple targets recompute ALL touched components
+  (check inside a cluster, where NewSolution(false) only processes expired objects).
+- **render wait:** `rhino_render(action='render', wait=30)` on a Shaded viewport errors
+  immediately (no 30s stall); on Raytraced it waits and reports passes.
+- **sun mode:** after using azimuth/altitude, a lat/long/dateTime call flips back to computed
+  mode (`mode:"computed"`) and visibly moves the sun.
+- **light validation:** `light_add` with `spotAngle=120` errors; `light_set` with a bad color
+  string errors before mutating; stale light ids appear in `notFound`.
+- **bulk notFound:** `rhino_scene(action='delete', ids='[<stale-guid>]')` returns success:false
+  with the id in `notFound` (same for hide/show/set_layer/set_name/set_color).
+- **JSON-RPC robustness:** an MCP client sending a string or large-integer request id gets a
+  correct response (previously the response was destroyed after the tool ran); `Accept: */*`
+  works (curl default).
+
 ## VRF-006 — gitflow-release-refactor — `release.sh prep`/`publish` end-to-end
 
 **Status:** pending

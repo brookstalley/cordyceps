@@ -27,19 +27,19 @@ Position (x,y) is the **pivot point**, not top-left corner.
 
 | Type | Pixels |
 |------|--------|
-| Horizontal between columns | 60-80 |
+| Horizontal between columns | 150 |
 | Vertical between stacked inputs | 70 |
 | Vertical between components | 50-70 |
 | Between groups | 30 |
 
-**Goal**: Avoid backwards wires. Stack vertically. Minimize horizontal spread.
+**Goal**: Avoid backwards wires. Stack vertically. Keep columns readable — 150px gaps leave room for wires.
 
 ## Standard Layout
 
 | Column | X | Contents |
 |--------|---|----------|
 | Inputs | 50 | Sliders, parameters (stacked y=50, 120, 190...) |
-| Processing | 300, 380, 460... | Operations (+60-80 per column) |
+| Processing | 300, 450, 600... | Operations (+150 per column) |
 
 ## Constants
 
@@ -48,14 +48,15 @@ When explicit: Panel at y=250+ with nickname ("Zero", "Pi").
 
 ## Using Bounds
 
-Responses include `{x, y, width, height, right, bottom}`.
-Next position: `x = previous.right + 80`
+`gh_canvas(action='bounds', id='...')` returns `bounds` (`{x, y, width, height}`) plus `pivot` (`{x, y}`).
+`list`/`find`/`info` responses include only the pivot `x`/`y`, not the bounding box.
+Next column position: `x = bounds.x + bounds.width + 150`
 
 ## Workflow
 
 1. `gh_document(action='solver', enabled=false)`
 2. Inputs at x=50, y=50/120/190 (70px vertical gaps)
-3. Processing at x=300, 380, 460 (60-80px horizontal gaps)
+3. Processing at x=300, 450, 600 (150px horizontal gaps)
 4. Wire: `gh_wire(action='connect', connections='[...]')`
 5. `gh_document(action='solver', enabled=true)`
 6. `gh_canvas(action='validate')` — check overlaps

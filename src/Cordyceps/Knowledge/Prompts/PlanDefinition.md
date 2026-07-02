@@ -11,11 +11,12 @@ resources/read: gh://docs/canvas-layout
 ```
 
 ## Step 2: Check for Patterns
-Search for a matching pattern:
+Read the built-in pattern resources for common structures:
 ```
-gh_canvas(action='search', query='{goal}')
+resources/read: gh://patterns/linear-array
+resources/read: gh://patterns/grid-array
 ```
-If a pattern is found, read the pattern resource for detailed guidance.
+If the goal matches one of these patterns (repeated geometry along a line, or a 2D grid), follow the pattern's guidance for component choice and layout.
 
 ## Step 3: Identify Inputs
 What parameters should be adjustable?

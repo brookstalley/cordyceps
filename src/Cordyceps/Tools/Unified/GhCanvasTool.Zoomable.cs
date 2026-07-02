@@ -100,10 +100,12 @@ namespace Cordyceps.Tools.Unified
                 return ToolHelpers.ErrorResponse("Failed to create parameter");
             }
 
+            // Indexed overloads (like GhScriptTool's SyncParamSide) so an explicit index inserts
+            // at that position — the non-indexed overloads append, making the reported index wrong.
             if (side == GH_ParameterSide.Input)
-                ghComponent.Params.RegisterInputParam(newParam);
+                ghComponent.Params.RegisterInputParam(newParam, insertIndex);
             else
-                ghComponent.Params.RegisterOutputParam(newParam);
+                ghComponent.Params.RegisterOutputParam(newParam, insertIndex);
 
             varParamComp.VariableParameterMaintenance();
             ghComponent.ExpireSolution(false);

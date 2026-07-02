@@ -223,17 +223,9 @@ namespace Cordyceps
             }
         }
 
-        private static string ConvertToSnakeCase(string name)
-        {
-            var sb = new StringBuilder();
-            for (int i = 0; i < name.Length; i++)
-            {
-                if (i > 0 && char.IsUpper(name[i]))
-                    sb.Append('_');
-                sb.Append(char.ToLower(name[i]));
-            }
-            return sb.ToString();
-        }
+        // The PascalCase -> snake_case tool-name mapping lives in Core.McpNaming (host-free,
+        // unit-tested there — the real tool names are pinned as a contract in Cordyceps.Tests).
+        private static string ConvertToSnakeCase(string name) => Core.McpNaming.ToSnakeCase(name);
 
         private static string GetJsonType(Type type) => Core.JsonTypeConverter.GetJsonType(type);
 
@@ -256,7 +248,7 @@ namespace Cordyceps
                 catch (Exception ex)
                 {
                     if (!ct.IsCancellationRequested)
-                        Core.DebugLog.WriteLine($"Listener error: {ex.Message}", "ERROR", 1);
+                        Core.DebugLog.WriteLine($"Listener error: {ex.Message}", "ERROR", 0);
                 }
             }
         }
@@ -314,7 +306,7 @@ namespace Cordyceps
             }
             catch (Exception ex)
             {
-                Core.DebugLog.WriteLine($"Request error: {ex.Message}", "ERROR", 1);
+                Core.DebugLog.WriteLine($"Request error: {ex.Message}", "ERROR", 0);
                 try
                 {
                     response.StatusCode = 500;
@@ -423,9 +415,10 @@ namespace Cordyceps
 
             try
             {
-                // Validate Accept header - require application/json (SSE optional since we're stateless)
+                // Validate Accept header - require application/json (SSE optional since we're
+                // stateless). Wildcards ("*/*", "application/*") accept JSON too.
                 var accept = request.Headers["Accept"] ?? "";
-                if (!accept.Contains("application/json"))
+                if (!accept.Contains("application/json") && !accept.Contains("*/*") && !accept.Contains("application/*"))
                 {
                     Core.DebugLog.WriteLine($"Invalid Accept header (must include application/json): {accept}", "WARN", 1);
                     response.StatusCode = 406; // Not Acceptable
@@ -436,8 +429,17 @@ namespace Cordyceps
                 // Add CORS header for actual requests (echo validated origin)
                 response.Headers.Add("Access-Control-Allow-Origin", origin ?? "*");
 
-                // Check request body size limit (10MB) to prevent memory exhaustion
+                // Check request body size limit (10MB) to prevent memory exhaustion.
+                // ContentLength64 < 0 means no Content-Length header (e.g. chunked transfer),
+                // which would bypass the cap entirely — require a declared length (411).
                 const long MAX_BODY_SIZE = 10 * 1024 * 1024;
+                if (request.ContentLength64 < 0)
+                {
+                    Core.DebugLog.WriteLine("Request without Content-Length (chunked?) rejected: body size cap cannot be enforced", "WARN", 1);
+                    response.StatusCode = 411; // Length Required
+                    response.Close();
+                    return;
+                }
                 if (request.ContentLength64 > MAX_BODY_SIZE)
                 {
                     Core.DebugLog.WriteLine($"Request body too large: {request.ContentLength64} bytes (max {MAX_BODY_SIZE})", "WARN", 1);
@@ -455,11 +457,14 @@ namespace Cordyceps
                 var root = doc.RootElement;
 
                 var method = root.TryGetProperty("method", out var m) ? m.GetString() : null;
-                var hasId = root.TryGetProperty("id", out var id);
                 var paramsEl = root.TryGetProperty("params", out var p) ? p : default;
 
-                // JSON-RPC 2.0: Notifications (no id) MUST NOT receive a response
-                bool isNotification = !hasId || id.ValueKind == JsonValueKind.Undefined;
+                // Notification detection and lossless id echo live in Core.JsonRpcEnvelope
+                // (host-free, unit-tested): notifications are ABSENT-id only ("id": null still
+                // gets a response), and the id is computed BEFORE dispatch so a malformed id can
+                // never destroy the response after the tool's side effects ran.
+                bool isNotification = Core.JsonRpcEnvelope.IsNotification(root);
+                JsonElement? responseId = Core.JsonRpcEnvelope.EchoId(root);
 
                 object result = null;
                 string errorMessage = null;
@@ -488,32 +493,11 @@ namespace Cordyceps
                 response.ContentType = "application/json";
                 response.StatusCode = 200;
 
-                var responseObj = new Dictionary<string, object> { ["jsonrpc"] = "2.0" };
-
-                // Add id to response (required for non-notification responses)
-                if (id.ValueKind == JsonValueKind.Number)
-                    responseObj["id"] = id.GetInt32();
-                else if (id.ValueKind == JsonValueKind.String)
-                    responseObj["id"] = id.GetString();
-
-                if (errorMessage != null)
-                {
-                    responseObj["error"] = new Dictionary<string, object>
-                    {
-                        ["code"] = errorCode,
-                        ["message"] = errorMessage
-                    };
-                }
-                else
-                {
-                    responseObj["result"] = result;
-                }
-
-                var responseJson = JsonSerializer.Serialize(responseObj, new JsonSerializerOptions
-                {
-                    WriteIndented = false,
-                    DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull
-                });
+                // Envelope construction + serialization live in Core.JsonRpcEnvelope
+                // (host-free, unit-tested): lossless id echo, "id": null survival under
+                // WhenWritingNull, error-vs-result shape.
+                var responseObj = Core.JsonRpcEnvelope.Build(responseId, result, errorMessage, errorCode);
+                var responseJson = Core.JsonRpcEnvelope.Serialize(responseObj);
 
                 Core.DebugLog.WriteLine($"Responding: {responseJson.Substring(0, Math.Min(LOG_TRUNCATE_LENGTH, responseJson.Length))}...", "INFO", 1);
 
@@ -524,7 +508,7 @@ namespace Cordyceps
             }
             catch (Exception ex)
             {
-                Core.DebugLog.WriteLine($"JSON-RPC error: {ex.Message}", "ERROR", 1);
+                Core.DebugLog.WriteLine($"JSON-RPC error: {ex.Message}", "ERROR", 0);
                 response.StatusCode = 400;
             }
             finally
@@ -590,7 +574,7 @@ READ FIRST: gh://docs/getting-started (use resources/read)
 UNIFIED TOOLS (use action='help' for details):
 - gh_canvas: add, delete, move, rename, find, search, list, info, bounds, validate, constant, bake, zoom, view, get, set, config, preview, enable, group_create, group_delete, group_add, group_remove, group_list, group_rename, group_color, group_move, zoomable
 - gh_wire: connect, disconnect, list, clear, validate
-- gh_document: info, save, clear, solver, recompute, undo, redo, snapshot, revert, snapshots, capture_canvas, capture_viewport, capture_region, capture_views
+- gh_document: info, save, clear, solver, recompute, undo, redo (both disabled — use snapshot/revert), snapshot, revert, snapshots, capture_canvas, capture_viewport, capture_region, capture_views
 - gh_script: get, set, configure, info
 - gh_inspect: status, outputs, trace, disconnected, geometry, log, reports, categories, docs
 - rhino_scene: objects, select, deselect, set_layer, set_name, layers, layer_create, layer_set, layer_delete, hide, show, delete, set_color, bbox, place_image, script
@@ -652,39 +636,42 @@ Resources: gh://docs/getting-started, gh://docs/data-trees, gh://docs/common-err
 
             RecordCommand(name);
 
+            // Unknown tool stays a protocol error (the client addressed a tool that doesn't
+            // exist); everything past this point concerns a KNOWN tool, so failures become
+            // structured {success:false} tool results instead.
             var tool = _tools.FirstOrDefault(t => t.Name == name);
             if (tool == null)
                 throw new Exception($"Unknown tool: {name}");
 
-            // Create tool instance (all tool classes take GrasshopperContext)
-            var instance = Activator.CreateInstance(tool.DeclaringType, ctx);
-
-            // Build method arguments
-            var methodParams = tool.Method.GetParameters();
-            var args = new object[methodParams.Length];
-
-            for (int i = 0; i < methodParams.Length; i++)
-            {
-                var param = methodParams[i];
-                if (arguments.ValueKind == JsonValueKind.Object &&
-                    arguments.TryGetProperty(param.Name, out var argVal))
-                {
-                    args[i] = ConvertJsonValue(argVal, param.ParameterType);
-                }
-                else if (param.HasDefaultValue)
-                {
-                    args[i] = param.DefaultValue;
-                }
-                else
-                {
-                    // Required parameter is missing - throw a clear error
-                    throw new Exception($"Missing required parameter: {param.Name}");
-                }
-            }
-
             object result;
             try
             {
+                // Create tool instance (all tool classes take GrasshopperContext)
+                var instance = Activator.CreateInstance(tool.DeclaringType, ctx);
+
+                // Build method arguments
+                var methodParams = tool.Method.GetParameters();
+                var args = new object[methodParams.Length];
+
+                for (int i = 0; i < methodParams.Length; i++)
+                {
+                    var param = methodParams[i];
+                    if (arguments.ValueKind == JsonValueKind.Object &&
+                        arguments.TryGetProperty(param.Name, out var argVal))
+                    {
+                        args[i] = ConvertJsonValue(argVal, param.ParameterType);
+                    }
+                    else if (param.HasDefaultValue)
+                    {
+                        args[i] = param.DefaultValue;
+                    }
+                    else
+                    {
+                        // Required parameter is missing - throw a clear error
+                        throw new InvalidOperationException($"Missing required parameter: {param.Name}");
+                    }
+                }
+
                 // Invoke the tool method
                 result = tool.Method.Invoke(instance, args);
 
@@ -696,11 +683,11 @@ Resources: gh://docs/getting-started, gh://docs/data-trees, gh://docs/common-err
                     result = resultProperty?.GetValue(task);
                 }
             }
-            catch (Exception ex) // prawduct:allow prawduct/broad-except -- tool-invocation boundary: any tool-body failure must become a structured {success:false} result, not a JSON-RPC protocol error (project error-handling contract)
+            catch (Exception ex) // prawduct:allow prawduct/broad-except -- tool-invocation boundary: any failure for a KNOWN tool (construction, argument coercion, missing required param, tool body) must become a structured {success:false} result, not a JSON-RPC protocol error (project error-handling contract)
             {
                 // Log the full exception (type + stack) operator-side for root-causing; the client
                 // payload stays message-only via FormatExceptionResult.
-                Core.DebugLog.WriteLine($"Tool '{name}' threw: {ex}", "ERROR", 1);
+                Core.DebugLog.WriteLine($"Tool '{name}' threw: {ex}", "ERROR", 0);
                 var errorText = Core.McpResultFormatter.FormatExceptionResult(ex);
                 return new
                 {

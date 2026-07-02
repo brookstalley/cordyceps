@@ -8,7 +8,7 @@ Use `action='help'` on any tool for parameters.
 
 **Grasshopper:**
 - `gh_canvas` — components, values, groups, bake, zoomable params
-- `gh_wire` — connect, disconnect, list, validate
+- `gh_wire` — connect, disconnect, list, clear, validate
 - `gh_document` — save, clear, solver, snapshots, capture
 - `gh_script` — get/set script code, configure params
 - `gh_inspect` — status, outputs, trace, disconnected
@@ -22,7 +22,7 @@ Use `action='help'` on any tool for parameters.
 ```
 gh_document(action='solver', enabled=false)
 gh_canvas(action='add', type='...', x=..., y=..., nickname='...')
-gh_wire(action='connect', connections='[{"source":"id1:0","target":"id2:R"}]')
+gh_wire(action='connect', connections='[{"sourceId":"id1","sourceParam":"0","targetId":"id2","targetParam":"R"}]')
 gh_document(action='solver', enabled=true)
 gh_inspect(action='status')
 ```
@@ -45,8 +45,11 @@ gh_inspect(action='status')
 
 ## Variable Parameters (ZUI)
 
-- `gh_canvas(action='zoomable', id='...', operation='list')`
-- `gh_canvas(action='zoomable', id='...', operation='add', param='...')`
+- `gh_canvas(action='zoomable', id='...', operation='add', side='input')` — append a param (optional `index` for position)
+- `gh_canvas(action='zoomable', id='...', operation='remove', side='input', index=2)` — remove a param
+- `gh_canvas(action='zoomable', id='...', operation='set_count', side='input', count=4)` — set total param count
+
+Operations: `add`, `remove`, `set_count`. Params: `side` ('input'/'output', default 'input'), `index`, `count`. Use `gh_canvas(action='info')` to list current params.
 
 ## Capture
 
@@ -71,7 +74,7 @@ gh_inspect(action='status')
 
 ## Layout
 
-Avoid backwards wires. Stack inputs vertically at x=50. Processing columns at x=300, 380, 460...
+Avoid backwards wires. Stack inputs vertically at x=50 (70px vertical gaps). Processing columns at x=300, 450, 600... (150px horizontal gaps).
 Use `gh_canvas(action='validate')` for overlaps. See `gh://docs/canvas-layout`.
 
 ## Clusters

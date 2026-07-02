@@ -95,7 +95,10 @@ namespace Cordyceps.Core
                 });
             }
 
-            if (!toolInfo.Actions.TryGetValue(action, out var actionInfo))
+            // Case-insensitive like the dispatch (which lowercases): try the exact key first,
+            // then the lowercased form, so "Add"/"ADD" validate the same action they dispatch to.
+            if (!toolInfo.Actions.TryGetValue(action, out var actionInfo) &&
+                !toolInfo.Actions.TryGetValue(action.ToLowerInvariant(), out actionInfo))
             {
                 return JsonConvert.SerializeObject(new
                 {

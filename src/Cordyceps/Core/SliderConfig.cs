@@ -46,11 +46,17 @@ namespace Cordyceps.Core
                 && double.TryParse(value, NumberStyles.Float | NumberStyles.AllowThousands,
                     CultureInfo.InvariantCulture, out parsedValue);
 
+            // A substantive-but-unparseable value ("abc") is a caller error, distinct from
+            // "not provided" (null/empty/whitespace) — callers surface it instead of silently
+            // succeeding with the value ignored.
+            bool valueInvalid = !string.IsNullOrWhiteSpace(value) && !setValue;
+
             return new SliderConfigPlan(
                 setMin, setMin ? (decimal)min : 0m,
                 setMax, setMax ? (decimal)max : 0m,
                 setDecimals, setDecimals ? decimals : 0,
-                setValue, setValue ? (decimal)parsedValue : 0m);
+                setValue, setValue ? (decimal)parsedValue : 0m,
+                valueInvalid);
         }
     }
 
@@ -65,7 +71,8 @@ namespace Cordyceps.Core
             bool setMinimum, decimal minimum,
             bool setMaximum, decimal maximum,
             bool setDecimals, int decimals,
-            bool setValue, decimal value)
+            bool setValue, decimal value,
+            bool valueInvalid = false)
         {
             SetMinimum = setMinimum;
             Minimum = minimum;
@@ -75,6 +82,7 @@ namespace Cordyceps.Core
             Decimals = decimals;
             SetValue = setValue;
             Value = value;
+            ValueInvalid = valueInvalid;
         }
 
         public bool SetMinimum { get; }
@@ -85,6 +93,12 @@ namespace Cordyceps.Core
         public int Decimals { get; }
         public bool SetValue { get; }
         public decimal Value { get; }
+
+        /// <summary>
+        /// True when the caller provided a substantive <c>value</c> string that did not parse as a
+        /// number (e.g. "abc"). Null/empty/whitespace count as "not provided", not invalid.
+        /// </summary>
+        public bool ValueInvalid { get; }
 
         /// <summary>True if the plan applies at least one setting (i.e. the caller passed something).</summary>
         public bool HasAny => SetMinimum || SetMaximum || SetDecimals || SetValue;

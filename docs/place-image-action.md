@@ -1,5 +1,10 @@
 # Requirement & Design — `rhino_scene(action='place_image')`
 
+> **Status: SHIPPED** (2026-06-21, commit `ceab6e0`; backlog RSC-2H9K archived). Kept as the
+> design record for the shipped contract — the implementation matches this doc. The originating
+> report (`incoming-bugs/place-raster-image-picture-frame-action.md`) was archived by the
+> 2026-07-02 janitor pass and is preserved in git history.
+
 **Backlog:** RSC-2H9K · **Stage:** ready (discovery complete 2026-06-21)
 **Source:** `incoming-bugs/place-raster-image-picture-frame-action.md` (Puzzles project, Chunk 06)
 

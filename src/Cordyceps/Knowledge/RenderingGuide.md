@@ -35,7 +35,7 @@ Grasshopper geometry → Rhino baking → materials → viewport → capture.
 Use `action='help'` on any tool for full parameter details.
 
 ### rhino_scene
-`objects`, `select`, `deselect`, `set_layer`, `set_name`, `set_color`, `bbox`, `place_image`, `hide`, `show`, `delete`, `layers`, `layer_create`, `layer_set`, `layer_delete`
+`objects`, `select`, `deselect`, `set_layer`, `set_name`, `set_color`, `bbox`, `place_image`, `script`, `hide`, `show`, `delete`, `layers`, `layer_create`, `layer_set`, `layer_delete`
 
 `place_image` puts a raster image into the scene as a real Rhino PictureFrame object at a given origin/size/rotation — use it (not a PBR `material_texture`) when you need the image as a placeable, selectable document object (e.g. previewing a layout over printed artwork). `replace=true` with a `name` keeps repeated parametric calls idempotent.
 
@@ -46,7 +46,7 @@ Use `action='help'` on any tool for full parameter details.
 **Settings**: `settings`, `ground`, `sun`, `skylight`
 **Lights**: `light_add`, `light_list`, `light_set`, `light_delete`
 **Materials**: `material_list`, `material_library`, `material_instantiate`, `material_create`, `material_texture`, `material_apply`, `material_delete`
-**Environments**: `env_list`, `env_current`, `env_set`, `env_create`
+**Environments**: `env_list`, `env_current`, `env_set`, `env_create`, `env_delete`
 
 ### gh_document
 `capture_viewport`, `capture_canvas`, `capture_views`

@@ -13,7 +13,7 @@ For each problem component, examine its output structure:
 ```
 gh_inspect(action='outputs', id=[component_id])
 ```
-Note the `branchCount` and `dataCount` for each output.
+Note the `branches` (branch count) and `count` (item count) for each output.
 
 ## Step 3: Trace Upstream
 Find what's feeding the problem component:

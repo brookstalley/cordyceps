@@ -29,19 +29,18 @@ namespace Cordyceps.Tools.Unified
 
                 var vp = targetView.ActiveViewport;
 
-                // Check if named view already exists
+                // Detect an existing same-named view (for the 'updated' flag only) — per the
+                // RhinoCommon docs, NamedViewTable.Add replaces a same-named view itself, so no
+                // pre-delete is needed (and pre-deleting would lose the old view if Add failed).
                 var existingIndex = doc.NamedViews.FindByName(name);
-                if (existingIndex >= 0)
-                {
-                    // Update existing named view
-                    doc.NamedViews.Delete(existingIndex);
-                }
 
                 var index = doc.NamedViews.Add(name, vp.Id);
+                if (index < 0)
+                    return ToolHelpers.ErrorResponse($"Failed to save named view '{name}': the named view table rejected the add");
 
                 return JsonConvert.SerializeObject(new
                 {
-                    success = index >= 0,
+                    success = true,
                     name,
                     index,
                     updated = existingIndex >= 0,
@@ -80,9 +79,12 @@ namespace Cordyceps.Tools.Unified
                 doc.Views.Redraw();
 
                 var vp = targetView.ActiveViewport;
+                if (!restored)
+                    return ToolHelpers.ErrorResponse($"Failed to restore named view '{name}' into viewport '{vp.Name}'");
+
                 return JsonConvert.SerializeObject(new
                 {
-                    success = restored,
+                    success = true,
                     name,
                     viewportName = vp.Name,
                     location = $"{vp.CameraLocation.X:F3},{vp.CameraLocation.Y:F3},{vp.CameraLocation.Z:F3}",
@@ -135,7 +137,10 @@ namespace Cordyceps.Tools.Unified
                     return ToolHelpers.ErrorResponse($"Named view '{name}' not found");
 
                 var deleted = doc.NamedViews.Delete(index);
-                return JsonConvert.SerializeObject(new { success = deleted, name, deleted });
+                if (!deleted)
+                    return ToolHelpers.ErrorResponse($"Failed to delete named view '{name}': the named view table rejected the delete");
+
+                return JsonConvert.SerializeObject(new { success = true, name, deleted = true });
             });
         }
 

@@ -14,11 +14,11 @@ gh_script(
     action='configure',
     id=[script_id],
     inputs='[
-        {{"name": "points", "type": "Point3d", "access": "list"}},
-        {{"name": "radius", "type": "double", "access": "item"}}
+        {"name": "points", "type": "Point3d", "access": "list"},
+        {"name": "radius", "type": "double", "access": "item"}
     ]',
     outputs='[
-        {{"name": "circles", "type": "Circle"}}
+        {"name": "circles", "type": "Circle"}
     ]',
     code='[your code here]'
 )
@@ -42,10 +42,10 @@ gh_script(
 
 var result = new List<Circle>();
 foreach(var pt in points)
-{{
+{
     var plane = new Plane(pt, Vector3d.ZAxis);
     result.Add(new Circle(plane, radius));
-}}
+}
 circles = result;
 ```
 
