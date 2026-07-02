@@ -64,34 +64,6 @@
 
 <!-- Items available to pick up. -->
 
-- **[GHS-4D8M]** gh_script(set/configure) silently succeeds when it leaves a Script component unable to determine its language (Rhino LanguageSpec wipe — upstream)
-  `effort: M · impact: M · area: gh-script · source: user · added: 2026-06-24 · status: open · stage: ready · reviewed: 2026-06-24 · related: GHS-7K2P · refs: issue #15, docs/upstream-rhino-scriptcomponent-languagespec.md`
-
-  `gh_script(set/configure)` silently returns `{"success": true}` in a case where it leaves a unified
-  `ScriptComponent` unable to determine its language — the component then fails at solve time (the same
-  class of failure as GHS-7K2P, but via a different mechanism). A partial fix landed this session: a
-  `languageWarning` guard was added so the tool now surfaces a warning instead of silently reporting
-  success (issue #15, partial).
-
-  **[2026-06-24] Investigation + upstream report drafted.** A McNeel bug report is drafted at
-  `docs/upstream-rhino-scriptcomponent-languagespec.md`, pending filing on McNeel Discourse/YouTrack
-  (next action). Investigation findings:
-  - The unified `ScriptComponent` silently loses its language on a **directive-less `SetSource`** — the
-    error surfaces only at solve time, **not** from `SetSource` itself.
-  - It **IS recoverable** via a directive-bearing `SetSource` — this **corrects the original
-    "permanently broken" claim**.
-  - Setting `LanguageSpec` via reflection **does not stick**.
-
-  **Cordyceps mitigation shipped in v1.4.11:** the `languageWarning` guard + directive preservation
-  (the latter via `Core/ScriptDirective.cs`, GHS-7K2P). The remaining root cause — Rhino's
-  `LanguageSpec` being wiped — is **upstream in Rhino 8's `ScriptComponent` and is not
-  cordyceps-fixable**. This item now tracks the upstream report through filing.
-
-  **Next action:** file the drafted report with McNeel (Discourse / YouTrack). Related to GHS-7K2P
-  (the directive-preservation fix via `Core/ScriptDirective.cs`); distinct mechanism, same `gh-script`
-  area. Doc-audit: if the warning surfaces in tool responses, check `gh_script` ActionInfo + server
-  instructions.
-
 - **[GHC-2N8K]** De-duplicate the host-bound slider-apply block shared by gh_canvas add and config
   `effort: S · impact: S · area: gh-canvas · source: critic · added: 2026-06-24 · status: open · stage: ready · related: GHC-7X4B, GHS-3W9N`
 
@@ -295,6 +267,36 @@
 ## Archive
 
 <!-- Shipped and dropped items, kept for searchability. Never deleted. -->
+
+- **[GHS-4D8M]** gh_script(set/configure) silently succeeds when it leaves a Script component unable to determine its language (Rhino LanguageSpec wipe — upstream)
+  `effort: M · impact: M · area: gh-script · source: user · added: 2026-06-24 · status: shipped · stage: ready · reviewed: 2026-07-02 · closed-by: mcneel-upstream-filing · related: GHS-7K2P · refs: issue #15, docs/upstream-rhino-scriptcomponent-languagespec.md`
+
+  `gh_script(set/configure)` silently returns `{"success": true}` in a case where it leaves a unified
+  `ScriptComponent` unable to determine its language — the component then fails at solve time (the same
+  class of failure as GHS-7K2P, but via a different mechanism). A partial fix landed this session: a
+  `languageWarning` guard was added so the tool now surfaces a warning instead of silently reporting
+  success (issue #15, partial).
+
+  **[2026-06-24] Investigation + upstream report drafted.** A McNeel bug report is drafted at
+  `docs/upstream-rhino-scriptcomponent-languagespec.md`, pending filing on McNeel Discourse/YouTrack
+  (next action). Investigation findings:
+  - The unified `ScriptComponent` silently loses its language on a **directive-less `SetSource`** — the
+    error surfaces only at solve time, **not** from `SetSource` itself.
+  - It **IS recoverable** via a directive-bearing `SetSource` — this **corrects the original
+    "permanently broken" claim**.
+  - Setting `LanguageSpec` via reflection **does not stick**.
+
+  **Cordyceps mitigation shipped in v1.4.11:** the `languageWarning` guard + directive preservation
+  (the latter via `Core/ScriptDirective.cs`, GHS-7K2P). The remaining root cause — Rhino's
+  `LanguageSpec` being wiped — is **upstream in Rhino 8's `ScriptComponent` and is not
+  cordyceps-fixable**. This item then tracked the upstream report through filing.
+
+  **[2026-07-02] Closed — filed upstream, McNeel acknowledged.** The drafted report was filed with
+  McNeel; McNeel acknowledged it and promised a fix in a future Rhino release (user-reported
+  2026-07-02). All Cordyceps-side work is done (mitigation shipped in v1.4.11; upstream report filed
+  and accepted) — the remaining wait is on McNeel's fix, not on us, so the item is archived. If the
+  upstream fix lands and warrants verification or removal of the `languageWarning` mitigation, file a
+  fresh item then. Related to GHS-7K2P (directive-preservation fix via `Core/ScriptDirective.cs`).
 
 - **[GHC-7X4B]** gh_canvas(action='add') silently drops slider min/max/value/decimals
   `effort: S · impact: M · area: gh-canvas · source: user · added: 2026-06-24 · status: shipped · stage: ready · reviewed: 2026-06-24 · closed-by: fix/add-slider-params-and-configure-wires`
