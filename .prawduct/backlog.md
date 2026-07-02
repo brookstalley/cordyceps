@@ -151,25 +151,109 @@
   drift. Doc-audit: internal refactor, behavior-preserving; no user-facing surface expected to change.
 
 - **[GHC-8V3T]** Stop renaming/nicknaming components on the canvas — annotate via groups instead
-  `effort: M · impact: M · area: gh-canvas · source: user · added: 2026-07-02 · status: open · stage: requirements`
+  `effort: M · impact: M · area: gh-canvas · source: user · added: 2026-07-02 · status: open · stage: ready · reviewed: 2026-07-02`
 
   **User decision (2026-07-02, from user reports):** Cordyceps must NOT rename/nickname components —
   renamed components are hard to find on the canvas. Most Grasshopper users never rename components;
   the native convention is annotation via **groups with labels** (plus panels/scribbles), so Cordyceps
-  should snap to that convention. The decision is made; the contract-evolution path is not (hence
-  `stage: requirements`).
+  should snap to that convention.
 
-  **Scope to work out during requirements/design:**
-  - (a) the `gh_canvas` `rename` action — deprecate or remove (external contract change; the
-    deprecation path needs deciding);
-  - (b) the `nickname` parameter on `gh_canvas` `add` (and anywhere else a nickname is set, e.g.
-    script configure) — stop applying/encouraging it, or keep it functional-but-undocumented;
-  - (c) documentation audit — server instructions (`McpServer.cs` `GetServerInstructions()`),
-    ActionInfo help metadata, Knowledge guides (CanvasLayoutGuide / BestPractices / GettingStarted),
-    and prompt templates must switch their annotation guidance to groups + group labels instead of
-    nicknames;
+  **Scope resolution (user decision, 2026-07-02):** the main open contract question is decided — do
+  **NOT** remove or deprecate the rename capability. The `gh_canvas` `rename` action and the
+  `nickname` parameter stay fully functional (a user/agent who explicitly wants to rename still can).
+  What changes is the **propensity** to rename as part of building: Cordyceps guidance must stop
+  encouraging renaming/nicknaming during normal canvas construction. This supersedes the earlier
+  deprecate-or-remove question in (a)/(b) below; the contract question is closed, so the item is now
+  implementable (`stage: ready`).
+
+  **Remaining scope (implementable):**
+  - (a) audit all guidance surfaces — server instructions (`McpServer.cs` `GetServerInstructions()`),
+    ActionInfo descriptions/tips/examples, Knowledge guides (CanvasLayoutGuide / BestPractices /
+    GettingStarted), and prompt templates — and remove anything that encourages nicknaming components
+    while building; recommend groups with labels (and panels/scribbles) for annotation instead;
+  - (b) check whether any Cordyceps code path auto-applies nicknames unprompted (e.g. `add` or script
+    `configure` defaulting a nickname) and stop doing so;
+  - (c) add an explicit note in the rename/add ActionInfo that renaming makes components hard to find
+    and groups are the preferred annotation mechanism;
   - (d) note groups already have create/rename/color actions that serve the annotation need — no new
     capability required for the replacement convention.
+
+- **[MCP-3D8V]** McpServer.Stop() drain runs on the UI thread it is waiting for
+  `effort: M · impact: M · area: mcp-server · source: janitor · added: 2026-07-02 · status: open · stage: ready · related: MCP-9F3Q, MCP-5T7W`
+
+  Surfaced by the 2026-07-02 janitor audit. `Stop()` is always invoked from the UI thread (the
+  `SolveInstance` port-change path, `RemovedFromDocument`, and now `DocumentContextChanged`) while
+  holding `CordycepsComponent._lock`. An in-flight tool handler is a worker blocked in
+  `RhinoApp.InvokeAndWait` waiting for that same UI thread — so `_inFlight.DrainWithin(2s)` can
+  **never** succeed for exactly the handlers it protects. Result: a guaranteed ~2s UI stall + detach
+  whenever teardown overlaps a request, and the `McpServer.cs` comment claiming handlers finish
+  against a still-valid context is wrong for that case.
+
+  Correctness is protected by the captured-context guard (no NRE), so this is a **latency/topology
+  fix**, not a correctness fix: run the drain off the UI thread (cancel + fire-and-forget teardown
+  task) or skip the drain when `!RhinoApp.InvokeRequired`. Pairs naturally with MCP-9F3Q's
+  ServerState enum; MCP-5T7W covers the adjacent DrainWithin timeout-vs-fault return-value question.
+
+- **[RSC-6K1W]** Wrap multi-step Rhino mutations in undo records
+  `effort: M · impact: L · area: rhino-scene · source: janitor · added: 2026-07-02 · status: open · stage: ready`
+
+  Surfaced by the 2026-07-02 janitor audit. No code path calls
+  `RhinoDoc.BeginUndoRecord`/`EndUndoRecord` (grep-verified), so each per-object mutation is its own
+  undo step: a user pressing Ctrl-Z after an MCP `layer_delete` gets back one object of fifty.
+  User-felt impact.
+
+  **Fix shape:** wrap each mutating `rhino_scene`/`rhino_render` action body in
+  `BeginUndoRecord("Cordyceps <action>")` / `EndUndoRecord` in a `finally`. Doc-audit: mention undo
+  grouping in tool notes.
+
+- **[DOC-4Q7N]** Author api-contract.md for the MCP tool surface
+  `effort: M · impact: M · area: documentation · source: janitor · added: 2026-07-02 · status: open · stage: requirements`
+
+  Surfaced by the 2026-07-02 janitor audit. The product's defining trait is an external programmatic
+  contract (7 tools, ~106 actions) consumed by agents and scripts, but `.prawduct/artifacts` has no
+  api-contract artifact (the plugin ships a template at `templates/api-contract.md`).
+
+  **Requirements work:** decide + record a versioning/deprecation policy for tool actions
+  (project-state 'accommodate' already names a deprecation registry) and publish the contract
+  surface with stability tiers.
+
+- **[TST-2R5H]** Scripted MCP smoke-test harness for live-Rhino verification
+  `effort: M · impact: M · area: tooling · source: janitor · added: 2026-07-02 · status: open · stage: requirements · related: TST-8B3D`
+
+  Surfaced by the 2026-07-02 janitor audit. The Grasshopper host can't run headless, so all host
+  glue is verified manually via the operator-verification queue (7 pending entries). A small
+  scripted MCP client (Python/TS) that runs a canned smoke sequence against a live Cordyceps server
+  (add/wire/set/inspect/layer/material/place_image round-trips with assertions) would make VRF
+  burn-downs cheap and repeatable.
+
+  **Requirements to decide:** where it lives, and how results are recorded as evidence.
+
+- **[TST-8B3D]** Burn down the operator-verification queue (VRF-001..VRF-007)
+  `effort: S · impact: L · area: tooling · source: janitor · added: 2026-07-02 · status: open · stage: ready · related: TST-2R5H`
+
+  Surfaced by the 2026-07-02 janitor audit. All 7 entries are pending; VRF-001..005 cover changes
+  ALREADY SHIPPED to users in v1.4.10–12 (wedge-hang recovery, lifecycle teardown, slider parity,
+  configure wire preservation) and VRF-007 covers the janitor HIGH fixes. One session in Rhino 8
+  following the written steps; VRF-006 folds into the next release.
+
+- **[TST-5N9X]** Dependency/toolchain refresh: test stack + csproj comments + SDK pin policy
+  `effort: S · impact: S · area: tooling · source: janitor · added: 2026-07-02 · status: open · stage: ready`
+
+  Surfaced by the 2026-07-02 janitor audit. Test packages are ~2 years old (Microsoft.NET.Test.Sdk
+  17.8.0, xunit 2.6.6, runner 2.5.6 — batch-bump within the v2 line); two stale csproj comments
+  (a net7 reference, and a 'Rhino 8.21+' claim vs the Grasshopper 8.0.23304 pin); and
+  decide + document whether the oldest-8.x SDK pin is a deliberate min-version strategy.
+
+- **[CQ-9W2F]** Repo structure cosmetics: Tools/Unified flatten, Knowledge/Prompts naming, tracked .gha strategy
+  `effort: M · impact: S · area: code-quality · source: janitor · added: 2026-07-02 · status: open · stage: requirements`
+
+  Surfaced by the 2026-07-02 janitor audit. Three cosmetic/structural nits to batch when convenient
+  (low priority):
+  - `Tools/Unified` is the only `Tools/` subdir (vestigial from the v1.3 unification) — consider
+    flattening.
+  - `Knowledge/Prompts` (markdown templates) vs `Prompts/` (registry code) is confusable naming.
+  - `releases/Cordyceps.gha` is a tracked binary (56 blobs, 27.4 MiB across history, pack still
+    compact) — consider LFS or GitHub-Release-asset-only at a future major cleanup.
 
 ## Promoted
 

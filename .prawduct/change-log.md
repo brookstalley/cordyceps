@@ -39,6 +39,39 @@
      derived view. Don't hand-edit them — add/update a tagged entry here and
      run `prawduct-hook regen-views`. -->
 
+## 2026-07-02: janitor full reliability audit — hygiene, doc contract, HIGH bugs, MEDIUM sweeps, testability
+
+<!-- prawduct: type=maintenance | chunks=01,02,03,04,05,06 | scope=janitor-2026-07-02 | status=built -->
+
+**Why:** The user requested a thorough audit ("quality, bugs, consistency, gaps — ultra reliable
+and stable"). A six-agent survey found the dominant defect class was mutate-then-report-success
+(silent-success paths in the tool layer), plus agent-facing doc drift and governance debt.
+
+**What (branch `chore/janitor-2026-07-02`, six chunks, each Critic-gated):**
+- Chunk 01 hygiene: merged-branch cleanup (11 refs), `.work-model-index.json` untrack+ignore,
+  shipped-feature bug report archived + advisory resolved, stale gitflow build plan replaced,
+  unused images pruned, stale sln removed.
+- Chunk 02 doc contract: 14 verified drift fixes across guides/ActionInfo/server
+  instructions/prompts/README/csproj message.
+- Chunk 03 HIGH bugs (6): document-close server teardown; configure JSON param-wipe;
+  preview/enable per-id results; layer_delete current-layer ordering; material_create PBR
+  application; place_image replace ordering. New host-free `Core/ScriptParamDefs` (+12 tests).
+  Host-bound halves → VRF-007.
+- Chunk 04 MEDIUM GH+boundary (29 items): silent-success→structured errors, group protection,
+  cluster-safe clear, bulk expire, lossless JSON-RPC id echo, binding-error contract, coercion,
+  registry races, case-insensitive actions, strict bool.
+- Chunk 05 MEDIUM Rhino (17 items): InvariantCulture coordinates, select safety + type='all',
+  light validation, render-wait precheck, sun mode restore, error-field + notFound conventions,
+  FindByLayer guards, nested-layer resolution/creation, place_image absolute path.
+- Chunk 06 testability: `ParseHelpers`/`ResponseHelpers`/`McpNaming`/`PromptTemplate`/`LogBuffer`
+  extracted host-free with tests (+108); PromptRegistry unfilled-placeholder bug fixed; tool-name
+  contract pinned; xUnit1031 fixed async; drain-snapshot flake eliminated via deterministic seam.
+
+**Verification:** 224 → 370 tests, all green; plugin + test builds 0 warnings; Critic per chunk
+(03: clean; 04: 1 warning resolved in 06, 1 note fixed in-chunk; 05: 2 notes — one fixed
+in-chunk, one closed in 06; 06: clean). Cumulative Critic at close-out. Live-Rhino halves
+recorded in VRF-007; queue burn-down (VRF-001..007) remains operator work.
+
 ## 2026-06-24: gitflow + two-step release (prep/publish)
 
 <!-- prawduct: type=tooling | scope=gitflow-release-refactor | status=merged -->

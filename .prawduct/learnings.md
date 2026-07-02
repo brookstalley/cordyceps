@@ -103,3 +103,18 @@ every backticked token that looks like a file path and resolves it **relative to
 write `src/Cordyceps/Core/Foo.cs`, not `Core/Foo.cs`, and avoid backticked slash-containing
 non-paths like `` `"true"/"false"` `` (split them: `` `true`/`false` ``). This recurred: CQ-7T4P
 hit the same exit-1 as a NOTE, RSC-2H9K as a WARNING. Use the canonical format from the start.
+
+## Validate-then-mutate, and never conflate "unparseable" with "empty"
+
+The 2026-07-02 janitor audit found one defect CLASS behind most of its 10 HIGH findings,
+recurring across independently-written actions: mutate the document first, then discover the
+operation can't complete (layer_delete moved objects before the current-layer check;
+place_image deleted the old frame before the new add; configure wiped params from JSON that
+failed to parse and was silently read as `[]`). The rules that kill the class: (1) resolve and
+validate EVERY input — and pick destinations/replacements — before the first document mutation;
+(2) a parse failure is an error, never an empty collection (`TryParse(out result, out error)`
+shape, per `Core/ScriptParamDefs`); (3) any per-id loop returns per-id results with overall
+`success=false` when something failed (the `ActionDelete` pattern) — silent skips reported as
+`success:true` were the single most common bug. New pure decision logic goes in a host-free
+`Core/` file linked into the test project WITH tests in the same chunk, even when it feels like
+host glue — the audit found ~10 helpers untestable only because they sat in host-coupled files.
