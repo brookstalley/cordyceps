@@ -86,7 +86,7 @@ namespace Cordyceps.Tools.Unified
 
         private string ActionMaterialTexture(string name, string slot, string path, string repeat, double amount)
         {
-            return _context.ExecuteOnUiThread(() =>
+            return _context.ExecuteOnUiThread(() => ToolHelpers.WithUndoRecord(RhinoDoc.ActiveDoc, "material_texture", () =>
             {
                 var rhinoDoc = RhinoDoc.ActiveDoc;
                 if (rhinoDoc == null)
@@ -195,7 +195,7 @@ namespace Cordyceps.Tools.Unified
                     catch (Exception endEx) { DebugLog.Debug($"EndChange during texture-error cleanup failed: {endEx.Message}"); }
                     return ToolHelpers.ErrorResponse($"Failed to set texture: {ex.Message}");
                 }
-            });
+            }));
         }
 
         private string ActionMaterialLibrary()
@@ -237,7 +237,7 @@ namespace Cordyceps.Tools.Unified
 
         private string ActionMaterialInstantiate(string type, string name, string color)
         {
-            return _context.ExecuteOnUiThread(() =>
+            return _context.ExecuteOnUiThread(() => ToolHelpers.WithUndoRecord(RhinoDoc.ActiveDoc, "material_instantiate", () =>
             {
                 var rhinoDoc = RhinoDoc.ActiveDoc;
                 if (rhinoDoc == null)
@@ -332,12 +332,12 @@ namespace Cordyceps.Tools.Unified
                 {
                     return ToolHelpers.ErrorResponse($"Failed to instantiate material: {ex.Message}");
                 }
-            });
+            }));
         }
 
         private string ActionMaterialCreate(string name, string color, double roughness, double metallic, double transparency, string emission, double ior)
         {
-            return _context.ExecuteOnUiThread(() =>
+            return _context.ExecuteOnUiThread(() => ToolHelpers.WithUndoRecord(RhinoDoc.ActiveDoc, "material_create", () =>
             {
                 var rhinoDoc = RhinoDoc.ActiveDoc;
                 if (rhinoDoc == null)
@@ -454,12 +454,12 @@ namespace Cordyceps.Tools.Unified
                         ? "Some PBR parameters could not be applied through the SDK; the listed values were dropped."
                         : null
                 });
-            });
+            }));
         }
 
         private string ActionMaterialApply(string objectIds, string material)
         {
-            return _context.ExecuteOnUiThread(() =>
+            return _context.ExecuteOnUiThread(() => ToolHelpers.WithUndoRecord(RhinoDoc.ActiveDoc, "material_apply", () =>
             {
                 var rhinoDoc = RhinoDoc.ActiveDoc;
                 if (rhinoDoc == null)
@@ -514,12 +514,12 @@ namespace Cordyceps.Tools.Unified
                     failed,
                     material = renderMaterial?.Name ?? material
                 });
-            });
+            }));
         }
 
         private string ActionMaterialDelete(string name)
         {
-            return _context.ExecuteOnUiThread(() =>
+            return _context.ExecuteOnUiThread(() => ToolHelpers.WithUndoRecord(RhinoDoc.ActiveDoc, "material_delete", () =>
             {
                 var rhinoDoc = RhinoDoc.ActiveDoc;
                 if (rhinoDoc == null)
@@ -546,7 +546,7 @@ namespace Cordyceps.Tools.Unified
                 }
 
                 return ToolHelpers.ErrorResponse($"Material '{name}' not found");
-            });
+            }));
         }
 
         #endregion
@@ -617,7 +617,7 @@ namespace Cordyceps.Tools.Unified
 
         private string ActionEnvSet(string environment, string usage)
         {
-            return _context.ExecuteOnUiThread(() =>
+            return _context.ExecuteOnUiThread(() => ToolHelpers.WithUndoRecord(RhinoDoc.ActiveDoc, "env_set", () =>
             {
                 var rhinoDoc = RhinoDoc.ActiveDoc;
                 if (rhinoDoc == null)
@@ -680,12 +680,12 @@ namespace Cordyceps.Tools.Unified
                     environmentId = targetEnv.Id.ToString(),
                     modified
                 });
-            });
+            }));
         }
 
         private string ActionEnvCreate(string name, string color)
         {
-            return _context.ExecuteOnUiThread(() =>
+            return _context.ExecuteOnUiThread(() => ToolHelpers.WithUndoRecord(RhinoDoc.ActiveDoc, "env_create", () =>
             {
                 var rhinoDoc = RhinoDoc.ActiveDoc;
                 if (rhinoDoc == null)
@@ -726,12 +726,12 @@ namespace Cordyceps.Tools.Unified
                     name = renderEnv.Name,
                     color = ToolHelpers.ColorToHex(bgColor)
                 });
-            });
+            }));
         }
 
         private string ActionEnvDelete(string name)
         {
-            return _context.ExecuteOnUiThread(() =>
+            return _context.ExecuteOnUiThread(() => ToolHelpers.WithUndoRecord(RhinoDoc.ActiveDoc, "env_delete", () =>
             {
                 var rhinoDoc = RhinoDoc.ActiveDoc;
                 if (rhinoDoc == null)
@@ -749,7 +749,7 @@ namespace Cordyceps.Tools.Unified
                     return ToolHelpers.ErrorResponse($"Failed to delete environment '{name}' — it may be in use (e.g. assigned as background, skylight, or reflection environment)");
 
                 return JsonConvert.SerializeObject(new { success = true, name, id = envId, deleted = true });
-            });
+            }));
         }
 
         #endregion

@@ -210,6 +210,29 @@ drain/teardown bullets of VRF-002 (the lifecycle otherwise unchanged).
 - **Clean idle teardown:** delete the component with no requests in flight — server stops
   cleanly, port is freed (re-placing the component on the same port works).
 
+## VRF-010 — reliability Chunk 05 — undo records around mutating Rhino actions
+
+**Status:** pending
+**Added:** 2026-07-02 (feat/reliability-follow-through, Chunk 05)
+**Where to verify:** live Rhino 8 + Grasshopper with an MCP client attached.
+
+**Why this needs a human:** `RhinoDoc.BeginUndoRecord`/`EndUndoRecord` grouping is host behavior
+— no unit test can observe Rhino's undo stack. The API surface was verified by reflection
+(api-notes-rhinocommon.md), but the actual grouping and record naming need eyes.
+
+**Verify:**
+- **Bulk undo as one step:** create ~10 objects, `rhino_scene(action='set_layer', ids=[all], layer='X')`,
+  then a single Ctrl-Z in Rhino — ALL objects return to their original layers at once. Rhino's
+  undo menu shows "Cordyceps set_layer".
+- **layer_delete:** delete a layer with objects (moved to another layer) — one Ctrl-Z restores
+  the layer and its objects together.
+- **bake:** `gh_canvas(action='bake')` on a component producing many items — one Ctrl-Z removes
+  every baked object.
+- **Error path:** trigger a failing mutation (e.g. `set_layer` to a bogus layer) — no dangling
+  open undo record afterward (subsequent manual edits undo normally, one at a time).
+- **script action untouched:** `rhino_scene(action='script', ...)` undo behavior matches the
+  native command's own record (not wrapped by Cordyceps).
+
 ## VRF-006 — gitflow-release-refactor — `release.sh prep`/`publish` end-to-end
 
 **Status:** pending

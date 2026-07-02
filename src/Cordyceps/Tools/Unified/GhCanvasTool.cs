@@ -125,7 +125,7 @@ namespace Cordyceps.Tools.Unified
                     Required = new[] { "id" },
                     Optional = new[] { "layer", "name" },
                     Example = "action='bake', id='abc-123', layer='Baked'",
-                    Tips = new[] { "Creates permanent Rhino objects from component output", "Specify layer to organize baked geometry" }
+                    Tips = new[] { "Creates permanent Rhino objects from component output", "Specify layer to organize baked geometry", "All baked objects land in one undo record — a single Ctrl-Z in Rhino removes the whole bake" }
                 },
                 ["zoom"] = new ActionInfo
                 {
@@ -978,7 +978,7 @@ namespace Cordyceps.Tools.Unified
 
         private string ActionBake(string id, string layer, string name)
         {
-            return _context.ExecuteOnUiThread(() =>
+            return _context.ExecuteOnUiThread(() => ToolHelpers.WithUndoRecord(Rhino.RhinoDoc.ActiveDoc, "bake", () =>
             {
                 if (!ToolHelpers.TryGetUnprotectedComponent(_context, id, out var component, out var error))
                     return ToolHelpers.ErrorResponse(error);
@@ -1061,7 +1061,7 @@ namespace Cordyceps.Tools.Unified
                     layer = layer ?? "Default",
                     objectIds = bakedIds
                 });
-            });
+            }));
         }
 
         private string ActionZoom(string id, int padding)

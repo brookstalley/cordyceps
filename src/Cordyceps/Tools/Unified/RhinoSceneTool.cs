@@ -182,7 +182,8 @@ namespace Cordyceps.Tools.Unified
             {
                 "Object IDs are GUIDs that can be used across calls",
                 "Use 'layers' to see valid layer names for filtering",
-                "Bulk id actions (delete, hide, show, set_layer, set_name, set_color) report stale ids in a 'notFound' array and return success:false with an error when no requested object was affected"
+                "Bulk id actions (delete, hide, show, set_layer, set_name, set_color) report stale ids in a 'notFound' array and return success:false with an error when no requested object was affected",
+                "Mutating actions run inside one undo record ('Cordyceps <action>'), so a single Ctrl-Z in Rhino reverts the whole action — including bulk operations"
             }
         };
 
@@ -473,7 +474,7 @@ namespace Cordyceps.Tools.Unified
 
         private string ActionSetLayer(string ids, string layer)
         {
-            return _context.ExecuteOnUiThread(() =>
+            return _context.ExecuteOnUiThread(() => ToolHelpers.WithUndoRecord(RhinoDoc.ActiveDoc, "set_layer", () =>
             {
                 var doc = RhinoDoc.ActiveDoc;
                 if (doc == null)
@@ -527,12 +528,12 @@ namespace Cordyceps.Tools.Unified
                     layer = doc.Layers[layerIndex].FullPath,
                     notFound = notFound.Count > 0 ? notFound : null
                 });
-            });
+            }));
         }
 
         private string ActionSetName(string ids, string name)
         {
-            return _context.ExecuteOnUiThread(() =>
+            return _context.ExecuteOnUiThread(() => ToolHelpers.WithUndoRecord(RhinoDoc.ActiveDoc, "set_name", () =>
             {
                 var doc = RhinoDoc.ActiveDoc;
                 if (doc == null)
@@ -581,12 +582,12 @@ namespace Cordyceps.Tools.Unified
                     name,
                     notFound = notFound.Count > 0 ? notFound : null
                 });
-            });
+            }));
         }
 
         private string ActionSetColor(string ids, string color)
         {
-            return _context.ExecuteOnUiThread(() =>
+            return _context.ExecuteOnUiThread(() => ToolHelpers.WithUndoRecord(RhinoDoc.ActiveDoc, "set_color", () =>
             {
                 var doc = RhinoDoc.ActiveDoc;
                 if (doc == null)
@@ -639,7 +640,7 @@ namespace Cordyceps.Tools.Unified
                     color = ToolHelpers.ColorToHex(parsedColor),
                     notFound = notFound.Count > 0 ? notFound : null
                 });
-            });
+            }));
         }
 
         private string ActionBbox(string ids)
@@ -692,7 +693,7 @@ namespace Cordyceps.Tools.Unified
 
         private string ActionHide(string ids, bool selectedOnly)
         {
-            return _context.ExecuteOnUiThread(() =>
+            return _context.ExecuteOnUiThread(() => ToolHelpers.WithUndoRecord(RhinoDoc.ActiveDoc, "hide", () =>
             {
                 var doc = RhinoDoc.ActiveDoc;
                 if (doc == null)
@@ -758,12 +759,12 @@ namespace Cordyceps.Tools.Unified
 
                 doc.Views.Redraw();
                 return JsonConvert.SerializeObject(new { success = true, hiddenCount });
-            });
+            }));
         }
 
         private string ActionShow(string ids, bool showAll)
         {
-            return _context.ExecuteOnUiThread(() =>
+            return _context.ExecuteOnUiThread(() => ToolHelpers.WithUndoRecord(RhinoDoc.ActiveDoc, "show", () =>
             {
                 var doc = RhinoDoc.ActiveDoc;
                 if (doc == null)
@@ -828,12 +829,12 @@ namespace Cordyceps.Tools.Unified
                     alreadyVisible = alreadyVisible > 0 ? (int?)alreadyVisible : null,
                     notFound = notFound.Count > 0 ? notFound : null
                 });
-            });
+            }));
         }
 
         private string ActionDelete(string ids)
         {
-            return _context.ExecuteOnUiThread(() =>
+            return _context.ExecuteOnUiThread(() => ToolHelpers.WithUndoRecord(RhinoDoc.ActiveDoc, "delete", () =>
             {
                 var doc = RhinoDoc.ActiveDoc;
                 if (doc == null)
@@ -874,7 +875,7 @@ namespace Cordyceps.Tools.Unified
                     deletedCount,
                     notFound = notFound.Count > 0 ? notFound : null
                 });
-            });
+            }));
         }
 
         private string ActionScript(string cmd)

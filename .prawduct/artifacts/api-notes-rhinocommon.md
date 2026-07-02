@@ -1,3 +1,20 @@
+# API Notes — RhinoCommon (verify-api)
+
+## Undo records (verify-api, reliability Chunk 05, 2026-07-02)
+
+Verified against `RhinoCommon 8.0.23304.9001` (net48, MetadataLoadContext reflection on
+`Rhino.RhinoDoc`):
+
+- **`uint BeginUndoRecord(string description)`** — returns the new record's serial number,
+  or **0 when recording is already active** (nested call, or recording disabled): only the
+  outermost record counts. A wrapper must therefore only call `EndUndoRecord` when its own
+  `Begin` returned non-zero — that also makes nesting (wrapper inside wrapper, or a native
+  command's own record) safe.
+- **`bool EndUndoRecord(uint undoRecordSerialNumber)`** — closes the record opened with that
+  serial.
+- Related surface (not used): `UndoRecordingEnabled` / `UndoRecordingIsActive` properties,
+  `ClearUndoRecords(...)`, `AddCustomUndoEvent(...)`.
+
 # API Notes — RhinoCommon threading surface (verify-api, Chunk 01)
 
 Verified against `RhinoCommon 8.0.23304.9001` (net48 ref assembly) via

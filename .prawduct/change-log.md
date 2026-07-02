@@ -39,6 +39,27 @@
      derived view. Don't hand-edit them — add/update a tagged entry here and
      run `prawduct-hook regen-views`. -->
 
+## 2026-07-02: Rhino undo records around mutating actions (reliability chunk 05)
+
+<!-- prawduct: type=feature | chunks=05 | scope=reliability -->
+
+**Why:** [RSC-6K1W] No code path called `RhinoDoc.BeginUndoRecord`/`EndUndoRecord`, so each
+per-object mutation was its own undo step — Ctrl-Z after a bulk MCP `set_layer` reverted one
+object of fifty. User-felt.
+
+**What:** verify-api probe (MetadataLoadContext on RhinoCommon 8.0.23304.9001) confirmed
+`uint BeginUndoRecord(string)` / `bool EndUndoRecord(uint)` and that Begin returns 0 when a
+record is already active — nesting-safe by skipping End on 0 (recorded in
+api-notes-rhinocommon.md). New `ToolHelpers.WithUndoRecord(doc, action, body)` brackets the
+UI-thread lambda of all 28 doc-mutating actions: rhino_scene (set_layer, set_name, set_color,
+layer_create/set/delete, hide, show, delete, place_image), rhino_render (lights, materials,
+environments, settings/ground/sun/skylight, view_save/view_delete), and — found by behavior
+trace, outside the item's literal file list — `gh_canvas(action='bake')`, which bulk-adds
+objects in a loop. Exclusions by decision: `script` (native commands own their records),
+select/deselect (selection isn't undoable), camera/zoom/display/view_load (viewport state),
+reads. Doc-audit: tool Notes (both Rhino tools), bake Tips, RenderingGuide "Undo Behavior"
+section, CHANGELOG. Host behavior queued as VRF-010.
+
 ## 2026-07-02: bounded snapshot store + snapshot_delete (reliability chunk 04)
 
 <!-- prawduct: type=feature | chunks=04 | scope=reliability -->

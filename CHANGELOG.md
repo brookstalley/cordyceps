@@ -12,6 +12,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 
+- **One Ctrl-Z now reverts a whole MCP action** - Every mutating `rhino_scene`/`rhino_render` action and `gh_canvas(action='bake')` runs inside a single named undo record (`Cordyceps <action>`). Previously each internal step was its own undo entry, so undoing a bulk operation (e.g. `set_layer` on fifty objects) reverted one object at a time.
 - **The snapshot store is bounded (max 20 snapshots, oldest evicted)** - Snapshots are full document serializations that previously accumulated unbounded for the life of the Rhino session. Saving a new name beyond the cap now evicts the oldest snapshot and reports it in the response's `evicted` field; re-using a name replaces that snapshot in place. `snapshot`/`snapshots` responses now include `maxSnapshots`, and listed snapshots carry `createdAtUtc`.
 - **Server teardown no longer stalls the Rhino UI** - Stopping the MCP server (deleting the component, changing its port, or closing the document) while a request was in flight previously froze Rhino for ~2 seconds waiting on handlers that could not finish until the UI thread was released. The port is still freed immediately; the wait for in-flight requests now happens in the background.
 

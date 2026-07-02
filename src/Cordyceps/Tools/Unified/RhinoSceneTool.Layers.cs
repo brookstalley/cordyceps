@@ -67,7 +67,7 @@ namespace Cordyceps.Tools.Unified
 
         private string ActionLayerCreate(string name, string color, bool visible, string parent)
         {
-            return _context.ExecuteOnUiThread(() =>
+            return _context.ExecuteOnUiThread(() => ToolHelpers.WithUndoRecord(RhinoDoc.ActiveDoc, "layer_create", () =>
             {
                 var doc = RhinoDoc.ActiveDoc;
                 if (doc == null)
@@ -130,12 +130,12 @@ namespace Cordyceps.Tools.Unified
                     color = ToolHelpers.ColorToHex(created.Color),
                     visible = created.IsVisible
                 });
-            });
+            }));
         }
 
         private string ActionLayerSet(string name, string color, string visible, string locked)
         {
-            return _context.ExecuteOnUiThread(() =>
+            return _context.ExecuteOnUiThread(() => ToolHelpers.WithUndoRecord(RhinoDoc.ActiveDoc, "layer_set", () =>
             {
                 var doc = RhinoDoc.ActiveDoc;
                 if (doc == null)
@@ -197,12 +197,12 @@ namespace Cordyceps.Tools.Unified
                     locked = targetLayer.IsLocked,
                     modified
                 });
-            });
+            }));
         }
 
         private string ActionLayerDelete(string name, bool deleteObjects)
         {
-            return _context.ExecuteOnUiThread(() =>
+            return _context.ExecuteOnUiThread(() => ToolHelpers.WithUndoRecord(RhinoDoc.ActiveDoc, "layer_delete", () =>
             {
                 var doc = RhinoDoc.ActiveDoc;
                 if (doc == null)
@@ -305,7 +305,7 @@ namespace Cordyceps.Tools.Unified
                     movedToLayer = objectsMoved > 0 ? destLayer.FullPath : null,
                     error = deleteError
                 });
-            });
+            }));
         }
 
         #endregion

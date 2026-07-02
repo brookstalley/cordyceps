@@ -503,6 +503,40 @@ namespace Cordyceps.Core
 
         #endregion
 
+        #region Undo Records
+
+        /// <summary>
+        /// Run a mutating Rhino action inside one named undo record so a single Ctrl-Z reverts
+        /// the whole action instead of one internal step (RSC-6K1W — e.g. a bulk set_layer of
+        /// fifty objects previously left fifty undo steps). Must be called on the UI thread
+        /// (inside ExecuteOnUiThread), alongside the document mutation it brackets.
+        ///
+        /// Verified RhinoCommon semantics (api-notes-rhinocommon.md): BeginUndoRecord returns 0
+        /// when a record is already active (nesting, or recording disabled) — EndUndoRecord is
+        /// skipped in that case, so nested wrappers and native commands' own records stay safe.
+        /// </summary>
+        /// <param name="doc">The document being mutated; null runs the body unwrapped
+        /// (the body reports its own no-document error).</param>
+        /// <param name="actionName">Tool action name; the undo record appears in Rhino's undo
+        /// stack as "Cordyceps &lt;actionName&gt;".</param>
+        /// <param name="body">The action body to bracket.</param>
+        public static string WithUndoRecord(Rhino.RhinoDoc doc, string actionName, Func<string> body)
+        {
+            if (doc == null) return body();
+
+            uint serial = doc.BeginUndoRecord($"Cordyceps {actionName}");
+            try
+            {
+                return body();
+            }
+            finally
+            {
+                if (serial != 0) doc.EndUndoRecord(serial);
+            }
+        }
+
+        #endregion
+
         #region Component Info Helpers
 
         /// <summary>

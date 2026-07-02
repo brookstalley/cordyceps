@@ -14,7 +14,7 @@ namespace Cordyceps.Tools.Unified
 
         private string ActionViewSave(string name, string view)
         {
-            return _context.ExecuteOnUiThread(() =>
+            return _context.ExecuteOnUiThread(() => ToolHelpers.WithUndoRecord(RhinoDoc.ActiveDoc, "view_save", () =>
             {
                 var doc = RhinoDoc.ActiveDoc;
                 if (doc == null)
@@ -48,7 +48,7 @@ namespace Cordyceps.Tools.Unified
                     location = $"{vp.CameraLocation.X:F3},{vp.CameraLocation.Y:F3},{vp.CameraLocation.Z:F3}",
                     target = $"{vp.CameraTarget.X:F3},{vp.CameraTarget.Y:F3},{vp.CameraTarget.Z:F3}"
                 });
-            });
+            }));
         }
 
         private string ActionViewLoad(string name, string view)
@@ -123,7 +123,7 @@ namespace Cordyceps.Tools.Unified
 
         private string ActionViewDelete(string name)
         {
-            return _context.ExecuteOnUiThread(() =>
+            return _context.ExecuteOnUiThread(() => ToolHelpers.WithUndoRecord(RhinoDoc.ActiveDoc, "view_delete", () =>
             {
                 var doc = RhinoDoc.ActiveDoc;
                 if (doc == null)
@@ -141,7 +141,7 @@ namespace Cordyceps.Tools.Unified
                     return ToolHelpers.ErrorResponse($"Failed to delete named view '{name}': the named view table rejected the delete");
 
                 return JsonConvert.SerializeObject(new { success = true, name, deleted = true });
-            });
+            }));
         }
 
         #endregion

@@ -16,7 +16,7 @@ namespace Cordyceps.Tools.Unified
 
         private string ActionSettings(string style, string colorTop, string colorBottom, string transparent)
         {
-            return _context.ExecuteOnUiThread(() =>
+            return _context.ExecuteOnUiThread(() => ToolHelpers.WithUndoRecord(RhinoDoc.ActiveDoc, "settings", () =>
             {
                 var rhinoDoc = RhinoDoc.ActiveDoc;
                 if (rhinoDoc == null)
@@ -74,12 +74,12 @@ namespace Cordyceps.Tools.Unified
                     transparentBackground = rs.TransparentBackground,
                     modified
                 });
-            });
+            }));
         }
 
         private string ActionGround(string enabled, double altitude, string autoAltitude, string shadowOnly, string material)
         {
-            return _context.ExecuteOnUiThread(() =>
+            return _context.ExecuteOnUiThread(() => ToolHelpers.WithUndoRecord(RhinoDoc.ActiveDoc, "ground", () =>
             {
                 var rhinoDoc = RhinoDoc.ActiveDoc;
                 if (rhinoDoc == null)
@@ -139,12 +139,12 @@ namespace Cordyceps.Tools.Unified
                     shadowOnly = gp.ShadowOnly,
                     modified
                 });
-            });
+            }));
         }
 
         private string ActionSun(string enabled, double azimuth, double altitude, double intensity, double latitude, double longitude, string dateTime)
         {
-            return _context.ExecuteOnUiThread(() =>
+            return _context.ExecuteOnUiThread(() => ToolHelpers.WithUndoRecord(RhinoDoc.ActiveDoc, "sun", () =>
             {
                 var rhinoDoc = RhinoDoc.ActiveDoc;
                 if (rhinoDoc == null)
@@ -244,12 +244,12 @@ namespace Cordyceps.Tools.Unified
                     intensity = sun.Intensity,
                     modified
                 });
-            });
+            }));
         }
 
         private string ActionSkylight(string enabled, double shadowIntensity, string customEnvironment)
         {
-            return _context.ExecuteOnUiThread(() =>
+            return _context.ExecuteOnUiThread(() => ToolHelpers.WithUndoRecord(RhinoDoc.ActiveDoc, "skylight", () =>
             {
                 var rhinoDoc = RhinoDoc.ActiveDoc;
                 if (rhinoDoc == null)
@@ -296,7 +296,7 @@ namespace Cordyceps.Tools.Unified
                     customEnvironmentOn = rs.RenderEnvironmentOverride(RenderSettings.EnvironmentUsage.Skylighting),
                     modified
                 });
-            });
+            }));
         }
 
         #endregion

@@ -24,7 +24,7 @@ namespace Cordyceps.Tools.Unified
             string path, double x, double y, double z, double width, double height, double rotation,
             string layer, string name, bool replace, bool selfIllumination, bool embedBitmap, bool asMesh)
         {
-            return _context.ExecuteOnUiThread(() =>
+            return _context.ExecuteOnUiThread(() => ToolHelpers.WithUndoRecord(RhinoDoc.ActiveDoc, "place_image", () =>
             {
                 var doc = RhinoDoc.ActiveDoc;
                 if (doc == null)
@@ -112,7 +112,7 @@ namespace Cordyceps.Tools.Unified
                     note,
                     warning
                 });
-            });
+            }));
         }
 
         /// <summary>
