@@ -39,6 +39,22 @@
      derived view. Don't hand-edit them — add/update a tagged entry here and
      run `prawduct-hook regen-views`. -->
 
+## 2026-07-02: DrainWithin fault-vs-timeout contract pinned (reliability chunk 01)
+
+<!-- prawduct: type=bugfix | chunks=01 | scope=reliability -->
+
+**Why:** [MCP-5T7W] `InFlightRequests.DrainWithin` returned `true` on any `AggregateException`,
+which could mask a drain-budget timeout coinciding with a handler fault — the combination was
+undecided and untested.
+
+**What:** Decision recorded at the catch site: a faulted handler counts as drained, but drain
+success requires every snapshotted handler to have completed — on `AggregateException` the
+method now returns `pending.All(t => t.IsCompleted)` instead of `true`. Empirically
+`Task.WaitAll` only throws that exception when all observed tasks completed (a timeout returns
+`false` instead), so behavior is unchanged today; the check makes the contract independent of
+that undocumented BCL nuance. Two regression tests added (fault+timeout → false;
+fault+late-completion within budget → true), 389/389 green.
+
 ## 2026-07-02: janitor full reliability audit — hygiene, doc contract, HIGH bugs, MEDIUM sweeps, testability
 
 <!-- prawduct: type=maintenance | chunks=01,02,03,04,05,06 | scope=janitor-2026-07-02 | status=merged -->
