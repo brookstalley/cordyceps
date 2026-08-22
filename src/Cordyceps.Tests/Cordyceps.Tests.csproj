@@ -43,6 +43,8 @@
     <Compile Include="..\Cordyceps\Core\JsonRpcEnvelope.cs" Link="JsonRpcEnvelope.cs" />
     <Compile Include="..\Cordyceps\Core\ServerState.cs" Link="ServerState.cs" />
     <Compile Include="..\Cordyceps\Core\SnapshotStore.cs" Link="SnapshotStore.cs" />
+    <Compile Include="..\Cordyceps\Core\SolverState.cs" Link="SolverState.cs" />
+    <Compile Include="..\Cordyceps\Core\StatusEnvelope.cs" Link="StatusEnvelope.cs" />
   </ItemGroup>
 
 </Project>
