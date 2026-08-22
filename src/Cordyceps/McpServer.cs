@@ -639,7 +639,7 @@ namespace Cordyceps
 READ FIRST: gh://docs/getting-started (use resources/read)
 
 UNIFIED TOOLS (use action='help' for details):
-- gh_canvas: add, delete, move, rename, find, search, list, info, bounds, validate, constant, bake, zoom, view, get, set, config, preview, enable, group_create, group_delete, group_add, group_remove, group_list, group_rename, group_color, group_move, zoomable
+- gh_canvas: add, delete, move, rename, find, search, list, info, bounds, validate, constant, bake, zoom, view, get, set, config, preview, enable, group_create, group_delete, group_add, group_remove, group_list, group_rename, group_color, group_move, zoomable, modifier
 - gh_wire: connect, disconnect, list, clear, validate
 - gh_document: info, save, clear, solver, recompute (rejected while a solution is running), undo, redo (both disabled — use snapshot/revert), snapshot, revert, snapshots, snapshot_delete (max 20 snapshots kept; oldest evicted), capture_canvas, capture_viewport, capture_region, capture_views
 - gh_script: get, set, configure, info
