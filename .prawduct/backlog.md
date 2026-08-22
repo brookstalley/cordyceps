@@ -194,6 +194,41 @@
   Related: the always-on status envelope shipped in the liveness cycle (build-plan.md chunk 03) is
   the mitigation, not the fix.
 
+- **[MCP-4T8V]** SolverState holds ONE server-snapshot slot but the bridge supports several servers
+  `effort: S · impact: M · area: liveness · source: critic · added: 2026-08-21 · status: open · stage: ready`
+
+  `SolverState.Shared` keeps a single `Func<StatusInputs>` provider; `McpServer.Start` publishes it
+  and `Stop` withdraws it. But `CordycepsComponent` keys `_servers`/`_portOwners` **by port**, and
+  its own error text tells the user to "Change this component's port input to use a different port"
+  — so concurrent servers are the designed remedy, not an edge case. With two bridges up, the
+  second overwrites the first's provider; when the second stops, `ClearServerSnapshot` nulls the
+  slot and the still-listening first server reports `cordyceps.listening: false` on every response.
+
+  Only the cordyceps layer is affected — Rhino/Grasshopper layers and the modal inference are
+  process-wide and stay correct. Fix shape: key providers by port and aggregate, or have the status
+  layer resolve the provider for the port serving the current request.
+
+- **[GHC-6P2M]** Parameter resolution by name-or-index is implemented twice, with different semantics
+  `effort: S · impact: S · area: code-quality · source: critic · added: 2026-08-21 · status: open · stage: ready`
+
+  `GhWireTool.GetParameter` (`src/Cordyceps/Tools/Unified/GhWireTool.cs:506`) and
+  `GhCanvasTool.Modifiers`' `ResolveModifierParam` both resolve a param spec by name or 0-based
+  index, and they already disagree: the modifier copy errors on an out-of-range index while the
+  wire copy falls through to name matching, and only the modifier copy null-guards the spec.
+  CLAUDE.md states name-or-index resolution as a project-wide rule, so the divergence is a contract
+  inconsistency rather than a style nit. Fix shape: one shared helper in `Core/`, host-free enough
+  to unit-test the resolution matrix (the wire copy has no tests today either).
+
+- **[GHS-9K3T]** gh_script(action='info') hand-rolls its param list and omits modifiers/optional
+  `effort: S · impact: S · area: code-quality · source: critic · added: 2026-08-21 · status: open · stage: ready`
+
+  `ToolHelpers.BuildParameterList` and the free-floating branch of `BuildFullComponentInfo` both
+  report a `modifiers` object per param. `GhScriptTool.ActionInfo` builds its own input/output
+  dictionaries instead of calling that helper, so a script component's params report neither
+  `modifiers` nor `optional` — the same field visible on every other component is missing here for
+  no stated reason. This is the shape `learnings.md` warns about under tracing consumers of a shared
+  helper: the helper gained a field and a hand-rolled duplicate silently did not.
+
 ## Promoted
 
 <!-- Items currently being addressed in an active build plan. /backlog pick

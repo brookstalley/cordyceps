@@ -74,7 +74,7 @@ namespace Cordyceps.Tools.Unified
                 ["recompute"] = new ActionInfo
                 {
                     Name = "recompute",
-                    Description = "Trigger a solution recompute (cluster-safe). Rejected while a solution is already running",
+                    Description = "Trigger a solution recompute (cluster-safe). Rejected while a solution is already running, or while the UI thread is blocked by a modal dialog",
                     Example = "action='recompute'",
                     Tips = new[]
                     {

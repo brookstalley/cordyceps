@@ -50,7 +50,7 @@ every other call is stuck.
 | `modal_inferred: true` | The UI thread is stuck with nothing solving — a modal dialog is open in Rhino | **Only a human can clear it.** Stop retrying and tell the user to check Rhino for a dialog |
 | `ui: "unknown"` | No heartbeat recorded yet (the component was just placed) | Retry in a second |
 
-`gh_document(action='recompute')` refuses while a solution is running rather than queueing or
+`gh_document(action='recompute')` refuses while a solution is running — or while a modal dialog holds the UI thread — rather than queueing or
 blocking, and returns `success: false` with `solving: true` and `solving_since`. That is not a
 failure to fix — it means "already working, come back". `gh_inspect(action='status')` answers the
 same way instead of hanging when the UI thread is not responding.
