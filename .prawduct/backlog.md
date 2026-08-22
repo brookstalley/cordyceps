@@ -158,6 +158,42 @@
   **Fix shape:** either add a `Disposed` terminal state to `Core/ServerState` (`CanStart` false) or
   guard `Start()` on `_disposed`; add a transition-table test either way.
 
+- **[GHD-5R7Q]** Tools silently retarget when the user switches Grasshopper canvas tabs
+  `effort: M · impact: L · area: document-resolution · source: user · added: 2026-08-21 · status: open · stage: requirements`
+
+  Every tool resolves its document through `ToolHelpers.TryGetActiveDocument` →
+  `Grasshopper.Instances.ActiveCanvas?.Document` (`src/Cordyceps/Core/ToolHelpers.cs:173`; also
+  `McpServer.cs:430`). Grasshopper can have multiple documents open at once, so when the human
+  focuses a different canvas tab, the **entire MCP surface silently retargets mid-session**. An agent
+  can believe it is editing `wall-study.gh` while actually editing the definition the user just
+  clicked over to. Nothing in any response signals the switch, and there is no way for a client to
+  pin a target.
+
+  **Blast radius:** all 7 tools — every mutating action resolves this way (gh_canvas, gh_wire,
+  gh_document, gh_script, gh_inspect, plus the Rhino tools' document assumptions).
+
+  Discovered by the user while designing the liveness/status work for issues #29/#30. That cycle
+  makes the hazard **visible but not safe**: the always-on status block now names the document
+  (DisplayName + DocumentID) on every response, and solver state is tracked per-document, so an
+  attentive agent can notice a switch after the fact. It still cannot prevent one.
+
+  **Fix shape** (needs requirements work first — hence `stage: requirements`; the options are a real
+  contract decision):
+  - (a) **Explicit pinning** — `gh_document(action='target', id=...)`, with every resolution honoring
+    the pin and a clear error when the pinned doc closes.
+  - (b) **Anchor to the bridge component's document** (`this.OnPingDocument()`) instead of the
+    focused canvas — most stable for unattended runs, but a silent behavior change for existing
+    users who rely on tab-following.
+  - (c) **Leave resolution alone** and require callers to pass a document id explicitly on mutating
+    actions.
+
+  **Open question the requirements pass must answer:** is tab-following a *feature* for interactive
+  human+agent pairing, and only a hazard for unattended runs? If so the answer may be mode-dependent
+  rather than a single global rule.
+
+  Related: the always-on status envelope shipped in the liveness cycle (build-plan.md chunk 03) is
+  the mitigation, not the fix.
+
 ## Promoted
 
 <!-- Items currently being addressed in an active build plan. /backlog pick
