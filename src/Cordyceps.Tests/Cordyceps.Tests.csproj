@@ -30,6 +30,7 @@
     <Compile Include="..\Cordyceps\Core\ScriptParamDefs.cs" Link="ScriptParamDefs.cs" />
     <Compile Include="..\Cordyceps\Core\GhArchiveSave.cs" Link="GhArchiveSave.cs" />
     <Compile Include="..\Cordyceps\Core\SliderConfig.cs" Link="SliderConfig.cs" />
+    <Compile Include="..\Cordyceps\Core\DataModifiers.cs" Link="DataModifiers.cs" />
     <Compile Include="..\Cordyceps\Core\ParamSyncPlan.cs" Link="ParamSyncPlan.cs" />
     <Compile Include="..\Cordyceps\Core\McpResultFormatter.cs" Link="McpResultFormatter.cs" />
     <Compile Include="..\Cordyceps\Core\RequestValidator.cs" Link="RequestValidator.cs" />

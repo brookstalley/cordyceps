@@ -615,7 +615,8 @@ namespace Cordyceps.Core
                         nickname = param.NickName,
                         type = param.TypeName,
                         sourceCount = param.SourceCount,
-                        optional = param.Optional
+                        optional = param.Optional,
+                        modifiers = BuildModifierInfo(param)
                     });
                 }
                 else
@@ -625,11 +626,60 @@ namespace Cordyceps.Core
                         name = param.Name,
                         nickname = param.NickName,
                         type = param.TypeName,
-                        recipientCount = param.Recipients.Count
+                        recipientCount = param.Recipients.Count,
+                        modifiers = BuildModifierInfo(param)
                     });
                 }
             }
             return result;
+        }
+
+        /// <summary>
+        /// Report a parameter's data modifiers — the Flatten/Graft/Simplify/Reverse options
+        /// Grasshopper puts on a port's right-click menu. Without this, a document round-tripped
+        /// through the API silently loses them and a caller cannot even detect that a Graft exists.
+        /// </summary>
+        /// <remarks>
+        /// Emits the same lowercase mapping names <c>gh_canvas(action='modifier')</c> accepts, so
+        /// a reported state feeds straight back in as an argument.
+        /// </remarks>
+        public static object BuildModifierInfo(IGH_Param param)
+        {
+            return new
+            {
+                mapping = DataModifiers.MappingName(ToMappingChoice(param.DataMapping)),
+                simplify = param.Simplify,
+                reverse = param.Reverse
+            };
+        }
+
+        /// <summary>
+        /// Bridge Grasshopper's <see cref="GH_DataMapping"/> to the host-free
+        /// <see cref="DataMappingChoice"/>. Mapped by name rather than cast, so the host-free
+        /// enum never becomes silently coupled to Grasshopper's member ordering.
+        /// </summary>
+        public static DataMappingChoice ToMappingChoice(GH_DataMapping mapping)
+        {
+            switch (mapping)
+            {
+                case GH_DataMapping.Flatten: return DataMappingChoice.Flatten;
+                case GH_DataMapping.Graft: return DataMappingChoice.Graft;
+                default: return DataMappingChoice.None;
+            }
+        }
+
+        /// <summary>
+        /// Bridge the host-free <see cref="DataMappingChoice"/> back to Grasshopper's
+        /// <see cref="GH_DataMapping"/>.
+        /// </summary>
+        public static GH_DataMapping ToGhDataMapping(DataMappingChoice choice)
+        {
+            switch (choice)
+            {
+                case DataMappingChoice.Flatten: return GH_DataMapping.Flatten;
+                case DataMappingChoice.Graft: return GH_DataMapping.Graft;
+                default: return GH_DataMapping.None;
+            }
         }
 
         /// <summary>
@@ -722,6 +772,7 @@ namespace Cordyceps.Core
                 info["sourceCount"] = param.SourceCount;
                 info["recipientCount"] = param.Recipients.Count;
                 info["dataCount"] = param.VolatileDataCount;
+                info["modifiers"] = BuildModifierInfo(param);
             }
 
             return info;

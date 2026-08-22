@@ -279,6 +279,23 @@ namespace Cordyceps.Tools.Unified
                         "count: target number for 'set_count'",
                         "index: specific position for 'add'/'remove'"
                     }
+                },
+                ["modifier"] = new ActionInfo
+                {
+                    Name = "modifier",
+                    Description = "Read or set a parameter's data modifiers (flatten/graft, simplify, reverse)",
+                    Required = new[] { "id" },
+                    Optional = new[] { "side", "param", "mapping", "simplify", "reverse" },
+                    Example = "action='modifier', id='abc', side='input', param='P', mapping='graft'",
+                    Tips = new[] {
+                        "Omit mapping/simplify/reverse to READ the current state; each one you pass is applied, the rest are left unchanged",
+                        "mapping: 'none', 'flatten', or 'graft' (Grasshopper's DataMapping)",
+                        "simplify/reverse: true or false",
+                        "param: name or 0-based index of the port; not needed for a free-floating parameter",
+                        "side: 'input' or 'output' (default: 'input')",
+                        "Clear everything with mapping='none', simplify=false, reverse=false",
+                        "action='info' reports the same modifiers for every param of a component"
+                    }
                 }
             },
             Notes = new[]
@@ -295,7 +312,7 @@ namespace Cordyceps.Tools.Unified
             _context = context;
         }
 
-        [McpServerTool, Description("Component operations. Actions: add|delete|move|rename|find|search|list|info|bounds|validate|constant|bake|zoom|view|get|set|config|preview|enable|group_create|group_delete|group_add|group_remove|group_list|group_rename|group_color|group_move|zoomable|help")]
+        [McpServerTool, Description("Component operations. Actions: add|delete|move|rename|find|search|list|info|bounds|validate|constant|bake|zoom|view|get|set|config|preview|enable|group_create|group_delete|group_add|group_remove|group_list|group_rename|group_color|group_move|zoomable|modifier|help")]
         public string GhCanvas(
             [Description("Action to perform")] string action,
             [Description("Component type for 'add', search query for 'search', or type filter for 'list'")] string type = null,
@@ -332,7 +349,12 @@ namespace Cordyceps.Tools.Unified
             [Description("Parameter side: 'input' or 'output'")] string side = null,
             [Description("Operation: 'add', 'remove', 'set_count'")] string operation = null,
             [Description("Target count for set_count")] int count = -1,
-            [Description("Index for add/remove")] int index = -1)
+            [Description("Index for add/remove")] int index = -1,
+            // Data modifier params
+            [Description("Parameter name or 0-based index for 'modifier'")] string param = null,
+            [Description("Data mapping for 'modifier': 'none', 'flatten', or 'graft'")] string mapping = null,
+            [Description("Simplify state for 'modifier': true or false")] string simplify = null,
+            [Description("Reverse state for 'modifier': true or false")] string reverse = null)
         {
             // Handle help action
             if (string.Equals(action, "help", StringComparison.OrdinalIgnoreCase))
@@ -376,7 +398,12 @@ namespace Cordyceps.Tools.Unified
                 ("side", side),
                 ("operation", operation),
                 ("count", count >= 0 ? (object)count : null),
-                ("index", index >= 0 ? (object)index : null)
+                ("index", index >= 0 ? (object)index : null),
+                // Data modifier params
+                ("param", param),
+                ("mapping", mapping),
+                ("simplify", simplify),
+                ("reverse", reverse)
             );
 
             // 'type' doubles as the search query (documented on the param), so let a provided
@@ -436,6 +463,7 @@ namespace Cordyceps.Tools.Unified
                 "group_color" => ActionGroupColor(id, color),
                 "group_move" => ActionGroupMove(id, dx, dy),
                 "zoomable" => ActionZoomable(id, side, operation, count, index),
+                "modifier" => ActionModifier(id, side, param, mapping, simplify, reverse),
                 _ => JsonConvert.SerializeObject(new { success = false, error = $"Unknown action: {action}" })
             };
         }
