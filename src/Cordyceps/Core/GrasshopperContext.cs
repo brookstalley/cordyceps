@@ -51,17 +51,29 @@ namespace Cordyceps.Core
                 T result = default;
                 ExceptionDispatchInfo captured = null;
 
-                RhinoApp.InvokeAndWait(new Action(() =>
+                // Occupying the UI thread here starves the liveness heartbeat exactly as a modal
+                // dialog would. Recording it lets the status layer tell "we asked Rhino to do
+                // something slow" apart from "the host is stuck waiting on a human" — states that
+                // are indistinguishable from a stale heartbeat alone.
+                SolverState.Shared.BeginUiWork();
+                try
                 {
-                    try
+                    RhinoApp.InvokeAndWait(new Action(() =>
                     {
-                        result = action();
-                    }
-                    catch (Exception ex)
-                    {
-                        captured = ExceptionDispatchInfo.Capture(ex);
-                    }
-                }));
+                        try
+                        {
+                            result = action();
+                        }
+                        catch (Exception ex)
+                        {
+                            captured = ExceptionDispatchInfo.Capture(ex);
+                        }
+                    }));
+                }
+                finally
+                {
+                    SolverState.Shared.EndUiWork();
+                }
 
                 captured?.Throw();
                 return result;
@@ -85,17 +97,27 @@ namespace Cordyceps.Core
             {
                 ExceptionDispatchInfo captured = null;
 
-                RhinoApp.InvokeAndWait(new Action(() =>
+                // See the generic overload: recorded so a slow operation of ours is not mistaken
+                // for a host wedged behind a dialog.
+                SolverState.Shared.BeginUiWork();
+                try
                 {
-                    try
+                    RhinoApp.InvokeAndWait(new Action(() =>
                     {
-                        action();
-                    }
-                    catch (Exception ex)
-                    {
-                        captured = ExceptionDispatchInfo.Capture(ex);
-                    }
-                }));
+                        try
+                        {
+                            action();
+                        }
+                        catch (Exception ex)
+                        {
+                            captured = ExceptionDispatchInfo.Capture(ex);
+                        }
+                    }));
+                }
+                finally
+                {
+                    SolverState.Shared.EndUiWork();
+                }
 
                 captured?.Throw();
             });

@@ -343,6 +343,121 @@ namespace Cordyceps.Tests
             Assert.Contains("human", status.Hint);
         }
 
+        /// <summary>
+        /// A long Cordyceps operation must NOT be reported as a modal dialog.
+        ///
+        /// <para>Tool bodies run on the Rhino UI thread, so a large bake, a viewport capture or a
+        /// big save starves the heartbeat in exactly the same way a dialog does. Reporting a dialog
+        /// here is not a cosmetic slip: the hint tells the caller to stop and fetch a human, and
+        /// both the status action and recompute refuse while it stands — so a healthy session doing
+        /// exactly what it was asked would be told to halt and wait for someone who is not coming.
+        /// </para>
+        /// </summary>
+        [Fact]
+        public void Derive_OwnUiWork_IsNotMistakenForAModalDialog()
+        {
+            var clock = new FakeClock();
+            var state = NewState(clock);
+            state.Heartbeat();
+
+            state.BeginUiWork();
+            clock.Advance(TimeSpan.FromSeconds(30));
+
+            var status = state.Derive(new StatusInputs());
+
+            // The UI thread genuinely is not responding — that part is honest.
+            Assert.Equal(UiLiveness.Blocked, status.Ui);
+            Assert.True(status.UiWorkInProgress);
+            // But the cause is known, so no human is summoned.
+            Assert.False(status.ModalInferred);
+            Assert.DoesNotContain("modal dialog", status.Hint);
+            Assert.Contains("Cordyceps operation", status.Hint);
+        }
+
+        /// <summary>Once our own work finishes, a still-stale heartbeat does mean a dialog again.</summary>
+        [Fact]
+        public void Derive_ModalInference_ResumesAfterOwnUiWorkEnds()
+        {
+            var clock = new FakeClock();
+            var state = NewState(clock);
+            state.Heartbeat();
+
+            state.BeginUiWork();
+            clock.Advance(TimeSpan.FromSeconds(30));
+            Assert.False(state.Derive(new StatusInputs()).ModalInferred);
+
+            state.EndUiWork();
+
+            Assert.True(state.Derive(new StatusInputs()).ModalInferred);
+        }
+
+        /// <summary>
+        /// Concurrent handlers each marshal independently, so the counter is a depth: the FIRST to
+        /// finish must not clear the flag while the second is still holding the UI thread.
+        /// </summary>
+        [Fact]
+        public void Derive_UiWork_NestsByDepth()
+        {
+            var clock = new FakeClock();
+            var state = NewState(clock);
+            state.Heartbeat();
+            clock.Advance(TimeSpan.FromSeconds(30));
+
+            state.BeginUiWork();
+            state.BeginUiWork();
+            state.EndUiWork();
+
+            Assert.True(state.Derive(new StatusInputs()).UiWorkInProgress);
+            Assert.False(state.Derive(new StatusInputs()).ModalInferred);
+
+            state.EndUiWork();
+
+            Assert.False(state.Derive(new StatusInputs()).UiWorkInProgress);
+            Assert.True(state.Derive(new StatusInputs()).ModalInferred);
+        }
+
+        /// <summary>
+        /// An unbalanced EndUiWork must not drive the depth negative — a negative depth would take
+        /// several later BeginUiWork calls just to climb back to zero, silently suppressing modal
+        /// inference for the rest of the session.
+        /// </summary>
+        [Fact]
+        public void Derive_UnbalancedEndUiWork_DoesNotGoNegative()
+        {
+            var clock = new FakeClock();
+            var state = NewState(clock);
+            state.Heartbeat();
+            clock.Advance(TimeSpan.FromSeconds(30));
+
+            state.EndUiWork();
+            state.EndUiWork();
+
+            state.BeginUiWork();
+            Assert.True(state.Derive(new StatusInputs()).UiWorkInProgress);
+
+            state.EndUiWork();
+            Assert.False(state.Derive(new StatusInputs()).UiWorkInProgress);
+            Assert.True(state.Derive(new StatusInputs()).ModalInferred);
+        }
+
+        /// <summary>A running solve still explains a blocked UI, with or without our own work.</summary>
+        [Fact]
+        public void Derive_SolvingStillSuppressesModalInference_EvenWithOwnUiWork()
+        {
+            var clock = new FakeClock();
+            var state = NewState(clock);
+            state.Heartbeat();
+            state.BeginSolution(Guid.NewGuid(), "wall-study.gh");
+
+            state.BeginUiWork();
+            clock.Advance(TimeSpan.FromSeconds(30));
+
+            var status = state.Derive(new StatusInputs());
+
+            Assert.True(status.Solving);
+            Assert.False(status.ModalInferred);
+        }
+
         [Fact]
         public void Derive_ModalInference_ClearsWhenTheUiRecovers()
         {

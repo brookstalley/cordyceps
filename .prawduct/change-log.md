@@ -39,6 +39,104 @@
      derived view. Don't hand-edit them — add/update a tagged entry here and
      run `prawduct-hook regen-views`. -->
 
+## 2026-08-21: bridge liveness, solution safety, status envelope (issues #30, #29)
+
+<!-- prawduct: type=feature | chunks=01,02,03 | scope=issues-2026-08 | status=built -->
+
+**Why:** [GitHub #30, #29] Two companion reports from one agent-driven session. Every MCP call
+refreshed the bridge component by expiring it immediately; landing mid-solve, that raised
+Grasshopper's modal breakpoint dialog, which stops the canvas and blocks every later call until a
+human clicks Close — fatal unattended. Separately, a caller could not tell a busy solver from a
+dead bridge: one measured outage was ~32 minutes of total silence from a read-only probe. The
+ambiguity caused the retries that triggered the dialog, so the two are one problem.
+
+**What:** (a) `RefreshComponent` defers via `ScheduleSolution` instead of `ExpireSolution(true)`,
+so no MCP call can expire the bridge inside a running solution; bursts coalesce into one recompute.
+(b) Host-free `Core/SolverState` tracks solve state per document (`SolutionStart`/`SolutionEnd` are
+per-document, and several definitions share one UI thread) plus a UI-thread heartbeat, fed by
+`Core/SolutionWatcher` watching `GH_DocumentServer` globally — per-instance subscription would miss
+a solve in a definition holding no bridge and report a false modal. (c) `gh_inspect(action=
+'connection')` answers from cached state without ever marshaling; the pre-existing `status` action,
+which does need the UI thread and was itself the source of the 32-minute silence, now returns a
+prompt busy result instead of hanging. (d) Compact host status injected into every tool response at
+one choke point in `HandleToolCallAsync`. (e) `recompute` refuses during an active solve with a
+structured busy result. (f) `GET /health` enriched and no longer reads the document off-thread.
+
+**Modal inference is guarded on three conditions, not two:** stale heartbeat, no solve running,
+*and* no Cordyceps UI work in flight. Tool bodies execute on the UI thread, so a long bake or
+capture starves the heartbeat exactly as a dialog does; with only the first two conditions a
+healthy host mid-bake reported a dialog that was not there and the guidance told the agent to stop
+and fetch a human. `GrasshopperContext` records UI-thread occupancy at its marshaling choke point;
+the connection probe never marshals, so it never counts itself.
+
+**Known limitation:** `modal_inferred` does not fire for issue #30's own dialog, which appears
+*inside* a solve and so reads as "busy solving". The deferred refresh prevents that dialog at the
+source; the inference catches every other modal. Recorded in VRF-012 so a verifier does not test
+for the wrong thing.
+
+## 2026-08-21: per-parameter data modifiers on gh_canvas (issue #27)
+
+<!-- prawduct: type=feature | chunks=04 | scope=issues-2026-08 | status=built -->
+
+**Why:** [GitHub #27] Flatten/Graft/Simplify/Reverse — the right-click options on component ports —
+were unreachable through the API, and `action='info'` did not report them, so an agent could not
+even detect an existing Graft; it had to be inferred from downstream branch counts, and
+round-tripping a document silently lost the information. The reporter surveyed the comparable
+Grasshopper MCP projects and found the same gap in all of them.
+
+**What:** host-free `Core/DataModifiers` parses and plans (`none|flatten|graft`, tri-state
+simplify/reverse, partial update, all bad arguments reported in one message);
+`gh_canvas(action='modifier')` reads with `id`/`side`/`param` alone and writes otherwise, over
+component ports and free-floating params alike; `modifiers` added to both branches of
+`BuildParameterList` and to the free-floating branch of `BuildFullComponentInfo`. Param resolution
+accepts a name or a 0-based index and null-guards the spec. `ExpireSolution(false)` only when
+something actually changed. `RemoveEffects()` deliberately unused — an explicit
+`mapping='none', simplify=false, reverse=false` expresses the same clear without clearing more
+than these three. Reparameterize stays out of scope (the issue calls it phase 2).
+
+## 2026-08-21: script source write cascade (issue #28 finding)
+
+<!-- prawduct: type=fix | chunks=05 | scope=issues-2026-08 | status=built -->
+
+**Why:** [GitHub #28] An external source audit found the read path probing a five-member cascade
+while the write path called `SetSource` bare through `dynamic`. A script component without
+`SetSource` therefore read fine and failed opaquely on write. Applies on Rhino 8 too — third-party
+script components need not expose it either.
+
+**What:** host-free `Core/ScriptSourceWriter` mirrors the read cascade on the write side —
+`SetSource(string)`, then a writable `Code` property gated by a `HiddenCodeInput` pre-check so a
+visible code-input parameter yields an actionable message rather than an opaque host exception, then
+a specific failure naming the type and every member probed. Never a silent no-op. Overload- and
+shadowing-tolerant (both `AmbiguousMatchException` sources). All three call sites route through one
+helper; `PreserveLanguageDirective`, param sync and expire behavior unchanged. `IsScriptComponent`
+now probes `CanWrite`, or a `Code`-only component would be rejected before the fallback could run.
+
+**Not done:** the net48/Rhino 7 multi-target the same issue proposed was declined — a Mono-era
+runtime that cannot be tested here is a real maintenance surface, and the reporter's fork ends
+naturally at Rhino 9.
+
+## 2026-08-21: System.Text.Json to Newtonsoft conversion dropped (issue #28 finding)
+
+<!-- prawduct: type=decision | chunks=06 | scope=issues-2026-08 | status=deferred -->
+
+**Why:** [user decision 2026-08-21] The conversion's sole justification was a net48 assembly-load
+conflict: on `net48` System.Text.Json arrives as a package needing `System.Memory` >= 4.0.1.2 and
+`Unsafe` 6.0.0.0, while Rhino 7 already holds older versions in-process for Roslyn, .NET Framework
+binds by exact version, and a `.gha` cannot inject binding redirects. net48 was declined, and on
+.NET 8 System.Text.Json IS the BCL — no package, no transitive versions, nothing to conflict. The
+residual "one JSON library" argument points the other way on this runtime, since STJ is the
+platform-native and faster option. `project-preferences.md` already scopes the split deliberately.
+
+**What:** not built. Recon identified five behavior traps in what the issue framed as mechanical —
+`WhenWritingNull` not governing dictionary values, `DateParseHandling` rewriting date-shaped string
+ids, `GetRawText` vs `ToString` formatting, `prompts/get` throwing vs coercing on non-string
+arguments, and lossless numeric id echo. Three were untested, so the reporter's "all 56 tests pass"
+could not have caught a regression in them. Carried forward instead: `JsonRpcWireFormatTests` pins
+the current wire format (null `result` emitted explicitly as JSON-RPC 2.0 requires, verbatim string
+ids, exact numeric literals, compactness, no naming policy, unicode escaping with round-trip). Doing
+so corrected a comment in `JsonRpcEnvelope` that claimed `WhenWritingNull` drops a null `result`; it
+does not, and the emitted null is required.
+
 ## 2026-07-02: stop encouraging component renames — annotate via groups (reliability chunk 06)
 
 <!-- prawduct: type=feature | chunks=06 | scope=reliability | status=merged -->

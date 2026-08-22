@@ -98,7 +98,7 @@ live in Rhino.
 
 ## Chunks
 
-### Chunk 01 — Host-free status model  *(track A)*
+### Chunk 01: Host-free status model  *(track A)*
 **Delivers:** `Core/SolverState.cs` + `Core/StatusEnvelope.cs`, both host-free and linked
 into the test project.
 - Per-document solve state: begin/end by document id, `solving_since`, concurrent-safe.
@@ -113,7 +113,7 @@ into the test project.
   concurrent begin/end on two documents, and Inject over object / array / malformed /
   already-has-status inputs. No Grasshopper reference in either file.
 
-### Chunk 02 — Host wiring: solution safety + heartbeat  *(track A)*
+### Chunk 02: Host wiring: solution safety + heartbeat  *(track A)*
 **Delivers:** the #30 fix and the state feed.
 - `RefreshComponent()` no longer calls `ExpireSolution(true)` unguarded. Defer via
   `ScheduleSolution` / skip when a solution is in progress, so no MCP call can expire the
@@ -126,7 +126,7 @@ into the test project.
   `DocumentContextChanged` lifecycle. Enqueue an operator-verification entry — the modal
   scenario needs a live Rhino to confirm.
 
-### Chunk 03 — Surfaces: probe, envelope, busy rejection  *(track A)*
+### Chunk 03: Surfaces: probe, envelope, busy rejection  *(track A)*
 **Delivers:** everything an agent can observe.
 - `gh_inspect(action='status')` — answered **without** `ExecuteOnUiThread`, reading cached
   state only. This is the whole point; a reviewer must be able to see it cannot block.
@@ -140,7 +140,7 @@ into the test project.
 - **Acceptance:** a reviewer can trace the status path and confirm it never marshals or
   takes the document lock.
 
-### Chunk 04 — #27 data modifiers  *(track B)*
+### Chunk 04: #27 data modifiers  *(track B)*
 **Delivers:** `Core/DataModifiers.cs` (host-free parse/plan: `none|flatten|graft`, tri-state
 simplify/reverse, partial-update semantics) + tests; `GhCanvasTool.Modifiers.cs`
 implementing `gh_canvas(action='modifier', ...)` with read mode when only `id`/`side`/`param`
@@ -151,7 +151,7 @@ Param resolution by name **and** index, per the project rule (null-guard it — 
 **Acceptance:** unit tests cover the plan/parse matrix including partial updates and
 invalid inputs; `info` round-trips modifier state.
 
-### Chunk 05 — #28 finding A: script write cascade  *(track C)*
+### Chunk 05: #28 finding A: script write cascade  *(track C)*
 **Delivers:** the write path mirrors the read cascade — try `SetSource`, fall back to a
 writable `Code` property, and **pre-check `HiddenCodeInput`** so a visible code-input param
 yields an actionable message instead of an opaque `InvalidOperationException`. Applies at
@@ -159,7 +159,7 @@ all three call sites (`GhScriptTool.cs:174`, `:294`, `:323`).
 **Acceptance:** the probe/fallback decision logic extracted host-free and unit-tested;
 failure returns a specific, actionable error string.
 
-### Chunk 06 — #28 finding B: System.Text.Json → Newtonsoft  *(track D, main agent)*
+### Chunk 06: #28 finding B: System.Text.Json → Newtonsoft  *(track D, main agent)*
 **Status: PENDING USER CONFIRMATION** — the justification for this finding was net48 load
 conflicts, and net48 was declined. Its standalone value is dependency consolidation; its
 cost is a refactor of the most protocol-critical code in the repo. Five behavior traps were
@@ -215,14 +215,14 @@ the departure is visible rather than inferred.
 
 ## Status
 
-- [ ] Chunk 01 — Host-free status model
-- [ ] Chunk 02 — Host wiring: solution safety + heartbeat
-- [ ] Chunk 03 — Surfaces: probe, envelope, busy rejection
-- [ ] Chunk 04 — #27 data modifiers
-- [ ] Chunk 05 — #28 finding A: script write cascade
-- [x] Chunk 06 — #28 finding B: STJ → Newtonsoft — **DROPPED, not built** (see chunk entry)
-- [ ] Chunk 06a — Characterization tests pinning current STJ wire behavior (traps 1, 2, 4)
-- [ ] Integration: full suite green, cumulative Critic, doc audit
+- [x] Chunk 01: Host-free status model
+- [x] Chunk 02: Host wiring: solution safety + heartbeat
+- [x] Chunk 03: Surfaces: probe, envelope, busy rejection
+- [x] Chunk 04: #27 data modifiers
+- [x] Chunk 05: #28 finding A: script write cascade
+- [x] Chunk 06: #28 finding B: STJ → Newtonsoft — **DROPPED by user decision, not built**
+- [x] Chunk 06a: Characterization tests pinning current STJ wire behavior
+- [ ] Integration: cumulative Critic findings dispositioned, then PR
 
 ## Late decisions
 

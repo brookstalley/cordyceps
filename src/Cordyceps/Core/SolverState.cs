@@ -83,12 +83,26 @@ namespace Cordyceps.Core
         public UiLiveness Ui { get; set; }
 
         /// <summary>
-        /// True when the UI thread is blocked and no solution is running. Nothing else routinely
-        /// holds the UI thread that long, so a modal dialog is the overwhelmingly likely cause —
-        /// and a modal dialog needs a human, which is the one thing an unattended agent cannot
-        /// summon. This inference is the whole reason the heartbeat exists.
+        /// True when the UI thread is blocked, no solution is running, and Cordyceps is not itself
+        /// occupying the UI thread. Nothing else routinely holds it that long, so a modal dialog is
+        /// the overwhelmingly likely cause — and a modal dialog needs a human, which is the one
+        /// thing an unattended agent cannot summon. This inference is the whole reason the
+        /// heartbeat exists.
+        ///
+        /// <para>The third condition is not a refinement, it is load-bearing. Tool bodies run ON
+        /// the UI thread, so a long one (a large bake, a viewport capture, a big save) starves the
+        /// heartbeat exactly like a dialog would. Without the check, a perfectly healthy host mid-bake
+        /// reports a dialog that does not exist, and the guidance attached to that state tells the
+        /// agent to stop and fetch a human.</para>
         /// </summary>
         public bool ModalInferred { get; set; }
+
+        /// <summary>
+        /// True when Cordyceps is running its own work on the UI thread. Distinguishes "the host is
+        /// busy because we asked it to be" from "the host is stuck on something only a human can
+        /// clear" — two states that look identical from a stale heartbeat alone.
+        /// </summary>
+        public bool UiWorkInProgress { get; set; }
 
         public DateTime? LastHeartbeatUtc { get; set; }
         public int? HeartbeatAgeMs { get; set; }
@@ -183,6 +197,35 @@ namespace Cordyceps.Core
 
         // Supplies the running server's own counters. See PublishServerSnapshot.
         private Func<StatusInputs> _serverSnapshot;
+
+        /// <summary>
+        /// Depth of Cordyceps's own work currently occupying the UI thread. A depth, not a flag,
+        /// because concurrent HTTP handlers each marshal independently and the last one to finish
+        /// must be the one that clears it.
+        /// </summary>
+        private int _uiWorkDepth;
+
+        /// <summary>True while any Cordyceps operation is executing on the UI thread.</summary>
+        public bool UiWorkInProgress => Volatile.Read(ref _uiWorkDepth) > 0;
+
+        /// <summary>
+        /// Mark the start of work that occupies the UI thread. Call from the marshaling choke point
+        /// only, and always pair with <see cref="EndUiWork"/> in a finally — a leaked increment
+        /// suppresses modal inference for the rest of the session, which is the failure mode this
+        /// counter exists to prevent.
+        ///
+        /// <para>Deliberately NOT called by the connection probe: the probe never touches the UI
+        /// thread, so counting it would make the inference report "busy with our own work" during
+        /// the very call asking whether a human is needed.</para>
+        /// </summary>
+        public void BeginUiWork() => Interlocked.Increment(ref _uiWorkDepth);
+
+        /// <summary>Mark the end of UI-thread work. Never drops below zero.</summary>
+        public void EndUiWork()
+        {
+            if (Interlocked.Decrement(ref _uiWorkDepth) < 0)
+                Interlocked.Exchange(ref _uiWorkDepth, 0);
+        }
 
         public SolverState(Func<DateTime> clock = null, TimeSpan? heartbeatStaleAfter = null)
         {
@@ -345,9 +388,13 @@ namespace Cordyceps.Core
             var solve = ActiveSolve;
             var solving = solve != null;
 
-            // The key inference: only a solve legitimately holds the UI thread for this long, so a
-            // blocked UI with nothing solving means something is waiting on a human.
-            var modalInferred = ui == UiLiveness.Blocked && !solving;
+            // The key inference: a blocked UI thread means a human is needed only once both benign
+            // explanations are excluded — a running solve, and Cordyceps's own work. Tool bodies
+            // execute on the UI thread, so a long bake or capture starves the heartbeat exactly as
+            // a dialog does; without the second exclusion a healthy host reports a dialog that is
+            // not there, and the caller is told to stop and find a human.
+            var uiWorkInProgress = UiWorkInProgress;
+            var modalInferred = ui == UiLiveness.Blocked && !solving && !uiWorkInProgress;
 
             var active = ActiveDocument;
             var status = new HostStatus
@@ -355,6 +402,7 @@ namespace Cordyceps.Core
                 RhinoAlive = true,
                 Ui = ui,
                 ModalInferred = modalInferred,
+                UiWorkInProgress = uiWorkInProgress,
                 LastHeartbeatUtc = lastHeartbeat,
                 HeartbeatAgeMs = lastHeartbeat == null
                     ? (int?)null
@@ -401,8 +449,14 @@ namespace Cordyceps.Core
                          + "Wait and retry — this is a busy bridge, not a dead one. "
                          + "If it persists far beyond the expected solve time, ask a human to check Rhino for an open dialog.";
 
+                case UiLiveness.Blocked when status.UiWorkInProgress:
+                    return $"A Cordyceps operation is running on the Rhino UI thread and has held it for "
+                         + $"{FormatAge(status.HeartbeatAgeMs)}. This is our own work, not a stuck host — "
+                         + "long bakes, viewport captures and large saves all look like this. Wait for it to finish.";
+
                 case UiLiveness.Blocked:
-                    return $"The Rhino UI thread has not responded for {FormatAge(status.HeartbeatAgeMs)} and no solution is running. "
+                    return $"The Rhino UI thread has not responded for {FormatAge(status.HeartbeatAgeMs)}, "
+                         + "no solution is running, and Cordyceps is not doing anything. "
                          + "A modal dialog is almost certainly open and needs a human to dismiss it — "
                          + "document-touching calls will block until it is cleared. Do not keep retrying.";
 

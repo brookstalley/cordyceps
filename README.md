@@ -149,7 +149,7 @@ Cordyceps provides **7 tools with over 100 actions** — consolidated to minimiz
 | `gh_wire` | Connection management |
 | `gh_document` | Save, clear, snapshots (max 20 kept, oldest evicted), solver control, canvas capture (undo/redo are disabled — use snapshots) |
 | `gh_script` | Script component configuration |
-| `gh_inspect` | Status, outputs, data tracing, debugging |
+| `gh_inspect` | Connection/liveness probe, status, outputs, data tracing, debugging |
 
 ### Rhino
 

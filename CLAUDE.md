@@ -58,7 +58,7 @@ Each tool class is marked with `[McpServerToolType]` and contains a single metho
 - **GhWireTool** (`gh_wire`) - Connect/disconnect components, bulk wiring, validate connections
 - **GhDocumentTool** (`gh_document`) - Save, clear documents; snapshots; solver control; capture canvas/viewport
 - **GhScriptTool** (`gh_script`) - Configure C#/Python script components
-- **GhInspectTool** (`gh_inspect`) - Get component status, trace data flow, retrieve debug output
+- **GhInspectTool** (`gh_inspect`) - Non-blocking connection/liveness probe, component status, trace data flow, retrieve debug output
 
 **Rhino Tools (2):**
 - **RhinoSceneTool** (`rhino_scene`) - Object management, selection, layers (full CRUD), visibility

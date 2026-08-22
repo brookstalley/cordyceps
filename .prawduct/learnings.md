@@ -118,3 +118,38 @@ shape, per `Core/ScriptParamDefs`); (3) any per-id loop returns per-id results w
 `success:true` were the single most common bug. New pure decision logic goes in a host-free
 `Core/` file linked into the test project WITH tests in the same chunk, even when it feels like
 host glue — the audit found ~10 helpers untestable only because they sat in host-coupled files.
+
+## Never offer the user a choice you have not verified is available
+
+When framing a decision — especially a naming or API-surface choice — grep for the thing first.
+Asking the user to pick where a new liveness probe should live, and listing
+`gh_inspect(action='status')`, cost a round-trip and an amended record: that action already
+existed and needed the UI thread, so it could not also be the cached-only probe. One grep of the
+dispatch switch would have caught it in seconds. The options in an `AskUserQuestion` are claims
+about the codebase, and they carry the same evidence burden as any other claim. Same rule for
+"add action X" plans: confirm X is free, and confirm the surfaces that must list it
+(`GetServerInstructions()`, `ActionInfo`, the tool's `[Description]` pipe-list, README, CLAUDE.md).
+
+## A signal is only as trustworthy as what the REST of the system does to it
+
+Verifying that a new probe path never blocks is not the same as verifying the signal it reports is
+correct. The liveness heartbeat was starved not by the probe (which never marshals) but by ordinary
+tool calls, which all run ON the UI thread via `InvokeAndWait` — so a long bake or capture made a
+healthy host report a modal dialog that was not there, and the attached guidance told the agent to
+stop and fetch a human. When adding an inferred signal, enumerate every OTHER code path that can
+move its inputs, not just the read path. And note the trap in the obvious fix: gating the inference
+on in-flight HTTP requests would have counted the probe's own request and disabled it permanently —
+the correct signal was UI-thread occupancy, recorded at `GrasshopperContext`'s marshaling choke
+point, which the probe deliberately never enters.
+
+## Give worktree subagents the WHY behind a constraint, not just the constraint
+
+Track A was specified to subscribe to solution events per bridge instance and instead watched
+`GH_DocumentServer` globally — correctly, because documents share one Rhino UI thread and a solve in
+a definition containing no bridge component would otherwise read as "UI blocked, nothing solving",
+producing a false "a human must intervene". It could only make that call because the prompt
+explained what the signal was FOR. Also required, and confirmed the hard way: commit the build plan
+before dispatching, since worktree-isolated agents read HEAD (two reported starting at a stale
+commit and branching explicitly to find the plan), and assign file ownership per track — giving
+`CHANGELOG.md` and `McpServer.cs` to the main agent alone produced zero real merge conflicts across
+three parallel tracks.
