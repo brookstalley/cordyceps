@@ -84,12 +84,6 @@ namespace Cordyceps.Core
             }
         }
 
-        /// <summary>Number of documents currently watched. For diagnostics and tests of the host wiring.</summary>
-        public static int WatchedCount
-        {
-            get { lock (_gate) return _watched.Count; }
-        }
-
         private static void OnDocumentAdded(GH_DocumentServer sender, GH_Document doc)
         {
             lock (_gate) Watch(doc);

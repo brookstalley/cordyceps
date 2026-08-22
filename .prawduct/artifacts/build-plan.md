@@ -6,8 +6,10 @@ Critic mode: chunk (per code chunk) + cumulative before PR.
 
 ## Context / decisions
 
-- Prior plan (janitor-2026-07-02) is complete and archived as `build-plan-reliability.md`;
-  its six reliability chunks shipped via PR #26. Replaced by this plan.
+- Prior plan (janitor-2026-07-02) is complete and preserved as
+  `build-plan-janitor-2026-07-02.md`, added by this branch so the overwrite did not erase it.
+  Replaced by this plan. Not to be confused with `build-plan-reliability.md`, which was
+  already on `develop` and belongs to PR #26 — its six reliability chunks shipped there.
 - Baseline: 406/406 tests green (517 ms) on `develop` @ `af2b2c6`.
 - **#28 net48 multi-target: DECLINED** by the user. Rhino 7 support is out of scope; the
   reporter's fork has a natural end date at Rhino 9. The user replies on the issue directly.
