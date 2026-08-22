@@ -74,8 +74,13 @@ namespace Cordyceps.Tools.Unified
                 ["recompute"] = new ActionInfo
                 {
                     Name = "recompute",
-                    Description = "Trigger a solution recompute",
-                    Example = "action='recompute'"
+                    Description = "Trigger a solution recompute (cluster-safe). Rejected while a solution is already running, or while the UI thread is blocked by a modal dialog",
+                    Example = "action='recompute'",
+                    Tips = new[]
+                    {
+                        "If a solution is already running you get success=false with solving=true and solving_since — wait for it to finish and call again, do not retry in a tight loop.",
+                        "Use gh_inspect(action='connection') to see whether the host is busy solving or blocked by a modal dialog."
+                    }
                 },
                 ["undo"] = new ActionInfo
                 {
@@ -389,6 +394,15 @@ namespace Cordyceps.Tools.Unified
 
         private string ActionRecompute()
         {
+            // Refuse rather than queue or block while a solution is already running, or while the
+            // UI thread is stuck behind a dialog. Queueing would give the caller no completion
+            // signal; blocking would hold the request open for the whole solve, which is the
+            // unbounded silence this refusal exists to replace. The result names the running
+            // document and when it started so the caller can decide how long to wait.
+            var liveness = SolverState.Shared.Derive();
+            if (liveness.Solving || liveness.ModalInferred)
+                return StatusEnvelope.BusyResult(liveness);
+
             return _context.ExecuteOnUiThread(() =>
             {
                 if (!ToolHelpers.TryGetActiveDocument(_context, out var doc, out var error))

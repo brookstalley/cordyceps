@@ -158,6 +158,77 @@
   **Fix shape:** either add a `Disposed` terminal state to `Core/ServerState` (`CanStart` false) or
   guard `Start()` on `_disposed`; add a transition-table test either way.
 
+- **[GHD-5R7Q]** Tools silently retarget when the user switches Grasshopper canvas tabs
+  `effort: M · impact: L · area: document-resolution · source: user · added: 2026-08-21 · status: open · stage: requirements`
+
+  Every tool resolves its document through `ToolHelpers.TryGetActiveDocument` →
+  `Grasshopper.Instances.ActiveCanvas?.Document` (`src/Cordyceps/Core/ToolHelpers.cs:173`; also
+  `McpServer.cs:430`). Grasshopper can have multiple documents open at once, so when the human
+  focuses a different canvas tab, the **entire MCP surface silently retargets mid-session**. An agent
+  can believe it is editing `wall-study.gh` while actually editing the definition the user just
+  clicked over to. Nothing in any response signals the switch, and there is no way for a client to
+  pin a target.
+
+  **Blast radius:** all 7 tools — every mutating action resolves this way (gh_canvas, gh_wire,
+  gh_document, gh_script, gh_inspect, plus the Rhino tools' document assumptions).
+
+  Discovered by the user while designing the liveness/status work for issues #29/#30. That cycle
+  makes the hazard **visible but not safe**: the always-on status block now names the document
+  (DisplayName + DocumentID) on every response, and solver state is tracked per-document, so an
+  attentive agent can notice a switch after the fact. It still cannot prevent one.
+
+  **Fix shape** (needs requirements work first — hence `stage: requirements`; the options are a real
+  contract decision):
+  - (a) **Explicit pinning** — `gh_document(action='target', id=...)`, with every resolution honoring
+    the pin and a clear error when the pinned doc closes.
+  - (b) **Anchor to the bridge component's document** (`this.OnPingDocument()`) instead of the
+    focused canvas — most stable for unattended runs, but a silent behavior change for existing
+    users who rely on tab-following.
+  - (c) **Leave resolution alone** and require callers to pass a document id explicitly on mutating
+    actions.
+
+  **Open question the requirements pass must answer:** is tab-following a *feature* for interactive
+  human+agent pairing, and only a hazard for unattended runs? If so the answer may be mode-dependent
+  rather than a single global rule.
+
+  Related: the always-on status envelope shipped in the liveness cycle (build-plan.md chunk 03) is
+  the mitigation, not the fix.
+
+- **[MCP-4T8V]** SolverState holds ONE server-snapshot slot but the bridge supports several servers
+  `effort: S · impact: M · area: liveness · source: critic · added: 2026-08-21 · status: open · stage: ready`
+
+  `SolverState.Shared` keeps a single `Func<StatusInputs>` provider; `McpServer.Start` publishes it
+  and `Stop` withdraws it. But `CordycepsComponent` keys `_servers`/`_portOwners` **by port**, and
+  its own error text tells the user to "Change this component's port input to use a different port"
+  — so concurrent servers are the designed remedy, not an edge case. With two bridges up, the
+  second overwrites the first's provider; when the second stops, `ClearServerSnapshot` nulls the
+  slot and the still-listening first server reports `cordyceps.listening: false` on every response.
+
+  Only the cordyceps layer is affected — Rhino/Grasshopper layers and the modal inference are
+  process-wide and stay correct. Fix shape: key providers by port and aggregate, or have the status
+  layer resolve the provider for the port serving the current request.
+
+- **[GHC-6P2M]** Parameter resolution by name-or-index is implemented twice, with different semantics
+  `effort: S · impact: S · area: code-quality · source: critic · added: 2026-08-21 · status: open · stage: ready`
+
+  `GhWireTool.GetParameter` (`src/Cordyceps/Tools/Unified/GhWireTool.cs:506`) and
+  `GhCanvasTool.Modifiers`' `ResolveModifierParam` both resolve a param spec by name or 0-based
+  index, and they already disagree: the modifier copy errors on an out-of-range index while the
+  wire copy falls through to name matching, and only the modifier copy null-guards the spec.
+  CLAUDE.md states name-or-index resolution as a project-wide rule, so the divergence is a contract
+  inconsistency rather than a style nit. Fix shape: one shared helper in `Core/`, host-free enough
+  to unit-test the resolution matrix (the wire copy has no tests today either).
+
+- **[GHS-9K3T]** gh_script(action='info') hand-rolls its param list and omits modifiers/optional
+  `effort: S · impact: S · area: code-quality · source: critic · added: 2026-08-21 · status: open · stage: ready`
+
+  `ToolHelpers.BuildParameterList` and the free-floating branch of `BuildFullComponentInfo` both
+  report a `modifiers` object per param. `GhScriptTool.ActionInfo` builds its own input/output
+  dictionaries instead of calling that helper, so a script component's params report neither
+  `modifiers` nor `optional` — the same field visible on every other component is missing here for
+  no stated reason. This is the shape `learnings.md` warns about under tracing consumers of a shared
+  helper: the helper gained a field and a hand-rolled duplicate silently did not.
+
 ## Promoted
 
 <!-- Items currently being addressed in an active build plan. /backlog pick

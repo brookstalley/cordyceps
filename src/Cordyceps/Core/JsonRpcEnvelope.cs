@@ -26,8 +26,14 @@ namespace Cordyceps.Core
     /// </summary>
     public static class JsonRpcEnvelope
     {
-        // Matches the serialization the transport has always used: compact, and WhenWritingNull so
-        // a genuinely-null "result" member is dropped while a JsonValueKind.Null id survives.
+        // Matches the serialization the transport has always used: compact output, member names
+        // verbatim (no naming policy — payload fields are already authored at their wire names).
+        //
+        // WhenWritingNull does NOT drop a null "result" here, despite how it reads: the condition
+        // applies to POCO properties, and the envelope is a Dictionary<string, object>, whose values
+        // it does not govern. That is the behavior we want — JSON-RPC 2.0 requires a response to
+        // carry either "result" or "error", so omitting a null result would emit a malformed
+        // response. Pinned by JsonRpcWireFormatTests; do not "fix" this to omit nulls.
         private static readonly JsonSerializerOptions SerializerOptions = new JsonSerializerOptions
         {
             WriteIndented = false,

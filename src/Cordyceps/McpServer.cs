@@ -44,6 +44,18 @@ namespace Cordyceps
         private DateTime _startTime;
 
         /// <summary>
+        /// Cached so publish and withdraw hand the status registry the SAME delegate instance —
+        /// the registry compares by reference, and converting a method group creates a fresh
+        /// delegate every time, which would leave a stopped server's provider registered forever.
+        /// </summary>
+        private readonly Func<Core.StatusInputs> _statusProvider;
+
+        public McpServer()
+        {
+            _statusProvider = CurrentStatusInputs;
+        }
+
+        /// <summary>
         /// Lifecycle single source of truth (MCP-9F3Q). All lifecycle reads and writes go
         /// through this field; <see cref="IsRunning"/> is derived from it. Written on the UI
         /// thread (Start, and Stop's synchronous half) and by Stop()'s background teardown task
@@ -127,6 +139,11 @@ namespace Cordyceps
 
                 _state = Core.ServerState.Running;
                 _startTime = DateTime.UtcNow;
+
+                // Publish our counters so tool classes, which hold no server reference, can report
+                // the Cordyceps layer of the status block without a back-reference into this type.
+                Core.SolverState.Shared.PublishServerSnapshot(_statusProvider);
+
                 Core.DebugLog.WriteLine($"MCP server started on http://127.0.0.1:{_port}/mcp", "INFO", 0);
             }
             catch (Exception ex) // prawduct:allow prawduct/broad-except -- startup boundary: any failure (bind/reflection) must leave the server cleanly not-running with an actionable reason, never crash the host component's solve
@@ -216,6 +233,9 @@ namespace Cordyceps
                     // State transition BEFORE disposal: if Dispose ever threw, the instance
                     // must not be left stuck in Stopping with the context still pinned.
                     _context = null;
+                    // Only withdraws if we are still the published provider, so a replacement
+                    // server that started meanwhile keeps reporting.
+                    Core.SolverState.Shared.ClearServerSnapshot(_statusProvider);
                     _state = Core.ServerState.Stopped;
                     Core.DebugLog.WriteLine($"MCP server (port {_port}) stopped", "INFO", 0);
                     cts?.Dispose();
@@ -416,38 +436,38 @@ namespace Cordyceps
         }
 
         /// <summary>
-        /// Handle health check requests
+        /// Handle health check requests.
+        ///
+        /// <para>Answers entirely from cached state. It previously read
+        /// <c>Instances.ActiveCanvas?.Document</c> directly on this HTTP worker thread — a
+        /// Grasshopper read off the UI thread, and one that returns nothing useful precisely when
+        /// the host is wedged. The document identity now comes from the UI-thread heartbeat, which
+        /// is both thread-correct and the only way this endpoint can keep answering while the UI
+        /// thread is blocked.</para>
         /// </summary>
         private async Task HandleHealthCheckAsync(HttpListenerResponse response)
         {
             response.StatusCode = 200;
             response.ContentType = "application/json";
 
-            // Get active document name if available
-            string documentName = null;
-            try
-            {
-                var doc = Grasshopper.Instances.ActiveCanvas?.Document;
-                documentName = doc?.DisplayName;
-            }
-            catch (Exception ex) // prawduct:allow prawduct/broad-except -- best-effort status read; the health endpoint must still report if the document name is unavailable
-            {
-                Core.DebugLog.Debug($"Could not read active document name for status: {ex.Message}");
-            }
+            var status = Core.SolverState.Shared.Derive(CurrentStatusInputs());
 
-            var uptimeSeconds = (int)(DateTime.UtcNow - _startTime).TotalSeconds;
-
-            var health = JsonSerializer.Serialize(new
+            var health = new Newtonsoft.Json.Linq.JObject
             {
-                status = "ok",
-                server = "Cordyceps MCP",
-                transport = "streamable-http",
-                toolCount = _tools.Count,
-                commandCount = CommandCount,
-                uptimeSeconds,
-                activeDocument = documentName
-            });
-            var bytes = Encoding.UTF8.GetBytes(health);
+                // "ok" means the HTTP endpoint answered. Whether the HOST is healthy is the
+                // three-layer block below — conflating the two is what made a wedged Rhino
+                // indistinguishable from a healthy one.
+                ["status"] = "ok",
+                ["server"] = "Cordyceps MCP",
+                ["transport"] = "streamable-http",
+                ["toolCount"] = _tools.Count,
+                ["commandCount"] = status.CommandCount,
+                ["uptimeSeconds"] = status.UptimeSeconds,
+                ["activeDocument"] = status.DocumentName,
+                ["host"] = Core.StatusEnvelope.ToFullJson(status),
+            };
+
+            var bytes = Encoding.UTF8.GetBytes(health.ToString(Newtonsoft.Json.Formatting.None));
             await response.OutputStream.WriteAsync(bytes, 0, bytes.Length);
             response.Close();
         }
@@ -619,13 +639,25 @@ namespace Cordyceps
 READ FIRST: gh://docs/getting-started (use resources/read)
 
 UNIFIED TOOLS (use action='help' for details):
-- gh_canvas: add, delete, move, rename, find, search, list, info, bounds, validate, constant, bake, zoom, view, get, set, config, preview, enable, group_create, group_delete, group_add, group_remove, group_list, group_rename, group_color, group_move, zoomable
+- gh_canvas: add, delete, move, rename, find, search, list, info, bounds, validate, constant, bake, zoom, view, get, set, config, preview, enable, group_create, group_delete, group_add, group_remove, group_list, group_rename, group_color, group_move, zoomable, modifier
 - gh_wire: connect, disconnect, list, clear, validate
-- gh_document: info, save, clear, solver, recompute, undo, redo (both disabled — use snapshot/revert), snapshot, revert, snapshots, snapshot_delete (max 20 snapshots kept; oldest evicted), capture_canvas, capture_viewport, capture_region, capture_views
+- gh_document: info, save, clear, solver, recompute (rejected while a solution is running), undo, redo (both disabled — use snapshot/revert), snapshot, revert, snapshots, snapshot_delete (max 20 snapshots kept; oldest evicted), capture_canvas, capture_viewport, capture_region, capture_views
 - gh_script: get, set, configure, info
-- gh_inspect: status, outputs, trace, disconnected, geometry, log, reports, categories, docs
+- gh_inspect: connection, status, outputs, trace, disconnected, geometry, log, reports, categories, docs
 - rhino_scene: objects, select, deselect, set_layer, set_name, layers, layer_create, layer_set, layer_delete, hide, show, delete, set_color, bbox, place_image, script
 - rhino_render: display, camera, zoom, modes, render, settings, ground, sun, skylight, view_save, view_load, view_list, view_delete, light_add, light_list, light_set, light_delete, material_list, material_library, material_instantiate, material_create, material_texture, material_apply, material_delete, env_list, env_current, env_set, env_create, env_delete
+
+STATUS BLOCK: every tool response carries a compact ""status"" object — {document, ui, solving}, plus
+solving_since / modal_inferred / solving_document / hint when something is off. ""document"" is the
+.gh file the call acted on; check it, because tools follow whichever canvas tab the human focused.
+""solving_document"" appears only when a DIFFERENT open definition is the one holding the solver.
+
+BUSY IS NOT DEAD. If a call is slow or silent, call gh_inspect(action='connection') — it answers from
+cached state and never touches the document, so it replies even when everything else is stuck:
+- ui='blocked' + solving=true  -> Grasshopper is mid-solve. WAIT and retry; heavy solves take minutes.
+- modal_inferred=true          -> a modal dialog is open in Rhino. Only a HUMAN can clear it. Stop
+                                  retrying and tell the user what to dismiss.
+- ui='responsive'              -> the host is fine; treat any error as a real tool error.
 
 Key points:
 - Disable solver: gh_document(action='solver', enabled=false)
@@ -677,7 +709,7 @@ Resources: gh://docs/getting-started, gh://docs/data-trees, gh://docs/common-err
                     new InvalidOperationException("MCP server is shutting down; the request was not processed."));
                 return new
                 {
-                    content = new[] { new { type = "text", text = shuttingDown } },
+                    content = new[] { new { type = "text", text = WithStatus(shuttingDown) } },
                     isError = true
                 };
             }
@@ -739,18 +771,63 @@ Resources: gh://docs/getting-started, gh://docs/data-trees, gh://docs/common-err
                 var errorText = Core.McpResultFormatter.FormatExceptionResult(ex);
                 return new
                 {
-                    content = new[] { new { type = "text", text = errorText } },
+                    // A failure is exactly when the caller most needs to know whether the host was
+                    // busy, wedged, or fine — so the status block rides on errors too.
+                    content = new[] { new { type = "text", text = WithStatus(errorText) } },
                     isError = true
                 };
             }
 
             // Format as MCP tool result. isError reflects the tool's own success flag
             // (see Core.McpResultFormatter) so clients see a failed tool result as an error.
-            var resultText = result?.ToString() ?? "";
+            // Status is folded in FIRST so isError is computed from the payload the caller
+            // actually receives.
+            var resultText = WithStatus(result?.ToString() ?? "");
             return new
             {
                 content = new[] { new { type = "text", text = resultText } },
                 isError = Core.McpResultFormatter.IsErrorResult(resultText)
+            };
+        }
+
+        /// <summary>
+        /// The single choke point where every tool result gains its compact status block. Doing it
+        /// here rather than in each tool is what makes the block always-on: 19 tool files cannot
+        /// drift out of sync with one they never mention.
+        ///
+        /// <para>Never throws and never blocks. It reads only cached liveness state — no marshaling
+        /// to the UI thread, no document lock — and any failure returns the original result
+        /// untouched, because a diagnostic that can break a tool result is worse than no
+        /// diagnostic.</para>
+        /// </summary>
+        private string WithStatus(string resultText)
+        {
+            try
+            {
+                return Core.StatusEnvelope.InjectCompact(resultText, Core.SolverState.Shared.Derive());
+            }
+            catch (Exception ex) // prawduct:allow prawduct/broad-except -- the status block is advisory: whatever goes wrong deriving or injecting it, the caller must still receive the tool's own result
+            {
+                Core.DebugLog.WriteLine($"Status injection failed: {ex.Message}", "WARN", 1);
+                return resultText;
+            }
+        }
+
+        /// <summary>
+        /// This server's own counters for the Cordyceps layer of the status block. Reads volatile
+        /// fields only — it is invoked on HTTP worker threads while answering, so it must stay
+        /// allocation-cheap and lock-free.
+        /// </summary>
+        private Core.StatusInputs CurrentStatusInputs()
+        {
+            var running = _state == Core.ServerState.Running;
+            return new Core.StatusInputs
+            {
+                ServerListening = running,
+                Port = _port,
+                InFlightRequests = _inFlight.Count,
+                UptimeSeconds = running ? (int)(DateTime.UtcNow - _startTime).TotalSeconds : 0,
+                CommandCount = CommandCount,
             };
         }
 

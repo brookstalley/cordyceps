@@ -24,12 +24,26 @@ namespace Cordyceps.Tools.Unified
             Description = "Diagnostic and inspection operations for debugging definitions",
             Actions = new Dictionary<string, ActionInfo>
             {
+                ["connection"] = new ActionInfo
+                {
+                    Name = "connection",
+                    Description = "Is the bridge alive, busy, or blocked? Answers from cached state without touching the Grasshopper document, so it replies even while the Rhino UI thread is wedged",
+                    Example = "action='connection'",
+                    Tips = new[]
+                    {
+                        "Use this when a call times out or goes quiet: it is the only action guaranteed to answer.",
+                        "rhino.ui='blocked' + grasshopper.solving=true means BUSY — wait and retry.",
+                        "rhino.modal_inferred=true means a modal dialog is open in Rhino and only a human can clear it — stop retrying and say so.",
+                        "Every other tool response already carries a compact 'status' block; use this action when you need the full picture or the last call returned nothing."
+                    }
+                },
                 ["status"] = new ActionInfo
                 {
                     Name = "status",
                     Description = "Get status of all components (OK, ERROR, WARNING, DISCONNECTED)",
                     Optional = new[] { "category" },
-                    Example = "action='status' OR action='status', category='Curve'"
+                    Example = "action='status' OR action='status', category='Curve'",
+                    Tips = new[] { "Returns success=false with a busy/blocked status instead of hanging when the Rhino UI thread is not responding — use action='connection' to see why." }
                 },
                 ["outputs"] = new ActionInfo
                 {
@@ -97,7 +111,8 @@ namespace Cordyceps.Tools.Unified
             Notes = new[]
             {
                 "Use 'status' to quickly identify errors and warnings",
-                "Use 'trace' to understand data flow through your definition"
+                "Use 'trace' to understand data flow through your definition",
+                "Use 'connection' when a call is slow or silent — it distinguishes a busy solver from a host blocked by a modal dialog"
             }
         };
 
@@ -106,7 +121,7 @@ namespace Cordyceps.Tools.Unified
             _context = context;
         }
 
-        [McpServerTool, Description("Inspection operations. Actions: status|outputs|trace|disconnected|geometry|log|reports|categories|docs|help")]
+        [McpServerTool, Description("Inspection operations. Actions: connection|status|outputs|trace|disconnected|geometry|log|reports|categories|docs|help")]
         public string GhInspect(
             [Description("Action to perform")] string action,
             [Description("Component GUID")] string id = null,
@@ -138,6 +153,7 @@ namespace Cordyceps.Tools.Unified
 
             return action.ToLowerInvariant() switch
             {
+                "connection" => ActionConnection(),
                 "status" => ActionStatus(category),
                 "outputs" => ActionOutputs(id),
                 "trace" => ActionTrace(id, direction),
@@ -151,8 +167,27 @@ namespace Cordyceps.Tools.Unified
             };
         }
 
+        /// <summary>
+        /// The connection probe. Deliberately does NOT call <c>_context.ExecuteOnUiThread</c>: that
+        /// is what takes the document lock and marshals onto the Rhino UI thread, and this is the
+        /// one call that must answer <em>while that thread is wedged</em>. Everything it reports
+        /// comes from <see cref="SolverState"/>, which the UI thread writes and any thread can read.
+        /// Keep it that way — a probe that can block is not a probe.
+        /// </summary>
+        private string ActionConnection()
+            => StatusEnvelope.ProbeResult(SolverState.Shared.Derive());
+
         private string ActionStatus(string category)
         {
+            // Enumerating component status needs the UI thread. If that thread is not responding,
+            // marshaling would hang until the document lock's timeout (or, behind a modal dialog,
+            // until a human intervenes) — the unbounded silence this feature exists to remove.
+            // Answer immediately with the reason instead. Checked BEFORE marshaling, from cached
+            // state only.
+            var liveness = SolverState.Shared.Derive();
+            if (liveness.Ui == UiLiveness.Blocked)
+                return StatusEnvelope.BusyResult(liveness);
+
             return _context.ExecuteOnUiThread(() =>
             {
                 if (!ToolHelpers.TryGetActiveDocument(_context, out var doc, out var error))

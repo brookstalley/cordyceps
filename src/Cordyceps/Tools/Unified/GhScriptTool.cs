@@ -43,7 +43,8 @@ namespace Cordyceps.Tools.Unified
                         "Renamed/removed params lose connections — reported in lostConnections",
                         "Use gh_wire(action='connect', connections='<lostConnections>') to restore",
                         "Script language is preserved automatically; start code with '#! python 3' or '// #! csharp' to set it explicitly",
-                        "A bare unified 'Script' component (no language picked) returns a languageWarning until code starts with a directive — add '#! python 3' or '// #! csharp'"
+                        "A bare unified 'Script' component (no language picked) returns a languageWarning until code starts with a directive — add '#! python 3' or '// #! csharp'",
+                        "Components that expose their code as a visible input parameter can't be written directly — the error says so and nothing is changed; remove that parameter, or feed the code through it with gh_wire"
                     }
                 },
                 ["configure"] = new ActionInfo
@@ -60,7 +61,8 @@ namespace Cordyceps.Tools.Unified
                         "Params matching by name keep their wires (like 'set'); renamed/removed params lose connections, reported in lostConnections — pass it to gh_wire(action='connect') to restore",
                         "Script language is preserved automatically; start code with '#! python 3' or '// #! csharp' to set it explicitly",
                         "A bare unified 'Script' component (no language picked) returns a languageWarning until code starts with a directive — add '#! python 3' or '// #! csharp'",
-                        "When 'code' is provided the response includes codeSet (bool); if setting the source fails after params were applied, success is false, codeSet=false, and sourceError holds the reason — the params DID change"
+                        "When 'code' is provided the response includes codeSet (bool); if setting the source fails after params were applied, success is false, codeSet=false, and sourceError holds the reason — the params DID change",
+                        "Components that expose their code as a visible input parameter can't be written directly — sourceError says so and the code is left unchanged"
                     }
                 },
                 ["info"] = new ActionInfo
@@ -79,6 +81,7 @@ namespace Cordyceps.Tools.Unified
             Notes = new[]
             {
                 "Works with C# Script and Python 3 Script components",
+                "Source is written through the component's SetSource method when it has one, otherwise its writable Code property; a component with neither fails with an error naming the type and what was probed — never a silent no-op",
                 "access values: 'item' (default), 'list', 'tree'"
             }
         };
@@ -168,10 +171,8 @@ namespace Cordyceps.Tools.Unified
 
                 try
                 {
-                    dynamic scriptComp = component;
-
                     var finalSource = PreserveLanguageDirective(component, code);
-                    scriptComp.SetSource(finalSource);
+                    WriteScriptSource(component, finalSource);
 
                     // Surgically sync params instead of SetParametersFromScript(),
                     // which rebuilds all params and destroys cluster input hooks.
@@ -291,7 +292,7 @@ namespace Cordyceps.Tools.Unified
                             try
                             {
                                 var finalSource = PreserveLanguageDirective(component, code);
-                                scriptComp.SetSource(finalSource);
+                                WriteScriptSource(component, finalSource);
                                 languageWarning = ScriptDirective.LanguageWarning(component.GetType().Name, finalSource);
                                 codeSet = true;
                                 message += ", source set";
@@ -320,7 +321,7 @@ namespace Cordyceps.Tools.Unified
                         try
                         {
                             var finalSource = PreserveLanguageDirective(component, code);
-                            scriptComp.SetSource(finalSource);
+                            WriteScriptSource(component, finalSource);
                             languageWarning = ScriptDirective.LanguageWarning(component.GetType().Name, finalSource);
                             // Best-effort param sync after SetSource: not all script-component types
                             // expose every hook, so a failure here is non-fatal — log at Debug and continue.
@@ -693,7 +694,35 @@ namespace Cordyceps.Tools.Unified
             var typeName = component.GetType().Name;
             if (typeName.Contains("Script") || typeName.Contains("Python") || typeName.Contains("CSharp"))
                 return true;
-            return component.GetType().GetMethod("SetSource") != null;
+            // Last resort: anything Cordyceps can actually write source to counts. This probes the
+            // Code-property fallback as well as SetSource, so a script component that exposes only
+            // Code (and whose type name gives nothing away) isn't rejected here before the write
+            // cascade ever gets a chance to run.
+            return ScriptSourceWriter.CanWrite(component);
+        }
+
+        /// <summary>
+        /// Write <paramref name="finalSource"/> to a script component through
+        /// <see cref="ScriptSourceWriter"/>'s probe cascade, logging the probe trace and throwing
+        /// on failure so each call site's existing error reporting carries the actionable message.
+        /// </summary>
+        /// <remarks>
+        /// <paramref name="finalSource"/> must already have been through
+        /// <see cref="PreserveLanguageDirective"/>: the write replaces the whole body, so a source
+        /// missing its language directive strips the component's language and makes it fail at
+        /// solve time with "Can not determine input code language".
+        /// </remarks>
+        private static void WriteScriptSource(IGH_DocumentObject component, string finalSource)
+        {
+            var result = ScriptSourceWriter.Write(component, finalSource);
+
+            foreach (var probe in result.Probes)
+                DebugLog.Debug($"WriteScriptSource: {probe}");
+
+            if (!result.Success)
+                throw new InvalidOperationException(result.Error);
+
+            DebugLog.Info($"WriteScriptSource: source set on {component.GetType().Name} via {result.Method}");
         }
 
         private string TryGetScriptSource(IGH_DocumentObject component)

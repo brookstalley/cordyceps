@@ -38,6 +38,19 @@ Compare branch counts. Mismatched branch counts cause cross-reference behavior.
 - Check if you need to **Graft** an input
 - Consider using **Path Mapper** for complex restructuring
 
+### Applying Flatten / Graft
+Set the modifier **on the port itself** — that is how these are written by hand, and it
+keeps the canvas clean:
+
+```
+gh_canvas(action='modifier', id='<guid>', side='input', param='P', mapping='graft')
+```
+
+Read what is already applied with `gh_canvas(action='modifier', id=..., side=..., param=...)`,
+or see every port at once in `gh_canvas(action='info')` under each parameter's `modifiers`.
+Inserting `Graft Tree` / `Flatten Tree` components still works and is the right choice when
+the restructuring needs to be visible as a step in the definition.
+
 ### If data is in wrong order:
 - Use **Flip Matrix** to swap rows/columns
 - Or **Shift Path** to adjust depth

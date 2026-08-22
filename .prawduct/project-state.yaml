@@ -377,7 +377,7 @@ build_state:
 # (artifacts/build-plan.md) is retained until the next develop->main release per
 # the gitflow plan lifecycle; it has no derived `## Status` block, so repointing
 # early loses nothing for release regen-views.
-active_build_plan: artifacts/build-plan-reliability.md
+active_build_plan: artifacts/build-plan.md
 
 # =============================================================================
 # DERIVED VIEWS (enabled by default, v1.4+)

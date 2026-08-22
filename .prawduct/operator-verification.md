@@ -263,3 +263,101 @@ the build host, so the logic was review-verified, not linted.
   publishes the GitHub Release with the `.gha`, and pushes to yak.
 - **Alignment:** after publish, `develop` and `main` have identical trees (no back-merge needed); the next
   `prep` starts clean.
+
+## VRF-011 — issues-2026-08-21 Chunk 04 — `gh_canvas(action='modifier')` data modifiers
+
+**Status:** pending
+**Added:** 2026-08-21 (issues-2026-08-21, Chunk 04 — GitHub issue #27)
+**Where to verify:** Rhino 8 + Grasshopper with the Cordyceps component placed and an MCP client connected.
+
+**Why this needs a human:** the parse/plan half (`Core/DataModifiers`) is unit-tested in CI, but the
+half that matters to a user is host-bound: whether setting `IGH_Param.DataMapping`/`Simplify`/`Reverse`
+actually changes downstream tree structure, and whether Grasshopper renders the modifier icon on the
+port. Neither can run without a live Rhino.
+
+**Verify:**
+- **Graft changes the data, not just the flag:** place a `Move` component, feed its Geometry input a
+  list of N points and its Motion input a list of M vectors. Baseline output count is
+  `max(N, M)` (index-matched). Then `gh_canvas(action='modifier', id=<move>, side='input',
+  param='Geometry', mapping='graft')`. Expected: output becomes N branches of M items (N×M total),
+  and the graft icon renders on the Geometry port.
+- **Read mode round-trips:** call `action='modifier'` with only `id`/`side`/`param` — the returned
+  `mapping` string must feed straight back in as a `mapping=` argument and be accepted.
+- **`info` reports it:** `gh_canvas(action='info', id=<move>)` shows `modifiers` on every param, and
+  the grafted port reports `"mapping": "graft"`. This is the observability half of the issue — an
+  agent could not previously detect a modifier at all.
+- **Partial update leaves the rest alone:** set `simplify=true` on a param that already has
+  `mapping='graft'`; confirm the graft survives (omitted fields must not reset).
+- **Free-floating params:** drop a bare `Param_Point` on the canvas and set a modifier on it directly
+  (no component involved) — it is its own target, a separate code path from component ports.
+- **Cluster safety:** repeat the graft inside a cluster editor and confirm the cluster's input hooks
+  survive (the action uses `ExpireSolution(false)`; `true` is what historically orphans clusters).
+
+## VRF-012 — issues-2026-08-21 Chunks 02/03 — solution safety, heartbeat, connection probe
+
+**Status:** pending
+**Added:** 2026-08-21 (issues-2026-08-21, Chunks 02-03 — GitHub issues #30, #29)
+**Where to verify:** Rhino 8 + Grasshopper, Cordyceps placed, an MCP client connected, and a
+definition containing a deliberately slow script component (~60s per solve).
+
+**Why this needs a human:** the state model and staleness classification are unit-tested in CI, but
+every claim that matters is host-bound — whether the modal dialog still appears, whether the
+heartbeat actually reflects a wedged UI thread, and whether the probe really answers while Rhino is
+blocked. None of it can run without a live Rhino.
+
+**Verify:**
+- **The modal no longer appears (the core fix):** start a long solve, then issue several MCP calls
+  during it (any tool — the old refresh fired on every call, not just `recompute`). Expected: no
+  "The 'Cordyceps (MCP)' object expired during a solution" dialog, and the canvas keeps solving.
+- **The probe answers while the UI thread is blocked:** during that same solve, call
+  `gh_inspect(action='connection')`. Expected: a prompt reply with `solving: true` and a plausible
+  `solving_since` — NOT a timeout. This is the whole point of the chunk; if it hangs, the path is
+  marshaling somewhere it must not.
+- **Busy recompute is refused, not queued:** during the solve, `gh_document(action='recompute')`
+  must return `success:false` with `solving:true`, and must NOT trigger a second solve afterwards.
+- **Heartbeat cadence and recovery:** with the canvas idle, `connection` should report the UI thread
+  responsive. Then block the UI thread (an infinite-loop script) and confirm it flips to blocked
+  within a few seconds — and, critically, that it returns to healthy after the block clears rather
+  than latching (a dropped stamp must expire, not freeze the heartbeat forever).
+- **Multi-document reporting:** open two definitions, put the bridge in one, start a long solve in
+  the OTHER. Expected: the solve is still recorded (documents share one UI thread, so a solve in a
+  bridge-less document must not read as "UI blocked, nothing solving"), and `solving_document` names
+  the solving one distinctly from the document the call acted on.
+- **Our own long operations must NOT read as a modal dialog:** with no solve running, issue a
+  deliberately slow document-touching call (a large bake, `capture_views`, or a save of a heavy
+  definition) that runs well past the staleness window. During it, call
+  `gh_inspect(action='connection')` from a second client. Expected: `ui` reports blocked (honest —
+  the thread really is busy) but `modal_inferred` is **false**, and the hint names a Cordyceps
+  operation rather than telling the caller to fetch a human. Then confirm `recompute` is refused
+  for the solving/blocked reason and NOT with a modal explanation. A `modal_inferred: true` here
+  is the regression this bullet exists to catch: tool bodies run on the UI thread, so they starve
+  the heartbeat exactly as a dialog does.
+- **Known limitation to confirm, not a bug:** `modal_inferred` will NOT fire for the #30 dialog
+  itself, because that dialog appears *inside* a solve, so the solve never ends and it classifies as
+  "busy solving". Confirm the inference does fire for an ordinary modal raised outside a solve
+  (e.g. a save dialog).
+- **Status block on every response:** confirm each tool result carries the compact `status` object
+  and that it names the document actually acted on.
+
+## VRF-013 — issues-2026-08-21 Chunk 05 — script source write cascade
+
+**Status:** pending
+**Added:** 2026-08-21 (issues-2026-08-21, Chunk 05 — GitHub issue #28)
+**Where to verify:** Rhino 8 + Grasshopper with a stock Script component and a GhPython component.
+
+**Why this needs a human:** the cascade's decision logic is unit-tested against fakes, but which
+branch a REAL Rhino 8 script component takes is only observable live.
+
+**Verify:**
+- **Rhino 8 still uses `SetSource`:** `gh_script(action='set')` on a stock Script component, with
+  DebugLevel at Info. The `WriteScriptSource: source set on X via SetSourceMethod` log line must
+  name the `SetSource` path. If it names the `Code` fallback instead, the `SetSource` overload
+  selection is wrong for this host and silently degraded — this is the specific risk worth checking.
+- **Language directive survives:** set a Python body without a `#!` line and confirm the component
+  still solves (no "Can not determine input code language").
+- **Visible code input is actionable:** wire a string into a script component's code parameter so
+  the code input becomes visible, then `set`. Expected: a specific error naming the visible code
+  input — not an opaque `InvalidOperationException`, and no partial write.
+- **`IsScriptComponent` widening did not false-positive:** confirm ordinary non-script components
+  are still rejected by `gh_script` (the gate now also accepts any component with a public writable
+  `string Code` property).

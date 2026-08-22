@@ -145,11 +145,11 @@ Cordyceps provides **7 tools with over 100 actions** — consolidated to minimiz
 
 | Tool | Description |
 |------|-------------|
-| `gh_canvas` | Components, values, groups, baking, variable parameters |
+| `gh_canvas` | Components, values, groups, baking, variable parameters, data modifiers (flatten/graft/simplify/reverse) |
 | `gh_wire` | Connection management |
 | `gh_document` | Save, clear, snapshots (max 20 kept, oldest evicted), solver control, canvas capture (undo/redo are disabled — use snapshots) |
 | `gh_script` | Script component configuration |
-| `gh_inspect` | Status, outputs, data tracing, debugging |
+| `gh_inspect` | Connection/liveness probe, status, outputs, data tracing, debugging |
 
 ### Rhino
 

@@ -19,11 +19,44 @@
 
 | Symptom | Cause | Fix |
 |---------|-------|-----|
-| N×M expected, got max(N,M) | Both inputs flat | Graft one input |
-| Unexpected combinations | Mismatched structures | Align with Graft/Flatten |
+| N×M expected, got max(N,M) | Both inputs flat | Graft one input: `gh_canvas(action='modifier', id='...', param='B', mapping='graft')` |
+| Unexpected combinations | Mismatched structures | Align with Graft/Flatten; read current state with `gh_canvas(action='info')` → `modifiers` |
 | Wrong item count | Access mode mismatch | Check Item vs List mode |
 
 See `gh://docs/data-trees` for details.
+
+## Is It Busy, Or Is It Dead?
+
+Every tool response carries a compact `status` block:
+
+```json
+"status": {"document": "wall-study.gh", "ui": "responsive", "solving": false}
+```
+
+When something is off it also carries `solving_since`, `modal_inferred`, `solving_document`, and a
+`hint`. `document` is the `.gh` file the call acted on — tools follow whichever canvas tab the human
+focused, so check it if results look like they belong to another file. `solving_document` appears
+only when a *different* open definition is the one holding the solver: all open definitions share
+the single Rhino UI thread, so a heavy solve in a file you are not touching still blocks you.
+
+If a call is slow, times out, or returns nothing at all, call `gh_inspect(action='connection')`.
+It answers from cached state and never touches the Grasshopper document, so it replies even when
+every other call is stuck.
+
+| What you see | What it means | What to do |
+|---|---|---|
+| `ui: "responsive"` | The host is fine | Treat any error as a real tool error, not a host problem |
+| `ui: "blocked"`, `solving: true` | Grasshopper is mid-solve and holding the UI thread | **Wait.** Heavy solves take minutes. Re-probe with `connection`; do not retry in a tight loop |
+| `modal_inferred: true` | The UI thread is stuck with nothing solving — a modal dialog is open in Rhino | **Only a human can clear it.** Stop retrying and tell the user to check Rhino for a dialog |
+| `ui: "unknown"` | No heartbeat recorded yet (the component was just placed) | Retry in a second |
+
+`gh_document(action='recompute')` refuses while a solution is running — or while a modal dialog holds the UI thread — rather than queueing or
+blocking, and returns `success: false` with `solving: true` and `solving_since`. That is not a
+failure to fix — it means "already working, come back". `gh_inspect(action='status')` answers the
+same way instead of hanging when the UI thread is not responding.
+
+The `GET /health` endpoint carries the same three-layer picture under `host`, for a caller outside
+the MCP protocol.
 
 ## Solver Errors
 
@@ -49,6 +82,9 @@ See `gh://docs/data-trees` for details.
 | "Type not found" | Missing import | C#: `using Rhino.Geometry;` / Python: `import Rhino.Geometry as rg` |
 | Connections lost after `gh_script set` | Param renamed or removed | Check `lostConnections` in response, re-wire with `gh_wire(action='connect')` |
 | "Can not determine input code language" | Directive-less body set on a bare unified **Script** component, which has no language until one is given | `gh_script(set)` preserves an existing directive automatically; for a bare Script component with no language yet it now returns a `languageWarning` in the response. Start your `code` with `#! python 3` (or `// #! csharp`) as line 1 and call `set` again — this also recovers a component already in this state. (The dedicated `C# Script` / `Python 3 Script` components carry a concrete language and don't need a directive.) |
+| "Cannot set source on 'X': the component's code input parameter is visible" | The component exposes its code as a wired input parameter, so its source is driven by that wire and cannot be assigned directly | Disconnect and remove the component's code input parameter, then retry `gh_script(action='set')` — or feed the code through that parameter with `gh_wire` instead. Nothing was written; the component is unchanged. |
+| "Cannot set source on 'X': no writable source member was found" | The component has neither a `SetSource(string)` method nor a writable `Code` property — it is probably not a script component, or its script API is one Cordyceps cannot write to | Confirm the target with `gh_script(action='info')`; the response's `componentType` names what was actually resolved. Reading source may still work even when writing does not. |
+| `configure` returns `success:false` with `codeSet:false` and a `sourceError` | The parameter changes were applied but the source write failed | The component's params reflect the new configuration and its code is unchanged — a detectable partial apply. Fix the cause named in `sourceError`, then call `gh_script(action='set')` with just the code. |
 
 ## Type Marshaling
 

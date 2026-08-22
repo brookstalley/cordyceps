@@ -63,3 +63,14 @@ __pycache__/
 
 # Claude memory folder accidentally written to repo root; belongs in ~/.claude
 memory/
+
+# Prawduct session files
+.prawduct/.bug-inbox
+.prawduct/.critic-partials/
+.prawduct/.critic-partials-archive/
+.prawduct/.handoff-notes.md
+.prawduct/.session-base-tree
+
+# Agent worktrees created by Claude Code subagents — transient, and an untracked
+# directory here aborts scripts/release.sh require_clean_tree.
+.claude/worktrees/
