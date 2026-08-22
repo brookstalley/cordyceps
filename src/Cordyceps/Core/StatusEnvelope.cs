@@ -52,6 +52,10 @@ namespace Cordyceps.Core
 
             if (status.SolvingSince != null)
                 obj["solving_since"] = Iso(status.SolvingSince);
+            // Named only when a DIFFERENT file is the one solving — otherwise it is noise on every
+            // response, and when it does appear it is the thing the caller needs to know.
+            if (status.SolvingDocumentName != null && status.SolvingDocumentName != status.DocumentName)
+                obj["solving_document"] = status.SolvingDocumentName;
             if (status.ModalInferred)
                 obj["modal_inferred"] = true;
             if (!status.IsHealthy)
@@ -88,10 +92,17 @@ namespace Cordyceps.Core
                 {
                     ["solving"] = status.Solving,
                     ["solving_since"] = Iso(status.SolvingSince),
+                    // "document" is the focused one — what tools act on. "solving_document" is
+                    // whichever definition is holding the UI thread, which need not be the same.
                     ["document"] = new JObject
                     {
                         ["name"] = Str(status.DocumentName),
                         ["id"] = Str(status.DocumentId?.ToString()),
+                    },
+                    ["solving_document"] = new JObject
+                    {
+                        ["name"] = Str(status.SolvingDocumentName),
+                        ["id"] = Str(status.SolvingDocumentId?.ToString()),
                     },
                 },
                 ["cordyceps"] = new JObject
@@ -103,6 +114,41 @@ namespace Cordyceps.Core
                     ["command_count"] = status.CommandCount,
                 },
             };
+        }
+
+        /// <summary>
+        /// The tool result for a deliberate liveness probe: <c>success:true</c> plus the full
+        /// three-layer block. Always a success, however unhealthy the host is — the probe's job is
+        /// to <em>report</em> a wedged host, so reporting one is the probe working, not failing.
+        /// </summary>
+        public static string ProbeResult(HostStatus status)
+        {
+            var payload = ToFullJson(status) ?? new JObject();
+            payload.AddFirst(new JProperty("success", true));
+            return payload.ToString(Formatting.None);
+        }
+
+        /// <summary>
+        /// The tool result for an action that refuses to run because the host is busy or blocked.
+        ///
+        /// <para>Refusing beats queueing or blocking: a hidden queue gives the caller no completion
+        /// signal, and blocking reproduces exactly the unbounded silence this feature exists to
+        /// remove. The caller gets <c>solving</c> / <c>solving_since</c> so it can decide whether
+        /// to wait, and the full status block so it can tell "wait" from "fetch a human".</para>
+        /// </summary>
+        public static string BusyResult(HostStatus status)
+        {
+            if (status == null)
+                return "{\"success\":false,\"error\":\"The host is busy.\"}";
+
+            return new JObject
+            {
+                ["success"] = false,
+                ["error"] = Str(status.Hint),
+                ["solving"] = status.Solving,
+                ["solving_since"] = Iso(status.SolvingSince),
+                ["status"] = ToFullJson(status),
+            }.ToString(Formatting.None);
         }
 
         /// <summary>

@@ -25,6 +25,39 @@
 
 See `gh://docs/data-trees` for details.
 
+## Is It Busy, Or Is It Dead?
+
+Every tool response carries a compact `status` block:
+
+```json
+"status": {"document": "wall-study.gh", "ui": "responsive", "solving": false}
+```
+
+When something is off it also carries `solving_since`, `modal_inferred`, `solving_document`, and a
+`hint`. `document` is the `.gh` file the call acted on — tools follow whichever canvas tab the human
+focused, so check it if results look like they belong to another file. `solving_document` appears
+only when a *different* open definition is the one holding the solver: all open definitions share
+the single Rhino UI thread, so a heavy solve in a file you are not touching still blocks you.
+
+If a call is slow, times out, or returns nothing at all, call `gh_inspect(action='liveness')`.
+It answers from cached state and never touches the Grasshopper document, so it replies even when
+every other call is stuck.
+
+| What you see | What it means | What to do |
+|---|---|---|
+| `ui: "responsive"` | The host is fine | Treat any error as a real tool error, not a host problem |
+| `ui: "blocked"`, `solving: true` | Grasshopper is mid-solve and holding the UI thread | **Wait.** Heavy solves take minutes. Re-probe with `liveness`; do not retry in a tight loop |
+| `modal_inferred: true` | The UI thread is stuck with nothing solving — a modal dialog is open in Rhino | **Only a human can clear it.** Stop retrying and tell the user to check Rhino for a dialog |
+| `ui: "unknown"` | No heartbeat recorded yet (the component was just placed) | Retry in a second |
+
+`gh_document(action='recompute')` refuses while a solution is running rather than queueing or
+blocking, and returns `success: false` with `solving: true` and `solving_since`. That is not a
+failure to fix — it means "already working, come back". `gh_inspect(action='status')` answers the
+same way instead of hanging when the UI thread is not responding.
+
+The `GET /health` endpoint carries the same three-layer picture under `host`, for a caller outside
+the MCP protocol.
+
 ## Solver Errors
 
 | Error | Cause | Fix |

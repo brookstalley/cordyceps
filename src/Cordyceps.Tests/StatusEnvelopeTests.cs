@@ -44,6 +44,20 @@ namespace Cordyceps.Tests
             Solving = true,
             SolvingSince = T0,
             DocumentName = "heavy.gh",
+            SolvingDocumentName = "heavy.gh",
+            Hint = "Wait and retry.",
+        };
+
+        /// <summary>Focused on one definition while a different one holds the UI thread.</summary>
+        private static HostStatus SolvingElsewhereStatus() => new HostStatus
+        {
+            Ui = UiLiveness.Blocked,
+            Solving = true,
+            SolvingSince = T0,
+            DocumentName = "mine.gh",
+            DocumentId = Guid.Parse("aaaaaaaa-0000-0000-0000-000000000000"),
+            SolvingDocumentName = "other.gh",
+            SolvingDocumentId = Guid.Parse("bbbbbbbb-0000-0000-0000-000000000000"),
             Hint = "Wait and retry.",
         };
 
@@ -82,6 +96,17 @@ namespace Cordyceps.Tests
             Assert.Equal("2026-08-21T12:00:00.0000000Z", (string)json["solving_since"]);
             Assert.Null(json["modal_inferred"]);
             Assert.Equal("Wait and retry.", (string)json["hint"]);
+            // Same document — naming it twice would be noise on every response.
+            Assert.Null(json["solving_document"]);
+        }
+
+        [Fact]
+        public void ToCompactJson_WhenADifferentDocumentIsSolving_NamesIt()
+        {
+            var json = StatusEnvelope.ToCompactJson(SolvingElsewhereStatus());
+
+            Assert.Equal("mine.gh", (string)json["document"]);
+            Assert.Equal("other.gh", (string)json["solving_document"]);
         }
 
         [Fact]
@@ -109,6 +134,7 @@ namespace Cordyceps.Tests
             Assert.False((bool)json["grasshopper"]["solving"]);
             Assert.Equal("wall-study.gh", (string)json["grasshopper"]["document"]["name"]);
             Assert.Equal("11111111-2222-3333-4444-555555555555", (string)json["grasshopper"]["document"]["id"]);
+            Assert.Equal(JTokenType.Null, json["grasshopper"]["solving_document"]["name"].Type);
 
             Assert.True((bool)json["cordyceps"]["listening"]);
             Assert.Equal(26929, (int)json["cordyceps"]["port"]);
@@ -125,6 +151,7 @@ namespace Cordyceps.Tests
             Assert.Equal(JTokenType.Null, json["rhino"]["heartbeat_age_ms"].Type);
             Assert.Equal(JTokenType.Null, json["grasshopper"]["solving_since"].Type);
             Assert.Equal(JTokenType.Null, json["grasshopper"]["document"]["id"].Type);
+            Assert.Equal(JTokenType.Null, json["grasshopper"]["solving_document"]["id"].Type);
             Assert.Equal("unknown", (string)json["rhino"]["ui"]);
         }
 
@@ -132,6 +159,92 @@ namespace Cordyceps.Tests
         public void ToFullJson_WithNullStatus_ReturnsNull()
         {
             Assert.Null(StatusEnvelope.ToFullJson(null));
+        }
+
+        // ---------------------------------------------------------------- probe / busy results
+
+        [Fact]
+        public void ProbeResult_IsAlwaysASuccess_EvenWhenTheHostIsBlocked()
+        {
+            // The probe's job is to REPORT a wedged host; reporting one is it working, not failing.
+            var obj = JObject.Parse(StatusEnvelope.ProbeResult(ModalStatus()));
+
+            Assert.True((bool)obj["success"]);
+            Assert.False((bool)obj["healthy"]);
+            Assert.True((bool)obj["rhino"]["modal_inferred"]);
+            Assert.Equal("blocked", (string)obj["rhino"]["ui"]);
+        }
+
+        [Fact]
+        public void ProbeResult_CarriesAllThreeLayers()
+        {
+            var obj = JObject.Parse(StatusEnvelope.ProbeResult(HealthyStatus()));
+
+            Assert.True((bool)obj["success"]);
+            Assert.True((bool)obj["healthy"]);
+            Assert.NotNull(obj["rhino"]);
+            Assert.NotNull(obj["grasshopper"]);
+            Assert.NotNull(obj["cordyceps"]);
+        }
+
+        [Fact]
+        public void ProbeResult_WithNullStatus_IsStillValidJson()
+        {
+            var obj = JObject.Parse(StatusEnvelope.ProbeResult(null));
+
+            Assert.True((bool)obj["success"]);
+        }
+
+        [Fact]
+        public void BusyResult_HasTheStructuredBusyContract()
+        {
+            var json = StatusEnvelope.BusyResult(SolvingStatus());
+            var obj = JObject.Parse(json);
+
+            Assert.False((bool)obj["success"]);
+            Assert.Equal("Wait and retry.", (string)obj["error"]);
+            Assert.True((bool)obj["solving"]);
+            // Asserted on the emitted text: a default re-parse turns the ISO stamp back into a
+            // DateTime token and renders it in the ambient culture.
+            Assert.Contains("\"solving_since\":\"2026-08-21T12:00:00.0000000Z\"", json);
+            Assert.Equal("heavy.gh", (string)obj["status"]["grasshopper"]["document"]["name"]);
+
+            // A busy refusal must read as a failed tool result, not a success.
+            Assert.True(McpResultFormatter.IsErrorResult(json));
+        }
+
+        [Fact]
+        public void BusyResult_WhenBlockedButNotSolving_SaysSoWithoutASolveTime()
+        {
+            var obj = JObject.Parse(StatusEnvelope.BusyResult(ModalStatus()));
+
+            Assert.False((bool)obj["success"]);
+            Assert.False((bool)obj["solving"]);
+            Assert.Equal(JTokenType.Null, obj["solving_since"].Type);
+            Assert.True((bool)obj["status"]["rhino"]["modal_inferred"]);
+        }
+
+        [Fact]
+        public void BusyResult_WithNullStatus_IsStillAValidFailure()
+        {
+            var json = StatusEnvelope.BusyResult(null);
+
+            Assert.False((bool)JObject.Parse(json)["success"]);
+            Assert.True(McpResultFormatter.IsErrorResult(json));
+        }
+
+        [Fact]
+        public void BusyResult_SurvivesTheChokePointInjection()
+        {
+            // The server injects into whatever a tool returned, including a busy refusal, which
+            // already occupies the "status" key.
+            var busy = StatusEnvelope.BusyResult(SolvingStatus());
+
+            var obj = JObject.Parse(StatusEnvelope.InjectCompact(busy, SolvingStatus()));
+
+            Assert.False((bool)obj["success"]);
+            Assert.NotNull(obj["status"]["grasshopper"]);          // the full block is intact
+            Assert.Equal("heavy.gh", (string)obj["host_status"]["document"]);
         }
 
         // ---------------------------------------------------------------- Inject totality

@@ -99,14 +99,23 @@ namespace Cordyceps.Core
         public DateTime? SolvingSince { get; set; }
 
         /// <summary>
-        /// The document this status describes: the solving document when one is solving, otherwise
-        /// the last document seen focused. Reported on every response because Grasshopper tools
-        /// follow the focused canvas, so an agent that never sees the name cannot tell it is
-        /// editing a different file than it believes.
+        /// The focused document — the one Grasshopper tools act on. Reported on every response
+        /// because tools follow whichever canvas tab the human focused, so an agent that never
+        /// sees the name cannot tell it is editing a different file than it believes.
         /// </summary>
         public string DocumentName { get; set; }
 
         public Guid? DocumentId { get; set; }
+
+        /// <summary>
+        /// The document that is solving, when one is — not necessarily the focused one. Several
+        /// definitions share the single Rhino UI thread, so a solve in a file the agent is not
+        /// touching still blocks it, and naming the wrong file would send it looking in the wrong
+        /// place. Null when idle.
+        /// </summary>
+        public string SolvingDocumentName { get; set; }
+
+        public Guid? SolvingDocumentId { get; set; }
 
         // --- cordyceps layer ---
 
@@ -171,6 +180,9 @@ namespace Cordyceps.Core
 
         // Immutable payload swapped as a whole, so a reader never sees a half-updated pair.
         private ActiveDocumentRef _activeDocument;
+
+        // Supplies the running server's own counters. See PublishServerSnapshot.
+        private Func<StatusInputs> _serverSnapshot;
 
         public SolverState(Func<DateTime> clock = null, TimeSpan? heartbeatStaleAfter = null)
         {
@@ -276,6 +288,29 @@ namespace Cordyceps.Core
         }
 
         /// <summary>
+        /// Register the running server's counter source, so surfaces that hold no server reference
+        /// (the tool classes) can still report the Cordyceps layer. The provider must be cheap and
+        /// must not throw — it is expected to read volatile counters and nothing else; callers that
+        /// can log guard the call anyway, because a diagnostic must never break a tool result.
+        /// </summary>
+        public void PublishServerSnapshot(Func<StatusInputs> provider)
+            => Volatile.Write(ref _serverSnapshot, provider);
+
+        /// <summary>
+        /// Withdraw a previously-published provider. Only clears if <paramref name="provider"/> is
+        /// still the registered one, so a server shutting down cannot unpublish its replacement.
+        /// </summary>
+        public void ClearServerSnapshot(Func<StatusInputs> provider)
+            => Interlocked.CompareExchange(ref _serverSnapshot, null, provider);
+
+        /// <summary>
+        /// The published server counters, or an all-zero "not listening" snapshot when no server
+        /// has published — which is itself the truthful answer.
+        /// </summary>
+        public StatusInputs ServerSnapshot()
+            => Volatile.Read(ref _serverSnapshot)?.Invoke() ?? new StatusInputs();
+
+        /// <summary>
         /// Classify a heartbeat stamp against a clock reading. Pure and static so the staleness
         /// boundary can be tested exactly, without waiting on wall-clock time.
         /// </summary>
@@ -288,6 +323,12 @@ namespace Cordyceps.Core
             var age = nowUtc - lastHeartbeatUtc.Value;
             return age > staleAfter ? UiLiveness.Blocked : UiLiveness.Responsive;
         }
+
+        /// <summary>
+        /// Build the three-layer status using whatever server counters have been published. The
+        /// form every surface uses; <see cref="Derive(StatusInputs)"/> is the pure core beneath it.
+        /// </summary>
+        public HostStatus Derive() => Derive(ServerSnapshot());
 
         /// <summary>
         /// Build the three-layer status from cached state plus the server's own counters. Reads no
@@ -320,8 +361,12 @@ namespace Cordyceps.Core
                     : (int)Math.Max(0, (now - lastHeartbeat.Value).TotalMilliseconds),
                 Solving = solving,
                 SolvingSince = solve?.StartedUtc,
-                DocumentName = solve?.DocumentName ?? active?.DocumentName,
-                DocumentId = solve?.DocumentId ?? active?.DocumentId,
+                // The solving document stands in for the focused one only before the first
+                // heartbeat, so the name is never blank when something is known.
+                DocumentName = active?.DocumentName ?? solve?.DocumentName,
+                DocumentId = active?.DocumentId ?? solve?.DocumentId,
+                SolvingDocumentName = solve?.DocumentName,
+                SolvingDocumentId = solve?.DocumentId,
                 ServerListening = inputs.ServerListening,
                 Port = inputs.Port,
                 InFlightRequests = inputs.InFlightRequests,
@@ -339,7 +384,11 @@ namespace Cordyceps.Core
         /// </summary>
         internal static string BuildHint(HostStatus status)
         {
-            var doc = string.IsNullOrEmpty(status.DocumentName) ? "the document" : $"'{status.DocumentName}'";
+            // Name the SOLVING document in solve hints — with several definitions open it is not
+            // necessarily the one the caller is working in, and that is the point worth saying.
+            var solvingDoc = string.IsNullOrEmpty(status.SolvingDocumentName)
+                ? "a document"
+                : $"'{status.SolvingDocumentName}'";
 
             switch (status.Ui)
             {
@@ -348,7 +397,7 @@ namespace Cordyceps.Core
                          + "This is normal for the first moment after the Cordyceps component is placed.";
 
                 case UiLiveness.Blocked when status.Solving:
-                    return $"Grasshopper is solving {doc} and the UI thread is busy with it. "
+                    return $"Grasshopper is solving {solvingDoc} and the UI thread is busy with it. "
                          + "Wait and retry — this is a busy bridge, not a dead one. "
                          + "If it persists far beyond the expected solve time, ask a human to check Rhino for an open dialog.";
 
@@ -358,7 +407,7 @@ namespace Cordyceps.Core
                          + "document-touching calls will block until it is cleared. Do not keep retrying.";
 
                 case UiLiveness.Responsive when status.Solving:
-                    return $"Grasshopper is solving {doc}; the host is responsive.";
+                    return $"Grasshopper is solving {solvingDoc}; the host is responsive.";
 
                 default:
                     return "Healthy: the Rhino UI thread is responsive and no solution is running.";

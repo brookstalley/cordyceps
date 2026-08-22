@@ -300,6 +300,7 @@ namespace Cordyceps.Tests
             Assert.True(status.Solving);
             Assert.False(status.IsHealthy);
             Assert.Contains("solving", status.Hint, StringComparison.OrdinalIgnoreCase);
+            Assert.Equal("quick.gh", status.SolvingDocumentName);
         }
 
         [Fact]
@@ -318,6 +319,7 @@ namespace Cordyceps.Tests
             Assert.True(status.Solving);
             Assert.Equal(T0, status.SolvingSince);
             Assert.Contains("Wait and retry", status.Hint);
+            Assert.Contains("heavy.gh", status.Hint);
         }
 
         [Fact]
@@ -358,8 +360,10 @@ namespace Cordyceps.Tests
         // ---------------------------------------------------------------- derived payload
 
         [Fact]
-        public void Derive_PrefersTheSolvingDocumentOverTheFocusedOne()
+        public void Derive_ReportsTheFocusedAndSolvingDocumentsSeparately()
         {
+            // Several definitions share one UI thread: a solve in a file the agent is not touching
+            // still blocks it, and naming the wrong file would send it looking in the wrong place.
             var state = NewState(new FakeClock());
             var focused = Guid.NewGuid();
             var solving = Guid.NewGuid();
@@ -369,8 +373,57 @@ namespace Cordyceps.Tests
 
             var status = state.Derive(new StatusInputs());
 
+            Assert.Equal("focused.gh", status.DocumentName);
+            Assert.Equal(focused, status.DocumentId);
+            Assert.Equal("solving.gh", status.SolvingDocumentName);
+            Assert.Equal(solving, status.SolvingDocumentId);
+        }
+
+        [Fact]
+        public void Derive_BeforeAnyHeartbeat_FallsBackToTheSolvingDocumentName()
+        {
+            // The name must never be blank when something is known.
+            var state = NewState(new FakeClock());
+            var solving = Guid.NewGuid();
+
+            state.BeginSolution(solving, "solving.gh");
+
+            var status = state.Derive(new StatusInputs());
+
             Assert.Equal("solving.gh", status.DocumentName);
             Assert.Equal(solving, status.DocumentId);
+        }
+
+        [Fact]
+        public void Derive_WhenIdle_HasNoSolvingDocument()
+        {
+            var state = NewState(new FakeClock());
+            state.Heartbeat(Guid.NewGuid(), "focused.gh");
+
+            var status = state.Derive(new StatusInputs());
+
+            Assert.Null(status.SolvingDocumentName);
+            Assert.Null(status.SolvingDocumentId);
+        }
+
+        [Fact]
+        public void Derive_ASolveInAnUnfocusedDocument_StillReadsAsBusy_NotAsAModal()
+        {
+            // The regression that motivates watching every open document rather than only the
+            // bridge's own: an unrecorded solve elsewhere would look like a modal dialog and send
+            // an agent to fetch a human for nothing.
+            var clock = new FakeClock();
+            var state = NewState(clock);
+            state.Heartbeat(Guid.NewGuid(), "focused.gh");
+            state.BeginSolution(Guid.NewGuid(), "other.gh");
+            clock.Advance(TimeSpan.FromMinutes(2));
+
+            var status = state.Derive(new StatusInputs());
+
+            Assert.Equal(UiLiveness.Blocked, status.Ui);
+            Assert.True(status.Solving);
+            Assert.False(status.ModalInferred);
+            Assert.Contains("other.gh", status.Hint);
         }
 
         [Fact]
@@ -418,6 +471,71 @@ namespace Cordyceps.Tests
 
             Assert.False(status.ServerListening);
             Assert.NotNull(status.Hint);
+        }
+
+        // ---------------------------------------------------------------- server snapshot
+
+        [Fact]
+        public void ServerSnapshot_WithNoPublisher_ReportsNotListening()
+        {
+            // The truthful answer before any server has started, not a crash and not a fiction.
+            var state = NewState(new FakeClock());
+
+            var snapshot = state.ServerSnapshot();
+
+            Assert.False(snapshot.ServerListening);
+            Assert.Equal(0, snapshot.Port);
+            Assert.False(state.Derive().ServerListening);
+        }
+
+        [Fact]
+        public void PublishServerSnapshot_IsReadBackByTheNoArgDerive()
+        {
+            var state = NewState(new FakeClock());
+            state.PublishServerSnapshot(() => new StatusInputs
+            {
+                ServerListening = true,
+                Port = 26929,
+                InFlightRequests = 2,
+                CommandCount = 11,
+            });
+
+            var status = state.Derive();
+
+            Assert.True(status.ServerListening);
+            Assert.Equal(26929, status.Port);
+            Assert.Equal(2, status.InFlightRequests);
+            Assert.Equal(11, status.CommandCount);
+        }
+
+        [Fact]
+        public void PublishServerSnapshot_IsReadEachTime_NotCached()
+        {
+            var state = NewState(new FakeClock());
+            var commands = 0;
+            state.PublishServerSnapshot(() => new StatusInputs { CommandCount = commands });
+
+            Assert.Equal(0, state.Derive().CommandCount);
+            commands = 5;
+            Assert.Equal(5, state.Derive().CommandCount);
+        }
+
+        [Fact]
+        public void ClearServerSnapshot_OnlyWithdrawsItsOwnProvider()
+        {
+            // A server shutting down must not unpublish the replacement that started meanwhile.
+            var state = NewState(new FakeClock());
+            Func<StatusInputs> oldServer = () => new StatusInputs { Port = 1 };
+            Func<StatusInputs> newServer = () => new StatusInputs { Port = 2 };
+
+            state.PublishServerSnapshot(oldServer);
+            state.PublishServerSnapshot(newServer);
+            state.ClearServerSnapshot(oldServer);
+
+            Assert.Equal(2, state.ServerSnapshot().Port);
+
+            state.ClearServerSnapshot(newServer);
+            Assert.False(state.ServerSnapshot().ServerListening);
         }
 
         // ---------------------------------------------------------------- concurrency

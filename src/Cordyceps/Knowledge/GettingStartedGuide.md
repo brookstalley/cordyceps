@@ -77,6 +77,17 @@ Operations: `add`, `remove`, `set_count`. Params: `side` ('input'/'output', defa
 Avoid backwards wires. Stack inputs vertically at x=50 (70px vertical gaps). Processing columns at x=300, 450, 600... (150px horizontal gaps).
 Use `gh_canvas(action='validate')` for overlaps. See `gh://docs/canvas-layout`.
 
+## Busy vs. dead
+
+Every tool response carries a compact `status` block — `{document, ui, solving}` — telling you which
+`.gh` file the call acted on and whether the host is healthy. If a call is slow or silent, call
+`gh_inspect(action='liveness')`: it reads cached state and never touches the document, so it answers
+even when everything else is stuck. `ui: "blocked"` with `solving: true` means **wait**;
+`modal_inferred: true` means a dialog is open in Rhino and **only a human can clear it**.
+
+`gh_document(action='recompute')` refuses (with `solving: true`) while a solution is already
+running, rather than queueing silently. See `gh://docs/common-errors`.
+
 ## Clusters
 
 When the cluster editor is open, `gh_document(action='recompute')` and `gh_document(action='solver', enabled=true)` are safe to use — they preserve cluster input data. Grasshopper's native recompute (F5) is NOT safe inside the cluster editor — it will null out all cluster inputs.
