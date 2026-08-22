@@ -39,14 +39,14 @@ focused, so check it if results look like they belong to another file. `solving_
 only when a *different* open definition is the one holding the solver: all open definitions share
 the single Rhino UI thread, so a heavy solve in a file you are not touching still blocks you.
 
-If a call is slow, times out, or returns nothing at all, call `gh_inspect(action='liveness')`.
+If a call is slow, times out, or returns nothing at all, call `gh_inspect(action='connection')`.
 It answers from cached state and never touches the Grasshopper document, so it replies even when
 every other call is stuck.
 
 | What you see | What it means | What to do |
 |---|---|---|
 | `ui: "responsive"` | The host is fine | Treat any error as a real tool error, not a host problem |
-| `ui: "blocked"`, `solving: true` | Grasshopper is mid-solve and holding the UI thread | **Wait.** Heavy solves take minutes. Re-probe with `liveness`; do not retry in a tight loop |
+| `ui: "blocked"`, `solving: true` | Grasshopper is mid-solve and holding the UI thread | **Wait.** Heavy solves take minutes. Re-probe with `connection`; do not retry in a tight loop |
 | `modal_inferred: true` | The UI thread is stuck with nothing solving — a modal dialog is open in Rhino | **Only a human can clear it.** Stop retrying and tell the user to check Rhino for a dialog |
 | `ui: "unknown"` | No heartbeat recorded yet (the component was just placed) | Retry in a second |
 

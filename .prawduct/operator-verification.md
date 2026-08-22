@@ -293,7 +293,7 @@ port. Neither can run without a live Rhino.
 - **Cluster safety:** repeat the graft inside a cluster editor and confirm the cluster's input hooks
   survive (the action uses `ExpireSolution(false)`; `true` is what historically orphans clusters).
 
-## VRF-012 — issues-2026-08-21 Chunks 02/03 — solution safety, heartbeat, liveness probe
+## VRF-012 — issues-2026-08-21 Chunks 02/03 — solution safety, heartbeat, connection probe
 
 **Status:** pending
 **Added:** 2026-08-21 (issues-2026-08-21, Chunks 02-03 — GitHub issues #30, #29)
@@ -310,12 +310,12 @@ blocked. None of it can run without a live Rhino.
   during it (any tool — the old refresh fired on every call, not just `recompute`). Expected: no
   "The 'Cordyceps (MCP)' object expired during a solution" dialog, and the canvas keeps solving.
 - **The probe answers while the UI thread is blocked:** during that same solve, call
-  `gh_inspect(action='liveness')`. Expected: a prompt reply with `solving: true` and a plausible
+  `gh_inspect(action='connection')`. Expected: a prompt reply with `solving: true` and a plausible
   `solving_since` — NOT a timeout. This is the whole point of the chunk; if it hangs, the path is
   marshaling somewhere it must not.
 - **Busy recompute is refused, not queued:** during the solve, `gh_document(action='recompute')`
   must return `success:false` with `solving:true`, and must NOT trigger a second solve afterwards.
-- **Heartbeat cadence and recovery:** with the canvas idle, `liveness` should report the UI thread
+- **Heartbeat cadence and recovery:** with the canvas idle, `connection` should report the UI thread
   responsive. Then block the UI thread (an infinite-loop script) and confirm it flips to blocked
   within a few seconds — and, critically, that it returns to healthy after the block clears rather
   than latching (a dropped stamp must expire, not freeze the heartbeat forever).

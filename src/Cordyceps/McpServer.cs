@@ -643,7 +643,7 @@ UNIFIED TOOLS (use action='help' for details):
 - gh_wire: connect, disconnect, list, clear, validate
 - gh_document: info, save, clear, solver, recompute (rejected while a solution is running), undo, redo (both disabled — use snapshot/revert), snapshot, revert, snapshots, snapshot_delete (max 20 snapshots kept; oldest evicted), capture_canvas, capture_viewport, capture_region, capture_views
 - gh_script: get, set, configure, info
-- gh_inspect: liveness, status, outputs, trace, disconnected, geometry, log, reports, categories, docs
+- gh_inspect: connection, status, outputs, trace, disconnected, geometry, log, reports, categories, docs
 - rhino_scene: objects, select, deselect, set_layer, set_name, layers, layer_create, layer_set, layer_delete, hide, show, delete, set_color, bbox, place_image, script
 - rhino_render: display, camera, zoom, modes, render, settings, ground, sun, skylight, view_save, view_load, view_list, view_delete, light_add, light_list, light_set, light_delete, material_list, material_library, material_instantiate, material_create, material_texture, material_apply, material_delete, env_list, env_current, env_set, env_create, env_delete
 
@@ -652,7 +652,7 @@ solving_since / modal_inferred / solving_document / hint when something is off. 
 .gh file the call acted on; check it, because tools follow whichever canvas tab the human focused.
 ""solving_document"" appears only when a DIFFERENT open definition is the one holding the solver.
 
-BUSY IS NOT DEAD. If a call is slow or silent, call gh_inspect(action='liveness') — it answers from
+BUSY IS NOT DEAD. If a call is slow or silent, call gh_inspect(action='connection') — it answers from
 cached state and never touches the document, so it replies even when everything else is stuck:
 - ui='blocked' + solving=true  -> Grasshopper is mid-solve. WAIT and retry; heavy solves take minutes.
 - modal_inferred=true          -> a modal dialog is open in Rhino. Only a HUMAN can clear it. Stop

@@ -95,7 +95,7 @@ Use `gh_canvas(action='validate')` for overlaps. See `gh://docs/canvas-layout`.
 
 Every tool response carries a compact `status` block — `{document, ui, solving}` — telling you which
 `.gh` file the call acted on and whether the host is healthy. If a call is slow or silent, call
-`gh_inspect(action='liveness')`: it reads cached state and never touches the document, so it answers
+`gh_inspect(action='connection')`: it reads cached state and never touches the document, so it answers
 even when everything else is stuck. `ui: "blocked"` with `solving: true` means **wait**;
 `modal_inferred: true` means a dialog is open in Rhino and **only a human can clear it**.
 

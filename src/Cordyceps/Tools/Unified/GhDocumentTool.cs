@@ -79,7 +79,7 @@ namespace Cordyceps.Tools.Unified
                     Tips = new[]
                     {
                         "If a solution is already running you get success=false with solving=true and solving_since — wait for it to finish and call again, do not retry in a tight loop.",
-                        "Use gh_inspect(action='liveness') to see whether the host is busy solving or blocked by a modal dialog."
+                        "Use gh_inspect(action='connection') to see whether the host is busy solving or blocked by a modal dialog."
                     }
                 },
                 ["undo"] = new ActionInfo

@@ -24,11 +24,11 @@ namespace Cordyceps.Tools.Unified
             Description = "Diagnostic and inspection operations for debugging definitions",
             Actions = new Dictionary<string, ActionInfo>
             {
-                ["liveness"] = new ActionInfo
+                ["connection"] = new ActionInfo
                 {
-                    Name = "liveness",
+                    Name = "connection",
                     Description = "Is the bridge alive, busy, or blocked? Answers from cached state without touching the Grasshopper document, so it replies even while the Rhino UI thread is wedged",
-                    Example = "action='liveness'",
+                    Example = "action='connection'",
                     Tips = new[]
                     {
                         "Use this when a call times out or goes quiet: it is the only action guaranteed to answer.",
@@ -43,7 +43,7 @@ namespace Cordyceps.Tools.Unified
                     Description = "Get status of all components (OK, ERROR, WARNING, DISCONNECTED)",
                     Optional = new[] { "category" },
                     Example = "action='status' OR action='status', category='Curve'",
-                    Tips = new[] { "Returns success=false with a busy/blocked status instead of hanging when the Rhino UI thread is not responding — use action='liveness' to see why." }
+                    Tips = new[] { "Returns success=false with a busy/blocked status instead of hanging when the Rhino UI thread is not responding — use action='connection' to see why." }
                 },
                 ["outputs"] = new ActionInfo
                 {
@@ -112,7 +112,7 @@ namespace Cordyceps.Tools.Unified
             {
                 "Use 'status' to quickly identify errors and warnings",
                 "Use 'trace' to understand data flow through your definition",
-                "Use 'liveness' when a call is slow or silent — it distinguishes a busy solver from a host blocked by a modal dialog"
+                "Use 'connection' when a call is slow or silent — it distinguishes a busy solver from a host blocked by a modal dialog"
             }
         };
 
@@ -121,7 +121,7 @@ namespace Cordyceps.Tools.Unified
             _context = context;
         }
 
-        [McpServerTool, Description("Inspection operations. Actions: liveness|status|outputs|trace|disconnected|geometry|log|reports|categories|docs|help")]
+        [McpServerTool, Description("Inspection operations. Actions: connection|status|outputs|trace|disconnected|geometry|log|reports|categories|docs|help")]
         public string GhInspect(
             [Description("Action to perform")] string action,
             [Description("Component GUID")] string id = null,
@@ -153,7 +153,7 @@ namespace Cordyceps.Tools.Unified
 
             return action.ToLowerInvariant() switch
             {
-                "liveness" => ActionLiveness(),
+                "connection" => ActionConnection(),
                 "status" => ActionStatus(category),
                 "outputs" => ActionOutputs(id),
                 "trace" => ActionTrace(id, direction),
@@ -168,13 +168,13 @@ namespace Cordyceps.Tools.Unified
         }
 
         /// <summary>
-        /// The liveness probe. Deliberately does NOT call <c>_context.ExecuteOnUiThread</c>: that
+        /// The connection probe. Deliberately does NOT call <c>_context.ExecuteOnUiThread</c>: that
         /// is what takes the document lock and marshals onto the Rhino UI thread, and this is the
         /// one call that must answer <em>while that thread is wedged</em>. Everything it reports
         /// comes from <see cref="SolverState"/>, which the UI thread writes and any thread can read.
         /// Keep it that way — a probe that can block is not a probe.
         /// </summary>
-        private string ActionLiveness()
+        private string ActionConnection()
             => StatusEnvelope.ProbeResult(SolverState.Shared.Derive());
 
         private string ActionStatus(string category)

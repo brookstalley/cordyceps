@@ -175,11 +175,20 @@ identified during recon and any of them is a silent wire-format regression:
    Newtonsoft's `(string)token` silently coerces — preserve or change deliberately.
 5. Id echo is byte-lossless under STJ `Clone()`; `JToken` re-formats numbers, so `1.00` /
    `1e2` / >Int64-precision ids will not round-trip identically. Tests assert `"id":1.0`.
-**Acceptance if built:** all 56 existing envelope/converter tests pass with **only** the
-`Parse` helper ported — no assertion weakened (tests are contracts). Plus new tests pinning
-traps 1, 2, and 4, which no current test covers.
-**Sequencing:** last, on the integrated branch — it touches `McpServer.cs` broadly and would
-conflict with chunk 03.
+**DECISION 2026-08-21: DROPPED by the user.** The swap is not built. Rationale: its sole
+justification was the net48 load conflict, and net48 was declined; on .NET 8 `System.Text.Json`
+IS the BCL, so there is no extra assembly, no transitive version conflict, and no user-visible
+benefit. The residual "consolidate on one library" argument points the *wrong* way on this
+runtime — STJ is the platform-native, faster option — so the swap would trade five silent
+wire-format regression risks for a move away from the native library.
+`project-preferences.md` already scopes the split deliberately ("System.Text.Json used only in
+type-conversion code and tests"), so this is a bounded exception, not drift.
+
+**Carried forward instead:** characterization tests pinning today's STJ behavior for traps 1, 2
+and 4, which no current test covers. Pure addition, no production change. These make any future
+swap safe rather than hopeful — the reporter's "all 56 tests pass against the rewrite" is weaker
+evidence than it sounds precisely because those 56 are structurally blind to three of the five
+traps.
 
 ## Parallelization and integration
 
@@ -211,5 +220,30 @@ the departure is visible rather than inferred.
 - [ ] Chunk 03 — Surfaces: probe, envelope, busy rejection
 - [ ] Chunk 04 — #27 data modifiers
 - [ ] Chunk 05 — #28 finding A: script write cascade
-- [ ] Chunk 06 — #28 finding B: STJ → Newtonsoft *(pending user confirmation)*
+- [x] Chunk 06 — #28 finding B: STJ → Newtonsoft — **DROPPED, not built** (see chunk entry)
+- [ ] Chunk 06a — Characterization tests pinning current STJ wire behavior (traps 1, 2, 4)
 - [ ] Integration: full suite green, cumulative Critic, doc audit
+
+## Late decisions
+
+- **The probe action is `gh_inspect(action='connection')`.** The user first chose `status`, but
+  that action already existed (component-status enumeration, and it requires the UI thread), so
+  one action could not be both without breaking a contract the server instructions tell agents to
+  poll. `connection` is the user's chosen replacement name. The pre-existing `status` action was
+  additionally hardened to return a prompt busy/blocked result instead of hanging — it went
+  through unbounded `InvokeAndWait`, which makes it the literal source of the 32-minute silence
+  issue #29 reported.
+- **Solve tracking watches `GH_DocumentServer` globally**, not per-bridge-instance as chunk 02
+  originally specified. Documents share one UI thread, so a solve in a definition containing no
+  bridge component would have gone unrecorded — producing "UI blocked, nothing solving" and thus
+  a false "modal, needs a human". The global watch also collapses four lifecycle hooks into one
+  start/stop pair, which is what makes the unsubscribe symmetry auditable.
+- **`modal_inferred` does not fire for issue #30's own dialog.** That dialog is raised *inside* a
+  solve, so `SolutionEnd` never fires and the state reads as "busy solving". Chunk 02 prevents
+  that dialog at the source; the inference catches every other modal. Recorded in VRF-012 so a
+  verifier does not test for the wrong thing.
+- **Pre-existing broad catches in `GhScriptTool` were left unwaived.** Repo-wide there are 60
+  broad catches and only `McpServer.cs` boundaries carry `prawduct:allow` pragmas; the prior
+  sweep (`CQ-5J9N`) targeted *silent* swallows by adding logging, which all 14 here already do.
+  Waiving 14 in one file would be a norm change applied to 23% of the instances, not a fix.
+  Flagged for the Critic rather than decided unilaterally mid-cycle.
