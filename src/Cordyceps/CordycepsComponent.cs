@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Drawing;
 using System.Reflection;
 using System.Text;
+using System.Threading;
 using Cordyceps.Core;
 using Grasshopper.Kernel;
 using Rhino;
@@ -21,6 +22,34 @@ namespace Cordyceps
         // Support multiple servers on different ports
         private static readonly Dictionary<int, McpServer> _servers = new Dictionary<int, McpServer>();
         private static readonly Dictionary<int, CordycepsComponent> _portOwners = new Dictionary<int, CordycepsComponent>();
+
+        /// <summary>
+        /// How long the refresh expire is deferred by. Matches the delay used elsewhere in this
+        /// file: long enough for the current solution to unwind, short enough to feel immediate.
+        /// </summary>
+        private const int REFRESH_SOLUTION_DELAY_MS = 10;
+
+        /// <summary>
+        /// How often the UI-thread heartbeat is stamped. One queued no-op per second is negligible
+        /// next to what Grasshopper already does per frame, and it bounds how long a caller can be
+        /// unsure whether the host is wedged.
+        /// </summary>
+        private const int HEARTBEAT_INTERVAL_MS = 1000;
+
+        // Heartbeat timer, shared by every instance (one Rhino process, one UI thread). Guarded
+        // by _lock, so it starts with the first server and stops when the last one goes away.
+        private static System.Threading.Timer _heartbeatTimer;
+
+        /// <summary>
+        /// How long an unrun heartbeat stamp blocks further ones. A wedged UI thread must not
+        /// accumulate a stamp per second, but the gate must also expire: if a queued stamp is
+        /// ever dropped (host teardown, a torn-down message loop) an unconditional gate would
+        /// leave the heartbeat frozen and report a perfectly healthy host as blocked forever.
+        /// </summary>
+        private static readonly TimeSpan HEARTBEAT_QUEUE_GATE = TimeSpan.FromSeconds(30);
+
+        // Ticks when the outstanding stamp was queued, or 0 when none is outstanding.
+        private static long _heartbeatQueuedTicks;
 
         // Track which port this instance is using (0 = not running)
         private int _myPort = 0;
@@ -102,8 +131,15 @@ namespace Cordyceps
                     // Register this component as the owner of this port
                     _portOwners[port] = this;
                     _myPort = port;
+                    EnsureHeartbeat();
                 }
             }
+
+            // Attach the liveness feed (idempotent). Done here, on the UI thread and outside the
+            // lock, because Grasshopper's document server is UI-thread-only and may not exist yet
+            // when this component is first constructed.
+            if (!isBlocked)
+                SolutionWatcher.Start();
 
             // Set outputs (outside lock to avoid potential deadlock)
             DA.SetData(0, GetAboutInfo());
@@ -134,6 +170,68 @@ namespace Cordyceps
         {
             base.RemovedFromDocument(document);
             ReleaseServer();
+        }
+
+        /// <summary>
+        /// Start the shared UI-thread heartbeat if it is not already running. Must be called
+        /// holding <see cref="_lock"/>.
+        /// </summary>
+        private static void EnsureHeartbeat()
+        {
+            if (_heartbeatTimer != null) return;
+
+            _heartbeatTimer = new System.Threading.Timer(
+                _ => StampHeartbeat(), null, HEARTBEAT_INTERVAL_MS, HEARTBEAT_INTERVAL_MS);
+        }
+
+        /// <summary>
+        /// Stop the heartbeat once no component owns a port — nothing reads it then, and a timer
+        /// outliving the last server would keep the plugin's threads alive. Must be called holding
+        /// <see cref="_lock"/>.
+        /// </summary>
+        private static void StopHeartbeatIfIdle()
+        {
+            if (_portOwners.Count > 0 || _heartbeatTimer == null) return;
+
+            _heartbeatTimer.Dispose();
+            _heartbeatTimer = null;
+        }
+
+        /// <summary>
+        /// Queue a heartbeat stamp onto the Rhino UI thread. The stamp <em>landing</em> is the
+        /// evidence that the UI thread is draining its queue, which is why this queues and never
+        /// waits: a wedged UI thread must leave the heartbeat stale, not block the timer.
+        /// </summary>
+        private static void StampHeartbeat()
+        {
+            // At most one stamp outstanding, but claim expires — see HEARTBEAT_QUEUE_GATE.
+            var now = DateTime.UtcNow.Ticks;
+            var queuedAt = Interlocked.Read(ref _heartbeatQueuedTicks);
+            if (queuedAt != 0 && now - queuedAt < HEARTBEAT_QUEUE_GATE.Ticks) return;
+            if (Interlocked.CompareExchange(ref _heartbeatQueuedTicks, now, queuedAt) != queuedAt) return;
+
+            try
+            {
+                RhinoApp.InvokeOnUiThread(new Action(() =>
+                {
+                    try
+                    {
+                        // Read on the UI thread and cache it, so the off-thread status path never
+                        // has to touch a Grasshopper object to name the document it describes.
+                        var doc = Grasshopper.Instances.ActiveCanvas?.Document;
+                        SolverState.Shared.Heartbeat(doc?.DocumentID, doc?.DisplayName);
+                    }
+                    finally
+                    {
+                        Interlocked.Exchange(ref _heartbeatQueuedTicks, 0);
+                    }
+                }));
+            }
+            catch (Exception ex) // prawduct:allow prawduct/broad-except -- timer-callback boundary: an escaping exception from a System.Threading.Timer callback terminates the Rhino process, and queueing can fail during host shutdown
+            {
+                Interlocked.Exchange(ref _heartbeatQueuedTicks, 0);
+                DebugLog.Debug($"Heartbeat stamp could not be queued: {ex.Message}");
+            }
         }
 
         /// <summary>
@@ -181,6 +279,7 @@ namespace Cordyceps
         /// </summary>
         private void ReleaseServer()
         {
+            bool idle;
             lock (_lock)
             {
                 if (_myPort != 0)
@@ -192,7 +291,14 @@ namespace Cordyceps
                     }
                     _myPort = 0;
                 }
+                StopHeartbeatIfIdle();
+                idle = _portOwners.Count == 0;
             }
+
+            // Detach the liveness feed once no bridge remains — outside the lock, because the
+            // watcher takes its own and nothing should hold two at once.
+            if (idle)
+                SolutionWatcher.Stop();
         }
 
         /// <summary>
@@ -280,6 +386,15 @@ namespace Cordyceps
         /// Expire the component to refresh outputs (refreshes all active instances).
         /// Called from HTTP worker threads - uses fire-and-forget UI thread invocation
         /// to avoid potential deadlock if UI thread is waiting on _lock.
+        ///
+        /// <para>The expire is <em>scheduled</em>, never immediate. Grasshopper pumps messages
+        /// during a solution, so a queued UI action can run while the document is mid-solve;
+        /// <c>ExpireSolution(true)</c> there expires an object inside a running solution and
+        /// raises Grasshopper's modal breakpoint dialog, which nothing but a human clicking a
+        /// button will clear. Since this runs on every MCP call, any call landing during a solve
+        /// could end an unattended session. <c>ScheduleSolution</c> is the host-sanctioned way to
+        /// ask for a recompute from outside the solver: it waits for the current solution to
+        /// finish, and the callback's <c>ExpireSolution(false)</c> never kicks one of its own.</para>
         /// </summary>
         public static void RefreshComponent()
         {
@@ -296,16 +411,39 @@ namespace Cordyceps
             {
                 foreach (var instance in instances)
                 {
+                    if (instance == null) continue;
+
                     try
                     {
-                        instance?.ExpireSolution(true);
+                        var document = instance.OnPingDocument();
+                        if (document == null) continue;
+
+                        document.ScheduleSolution(REFRESH_SOLUTION_DELAY_MS, d => SafeExpire(instance));
                     }
-                    catch (Exception ex)
+                    catch (Exception ex) // prawduct:allow prawduct/broad-except -- fire-and-forget UI callback: an escaping exception here would surface as an unhandled exception on the Rhino UI thread, and a failed status refresh must never break the MCP call that triggered it
                     {
                         DebugLog.Warn($"RefreshComponent failed: {ex.Message}");
                     }
                 }
             }));
+        }
+
+        /// <summary>
+        /// Mark an instance expired from inside Grasshopper's solution scheduler. The instance may
+        /// have been removed between scheduling and the callback, and anything escaping here would
+        /// surface inside the scheduler rather than at the MCP call that caused it.
+        /// </summary>
+        private static void SafeExpire(CordycepsComponent instance)
+        {
+            try
+            {
+                if (instance?.OnPingDocument() == null) return;
+                instance.ExpireSolution(false);
+            }
+            catch (Exception ex) // prawduct:allow prawduct/broad-except -- scheduled-solution callback boundary: an escaping exception would fault Grasshopper's solution scheduler, and a missed status refresh must never do that
+            {
+                DebugLog.Warn($"Scheduled status refresh failed: {ex.Message}");
+            }
         }
 
         /// <summary>
