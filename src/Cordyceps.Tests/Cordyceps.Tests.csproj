@@ -28,6 +28,7 @@
     <Compile Include="..\Cordyceps\Core\CommandStats.cs" Link="CommandStats.cs" />
     <Compile Include="..\Cordyceps\Core\ScriptDirective.cs" Link="ScriptDirective.cs" />
     <Compile Include="..\Cordyceps\Core\ScriptParamDefs.cs" Link="ScriptParamDefs.cs" />
+    <Compile Include="..\Cordyceps\Core\ScriptSourceWriter.cs" Link="ScriptSourceWriter.cs" />
     <Compile Include="..\Cordyceps\Core\GhArchiveSave.cs" Link="GhArchiveSave.cs" />
     <Compile Include="..\Cordyceps\Core\SliderConfig.cs" Link="SliderConfig.cs" />
     <Compile Include="..\Cordyceps\Core\ParamSyncPlan.cs" Link="ParamSyncPlan.cs" />
