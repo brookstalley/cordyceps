@@ -263,3 +263,32 @@ the build host, so the logic was review-verified, not linted.
   publishes the GitHub Release with the `.gha`, and pushes to yak.
 - **Alignment:** after publish, `develop` and `main` have identical trees (no back-merge needed); the next
   `prep` starts clean.
+
+## VRF-011 — issues-2026-08-21 Chunk 04 — `gh_canvas(action='modifier')` data modifiers
+
+**Status:** pending
+**Added:** 2026-08-21 (issues-2026-08-21, Chunk 04 — GitHub issue #27)
+**Where to verify:** Rhino 8 + Grasshopper with the Cordyceps component placed and an MCP client connected.
+
+**Why this needs a human:** the parse/plan half (`Core/DataModifiers`) is unit-tested in CI, but the
+half that matters to a user is host-bound: whether setting `IGH_Param.DataMapping`/`Simplify`/`Reverse`
+actually changes downstream tree structure, and whether Grasshopper renders the modifier icon on the
+port. Neither can run without a live Rhino.
+
+**Verify:**
+- **Graft changes the data, not just the flag:** place a `Move` component, feed its Geometry input a
+  list of N points and its Motion input a list of M vectors. Baseline output count is
+  `max(N, M)` (index-matched). Then `gh_canvas(action='modifier', id=<move>, side='input',
+  param='Geometry', mapping='graft')`. Expected: output becomes N branches of M items (N×M total),
+  and the graft icon renders on the Geometry port.
+- **Read mode round-trips:** call `action='modifier'` with only `id`/`side`/`param` — the returned
+  `mapping` string must feed straight back in as a `mapping=` argument and be accepted.
+- **`info` reports it:** `gh_canvas(action='info', id=<move>)` shows `modifiers` on every param, and
+  the grafted port reports `"mapping": "graft"`. This is the observability half of the issue — an
+  agent could not previously detect a modifier at all.
+- **Partial update leaves the rest alone:** set `simplify=true` on a param that already has
+  `mapping='graft'`; confirm the graft survives (omitted fields must not reset).
+- **Free-floating params:** drop a bare `Param_Point` on the canvas and set a modifier on it directly
+  (no component involved) — it is its own target, a separate code path from component ports.
+- **Cluster safety:** repeat the graft inside a cluster editor and confirm the cluster's input hooks
+  survive (the action uses `ExpireSolution(false)`; `true` is what historically orphans clusters).
