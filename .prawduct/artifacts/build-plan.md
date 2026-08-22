@@ -1,145 +1,215 @@
-# Build Plan — janitor-2026-07-02 (full reliability audit execution)
+# Build Plan — issues-2026-08-21 (liveness, data modifiers, script-write cascade)
 
-Branch: `chore/janitor-2026-07-02` (off `develop`)
-Scope: execute the approved findings of the 2026-07-02 janitor audit (quality, bugs,
-consistency, gaps). Survey ran as 6 parallel investigations; user approved chunks 1–5
-(hygiene, doc contract, HIGH bugs, MEDIUM sweeps, testability). Larger redesigns are
-filed to the backlog, not built here.
+Branch: `feature/liveness-and-modifiers` (integration, off `develop`)
+Scope: GitHub issues #30, #29, #27, and the two accepted findings from #28.
 Critic mode: chunk (per code chunk) + cumulative before PR.
 
 ## Context / decisions
-- Prior plan (gitflow-release-refactor) was stale-complete: merged via PR #22, gated by
-  its cumulative Critic; change-log entries correctly `status=merged` (flip to shipped at
-  next release). Replaced by this plan per the janitor stale-plan rule.
-- Baseline: 224/224 tests green (519 ms); plugin Release build 0 warnings; develop pulled
-  to 7eb9e09.
-- Deliberate non-goals (filed to backlog instead): Stop() drain threading topology
-  (pairs with MCP-9F3Q), Rhino undo-record grouping, nested-layer resolution redesign,
-  VRF-001..005 live burn-down (needs operator in Rhino), api-contract.md artifact,
-  test-package version bumps, releases/.gha history strategy, Tools/Unified flatten.
+
+- Prior plan (janitor-2026-07-02) is complete and archived as `build-plan-reliability.md`;
+  its six reliability chunks shipped via PR #26. Replaced by this plan.
+- Baseline: 406/406 tests green (517 ms) on `develop` @ `af2b2c6`.
+- **#28 net48 multi-target: DECLINED** by the user. Rhino 7 support is out of scope; the
+  reporter's fork has a natural end date at Rhino 9. The user replies on the issue directly.
+  The two *findings* from that issue are accepted and built here (chunks 05, 06).
+
+### User decisions recorded this cycle
+
+1. **`recompute` during an active solve → reject** with a structured busy result
+   (`{success:false, solving:true, solving_since}`). Not queued, not deferred-blocking: a
+   hidden queue gives the caller no completion signal, and blocking reintroduces the exact
+   silence #29 exists to remove.
+2. **Liveness probe lives at `gh_inspect(action='status')`** — `gh_inspect` is already the
+   "what is going on" tool. The GET `/health` endpoint is enriched in parallel regardless.
+3. **UI-thread heartbeat: build it.** Solver state alone cannot distinguish a modal dialog
+   from an idle healthy server — the worst possible confusion, and #30's unattended killer.
+   Heartbeat stale + solving = "busy, wait"; heartbeat stale + no solve = "UI blocked,
+   likely a modal dialog, needs a human".
+4. **Multi-document: report identity now, file retargeting.** `SolutionStart`/`SolutionEnd`
+   are per-document, so solver state is tracked per-document and the status names the
+   document it describes (`DisplayName` + `DocumentID`). Changing *which* document tools
+   act on is a separate contract change — filed to the backlog, not built here.
+5. **Status envelope: always-on, compact**, on every tool response, carrying the document
+   name. Injected at a single choke point (see chunk 03), never per-tool.
+
+### Known hazard, deliberately NOT fixed here (filed to backlog)
+
+Every tool resolves through `ToolHelpers.TryGetActiveDocument` →
+`Instances.ActiveCanvas?.Document` (`Core/ToolHelpers.cs:173`). With multiple definitions
+open, the human focusing a different canvas tab silently retargets the entire MCP surface:
+the agent can believe it is editing `wall-study.gh` while editing another file. The
+always-on status block (decision 5) makes this *visible* — it names the document on every
+response — but does not make it *safe*. Fixing targeting is a contract change for all 7
+tools and gets its own cycle.
 
 ## Confidence check
-Requirements Confidence: High — scope is the executed janitor survey's verified findings,
-approved by the user chunk-by-chunk; no unvalidated assumptions remain.
-1. Problem: organic growth left silent-success bugs in the tool layer, drifted agent-facing
-   docs, and governance/verification debt — user wants "ultra reliable and stable".
-2. Success: every approved finding fixed with regression tests where host-free; docs match
-   dispatch reality; repo hygiene clean; suite green; Critic clean per chunk.
-3. Out of scope: new features, redesigns listed above, applying branch protection, releases.
+
+Requirements Confidence: **High**. Three of the four items are user-filed GitHub issues with
+reproduction detail and explicit asks; the fourth is two findings from a source audit that
+were independently re-verified against the code (see Evidence). All five open design
+questions were put to the user and answered before planning.
+
+1. **Problem:** agent-driven sessions cannot tell a busy solver from a dead bridge (#29),
+   and MCP calls landing mid-solve can raise a modal that only a human can clear (#30);
+   per-parameter data modifiers are unreachable and unreportable through the API (#27);
+   the script write path is single-pathed where the read path is defensive (#28).
+2. **Success:** an agent can ask "are you alive?" and get an answer within a bounded time
+   *while the UI thread is wedged*; every response says which document it acted on and
+   whether the host is healthy; no MCP call can expire the bridge inside a running
+   solution; Flatten/Graft/Simplify/Reverse are both settable and readable; a script
+   component lacking `SetSource` fails with an actionable message instead of opaquely.
+3. **Out of scope:** net48 / Rhino 7 (declined); changing which document tools target
+   (filed); Reparameterize and other type-specific param extras (#27 calls this phase 2);
+   suppressing the GH breakpoint dialog itself (#30 ask 3 — only needed if ask 1 fails).
+
+## Evidence (verified against the tree, not the issue text)
+
+- **#30 mechanism, worse than reported.** `HandleToolCallAsync` calls `RecordCommand(name)`
+  on *every* tool call (`McpServer.cs:685`) → `CordycepsComponent.RefreshComponent()` →
+  `instance?.ExpireSolution(true)` (`CordycepsComponent.cs:301`), queued via
+  `RhinoApp.InvokeOnUiThread`. A repo-wide grep for `SolutionState` / `GH_ProcessStep` /
+  `SolutionDepth` / `IsSolving` returns **nothing** — there is no solution-in-progress check
+  anywhere. So the modal is reachable from *any* MCP call landing mid-solve, not only from
+  stacked recomputes. The correct idiom is already in the file:
+  `document.ScheduleSolution(10, d => ExpireSolution(false))` at `CordycepsComponent.cs:173`.
+- **#29 is viable off-thread.** The HTTP listener runs on `Task.Run` threads
+  (`McpServer.cs:290`), not the UI thread, and `HandleHealthCheckAsync` (`:421`) already
+  answers without marshaling. `GrasshopperContext.ExecuteOnUiThread` is what takes the
+  120-second `DocumentLock`, so a status path that simply never calls it stays responsive
+  while the UI thread is wedged.
+- **#27 gap confirmed.** `DataMapping` appears nowhere in `src/`. `GH_DataMapping` =
+  `{None, Flatten, Graft}`; `IGH_Param.DataMapping/Simplify/Reverse` are get/set; and
+  `IGH_Param.RemoveEffects()` exists for a clear operation. These live on `IGH_Param`, so
+  they apply to component ports *and* free-floating params — both branches need handling.
+- **#28 finding A confirmed.** `TryGetScriptSource` (`GhScriptTool.cs:699`) probes a
+  five-step cascade; the write path calls bare `scriptComp.SetSource(finalSource)` via
+  `dynamic` at `:174`, `:294`, `:323`.
+- **#28 finding B is NOT mechanical.** See chunk 06 — five behavior traps identified.
+
+## Testability constraint (drives all chunking)
+
+`Cordyceps.Tests.csproj` has **no ProjectReference**. It links ~22 host-free `Core/*.cs`
+files directly, because Grasshopper types cannot load in a unit test. Nothing under
+`Tools/Unified/` and not `ToolHelpers.cs` is testable. **Therefore every chunk below
+extracts its decision logic into a host-free `Core/` class, adds one `<Compile Include>`
+line to the test csproj, and unit-tests it** — the established pattern
+(`Core/SliderConfig.cs` → `SliderConfigTests.cs`). Host wiring stays thin and is verified
+live in Rhino.
 
 ## Chunks
 
-### Chunk 01: Repo + governance hygiene (no product code)
-- [x] Commit the stranded `.work-model-index.json` untrack + gitignore entry.
-- [x] Delete merged local branches (docs/readme-refresh, bug-report,
-      docs/rhino-scriptcomponent-languagespec) and merged remote topic branches
-      (feature/gitflow-release-refactor, fix/add-slider-params-and-configure-wires,
-      fix/gh-save-overwrite-and-script-language, fix/ops-safety-stage1,
-      fix/mcp-error-contract, chore/janitor-2026-06-20, docs/readme-refresh,
-      docs/rhino-scriptcomponent-languagespec). All verified merged via PRs #17–#24.
-- [x] Archive `incoming-bugs/place-raster-image-picture-frame-action.md` (feature shipped
-      as RSC-2H9K); resolve the `report-bug` advisory.
-- [x] Mark `docs/place-image-action.md` as shipped/archival at top.
-- [x] Delete 4 unreferenced images (~7 MB): cordyceps_showcase_trimmed.gif,
-      cordyceps_logo.png, cordyceps_icon_large_transparent.png, cordyceps_icon_24.png.
-- [x] sln: remove stale untracked `cordyceps.sln` (gitignored by `*.sln`, missing the test
-      project; both csprojs build directly). Note decision here.
+### Chunk 01 — Host-free status model  *(track A)*
+**Delivers:** `Core/SolverState.cs` + `Core/StatusEnvelope.cs`, both host-free and linked
+into the test project.
+- Per-document solve state: begin/end by document id, `solving_since`, concurrent-safe.
+- UI-thread heartbeat staleness: given last-stamp and now, classify fresh / stale.
+- The three-layer derivation: `rhino` (alive, ui responsive, **modal inferred** = stale
+  heartbeat with no solve running), `grasshopper` (idle/solving + which document),
+  `cordyceps` (server listening, in-flight count, uptime).
+- `StatusEnvelope.Inject(toolJson, status)` — parse a tool's JSON result string, add the
+  compact `status` object, re-serialize. Must be total: a non-object or unparseable result
+  is returned unchanged rather than throwing (a status block must never break a tool).
+- **Acceptance:** unit tests for every state transition, the modal inference truth table,
+  concurrent begin/end on two documents, and Inject over object / array / malformed /
+  already-has-status inputs. No Grasshopper reference in either file.
 
-### Chunk 02: Documentation-contract fixes (docs/metadata text only, no behavior)
-- [x] GettingStartedGuide.md:25 — bulk-wire example keys → sourceId/sourceParam/targetId/targetParam.
-- [x] GettingStartedGuide.md:46-49 — zoomable examples: remove invalid operation='list' and
-      nonexistent param=; use add/remove/set_count with side/index/count. Also :12 add `clear` to gh_wire summary.
-- [x] CanvasLayoutGuide.md:49-52 — remove nonexistent right/bottom response fields; document
-      bounds{x,y,width,height}+pivot layout math.
-- [x] Spacing guidance: pick 150px horizontal / 70px vertical (matches server instructions +
-      gh_canvas tips) and align CanvasLayoutGuide + GettingStartedGuide + PlanDefinition.md.
-- [x] gh_canvas list ActionInfo: `type` → `typeFilter` (code alias lands in Chunk 04).
-- [x] Undo/redo: add "currently disabled — use snapshot/revert" to GhDocumentTool ActionInfo,
-      server instructions (McpServer.cs:593), README.md:150.
-- [x] ResourceRegistry.cs:439 — `search_components` → gh_canvas(action='search').
-- [x] RenderingGuide.md — add env_delete (:49) and `script` to rhino_scene list (:38).
-- [x] DebugDataMismatch.md:16 — branchCount/dataCount → branches/count.
-- [x] SetupScriptComponent.md — fix {{ }} brace-escaping (renders literally; GetPrompt does
-      plain Replace).
-- [x] PlanDefinition.md:14-18 — point "Check for Patterns" at gh://patterns/* resources.
-- [x] README.md — build command add `-c Release` (:179); csproj:21 BlockDebugBuilds message
-      corrected; "Port" → "HttpPort" (:47); "110+ actions" → accurate count (:142).
-- [x] CHANGELOG under `## [Unreleased]`.
+### Chunk 02 — Host wiring: solution safety + heartbeat  *(track A)*
+**Delivers:** the #30 fix and the state feed.
+- `RefreshComponent()` no longer calls `ExpireSolution(true)` unguarded. Defer via
+  `ScheduleSolution` / skip when a solution is in progress, so no MCP call can expire the
+  bridge inside a running solution.
+- `CordycepsComponent` subscribes per-document `SolutionStart`/`SolutionEnd` and feeds
+  `SolverState`; unsubscribes on removal/close (no leak across document open/close cycles).
+- A low-cost UI-thread heartbeat timer stamps `SolverState`.
+- **Acceptance:** host-free policy covered by chunk 01 tests; wiring reviewed for
+  subscribe/unsubscribe symmetry against the existing `RemovedFromDocument` /
+  `DocumentContextChanged` lifecycle. Enqueue an operator-verification entry — the modal
+  scenario needs a live Rhino to confirm.
 
-### Chunk 03: HIGH code bugs (each with host-free regression tests where possible)
-- [x] H1 CordycepsComponent: override DocumentContextChanged; stop server + release port on
-      Close/Unloaded (fixes orphaned listener + permanently-bricked port on file reopen).
-- [x] H2 GhScriptTool.ParseParamDefs: malformed inputs/outputs JSON → structured error before
-      any mutation (never conflate unparseable with empty). Test via ParamSyncPlan-level seam
-      or extracted pure parser.
-- [x] H3 GhCanvasTool preview/enable: per-id results like delete; success only if all resolve.
-- [x] H4 RhinoSceneTool layer_delete: validate + reassign current layer and pick a
-      non-descendant destination BEFORE mutating objects.
-- [x] H5 RhinoRenderTool material_create: apply PBR params to the material actually added to
-      the doc (BeginChange/EndChange on a PBR RenderMaterial, or Material.ToPhysicallyBased path).
-- [x] H6 place_image replace=true: add new frame first, delete old ones only on success.
-- [x] Doc-audit each (ActionInfo tips where behavior surface changed).
+### Chunk 03 — Surfaces: probe, envelope, busy rejection  *(track A)*
+**Delivers:** everything an agent can observe.
+- `gh_inspect(action='status')` — answered **without** `ExecuteOnUiThread`, reading cached
+  state only. This is the whole point; a reviewer must be able to see it cannot block.
+- Always-on status injection at the single choke point in `HandleToolCallAsync` /
+  `McpResultFormatter`, not per-tool.
+- `GET /health` enriched with the same three-layer state.
+- `gh_document(action='recompute')` rejects during an active solve with the structured busy
+  result (decision 1).
+- Docs: `GetServerInstructions()`, `gh_inspect`/`gh_document` `ActionInfo`, and a Knowledge
+  guide section on busy-vs-dead and what the status block means.
+- **Acceptance:** a reviewer can trace the status path and confirm it never marshals or
+  takes the document lock.
 
-### Chunk 04: MEDIUM sweep — Grasshopper tools + MCP boundary
-- [x] gh_canvas list: dispatch alias `typeFilter ?? type`; search: seed providedParams so
-      query-or-type works as documented (or fix description).
-- [x] gh_wire disconnect: error when wire didn't exist.
-- [x] zoomable add: use indexed RegisterInput/OutputParam overloads.
-- [x] Slider set: route value parse through invariant culture (SliderConfig path); config
-      reports unparseable value instead of silently ignoring.
-- [x] Group protection: TryGetUnprotectedComponent* in group_remove/rename/color; filter
-      infraIds from member lists in group_create/group_add; group_add with unresolvable
-      explicit groupId errors instead of forking a new group; group_create errors on invalid
-      ids JSON (parity with group_add).
-- [x] gh_document revert: error when no active canvas. clear: preserve cluster IO hooks (or
-      refuse inside cluster editor with clear error).
-- [x] Bulk expire: expire every mutated object (delete/enable/wire connect), not just the last.
-- [x] gh_script configure params+code path: surface SetSource failure machine-readably.
-- [x] Capture: using/try-finally around bitmaps (3 sites).
-- [x] Boundary (McpServer): echo JSON-RPC id losslessly + build before dispatch; wrap
-      binding/conversion in the structured-error path; JsonTypeConverter coerces
-      whole-valued doubles for int/long; chunked-body reject (ContentLength64 < 0);
-      Accept */* allowed; DebugLog.Error at level 0.
-- [x] PluginRegistry: publish cache only when fully built; no permanent caching of failed
-      scan. DeprecationRegistry: initialized=true in finally; volatile.
-- [x] UnifiedToolHelpers action validation case-insensitive; strict bool parse helper used by
-      gh_canvas enable/preview + gh_document solver (error on garbage).
-- [x] gh_inspect trace: filter infraIds; guard Attributes?.GetTopLevel?.DocObject (also
-      GhWireTool:302); direction null-safe.
-- [x] Doc-audit all of the above (ActionInfo/server instructions/CommonErrors as touched).
+### Chunk 04 — #27 data modifiers  *(track B)*
+**Delivers:** `Core/DataModifiers.cs` (host-free parse/plan: `none|flatten|graft`, tri-state
+simplify/reverse, partial-update semantics) + tests; `GhCanvasTool.Modifiers.cs`
+implementing `gh_canvas(action='modifier', ...)` with read mode when only `id`/`side`/`param`
+are given; `modifiers` reported per param in `ToolHelpers.BuildParameterList` **and** in the
+free-floating `IGH_Param` branch of `BuildFullComponentInfo`; full doc audit.
+Param resolution by name **and** index, per the project rule (null-guard it — the
+`GhWireTool.GetParameter` shape it mirrors NREs on a null spec).
+**Acceptance:** unit tests cover the plan/parse matrix including partial updates and
+invalid inputs; `info` round-trips modifier state.
 
-### Chunk 05: MEDIUM sweep — Rhino tools
-- [x] TryParsePoint3d: InvariantCulture (fixes camera/light corruption on non-US locales).
-- [x] select: count only successful Select(); require ≥1 filter (error on bare select-all).
-- [x] light_set: validate inputs up front; honor Modify() return; error field on failure.
-      light_add: correct param names in errors; validate spotAngle 0–π/2; reject degenerate
-      direction vectors.
-- [x] render wait>0: up-front doc/view/Raytraced validation before the poll loop.
-- [x] sun: lat/long/dateTime turn ManualControlOn off (and report mode).
-- [x] Missing error fields on success:false (view_save/load/delete, material_delete,
-      env_delete); view_save drop redundant pre-delete (Add replaces).
-- [x] material_apply: legacy Materials.Find(name) fallback (parity with delete).
-- [x] FindByLayer null guards (3 sites); objects truncated flag off-by-one + limit clamp.
-- [x] place_image: absolute-path rule in PlaceImageValidation (+test); check
-      ModifyAttributes/FindId result and surface partial failure.
-- [x] Layer name matching: FullPath first, then short name, error on ambiguity;
-      FindOrCreateLayer creates nested hierarchy for `A::B` paths.
-- [x] Doc-audit (rhino_scene/rhino_render ActionInfo, RenderingGuide).
+### Chunk 05 — #28 finding A: script write cascade  *(track C)*
+**Delivers:** the write path mirrors the read cascade — try `SetSource`, fall back to a
+writable `Code` property, and **pre-check `HiddenCodeInput`** so a visible code-input param
+yields an actionable message instead of an opaque `InvalidOperationException`. Applies at
+all three call sites (`GhScriptTool.cs:174`, `:294`, `:323`).
+**Acceptance:** the probe/fallback decision logic extracted host-free and unit-tested;
+failure returns a specific, actionable error string.
 
-### Chunk 06: Testability extraction + test hygiene
-- [x] Extract host-free helpers from ToolHelpers.cs into linkable file(s)
-      (Core/ParseHelpers.cs + Core/ResponseHelpers.cs or similar): TryParseGuid,
-      Success/ErrorResponse, TryDeserializeList/Array, TryParseGuidArray, ColorToHex,
-      TryParseColor, ParseBool, TryParsePoint3d. Link + table-driven tests.
-- [x] Extract ConvertToSnakeCase → Core/McpNaming.cs; pin the 7 tool names as contract tests.
-- [x] PromptRegistry.GetPrompt: extract substitution as pure static; FIX the placeholder bug
-      (unfilled {goal} currently renders as literal "goal"); decide rendered form; tests.
-- [x] Rename McpServerTypeTests.cs → JsonTypeConverterTests.cs; fix xUnit1031 blocking waits
-      (CommandStatsTests:88, InFlightRequestsTests:100-101); harden the
-      InFlightRequestsTests 250 ms snapshot race; drop hard-coded line/count refs in comments.
-- [x] DebugLog: swappable console sink so ring buffer/level gating become testable (+tests).
+### Chunk 06 — #28 finding B: System.Text.Json → Newtonsoft  *(track D, main agent)*
+**Status: PENDING USER CONFIRMATION** — the justification for this finding was net48 load
+conflicts, and net48 was declined. Its standalone value is dependency consolidation; its
+cost is a refactor of the most protocol-critical code in the repo. Five behavior traps were
+identified during recon and any of them is a silent wire-format regression:
+1. STJ's `WhenWritingNull` does **not** apply to `Dictionary<string,object>` values, so a
+   null `result` is emitted today as `"result":null`. Newtonsoft's `NullValueHandling.Ignore`
+   **would** drop it — `Include` (the default) preserves current behavior.
+2. Newtonsoft's default `DateParseHandling.DateTime` would mangle a string id that looks
+   like a date; needs `DateParseHandling.None`.
+3. `GetRawText()` maps to `JToken.ToString(Formatting.None)`, not bare `ToString()` (which
+   indents objects/arrays).
+4. `prompts/get` currently **throws** on a non-string argument value via `GetString()`;
+   Newtonsoft's `(string)token` silently coerces — preserve or change deliberately.
+5. Id echo is byte-lossless under STJ `Clone()`; `JToken` re-formats numbers, so `1.00` /
+   `1e2` / >Int64-precision ids will not round-trip identically. Tests assert `"id":1.0`.
+**Acceptance if built:** all 56 existing envelope/converter tests pass with **only** the
+`Parse` helper ported — no assertion weakened (tests are contracts). Plus new tests pinning
+traps 1, 2, and 4, which no current test covers.
+**Sequencing:** last, on the integrated branch — it touches `McpServer.cs` broadly and would
+conflict with chunk 03.
 
-### Close-out
-- [x] Backlog: file deferred items; update GHC-2N8K (resolved if dedup lands via Chunk 04),
-      note GHS-4D8M upstream filing still pending (user action).
-- [ ] Cumulative Critic; reflection; change-log entries per chunk (scope=janitor-2026-07-02).
+## Parallelization and integration
+
+Tracks A, B, C are independent and run as **worktree-isolated subagents**, each on its own
+branch off the integration branch. Track D is the main agent, last.
+
+| Track | Chunks | Owns | Must not touch |
+|-------|--------|------|----------------|
+| A | 01-03 | `McpServer.cs`, `CordycepsComponent.cs`, `Core/SolverState.cs`, `Core/StatusEnvelope.cs`, `GhInspectTool`, `GhDocumentTool` | `GhCanvasTool*`, `GhScriptTool` |
+| B | 04 | `GhCanvasTool*`, `Core/DataModifiers.cs`, `ToolHelpers.BuildParameterList` | `McpServer.cs`, `CordycepsComponent.cs` |
+| C | 05 | `GhScriptTool.cs` + its host-free extraction | `McpServer.cs`, `GhCanvasTool*` |
+| D | 06 | `McpServer.cs`, `Core/JsonRpcEnvelope.cs`, `Core/JsonTypeConverter.cs` | — (runs last, alone) |
+
+**`CHANGELOG.md` is owned by the main agent alone** — it is a prepend-style file and three
+concurrent writers guarantee conflicts. Tracks B and C also **do not edit `McpServer.cs`**;
+they report the `GetServerInstructions()` line their action needs and the main agent applies
+it. Track A owns that file because chunk 03 genuinely lives there.
+
+**[DECISION] Subagents do not run the full suite.** Per explicit user instruction, each
+subagent runs only the tests for its own chunk (`dotnet test --filter`). The main agent runs
+the full 406+ suite at each integration merge and before Critic. This departs from the
+default build-cycle guidance ("run the full suite before and after") and is recorded here so
+the departure is visible rather than inferred.
+
+## Status
+
+- [ ] Chunk 01 — Host-free status model
+- [ ] Chunk 02 — Host wiring: solution safety + heartbeat
+- [ ] Chunk 03 — Surfaces: probe, envelope, busy rejection
+- [ ] Chunk 04 — #27 data modifiers
+- [ ] Chunk 05 — #28 finding A: script write cascade
+- [ ] Chunk 06 — #28 finding B: STJ → Newtonsoft *(pending user confirmation)*
+- [ ] Integration: full suite green, cumulative Critic, doc audit
