@@ -323,6 +323,15 @@ blocked. None of it can run without a live Rhino.
   the OTHER. Expected: the solve is still recorded (documents share one UI thread, so a solve in a
   bridge-less document must not read as "UI blocked, nothing solving"), and `solving_document` names
   the solving one distinctly from the document the call acted on.
+- **Our own long operations must NOT read as a modal dialog:** with no solve running, issue a
+  deliberately slow document-touching call (a large bake, `capture_views`, or a save of a heavy
+  definition) that runs well past the staleness window. During it, call
+  `gh_inspect(action='connection')` from a second client. Expected: `ui` reports blocked (honest —
+  the thread really is busy) but `modal_inferred` is **false**, and the hint names a Cordyceps
+  operation rather than telling the caller to fetch a human. Then confirm `recompute` is refused
+  for the solving/blocked reason and NOT with a modal explanation. A `modal_inferred: true` here
+  is the regression this bullet exists to catch: tool bodies run on the UI thread, so they starve
+  the heartbeat exactly as a dialog does.
 - **Known limitation to confirm, not a bug:** `modal_inferred` will NOT fire for the #30 dialog
   itself, because that dialog appears *inside* a solve, so the solve never ends and it classifies as
   "busy solving". Confirm the inference does fire for an ordinary modal raised outside a solve

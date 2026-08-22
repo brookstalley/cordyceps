@@ -117,7 +117,7 @@ naturally at Rhino 9.
 
 ## 2026-08-21: System.Text.Json to Newtonsoft conversion dropped (issue #28 finding)
 
-<!-- prawduct: type=decision | chunks=06 | scope=issues-2026-08 | status=deferred -->
+<!-- prawduct: type=decision | chunks=06,06a | scope=issues-2026-08 | status=deferred -->
 
 **Why:** [user decision 2026-08-21] The conversion's sole justification was a net48 assembly-load
 conflict: on `net48` System.Text.Json arrives as a package needing `System.Memory` >= 4.0.1.2 and

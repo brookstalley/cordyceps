@@ -19,8 +19,14 @@ Critic mode: chunk (per code chunk) + cumulative before PR.
    (`{success:false, solving:true, solving_since}`). Not queued, not deferred-blocking: a
    hidden queue gives the caller no completion signal, and blocking reintroduces the exact
    silence #29 exists to remove.
-2. **Liveness probe lives at `gh_inspect(action='status')`** — `gh_inspect` is already the
-   "what is going on" tool. The GET `/health` endpoint is enriched in parallel regardless.
+2. **The probe lives at `gh_inspect(action='connection')`.** The user first chose
+   `action='status'`, but that action already existed, enumerates component status, and needs
+   the UI thread — one action cannot be both without breaking a contract the server instructions
+   tell agents to poll. `connection` is the user's chosen replacement. The pre-existing `status`
+   action was additionally hardened: it still marshals, but only behind a cached `Ui == Blocked`
+   pre-check, so it returns a busy result instead of hanging (it went through unbounded
+   `InvokeAndWait`, which made it the literal source of issue #29's 32-minute silence). The GET
+   `/health` endpoint is enriched in parallel regardless.
 3. **UI-thread heartbeat: build it.** Solver state alone cannot distinguish a modal dialog
    from an idle healthy server — the worst possible confusion, and #30's unattended killer.
    Heartbeat stale + solving = "busy, wait"; heartbeat stale + no solve = "UI blocked,
@@ -99,13 +105,18 @@ live in Rhino.
 ## Chunks
 
 ### Chunk 01: Host-free status model  *(track A)*
-**Delivers:** `Core/SolverState.cs` + `Core/StatusEnvelope.cs`, both host-free and linked
-into the test project.
+**Delivers:** `src/Cordyceps/Core/SolverState.cs` + `src/Cordyceps/Core/StatusEnvelope.cs`,
+both host-free and linked into the test project, with
+`src/Cordyceps.Tests/SolverStateTests.cs` and `src/Cordyceps.Tests/StatusEnvelopeTests.cs`.
 - Per-document solve state: begin/end by document id, `solving_since`, concurrent-safe.
 - UI-thread heartbeat staleness: given last-stamp and now, classify fresh / stale.
-- The three-layer derivation: `rhino` (alive, ui responsive, **modal inferred** = stale
-  heartbeat with no solve running), `grasshopper` (idle/solving + which document),
-  `cordyceps` (server listening, in-flight count, uptime).
+- The three-layer derivation: `rhino` (alive, ui responsive, **modal inferred**),
+  `grasshopper` (idle/solving + which document), `cordyceps` (server listening, in-flight
+  count, uptime). Modal inference requires THREE conditions, not two — stale heartbeat, no
+  solve running, and no Cordyceps UI work in flight. Tool bodies execute on the UI thread, so
+  a long bake or capture starves the heartbeat exactly as a dialog does; with only the first
+  two, a healthy host mid-bake reports a dialog that is not there and the caller is told to
+  stop and fetch a human.
 - `StatusEnvelope.Inject(toolJson, status)` — parse a tool's JSON result string, add the
   compact `status` object, re-serialize. Must be total: a non-object or unparseable result
   is returned unchanged rather than throwing (a status block must never break a tool).
@@ -121,6 +132,8 @@ into the test project.
 - `CordycepsComponent` subscribes per-document `SolutionStart`/`SolutionEnd` and feeds
   `SolverState`; unsubscribes on removal/close (no leak across document open/close cycles).
 - A low-cost UI-thread heartbeat timer stamps `SolverState`.
+- **Deliverables:** `src/Cordyceps/CordycepsComponent.cs`,
+  `src/Cordyceps/Core/SolutionWatcher.cs`, `src/Cordyceps/Core/GrasshopperContext.cs`
 - **Acceptance:** host-free policy covered by chunk 01 tests; wiring reviewed for
   subscribe/unsubscribe symmetry against the existing `RemovedFromDocument` /
   `DocumentContextChanged` lifecycle. Enqueue an operator-verification entry — the modal
@@ -128,8 +141,11 @@ into the test project.
 
 ### Chunk 03: Surfaces: probe, envelope, busy rejection  *(track A)*
 **Delivers:** everything an agent can observe.
-- `gh_inspect(action='status')` — answered **without** `ExecuteOnUiThread`, reading cached
+- `gh_inspect(action='connection')` — answered **without** `ExecuteOnUiThread`, reading cached
   state only. This is the whole point; a reviewer must be able to see it cannot block.
+- `gh_inspect(action='status')` (pre-existing) — still marshals, because enumerating component
+  status genuinely needs the UI thread; it now checks cached liveness first and returns a busy
+  result rather than blocking on an unresponsive thread.
 - Always-on status injection at the single choke point in `HandleToolCallAsync` /
   `McpResultFormatter`, not per-tool.
 - `GET /health` enriched with the same three-layer state.
@@ -137,12 +153,15 @@ into the test project.
   result (decision 1).
 - Docs: `GetServerInstructions()`, `gh_inspect`/`gh_document` `ActionInfo`, and a Knowledge
   guide section on busy-vs-dead and what the status block means.
-- **Acceptance:** a reviewer can trace the status path and confirm it never marshals or
+- **Acceptance:** a reviewer can trace the `connection` path and confirm it never marshals or
   takes the document lock.
+- **Deliverables:** `src/Cordyceps/Tools/Unified/GhInspectTool.cs`,
+  `src/Cordyceps/Tools/Unified/GhDocumentTool.cs`, `src/Cordyceps/McpServer.cs`
 
 ### Chunk 04: #27 data modifiers  *(track B)*
-**Delivers:** `Core/DataModifiers.cs` (host-free parse/plan: `none|flatten|graft`, tri-state
-simplify/reverse, partial-update semantics) + tests; `GhCanvasTool.Modifiers.cs`
+**Delivers:** `src/Cordyceps/Core/DataModifiers.cs` (host-free parse/plan: `none|flatten|graft`,
+tri-state simplify/reverse, partial-update semantics) with
+`src/Cordyceps.Tests/DataModifiersTests.cs`; `src/Cordyceps/Tools/Unified/GhCanvasTool.Modifiers.cs`
 implementing `gh_canvas(action='modifier', ...)` with read mode when only `id`/`side`/`param`
 are given; `modifiers` reported per param in `ToolHelpers.BuildParameterList` **and** in the
 free-floating `IGH_Param` branch of `BuildFullComponentInfo`; full doc audit.
@@ -155,7 +174,9 @@ invalid inputs; `info` round-trips modifier state.
 **Delivers:** the write path mirrors the read cascade — try `SetSource`, fall back to a
 writable `Code` property, and **pre-check `HiddenCodeInput`** so a visible code-input param
 yields an actionable message instead of an opaque `InvalidOperationException`. Applies at
-all three call sites (`GhScriptTool.cs:174`, `:294`, `:323`).
+all three call sites in `src/Cordyceps/Tools/Unified/GhScriptTool.cs` (lines 174, 294, 323),
+via `src/Cordyceps/Core/ScriptSourceWriter.cs` with
+`src/Cordyceps.Tests/ScriptSourceWriterTests.cs`.
 **Acceptance:** the probe/fallback decision logic extracted host-free and unit-tested;
 failure returns a specific, actionable error string.
 
@@ -190,6 +211,17 @@ swap safe rather than hopeful — the reporter's "all 56 tests pass against the 
 evidence than it sounds precisely because those 56 are structurally blind to three of the five
 traps.
 
+### Chunk 06a: Characterization tests pinning current wire behavior  *(main agent)*
+**Delivers:** `src/Cordyceps.Tests/JsonRpcWireFormatTests.cs` — pins the JSON-RPC envelope's
+observable wire format, which no existing test covered and which a future serializer change would
+alter silently. Replaces the dropped chunk 06 as the durable value from that finding.
+**Acceptance:** the traps recon identified are pinned by an assertion — null `result` emitted
+explicitly (JSON-RPC 2.0 requires result-or-error, so omitting it would be malformed), string ids
+never reinterpreted, numeric ids keeping their exact literal form, compactness, no naming policy,
+and unicode escaping with a round-trip check. Writing them corrected a comment in
+`src/Cordyceps/Core/JsonRpcEnvelope.cs` that claimed `WhenWritingNull` drops a null `result`; it
+does not — that condition governs POCO properties, not dictionary values.
+
 ## Parallelization and integration
 
 Tracks A, B, C are independent and run as **worktree-isolated subagents**, each on its own
@@ -222,7 +254,6 @@ the departure is visible rather than inferred.
 - [x] Chunk 05: #28 finding A: script write cascade
 - [x] Chunk 06: #28 finding B: STJ → Newtonsoft — **DROPPED by user decision, not built**
 - [x] Chunk 06a: Characterization tests pinning current STJ wire behavior
-- [ ] Integration: cumulative Critic findings dispositioned, then PR
 
 ## Late decisions
 
