@@ -7,7 +7,7 @@ Visual dataflow graph for parametric 3D. Components on canvas connect via wires.
 Use `action='help'` on any tool for parameters.
 
 **Grasshopper:**
-- `gh_canvas` — components, values, groups, bake, zoomable params
+- `gh_canvas` — components, values, groups, bake, zoomable params, data modifiers
 - `gh_wire` — connect, disconnect, list, clear, validate
 - `gh_document` — save, clear, solver, snapshots, capture
 - `gh_script` — get/set script code, configure params
@@ -50,6 +50,20 @@ gh_inspect(action='status')
 - `gh_canvas(action='zoomable', id='...', operation='set_count', side='input', count=4)` — set total param count
 
 Operations: `add`, `remove`, `set_count`. Params: `side` ('input'/'output', default 'input'), `index`, `count`. Use `gh_canvas(action='info')` to list current params.
+
+## Data Modifiers (Flatten / Graft / Simplify / Reverse)
+
+The per-port right-click options, on any component parameter or free-floating param:
+
+- `gh_canvas(action='modifier', id='...', side='input', param='B', mapping='graft')` — graft one input
+- `gh_canvas(action='modifier', id='...', side='output', param='0', simplify=true)` — simplify an output
+- `gh_canvas(action='modifier', id='...', side='input', param='B')` — READ the current state
+- `gh_canvas(action='modifier', id='...', side='input', param='B', mapping='none', simplify=false, reverse=false)` — clear
+
+`mapping`: `none` | `flatten` | `graft`. `simplify`/`reverse`: true/false. Partial update — whatever you
+omit stays as it is, and passing none of the three reads instead of writing. `param` takes a name or a
+0-based index and is unnecessary for a free-floating param. `gh_canvas(action='info')` reports
+`modifiers` for every param, so state round-trips.
 
 ## Capture
 

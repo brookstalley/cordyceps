@@ -19,8 +19,8 @@
 
 | Symptom | Cause | Fix |
 |---------|-------|-----|
-| N×M expected, got max(N,M) | Both inputs flat | Graft one input |
-| Unexpected combinations | Mismatched structures | Align with Graft/Flatten |
+| N×M expected, got max(N,M) | Both inputs flat | Graft one input: `gh_canvas(action='modifier', id='...', param='B', mapping='graft')` |
+| Unexpected combinations | Mismatched structures | Align with Graft/Flatten; read current state with `gh_canvas(action='info')` → `modifiers` |
 | Wrong item count | Access mode mismatch | Check Item vs List mode |
 
 See `gh://docs/data-trees` for details.
