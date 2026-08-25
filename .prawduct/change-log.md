@@ -79,6 +79,14 @@ prescribes, `project-state.yaml`'s `views_enabled`/`scope_rollups` keys, and
 `build-plan-reliability.md`, whose six checkboxes sit unticked for work merged in PR #26 precisely
 because the mechanism that owned them stopped running. All six sites now state what is actually
 true; the release doc's bookkeeping step is `release=vX.Y.Z` tags plus `plan-backfill --apply`.
+`views_enabled` and `scope_rollups` were deleted outright via `prawduct-hook lifecycle-repair
+--apply` after three independent checks agreed nothing reads them — an inline comment explaining
+why a retired key was kept is not durable when the health check that flags it cannot read comments.
+
+A second review round then caught the one place a shipped behavior change and its documentation
+still disagreed: the `publish` step-list in `docs/release-process.md` — a line this very bundle had
+rewritten — still promised the GitHub Release step was "skipped if it already exists". Re-running
+`publish` is not a no-op any more; it re-uploads the asset and re-marks the Release latest.
 The reliability plan's checkboxes are deliberately left unticked — its own Context lists
 undischarged VRF-009/VRF-010 operator verification, so "built and merged, verification
 outstanding" is the honest state and no checkbox says that. Flagged for an owner ruling.

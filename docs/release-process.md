@@ -119,7 +119,12 @@ creates the GitHub Release (attaching the `.gha`), and pushes to yak.
 **`publish`** (on `main`, after the PR merged + pulled): guards branch + clean tree →
 verifies `main`'s csproj is at the version → `dotnet build -c Release` → prepares `dist/`
 (`.gha`, `manifest.yml`, `icon.png`) → `yak build` → tags `vX.Y.Z` and pushes **only the tag** →
-`gh release create` (`.gha` + notes, `--latest`; skipped if it already exists) → `yak push`.
+`gh release create` (`.gha` + notes, `--latest`) → `yak push`.
+
+Re-running `publish` for a version whose Release already exists is **not** a no-op: it reconciles
+that Release rather than skipping it — `gh release upload --clobber` re-attaches the `.gha` and
+`gh release edit --latest` re-marks it latest, and either failing aborts the run. Skipping would
+leave a Release with no asset, and the README's manual-install link resolves to that asset.
 
 `publish` builds rather than reusing whatever is in `releases/`, so the binary it ships to both
 GitHub and Yak is provably compiled from the commit being released, and a fresh clone of `main`

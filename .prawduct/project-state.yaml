@@ -381,21 +381,6 @@ build_state:
 active_build_plan: artifacts/build-plan.md
 
 # =============================================================================
-# DERIVED VIEWS — RETIRED (both keys below are inert)
-# =============================================================================
-# There are no derived views any more. `prawduct-hook regen-views` warns and
-# writes nothing; build-plan `## Status` checkboxes are hand-ticked, release
-# notes live in change-log.md itself, and no rollup is generated.
-#
-# Both keys are kept at their declared values rather than deleted: nothing is
-# known to read them, but flipping a key no reader needs cannot help and a
-# stale reader would see a changed answer. Treat them as historical.
-
-views_enabled: true
-
-scope_rollups: {}
-
-# =============================================================================
 # COVERAGE EVIDENCE (opt-in, v1.4+)
 # =============================================================================
 # When true, the Critic requires every changed file the verifier can judge to
