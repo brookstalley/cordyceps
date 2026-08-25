@@ -133,9 +133,30 @@ instructs a reader to clean up after a build that no longer dirties anything.
   scratch clone is the honest way to exercise the real code paths.
 - `git status` clean after a Release build.
 
+## Verification results (2026-08-25)
+
+- C# suite: 550/550 green, recorded via `test-evidence record`. The suite is a **regression guard
+  only** — this change is shell/YAML/docs and adds no C# tests. Do not read green as evidence the
+  release paths work; the items below are that evidence.
+- `bash -n scripts/release.sh` passes. `shellcheck` is not installed on this machine, so the
+  static-analysis pass was not run — flagged rather than claimed.
+- Scratch clone (`--no-hardlinks`, origin removed, local `develop`/`main` at the change):
+  - `prep --dry-run` — green; `check_readme` reports "README.md looks good" against the new
+    release-asset URL, and the commit step now announces a version bump with no `.gha`.
+  - `publish --dry-run` — green; "Building Cordyceps..." now precedes "Preparing distribution
+    directory...".
+  - Real `dotnet build -c Release` **in a clone with no `releases/` directory** produces
+    `releases/Cordyceps.gha` (698,368 bytes) and leaves `git status --untracked-files=all` empty.
+    This is the case that was broken before: publish would have hit a bare `cp` failure here.
+  - `prepare_dist` exercised verbatim (extracted from the real script) both ways: with an empty
+    releases dir it exits 1 with the named error; with the built artifact it populates `dist/`
+    with `.gha` + `manifest.yml` + `icon.png`.
+- Not verified: the CI upload step. YAML parses and the step list is correct, but
+  `actions/upload-artifact` cannot run until the branch is pushed. Confirm on the first CI run.
+
 ## Status
 
-- [ ] Chunk 01: Publish builds what it ships
-- [ ] Chunk 02: Untrack the built artifact
-- [ ] Chunk 03: CI publishes a downloadable build
-- [ ] Chunk 04: Documentation audit
+- [x] Chunk 01: Publish builds what it ships
+- [x] Chunk 02: Untrack the built artifact
+- [x] Chunk 03: CI publishes a downloadable build
+- [x] Chunk 04: Documentation audit
