@@ -25,3 +25,16 @@ jobs:
 
       - name: Run tests (Release)
         run: dotnet test src/Cordyceps.Tests/Cordyceps.Tests.csproj -c Release
+
+      # Publishes the built plugin on the run page so a tester without a .NET toolchain can pick
+      # up a build of any commit. This is a convenience, not the distribution channel: artifacts
+      # expire and need a GitHub login. Released builds come from the Releases page or Yak.
+      # Reads releases/ (written by the csproj CopyToReleases target) rather than the bin path,
+      # so retargeting the framework does not silently move the artifact out from under this step.
+      - name: Upload plugin artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Cordyceps.gha-${{ github.sha }}
+          path: releases/Cordyceps.gha
+          if-no-files-found: error
+          retention-days: 90

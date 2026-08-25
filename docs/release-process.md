@@ -2,10 +2,11 @@
 
 Cordyceps is distributed two ways, and a release publishes to both:
 
-1. **GitHub** — a `Release vX.Y.Z` commit + `vX.Y.Z` tag on `main`, a published
+1. **GitHub** — a `Release vX.Y.Z` commit + `vX.Y.Z` tag on `main`, and a published
    **GitHub Release** (with the `.gha` attached as a downloadable asset and the CHANGELOG
-   section as its notes), and the built `releases/Cordyceps.gha` (the file users download
-   directly from the README link).
+   section as its notes). That asset is what the README's manual-install link resolves to,
+   via `/releases/latest/download/Cordyceps.gha`. The `.gha` itself is a build output and is
+   not tracked in git — `publish` compiles it from the release commit.
 2. **Yak** — the [Rhino package manager](https://yak.rhino3d.com/packages/cordyceps),
    which is how Rhino's Package Manager (`_PackageManager`) finds and installs Cordyceps.
 
@@ -25,9 +26,33 @@ Because `main` rejects direct pushes, a release is split in two around the relea
 fact that makes this work: **branch protection guards *branches*, not *tags*** — so the publish
 half can push the `vX.Y.Z` tag even though it can't push the `main` branch.
 
+## Getting a build without releasing
+
+Two ways to hand someone a `.gha` that is not a release — neither touches `main` or Yak:
+
+- **CI artifact.** Every `build-test` run on `develop`/`main` (and every PR) uploads
+  `Cordyceps.gha-<sha>` to its run page. Cheapest option, but artifacts expire (90 days) and the
+  downloader needs a GitHub login.
+- **Pre-release.** For an outside tester, publish a GitHub pre-release so the link is anonymous
+  and durable:
+
+  ```bash
+  dotnet build src/Cordyceps/Cordyceps.csproj -c Release -p:Version=1.5.0-rc.1
+  gh release create v1.5.0-rc.1 "releases/Cordyceps.gha#Cordyceps.gha" \
+      --prerelease --target <sha> --title "..." --notes-file <notes>
+  ```
+
+  Build with `-p:Version=` rather than editing the csproj: `validate_version` rejects prerelease
+  strings and `increment_patch` would turn a stored `1.5.0-rc.1` into `1.5.0-rc.2` on the next
+  bare `prep`. The override still moves the assembly version (`1.5.0.0` vs a shipped `1.4.12.0`),
+  so a tester can confirm which build they are running via the MCP `initialize` response.
+
+  Pre-releases are skipped by `/releases/latest/download/`, so the README download link is
+  unaffected. `scripts/release.sh` has no command for this yet — backlog `REL-6H4X`.
+
 ## Prerequisites
 
-- **.NET 8 SDK** (`dotnet` on PATH) — `prep` builds the `.gha`.
+- **.NET 8 SDK** (`dotnet` on PATH) — both halves build the `.gha`.
 - **Git push access** to `origin`.
 - **GitHub CLI** (`gh` on PATH), authenticated — `prep` opens the release PR and `publish`
   creates the GitHub Release. Run `gh auth login` once (https://cli.github.com).
@@ -64,8 +89,9 @@ git checkout develop && git pull
 ./scripts/release.sh prep --dry-run  # preview, no changes
 ```
 
-`prep` bumps the version, renames the CHANGELOG section, builds the `.gha`, commits
-`Release vX.Y.Z` on `develop`, pushes, and opens a `develop → main` PR.
+`prep` bumps the version, renames the CHANGELOG section, builds the `.gha` (as a smoke test —
+the binary is not committed), commits `Release vX.Y.Z` on `develop`, pushes, and opens a
+`develop → main` PR.
 
 **Step 2 — merge the release PR.** Review it on GitHub and merge once `build-test` is green.
 Use a **merge commit** (not squash) so `develop` and `main` stay tree-aligned (no back-merge
@@ -79,34 +105,49 @@ git checkout main && git pull        # pull the merged release commit
 ./scripts/release.sh publish --dry-run
 ```
 
-`publish` builds the yak package, tags `vX.Y.Z` and **pushes only the tag**, creates the GitHub
-Release (attaching the `.gha`), and pushes to yak.
+`publish` builds the `.gha` and the yak package, tags `vX.Y.Z` and **pushes only the tag**,
+creates the GitHub Release (attaching the `.gha`), and pushes to yak.
 
 ### What each step does, in order
 
 **`prep`** (on `develop`): guards branch + clean tree → resolves the version → renames
 `CHANGELOG [Unreleased]` → bumps `csproj` + root `manifest.yml` → `dotnet build -c Release`
-(copies the `.gha` to `releases/`) → commits those four files as `Release vX.Y.Z` → pushes
-`develop` → opens the `develop → main` PR with the CHANGELOG section as the body.
+(verifies the bumped version compiles; the `.gha` lands in the gitignored `releases/`) → commits
+`csproj`, `manifest.yml` and `CHANGELOG.md` as `Release vX.Y.Z` → pushes `develop` → opens the
+`develop → main` PR with the CHANGELOG section as the body.
 
-**`publish`** (on `main`, after the PR merged + pulled): guards branch + clean tree → verifies
-`main`'s csproj is at the version → prepares `dist/` (`.gha`, `manifest.yml`, `icon.png`) →
-`yak build` → tags `vX.Y.Z` and pushes **only the tag** → `gh release create` (`.gha` + notes,
-`--latest`; skipped if it already exists) → `yak push`.
+**`publish`** (on `main`, after the PR merged + pulled): guards branch + clean tree →
+verifies `main`'s csproj is at the version → `dotnet build -c Release` → prepares `dist/`
+(`.gha`, `manifest.yml`, `icon.png`) → `yak build` → tags `vX.Y.Z` and pushes **only the tag** →
+`gh release create` (`.gha` + notes, `--latest`) → `yak push`.
+
+Re-running `publish` for a version whose Release already exists is **not** a no-op: it reconciles
+that Release rather than skipping it — `gh release upload --clobber` re-attaches the `.gha` and
+`gh release edit --latest` re-marks it latest, and either failing aborts the run. Skipping would
+leave a Release with no asset, and the README's manual-install link resolves to that asset.
+
+`publish` builds rather than reusing whatever is in `releases/`, so the binary it ships to both
+GitHub and Yak is provably compiled from the commit being released, and a fresh clone of `main`
+can publish.
 
 ## Governance bookkeeping (Prawduct)
 
-Under gitflow, a feature's change-log entry sits at `status=merged` after its
-`feature → develop` PR. When the `develop → main` release ships those entries, flip them to
-`status=shipped` and add `release=vX.Y.Z` to each, then regenerate the derived views:
+Under gitflow, a feature's change-log entry carries **no `release=` tag** after its
+`feature → develop` PR — that absence is the release-pending state. When the `develop → main`
+release ships those entries, add `release=vX.Y.Z` to each. That tag is the whole release-time
+edit: nothing is regenerated from it, and `prawduct-hook check-releasability` reads the *absence*
+of `release=` to enumerate what is still pending, so never write a placeholder value.
+
+Then archive the build plans this release shipped:
 
 ```bash
-prawduct-hook regen-views
+prawduct-hook plan-backfill --apply
 ```
 
-This flips the matching build-plan `## Status` checkboxes, groups `release-notes.md` by release,
-and updates the `scope_rollups` in `project-state.yaml`. (There is no auto "stamp-shipped" hook —
-the `merged → shipped` edit is intentional, done when the release actually publishes.)
+There is no derived-view regeneration step. Build-plan `## Status` checkboxes are written by hand —
+tick a box when its chunk's review passes, and nothing overwrites it. (`prawduct-hook regen-views`
+still exists but is inert: it prints a deprecation warning and writes nothing.) Older change-log
+entries carry a legacy `status=` key; it is no longer read by anything.
 
 ## Notes & cautions
 

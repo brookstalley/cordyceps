@@ -123,8 +123,8 @@
   (a net7 reference, and a 'Rhino 8.21+' claim vs the Grasshopper 8.0.23304 pin); and
   decide + document whether the oldest-8.x SDK pin is a deliberate min-version strategy.
 
-- **[CQ-9W2F]** Repo structure cosmetics: Tools/Unified flatten, Knowledge/Prompts naming, tracked .gha strategy
-  `effort: M · impact: S · area: code-quality · source: janitor · added: 2026-07-02 · status: open · stage: requirements · reviewed: 2026-07-02`
+- **[CQ-9W2F]** Repo structure cosmetics: Tools/Unified flatten, Knowledge/Prompts naming, dedup follow-ups
+  `effort: M · impact: S · area: code-quality · source: janitor · added: 2026-07-02 · status: open · stage: requirements · reviewed: 2026-08-25`
 
   Surfaced by the 2026-07-02 janitor audit. Three cosmetic/structural nits to batch when convenient
   (low priority):
@@ -133,6 +133,12 @@
   - `Knowledge/Prompts` (markdown templates) vs `Prompts/` (registry code) is confusable naming.
   - `releases/Cordyceps.gha` is a tracked binary (56 blobs, 27.4 MiB across history, pack still
     compact) — consider LFS or GitHub-Release-asset-only at a future major cleanup.
+    **RESOLVED 2026-08-25** on branch `fix/release-artifact-provenance` (commit `94572ed`): the
+    GitHub-Release-asset-only option was taken. `releases/` is now gitignored, `release.sh publish`
+    builds the `.gha` and attaches it to the GitHub Release, and the README manual-install link
+    points at `/releases/latest/download/Cordyceps.gha`. Caveat: history still carries the 56 old
+    blobs (~27.4 MiB) — untracking stops future churn but does not rewrite history, and repo size
+    is not a reported problem, so no history rewrite is planned.
 
   **[2026-07-02] Scope extended (cumulative Critic, design reviewer)** — three code-quality dedup
   follow-ups, same batch-when-convenient priority:
@@ -191,8 +197,8 @@
   human+agent pairing, and only a hazard for unattended runs? If so the answer may be mode-dependent
   rather than a single global rule.
 
-  Related: the always-on status envelope shipped in the liveness cycle (build-plan.md chunk 03) is
-  the mitigation, not the fix.
+  Related: the always-on status envelope shipped in the liveness cycle (issues #27/#29/#30, PR #31)
+  is the mitigation, not the fix.
 
 - **[MCP-4T8V]** SolverState holds ONE server-snapshot slot but the bridge supports several servers
   `effort: S · impact: M · area: liveness · source: critic · added: 2026-08-21 · status: open · stage: ready`
@@ -228,6 +234,55 @@
   `modifiers` nor `optional` — the same field visible on every other component is missing here for
   no stated reason. This is the shape `learnings.md` warns about under tracing consumers of a shared
   helper: the helper gained a field and a hand-rolled duplicate silently did not.
+
+- **[REL-6H4X]** `scripts/release.sh` has no pre-release command
+  `effort: S · impact: M · area: release-tooling · source: user · added: 2026-08-25 · status: open · stage: requirements · related: REL-4K7D · reviewed: 2026-08-25`
+
+  Handing testers/issue-reporters a verification build is a manual, error-prone ritual today. On
+  2026-08-25 the `v1.5.0-rc.1` verification build had to be cut by hand: `gh release create
+  --prerelease --target <sha>` plus a `-p:Version` override on the `dotnet build`, because
+  `scripts/release.sh` only supports the two-step `prep` → `publish` flow that targets `main` + Yak.
+  Two specific blockers in the script:
+  - `validate_version` rejects prerelease version strings (`1.5.0-rc.1`), and
+  - `increment_patch` would mangle a prerelease string if one were stored in the `.csproj`.
+
+  **Wanted:** a repeatable `./scripts/release.sh prerelease [version]` that builds the `.gha`, cuts a
+  GitHub pre-release off an arbitrary commit/branch (no `main` merge, no Yak push, no tag on the
+  release surface), and leaves the tracked version untouched — so shipping a tester build is routine
+  instead of improvised.
+
+  **Open design questions** (why this is `stage: requirements`, not `ready`): whether the prerelease
+  version is written to the `.csproj` at all or only passed as a build-time `-p:Version` override;
+  whether a `vX.Y.Z-rc.N` tag is pushed or the release is attached to a bare SHA; and how
+  `validate_version` / `increment_patch` should treat SemVer prerelease suffixes without loosening
+  the guards that protect the real release path.
+
+- **[REL-4K7D]** `scripts/release.sh` has no automated regression guard
+  `effort: M · impact: M · area: release-tooling · source: critic · added: 2026-08-25 · status: open · stage: ready · related: REL-6H4X`
+
+  Critic finding R-4 of review `rev-20260825T145837Z-e594dbc8` (2026-08-25).
+
+  The release script now carries real branching logic: `publish` builds the `.gha` it ships
+  (`build_gha` before `prepare_dist`), `prepare_dist` fails closed when no build exists, and
+  `create_github_release` reconciles an already-existing Release by uploading the asset with
+  `--clobber` and marking it `--latest` rather than skipping. None of that is covered by an
+  automated test — the C# suite (550 tests) does not touch shell.
+
+  Verification during that cycle was ad-hoc: `--dry-run` runs in a throwaway clone, plus two
+  hand-rolled harnesses that `sed`-extracted single functions (`prepare_dist`,
+  `create_github_release`) out of the script and ran them against stub `gh`/dirs. Those harnesses
+  proved the branches and were then thrown away — which is itself the evidence this is worth
+  having: the same extraction was improvised twice in one session.
+
+  **Wanted:** a small `bats` (or plain-bash) suite that sources the script's functions with stubbed
+  `gh`/`dotnet`/`yak` and asserts the failure-closed paths — no built `.gha`, existing Release,
+  failed asset upload, failed `--latest`.
+
+  **Note:** the script is 700+ lines and sourcing it executes the arg dispatch at the bottom, so it
+  likely needs a guard (e.g. dispatch only when `BASH_SOURCE[0] == $0`) before it can be sourced
+  cleanly — that refactor is part of the work.
+
+  Related to REL-6H4X (pre-release command) — both touch `release.sh` and could share the harness.
 
 ## Promoted
 

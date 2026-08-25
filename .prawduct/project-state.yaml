@@ -364,39 +364,21 @@ build_state:
 # `artifacts/build-plan.md` — scope-named plans (`artifacts/build-plan-<scope>.md`)
 # keep release-pending plans distinct under gitflow. The value is a path
 # relative to `.prawduct/` (a repo-relative `.prawduct/...` spelling is
-# tolerated). The Critic gate, plan-aware mode inference, regen-views, and
-# chunk-ref verification all resolve the plan through this pointer; unset →
+# tolerated). The Critic gate, plan-aware mode inference, and chunk-ref
+# verification all resolve the plan through this pointer; unset →
 # `artifacts/build-plan.md`. A pointer to a file that doesn't exist means
 # governance sees NO active plan — the session briefing warns loudly until
 # it's fixed (STH-5P2W).
 #
 # active_build_plan: artifacts/build-plan-my-scope.md
 #
-# Repointed 2026-07-02 when the reliability follow-through build started (janitor
-# PR #25 merged the prior plan's work to develop). The janitor plan
-# (artifacts/build-plan.md) is retained until the next develop->main release per
-# the gitflow plan lifecycle; it has no derived `## Status` block, so repointing
-# early loses nothing for release regen-views.
+# Points at the conventional path, which currently holds the
+# release-artifact-provenance plan (that plan also declares `branch:`, so it
+# resolves for itself). The completed issues-2026-08 plan was moved to
+# artifacts/archive/ rather than deleted. artifacts/build-plan-reliability.md is
+# a second retained plan, held live until the next develop->main release per the
+# gitflow plan lifecycle.
 active_build_plan: artifacts/build-plan.md
-
-# =============================================================================
-# DERIVED VIEWS (enabled by default, v1.4+)
-# =============================================================================
-# When true (default), three derived views are regenerated from change-log.md
-# tagged entries (see that file for the tag format):
-#   * build-plan `## Status` block (checkboxes from `status=shipped` tags)
-#   * `.prawduct/release-notes.md` (from `release=` tags)
-#   * `scope_rollups:` block below (from `scope=` tags)
-# Run `prawduct-hook regen-views` to apply.
-# Set to `false` to opt out — Status becomes hand-edited and the other views
-# are not produced.
-
-views_enabled: true
-
-# Scope rollups — derived view, populated by regen-views when views_enabled is
-# true. Lists chunks (and releases) shipped under each scope rollup tag.
-# Do not hand-edit — overwritten on next regen.
-scope_rollups: {}
 
 # =============================================================================
 # COVERAGE EVIDENCE (opt-in, v1.4+)

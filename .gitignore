@@ -74,3 +74,8 @@ memory/
 # Agent worktrees created by Claude Code subagents — transient, and an untracked
 # directory here aborts scripts/release.sh require_clean_tree.
 .claude/worktrees/
+
+# Built plugin output. The csproj CopyToReleases target writes here so Grasshopper can load a
+# local build; it is a build artifact, not a tracked file. The published download is the
+# GitHub Release asset, which scripts/release.sh builds and attaches at publish time.
+releases/

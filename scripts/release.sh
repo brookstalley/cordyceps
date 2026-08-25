@@ -10,8 +10,9 @@
 #                                            #   .gha, commit "Release vX.Y.Z", push develop, and
 #                                            #   open a develop->main PR. Then merge that PR.
 #   ./scripts/release.sh publish [VERSION]   # on main (after the prep PR merged + pulled): build
-#                                            #   the yak package, tag vX.Y.Z, push the tag, publish
-#                                            #   the GitHub Release, and push to yak.
+#                                            #   the .gha and the yak package, tag vX.Y.Z, push the
+#                                            #   tag, publish the GitHub Release with the .gha
+#                                            #   attached, and push to yak.
 #
 #   ./scripts/release.sh prep --dry-run      # preview either half without making changes
 #   ./scripts/release.sh --help
@@ -21,7 +22,8 @@
 #
 # Prerequisites:
 #   prep:    dotnet CLI, git push access to origin, gh CLI (authenticated)
-#   publish: git push access, gh CLI (authenticated), Rhino 8 (for the yak CLI), yak login
+#   publish: dotnet CLI (it builds the .gha it ships), git push access, gh CLI (authenticated),
+#            Rhino 8 (for the yak CLI), yak login
 #
 
 set -e
@@ -63,8 +65,9 @@ usage() {
     echo "  prep [VERSION]     On '$INTEGRATION_BRANCH': bump version + CHANGELOG, build the .gha,"
     echo "                     commit 'Release vX.Y.Z', push, and open a '$INTEGRATION_BRANCH'->'$RELEASE_BRANCH' PR."
     echo "                     Omit VERSION to auto-increment the patch (e.g. 1.4.12 -> 1.4.13)."
-    echo "  publish [VERSION]  On '$RELEASE_BRANCH' (after the prep PR is merged + pulled): build the yak"
-    echo "                     package, tag vX.Y.Z, push the tag, publish the GitHub Release, push to yak."
+    echo "  publish [VERSION]  On '$RELEASE_BRANCH' (after the prep PR is merged + pulled): build the .gha"
+    echo "                     and yak package, tag vX.Y.Z, push the tag, publish the GitHub Release"
+    echo "                     with the .gha attached, push to yak."
     echo "                     Omit VERSION to use the version already on '$RELEASE_BRANCH' (csproj)."
     echo ""
     echo "Options:"
@@ -203,7 +206,7 @@ ensure_gh() {
     log_success "GitHub CLI authenticated"
 }
 
-# Verify dotnet is available (prep builds the .gha)
+# Verify dotnet is available (both halves build the .gha)
 ensure_dotnet() {
     if ! command -v dotnet &> /dev/null; then
         log_error "dotnet CLI not found. Install .NET SDK."
@@ -328,9 +331,9 @@ check_readme() {
         fi
     fi
 
-    # Check download link points to releases
-    if ! grep -q "releases/Cordyceps.gha" "$README"; then
-        log_warn "README may be missing download link to releases/Cordyceps.gha"
+    # Check download link points at the published release asset
+    if ! grep -q "releases/latest/download/Cordyceps.gha" "$README"; then
+        log_warn "README may be missing the download link to the latest release asset"
         issues=$((issues + 1))
     fi
 
@@ -378,6 +381,12 @@ prepare_dist() {
     if [[ "$DRY_RUN" == true ]]; then
         log_info "[DRY-RUN] Would create $DIST_DIR with GHA, manifest, and icon"
     else
+        if [[ ! -f "$RELEASES_DIR/Cordyceps.gha" ]]; then
+            log_error "No built plugin at $RELEASES_DIR/Cordyceps.gha"
+            log_error "The build reported success but produced no .gha there - check the csproj"
+            log_error "CopyToReleases target. (The file is a build output, not tracked in git.)"
+            exit 1
+        fi
         rm -rf "$DIST_DIR"
         mkdir -p "$DIST_DIR"
         cp "$RELEASES_DIR/Cordyceps.gha" "$DIST_DIR/"
@@ -402,18 +411,19 @@ build_yak() {
     fi
 }
 
-# Commit the version bump + built .gha on the integration branch (prep)
+# Commit the version bump on the integration branch (prep)
 commit_release() {
     local version="$1"
     log_info "Committing release bump..."
     if [[ "$DRY_RUN" == true ]]; then
-        log_info "[DRY-RUN] Would commit version bump + .gha as 'Release v$version' on $INTEGRATION_BRANCH"
+        log_info "[DRY-RUN] Would commit version bump as 'Release v$version' on $INTEGRATION_BRANCH"
         return 0
     fi
 
-    # csproj + manifest (bumped) and the rebuilt .gha (the downloadable asset) ride to main
-    # via the PR; CHANGELOG was renamed by rename_changelog_unreleased.
-    git -C "$PROJECT_ROOT" add "$CSPROJ" "$MANIFEST" "$CHANGELOG" "$RELEASES_DIR/Cordyceps.gha"
+    # Only the bumped sources ride to main via the PR. The .gha is a build output, not a tracked
+    # file: publish rebuilds it and attaches it to the GitHub Release, which is where the README
+    # download points. CHANGELOG was renamed by rename_changelog_unreleased.
+    git -C "$PROJECT_ROOT" add "$CSPROJ" "$MANIFEST" "$CHANGELOG"
     git -C "$PROJECT_ROOT" commit -m "Release v$version"
     log_success "Committed 'Release v$version'"
 }
@@ -510,9 +520,23 @@ create_github_release() {
         return 0
     fi
 
-    # A tag can be pushed without a Release object; re-running must not hard-fail.
+    # A tag can be pushed without a Release object; re-running must not hard-fail. But skipping
+    # outright would leave a Release with no .gha, and the README's manual-install link resolves
+    # to that asset - a missing one is a 404 for every user, not a cosmetic gap. So reconcile the
+    # existing Release instead of returning blind.
     if gh release view "v$version" &> /dev/null; then
-        log_warn "GitHub Release v$version already exists - skipping creation"
+        log_warn "GitHub Release v$version already exists - reconciling asset and latest flag"
+        if ! gh release upload "v$version" "$RELEASES_DIR/Cordyceps.gha#Cordyceps.gha" --clobber; then
+            log_error "Could not attach Cordyceps.gha to the existing Release v$version."
+            log_error "The README download link resolves to that asset - attach it manually."
+            exit 1
+        fi
+        if ! gh release edit "v$version" --latest; then
+            log_error "Could not mark Release v$version as latest."
+            log_error "/releases/latest/download/Cordyceps.gha serves whichever Release is latest."
+            exit 1
+        fi
+        log_success "GitHub Release v$version reconciled (asset attached, marked latest)"
         return 0
     fi
 
@@ -655,6 +679,7 @@ do_publish() {
 
     require_branch "$RELEASE_BRANCH"
     require_clean_tree
+    ensure_dotnet   # publish builds the .gha it ships
     ensure_gh
     ensure_yak_login
 
@@ -682,6 +707,10 @@ do_publish() {
         echo ""
     fi
 
+    # Build here, not just in prep: the .gha is not tracked, so what lands in the Yak package and
+    # the GitHub Release must be compiled from the commit being released rather than whatever a
+    # local build happened to leave in releases/ (on a fresh clone, nothing at all).
+    build_gha
     prepare_dist
     build_yak "$NEW_VERSION"
     tag_and_push "$NEW_VERSION"
