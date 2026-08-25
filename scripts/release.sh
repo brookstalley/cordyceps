@@ -383,7 +383,8 @@ prepare_dist() {
     else
         if [[ ! -f "$RELEASES_DIR/Cordyceps.gha" ]]; then
             log_error "No built plugin at $RELEASES_DIR/Cordyceps.gha"
-            log_error "It is a build output, not a tracked file - run the build first."
+            log_error "The build reported success but produced no .gha there - check the csproj"
+            log_error "CopyToReleases target. (The file is a build output, not tracked in git.)"
             exit 1
         fi
         rm -rf "$DIST_DIR"
