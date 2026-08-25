@@ -29,7 +29,7 @@ The Package Manager downloads the plugin, places it in the right folder, and unb
 
 ### Manual install
 
-1. **[Download Cordyceps.gha](https://github.com/brookstalley/cordyceps/raw/main/releases/Cordyceps.gha)** (or grab it from the [latest release](https://github.com/brookstalley/cordyceps/releases/latest))
+1. **[Download Cordyceps.gha](https://github.com/brookstalley/cordyceps/releases/latest/download/Cordyceps.gha)** — always the current release (see [all releases](https://github.com/brookstalley/cordyceps/releases))
 
 2. Copy to your Grasshopper components folder:
    *File → Special Folders → Components Folder*

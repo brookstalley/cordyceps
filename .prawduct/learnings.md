@@ -48,16 +48,28 @@ declares `test_command:` in `project-state.yaml`, so `record --from-junit <repor
 will list every C# file under `changes_unjudged` — the floor verifier is Python-only symbol-grep, so
 that's structurally expected here, not a coverage failure.
 
-## Building dirties the tracked `releases/Cordyceps.gha` binary
+## The built `.gha` is a build output, not a tracked file — don't reintroduce it
 
-`Cordyceps.csproj` has a post-build `CopyToReleases` target that copies the built `.gha`
-into `releases/` (a *tracked* binary). So **any** `dotnet build`/`dotnet test` during
-non-release work — including baseline verification and `prawduct-hook test-evidence record` —
-restamps `releases/Cordyceps.gha` (it embeds a build timestamp via `SourceRevisionId`), leaving
-it modified in `git status`. **Run `git checkout -- releases/Cordyceps.gha` after building** so a
-rebuilt binary never lands in a non-release diff. The binary should only change via
-`scripts/release.sh` at actual release time. (Mirror of the GHS-7K2P housekeeping snag with the
-regenerable `.work-model-index.json`: discard regenerable build artifacts before committing.)
+`Cordyceps.csproj`'s post-build `CopyToReleases` target writes the built `.gha` into `releases/`
+so Grasshopper can load a local build. `releases/` is **gitignored**: the binary embeds a build
+timestamp via `SourceRevisionId`, so every `dotnet build`/`dotnet test` produces a different one,
+and while it was tracked each of those restamped it into `git status` — every session needed a
+`git checkout -- releases/Cordyceps.gha` ritual to keep a rebuilt binary out of an unrelated diff.
+
+Two failures came from tracking it, and both are what the untracking prevents:
+
+- The tracked copy only refreshed at release time, so on `develop` it was always the last
+  *released* build. A tester who swapped it in would run code with none of the branch's fixes and
+  report a false negative (this nearly happened on issues #27/#29/#30).
+- `release.sh publish` shipped `releases/Cordyceps.gha` straight from the working tree into both
+  the Yak package and the GitHub Release asset without building it. That was safe only because
+  `require_clean_tree` would flag the tracked file if a local build had touched it.
+
+`publish` now runs `build_gha` before `prepare_dist`, so the released binary is provably compiled
+from the release commit and a fresh clone can publish. Users download the GitHub Release asset via
+`/releases/latest/download/Cordyceps.gha`; CI also uploads a per-commit artifact for testers
+without a toolchain. **If you find yourself wanting to commit a `.gha`, don't** — cut a
+pre-release with the binary attached instead.
 
 ## A test naming a race/snapshot/ordering contract must actually exercise concurrency
 

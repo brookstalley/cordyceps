@@ -2,10 +2,11 @@
 
 Cordyceps is distributed two ways, and a release publishes to both:
 
-1. **GitHub** — a `Release vX.Y.Z` commit + `vX.Y.Z` tag on `main`, a published
+1. **GitHub** — a `Release vX.Y.Z` commit + `vX.Y.Z` tag on `main`, and a published
    **GitHub Release** (with the `.gha` attached as a downloadable asset and the CHANGELOG
-   section as its notes), and the built `releases/Cordyceps.gha` (the file users download
-   directly from the README link).
+   section as its notes). That asset is what the README's manual-install link resolves to,
+   via `/releases/latest/download/Cordyceps.gha`. The `.gha` itself is a build output and is
+   not tracked in git — `publish` compiles it from the release commit.
 2. **Yak** — the [Rhino package manager](https://yak.rhino3d.com/packages/cordyceps),
    which is how Rhino's Package Manager (`_PackageManager`) finds and installs Cordyceps.
 
@@ -27,7 +28,7 @@ half can push the `vX.Y.Z` tag even though it can't push the `main` branch.
 
 ## Prerequisites
 
-- **.NET 8 SDK** (`dotnet` on PATH) — `prep` builds the `.gha`.
+- **.NET 8 SDK** (`dotnet` on PATH) — both halves build the `.gha`.
 - **Git push access** to `origin`.
 - **GitHub CLI** (`gh` on PATH), authenticated — `prep` opens the release PR and `publish`
   creates the GitHub Release. Run `gh auth login` once (https://cli.github.com).
@@ -64,8 +65,9 @@ git checkout develop && git pull
 ./scripts/release.sh prep --dry-run  # preview, no changes
 ```
 
-`prep` bumps the version, renames the CHANGELOG section, builds the `.gha`, commits
-`Release vX.Y.Z` on `develop`, pushes, and opens a `develop → main` PR.
+`prep` bumps the version, renames the CHANGELOG section, builds the `.gha` (as a smoke test —
+the binary is not committed), commits `Release vX.Y.Z` on `develop`, pushes, and opens a
+`develop → main` PR.
 
 **Step 2 — merge the release PR.** Review it on GitHub and merge once `build-test` is green.
 Use a **merge commit** (not squash) so `develop` and `main` stay tree-aligned (no back-merge
@@ -79,20 +81,25 @@ git checkout main && git pull        # pull the merged release commit
 ./scripts/release.sh publish --dry-run
 ```
 
-`publish` builds the yak package, tags `vX.Y.Z` and **pushes only the tag**, creates the GitHub
-Release (attaching the `.gha`), and pushes to yak.
+`publish` builds the `.gha` and the yak package, tags `vX.Y.Z` and **pushes only the tag**,
+creates the GitHub Release (attaching the `.gha`), and pushes to yak.
 
 ### What each step does, in order
 
 **`prep`** (on `develop`): guards branch + clean tree → resolves the version → renames
 `CHANGELOG [Unreleased]` → bumps `csproj` + root `manifest.yml` → `dotnet build -c Release`
-(copies the `.gha` to `releases/`) → commits those four files as `Release vX.Y.Z` → pushes
-`develop` → opens the `develop → main` PR with the CHANGELOG section as the body.
+(verifies the bumped version compiles; the `.gha` lands in the gitignored `releases/`) → commits
+`csproj`, `manifest.yml` and `CHANGELOG.md` as `Release vX.Y.Z` → pushes `develop` → opens the
+`develop → main` PR with the CHANGELOG section as the body.
 
-**`publish`** (on `main`, after the PR merged + pulled): guards branch + clean tree → verifies
-`main`'s csproj is at the version → prepares `dist/` (`.gha`, `manifest.yml`, `icon.png`) →
-`yak build` → tags `vX.Y.Z` and pushes **only the tag** → `gh release create` (`.gha` + notes,
-`--latest`; skipped if it already exists) → `yak push`.
+**`publish`** (on `main`, after the PR merged + pulled): guards branch + clean tree →
+verifies `main`'s csproj is at the version → `dotnet build -c Release` → prepares `dist/`
+(`.gha`, `manifest.yml`, `icon.png`) → `yak build` → tags `vX.Y.Z` and pushes **only the tag** →
+`gh release create` (`.gha` + notes, `--latest`; skipped if it already exists) → `yak push`.
+
+`publish` builds rather than reusing whatever is in `releases/`, so the binary it ships to both
+GitHub and Yak is provably compiled from the commit being released, and a fresh clone of `main`
+can publish.
 
 ## Governance bookkeeping (Prawduct)
 

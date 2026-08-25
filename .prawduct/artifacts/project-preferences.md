@@ -23,7 +23,12 @@ Developer preferences for how code is written in this project. Captured during d
 - **Coverage expectations**: host-independent logic (type marshaling, conversions, schema mapping) is unit-tested; document-touching behavior is verified live in Rhino — the Grasshopper host cannot be exercised off the UI thread in a unit test
 - **Testing strategies**: table-driven via `[Theory]`/`[InlineData]`; no property-based testing
 - **Test location**: separate project `src/Cordyceps.Tests/`
-- **Parallelization**: xUnit default
+- **Parallelization**: disabled — `src/Cordyceps.Tests/AssemblyInfo.cs` sets
+  `[assembly: CollectionBehavior(DisableTestParallelization = true)]`. Several tests assert
+  timing/concurrency contracts and contend for the 2-core CI runner's thread pool under
+  parallel collections, which flaked `build-test` — the required check for strict `main`
+  protection. The suite is sub-second, so serial costs ~nothing. Make any new timing test
+  deterministic before re-enabling.
 
 ## Architecture Patterns
 

@@ -12,7 +12,7 @@ Cordyceps is a Grasshopper plugin that exposes Grasshopper and Rhino functionali
 # Build the plugin (Release configuration required)
 dotnet build src/Cordyceps/Cordyceps.csproj -c Release
 
-# The built .gha file is automatically copied to releases/
+# The built .gha file is automatically copied to releases/ (gitignored - a build output)
 ```
 
 The project targets .NET 8.0 and outputs a Grasshopper plugin (`.gha` file). Debug builds are blocked—always use `-c Release`.
@@ -122,11 +122,13 @@ This repo uses **gitflow**: **`develop`** is the default/integration branch (fea
 and merge back via `/prawduct:pr`); **`main`** is the release surface and is **strict-protected**
 (no direct pushes; a `develop → main` PR with the `build-test` check is required; no bypass).
 
-Releases publish to **both** GitHub (`Release vX.Y.Z` commit + tag on `main`, a published
-**GitHub Release** with the `.gha` attached, and the downloadable `releases/Cordyceps.gha`) and the
-**Yak** package manager. Because `main` rejects direct pushes, `scripts/release.sh` is a **two-step**
-flow around the release PR (branch protection guards branches, not tags, so the publish step pushes
-only the `vX.Y.Z` tag). Don't run the yak/gh commands by hand.
+Releases publish to **both** GitHub (`Release vX.Y.Z` commit + tag on `main`, and a published
+**GitHub Release** with the `.gha` attached — that asset is the download the README links to) and
+the **Yak** package manager. The `.gha` is a build output and is **not** tracked in git; `publish`
+compiles it from the release commit and attaches it. Because `main` rejects direct pushes,
+`scripts/release.sh` is a **two-step** flow around the release PR (branch protection guards
+branches, not tags, so the publish step pushes only the `vX.Y.Z` tag). Don't run the yak/gh
+commands by hand.
 
 ```bash
 # Keep notes under a top `## [Unreleased]` in CHANGELOG.md; prep renames it. Then:
