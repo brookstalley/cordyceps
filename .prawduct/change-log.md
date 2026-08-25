@@ -16,11 +16,14 @@
 
      Format:
 
-         ## YYYY-MM-DD: title (vN.M.P)
+         ## YYYY-MM-DD: title
 
-         <!-- prawduct: chunks=00,01,02 | release=v1.3.18 | status=shipped | scope=v1.4 -->
+         <!-- prawduct: type=bugfix | chunks=01,02 | scope=my-scope -->
 
          **Why:** ...
+
+     Copy that line as-is for a new entry: no `release=` (the release adds it)
+     and no `status=` (retired). Historical entries below carry both.
 
      Recognized keys:
        chunks   - comma-separated chunk IDs (zero-padded, must match
