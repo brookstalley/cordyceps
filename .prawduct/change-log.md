@@ -39,6 +39,41 @@
      derived view. Don't hand-edit them — add/update a tagged entry here and
      run `prawduct-hook regen-views`. -->
 
+## 2026-08-25: the release publishes the binary it built (release-artifact provenance)
+
+<!-- prawduct: type=bugfix | chunks=01,02,03,04 | scope=release-artifact-provenance -->
+
+**Why:** [GitHub #29] A reporter with no .NET toolchain asked for a `develop` build and there was
+no supported way to give them one. CI built and tested but uploaded nothing, and the two
+obvious-looking sources were both wrong: the tracked `releases/Cordyceps.gha` on `develop` is the
+last *released* build (swapping it in would have tested code containing none of the fixes and
+produced a false negative on #27/#29/#30), and any local `dotnet build -c Release` silently
+overwrote that same file through the csproj `CopyToReleases` target. Underneath all three sat one
+defect: `do_publish` called `prepare_dist` without ever calling `build_gha`, so the published
+binary was whatever happened to be sitting in the working tree. That was safe only by accident -
+the file was tracked, so `require_clean_tree` would catch a stray local build.
+
+**What:** (a) `publish` now runs `ensure_dotnet` + `build_gha` before `prepare_dist`, so it ships a
+binary compiled from the checked-out release commit and works on a fresh clone; `prepare_dist`
+hard-fails with a pointed message if the build reported success but produced no `.gha`.
+(b) `releases/` is gitignored and `releases/Cordyceps.gha` untracked - `prep` no longer stages it,
+and a local Release build can no longer dirty the tree or stage an unreleased binary into the
+manual-install download path. (c) The README manual-install link moved from `raw/main/releases/...`
+to `/releases/latest/download/Cordyceps.gha`, and `check_readme` greps for the new path.
+(d) `dotnet-ci.yml` uploads `Cordyceps.gha` per run (`if-no-files-found: error`, 90-day retention)
+so any commit is obtainable without a toolchain.
+
+**Reconcile, don't skip:** `create_github_release` previously logged a warning and returned when a
+Release for the tag already existed. With the README now resolving to that Release's asset, a
+skip leaves a Release with no `.gha` - a 404 for every user, not a cosmetic gap. It now reconciles:
+`gh release upload --clobber` plus `gh release edit --latest`, each failing loudly.
+
+**Accepted costs:** existing `raw/main/releases/Cordyceps.gha` links 404 (a loud 404 beats silently
+serving a build that is not the release you think it is), and the 56 historical `.gha` blobs
+(~27.4 MiB) stay in history - untracking stops the future churn and repo size is not a reported
+problem. Neither `publish` path has run for real yet; the next release exercises both for the
+first time.
+
 ## 2026-08-21: bridge liveness, solution safety, status envelope (issues #30, #29)
 
 <!-- prawduct: type=feature | chunks=01,02,03 | scope=issues-2026-08 | status=built -->
