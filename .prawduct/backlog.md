@@ -236,7 +236,7 @@
   helper: the helper gained a field and a hand-rolled duplicate silently did not.
 
 - **[REL-6H4X]** `scripts/release.sh` has no pre-release command
-  `effort: S · impact: M · area: release-tooling · source: user · added: 2026-08-25 · status: open · stage: requirements`
+  `effort: S · impact: M · area: release-tooling · source: user · added: 2026-08-25 · status: open · stage: requirements · related: REL-4K7D · reviewed: 2026-08-25`
 
   Handing testers/issue-reporters a verification build is a manual, error-prone ritual today. On
   2026-08-25 the `v1.5.0-rc.1` verification build had to be cut by hand: `gh release create
@@ -256,6 +256,33 @@
   whether a `vX.Y.Z-rc.N` tag is pushed or the release is attached to a bare SHA; and how
   `validate_version` / `increment_patch` should treat SemVer prerelease suffixes without loosening
   the guards that protect the real release path.
+
+- **[REL-4K7D]** `scripts/release.sh` has no automated regression guard
+  `effort: M · impact: M · area: release-tooling · source: critic · added: 2026-08-25 · status: open · stage: ready · related: REL-6H4X`
+
+  Critic finding R-4 of review `rev-20260825T145837Z-e594dbc8` (2026-08-25).
+
+  The release script now carries real branching logic: `publish` builds the `.gha` it ships
+  (`build_gha` before `prepare_dist`), `prepare_dist` fails closed when no build exists, and
+  `create_github_release` reconciles an already-existing Release by uploading the asset with
+  `--clobber` and marking it `--latest` rather than skipping. None of that is covered by an
+  automated test — the C# suite (550 tests) does not touch shell.
+
+  Verification during that cycle was ad-hoc: `--dry-run` runs in a throwaway clone, plus two
+  hand-rolled harnesses that `sed`-extracted single functions (`prepare_dist`,
+  `create_github_release`) out of the script and ran them against stub `gh`/dirs. Those harnesses
+  proved the branches and were then thrown away — which is itself the evidence this is worth
+  having: the same extraction was improvised twice in one session.
+
+  **Wanted:** a small `bats` (or plain-bash) suite that sources the script's functions with stubbed
+  `gh`/`dotnet`/`yak` and asserts the failure-closed paths — no built `.gha`, existing Release,
+  failed asset upload, failed `--latest`.
+
+  **Note:** the script is 700+ lines and sourcing it executes the arg dispatch at the bottom, so it
+  likely needs a guard (e.g. dispatch only when `BASH_SOURCE[0] == $0`) before it can be sourced
+  cleanly — that refactor is part of the work.
+
+  Related to REL-6H4X (pre-release command) — both touch `release.sh` and could share the harness.
 
 ## Promoted
 
