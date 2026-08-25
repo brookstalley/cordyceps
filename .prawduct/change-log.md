@@ -4,16 +4,15 @@
      This file is separate from project-state.yaml to reduce merge conflicts
      when multiple branches add entries simultaneously.
 
-     # Tagged entries (enabled by default; set `views_enabled: false` in project-state.yaml to opt out)
+     # Tagged entries
 
-     With views enabled (the default), add a tag-line directly under each ##
-     header to mark which build-plan chunks the entry shipped and which
-     release it belongs to. `prawduct-hook regen-views` uses these tags to
-     regenerate three derived views:
-       * build-plan `## Status` block — checkboxes flip from `status=shipped`
-       * `.prawduct/release-notes.md` — sections grouped by `release=`
-       * `scope_rollups:` block in project-state.yaml — grouped by `scope=`
-     Untagged entries are ignored by all three views.
+     Add a tag-line directly under each ## header to mark which build-plan
+     chunks the entry shipped and which release it belongs to.
+
+     Nothing is derived from these tags any more — there are no generated
+     views, and `prawduct-hook regen-views` is inert (it warns and writes
+     nothing). The tags are read directly: `check-releasability` and
+     `plan-backfill` use `scope=` and the presence/absence of `release=`.
 
      Format:
 
@@ -26,18 +25,17 @@
      Recognized keys:
        chunks   - comma-separated chunk IDs (zero-padded, must match
                   build-plan.md ## Status headers exactly: `Chunk 00:`)
-       release  - version string (used by release-notes view, future)
-       status   - shipped | in-progress | deferred
-                  `shipped` means MERGED TO MAINLINE — per-chunk timing.
-                  Tag chunks `status=shipped` as soon as the merge commit lands;
-                  inclusion in a tagged release is tracked separately via
-                  `release=vN.M.P` (set when a release entry consolidates one
-                  or more shipped chunks).
-       scope    - rollup identifier (e.g., v1.4)
+       release  - version string, added when the develop->main release ships
+                  the entry. Its ABSENCE is the release-pending state, so never
+                  write a placeholder: any value at all drops the entry's whole
+                  scope out of `check-releasability`'s pending set.
+       status   - LEGACY, inert. Older entries carry shipped|merged|built|
+                  deferred; nothing reads it. Don't add it to new entries.
+       scope    - rollup identifier (e.g., release-artifact-provenance)
 
-     With `views_enabled: true`, the Status checkboxes in build-plan.md are a
-     derived view. Don't hand-edit them — add/update a tagged entry here and
-     run `prawduct-hook regen-views`. -->
+     The `## Status` checkboxes in a build plan are NOT derived from this file.
+     They are written by hand: tick a box when its chunk's review passes, and
+     nothing will overwrite it. -->
 
 ## 2026-08-25: the release publishes the binary it built (release-artifact provenance)
 
@@ -67,6 +65,24 @@ so any commit is obtainable without a toolchain.
 Release for the tag already existed. With the README now resolving to that Release's asset, a
 skip leaves a Release with no `.gha` - a 404 for every user, not a cosmetic gap. It now reconciles:
 `gh release upload --clobber` plus `gh release edit --latest`, each failing loudly.
+
+**Also, from PR review — the post-release ritual was already dead.** `docs/release-process.md`
+made `prawduct-hook regen-views` *the* governance bookkeeping step and `CLAUDE.md` repeated it, but
+that command is retired in prawduct 3.4.0: it prints a warning and writes nothing. Four more places
+described the world it created — this file's own header (declaring build-plan `## Status`
+checkboxes a derived view that must not be hand-edited, which this bundle contradicts by correctly
+hand-ticking all four), a `learnings.md` rule forbidding exactly what the methodology now
+prescribes, `project-state.yaml`'s `views_enabled`/`scope_rollups` keys, and
+`build-plan-reliability.md`, whose six checkboxes sit unticked for work merged in PR #26 precisely
+because the mechanism that owned them stopped running. All six sites now state what is actually
+true; the release doc's bookkeeping step is `release=vX.Y.Z` tags plus `plan-backfill --apply`.
+The reliability plan's checkboxes are deliberately left unticked — its own Context lists
+undischarged VRF-009/VRF-010 operator verification, so "built and merged, verification
+outstanding" is the honest state and no checkbox says that. Flagged for an owner ruling.
+
+**Housekeeping in this bundle:** `94572ed` also archives the completed issues-2026-08 build plan
+into `artifacts/archive/` (preserved, not overwritten) and installs this cycle's plan at the
+conventional path — about two-thirds of the diff's line count.
 
 **Accepted costs:** existing `raw/main/releases/Cordyceps.gha` links 404 (a loud 404 beats silently
 serving a build that is not the release you think it is), and the 56 historical `.gha` blobs

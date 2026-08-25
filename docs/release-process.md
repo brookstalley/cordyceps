@@ -127,17 +127,22 @@ can publish.
 
 ## Governance bookkeeping (Prawduct)
 
-Under gitflow, a feature's change-log entry sits at `status=merged` after its
-`feature → develop` PR. When the `develop → main` release ships those entries, flip them to
-`status=shipped` and add `release=vX.Y.Z` to each, then regenerate the derived views:
+Under gitflow, a feature's change-log entry carries **no `release=` tag** after its
+`feature → develop` PR — that absence is the release-pending state. When the `develop → main`
+release ships those entries, add `release=vX.Y.Z` to each. That tag is the whole release-time
+edit: nothing is regenerated from it, and `prawduct-hook check-releasability` reads the *absence*
+of `release=` to enumerate what is still pending, so never write a placeholder value.
+
+Then archive the build plans this release shipped:
 
 ```bash
-prawduct-hook regen-views
+prawduct-hook plan-backfill --apply
 ```
 
-This flips the matching build-plan `## Status` checkboxes, groups `release-notes.md` by release,
-and updates the `scope_rollups` in `project-state.yaml`. (There is no auto "stamp-shipped" hook —
-the `merged → shipped` edit is intentional, done when the release actually publishes.)
+There is no derived-view regeneration step. Build-plan `## Status` checkboxes are written by hand —
+tick a box when its chunk's review passes, and nothing overwrites it. (`prawduct-hook regen-views`
+still exists but is inert: it prints a deprecation warning and writes nothing.) Older change-log
+entries carry a legacy `status=` key; it is no longer read by anything.
 
 ## Notes & cautions
 

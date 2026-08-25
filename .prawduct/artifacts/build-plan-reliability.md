@@ -1,9 +1,15 @@
 <!-- Scope-named plan per the gitflow plan lifecycle. The janitor PR (#25)
      merged to develop on 2026-07-02 and `active_build_plan` now points here
-     (project-state.yaml). Status checkboxes below are a DERIVED view
-     (views_enabled: true) — they flip via `prawduct-hook regen-views` from
-     change-log `status=shipped` tags at merge/release time, never by hand;
-     in-flight progress lives in the Context line. -->
+     (project-state.yaml).
+
+     THE BOXES BELOW ARE UNTICKED AND NOBODY IS TICKING THEM. They were written
+     as a derived view flipped by `prawduct-hook regen-views`; that command is
+     now inert, so the flip never came and never will. All six chunks shipped in
+     PR #26 (see the Context line). Ticking them is a live decision, not
+     bookkeeping — the Context line also lists trailing work (VRF-009/VRF-010
+     operator burn-down in live Rhino) that has not been discharged, so the
+     honest state is "built and merged, verification outstanding", which no
+     checkbox expresses. Resolve deliberately before archiving this plan. -->
 ---
 artifact: build-plan
 version: 2
@@ -65,7 +71,8 @@ sufficient).
 Context: All six chunks built and committed 2026-07-02 (chunks 01-05 Critic-clean
 per chunk; chunk 06 is Type: cumulative-final — its cumulative review found 0
 blocking plus warnings/notes, resolved in the close-out commit). Tagged change-log
-entries carry `scope=reliability`; checkboxes flip at merge via regen-views.
+entries carry `scope=reliability`. The checkboxes above were never ticked: the
+regen-views mechanism that owned them is retired (see the header comment).
 Remaining: verify-resolutions chain over the close-out, PR to develop, and
 VRF-009/VRF-010 operator burn-down in live Rhino.
 

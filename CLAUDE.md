@@ -148,8 +148,9 @@ git checkout main && git pull
 ```
 
 Prerequisites (dotnet, Rhino 8 for the yak CLI, yak login, `gh` authenticated), the post-release
-Prawduct bookkeeping (`status=merged → shipped` + `prawduct-hook regen-views`), and the full
-step-by-step flow are in [`docs/release-process.md`](docs/release-process.md).
+Prawduct bookkeeping (tag each shipped change-log entry `release=vX.Y.Z`, then
+`prawduct-hook plan-backfill --apply`), and the full step-by-step flow are in
+[`docs/release-process.md`](docs/release-process.md).
 
 <!-- PRAWDUCT:ANCHOR — static governance pointer managed by the prawduct plugin. Keep it small and version-free: principles, methodology, and the active version live in the plugin and are injected at session start. -->
 
