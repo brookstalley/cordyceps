@@ -172,6 +172,11 @@ problem nobody has reported.
   - `prepare_dist` exercised verbatim (extracted from the real script) both ways: with an empty
     releases dir it exits 1 with the named error; with the built artifact it populates `dist/`
     with `.gha` + `manifest.yml` + `icon.png`.
+- `create_github_release`'s existing-Release branch exercised verbatim against a stubbed `gh`,
+  both ways: upload succeeds -> asset attached with `--clobber` and the Release marked `--latest`,
+  exit 0; upload fails -> exits 1 with the actionable message instead of falling through to
+  "Release published!". Not testable against the live `v1.5.0-rc.1`, since `gh release edit
+  --latest` would promote the pre-release and break the README download link.
 - Not verified: the CI upload step. YAML parses and the step list is correct, but
   `actions/upload-artifact` cannot run until the branch is pushed. Confirm on the first CI run.
 
