@@ -76,8 +76,9 @@ Existing repo — no scaffold. Standing commands:
 - Build: `dotnet build src/Cordyceps/Cordyceps.csproj -c Release` (Debug is blocked)
 - Tests: `python3 <plugin>/bin/prawduct-hook test-evidence record` (runs the
   declared `test_command`, stamps evidence — do NOT hand-edit `.test-evidence.json`)
-- After any build/test: `git checkout -- releases/Cordyceps.gha` (post-build copy
-  target restamps this tracked binary; it must only change at release time)
+- After any build/test: nothing to clean up. (This line previously said to run
+  `git checkout -- releases/Cordyceps.gha`; `releases/` is now gitignored, so that
+  command fails with "pathspec ... did not match any file(s) known to git".)
 - Baseline at plan time: 224/224 tests green, 0 build warnings.
 
 ### Verification Strategy

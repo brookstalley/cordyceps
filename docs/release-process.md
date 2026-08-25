@@ -26,6 +26,30 @@ Because `main` rejects direct pushes, a release is split in two around the relea
 fact that makes this work: **branch protection guards *branches*, not *tags*** — so the publish
 half can push the `vX.Y.Z` tag even though it can't push the `main` branch.
 
+## Getting a build without releasing
+
+Two ways to hand someone a `.gha` that is not a release — neither touches `main` or Yak:
+
+- **CI artifact.** Every `build-test` run on `develop`/`main` (and every PR) uploads
+  `Cordyceps.gha-<sha>` to its run page. Cheapest option, but artifacts expire (90 days) and the
+  downloader needs a GitHub login.
+- **Pre-release.** For an outside tester, publish a GitHub pre-release so the link is anonymous
+  and durable:
+
+  ```bash
+  dotnet build src/Cordyceps/Cordyceps.csproj -c Release -p:Version=1.5.0-rc.1
+  gh release create v1.5.0-rc.1 "releases/Cordyceps.gha#Cordyceps.gha" \
+      --prerelease --target <sha> --title "..." --notes-file <notes>
+  ```
+
+  Build with `-p:Version=` rather than editing the csproj: `validate_version` rejects prerelease
+  strings and `increment_patch` would turn a stored `1.5.0-rc.1` into `1.5.0-rc.2` on the next
+  bare `prep`. The override still moves the assembly version (`1.5.0.0` vs a shipped `1.4.12.0`),
+  so a tester can confirm which build they are running via the MCP `initialize` response.
+
+  Pre-releases are skipped by `/releases/latest/download/`, so the README download link is
+  unaffected. `scripts/release.sh` has no command for this yet — backlog `REL-6H4X`.
+
 ## Prerequisites
 
 - **.NET 8 SDK** (`dotnet` on PATH) — both halves build the `.gha`.

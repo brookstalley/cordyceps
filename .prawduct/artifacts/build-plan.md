@@ -133,6 +133,27 @@ instructs a reader to clean up after a build that no longer dirties anything.
   scratch clone is the honest way to exercise the real code paths.
 - `git status` clean after a Release build.
 
+## Recorded decisions
+
+**Existing `raw/main/releases/Cordyceps.gha` links break.** Deleting the tracked blob means any
+link of the form `https://github.com/brookstalley/cordyceps/raw/main/releases/Cordyceps.gha` —
+the README's own link until this change, so plausibly copied into forum posts, bookmarks and
+third-party install notes — now 404s. Weighed and accepted:
+
+- GitHub serves no redirect for a deleted path, so there is no way to keep the old URL alive
+  short of continuing to track the binary, which is the defect being fixed.
+- A 404 is a loud failure. The alternative the old link produced — silently serving a build that
+  is not the release you think it is — is the failure mode that nearly cost three false-negative
+  bug reports.
+- The README, the Rhino Package Manager path, and every GitHub Release page continue to work, and
+  `/releases/latest/download/Cordyceps.gha` is the stable replacement.
+- Old *release tags* are unaffected: their assets are attached to the Release objects, not to the
+  tracked path.
+
+**History is not rewritten.** The 56 historical `.gha` blobs (~27.4 MiB) stay. Untracking stops
+future churn; a rewrite would break every existing clone and commit reference for a repo-size
+problem nobody has reported.
+
 ## Verification results (2026-08-25)
 
 - C# suite: 550/550 green, recorded via `test-evidence record`. The suite is a **regression guard

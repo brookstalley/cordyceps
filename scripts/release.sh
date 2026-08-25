@@ -22,7 +22,8 @@
 #
 # Prerequisites:
 #   prep:    dotnet CLI, git push access to origin, gh CLI (authenticated)
-#   publish: git push access, gh CLI (authenticated), Rhino 8 (for the yak CLI), yak login
+#   publish: dotnet CLI (it builds the .gha it ships), git push access, gh CLI (authenticated),
+#            Rhino 8 (for the yak CLI), yak login
 #
 
 set -e
@@ -518,9 +519,23 @@ create_github_release() {
         return 0
     fi
 
-    # A tag can be pushed without a Release object; re-running must not hard-fail.
+    # A tag can be pushed without a Release object; re-running must not hard-fail. But skipping
+    # outright would leave a Release with no .gha, and the README's manual-install link resolves
+    # to that asset - a missing one is a 404 for every user, not a cosmetic gap. So reconcile the
+    # existing Release instead of returning blind.
     if gh release view "v$version" &> /dev/null; then
-        log_warn "GitHub Release v$version already exists - skipping creation"
+        log_warn "GitHub Release v$version already exists - reconciling asset and latest flag"
+        if ! gh release upload "v$version" "$RELEASES_DIR/Cordyceps.gha#Cordyceps.gha" --clobber; then
+            log_error "Could not attach Cordyceps.gha to the existing Release v$version."
+            log_error "The README download link resolves to that asset - attach it manually."
+            exit 1
+        fi
+        if ! gh release edit "v$version" --latest; then
+            log_error "Could not mark Release v$version as latest."
+            log_error "/releases/latest/download/Cordyceps.gha serves whichever Release is latest."
+            exit 1
+        fi
+        log_success "GitHub Release v$version reconciled (asset attached, marked latest)"
         return 0
     fi
 
