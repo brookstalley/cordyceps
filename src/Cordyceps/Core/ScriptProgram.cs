@@ -1,18 +1,20 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Reflection;
 
 namespace Cordyceps.Core
 {
     /// <summary>
-    /// Outcome of a rebuild request: whether the component was asked to rebuild, why not when it
-    /// was not, and the probe trace the caller can log.
+    /// Outcome of a rebuild request: whether the component was asked to rebuild, whether a hook
+    /// refused, and the probe trace the caller can log.
     /// </summary>
     public sealed class ScriptRebuildResult
     {
-        internal ScriptRebuildResult(bool rebuilt, string reason, List<string> probes)
+        internal ScriptRebuildResult(bool rebuilt, bool failed, string reason, List<string> probes)
         {
             Rebuilt = rebuilt;
+            Failed = failed;
             Reason = reason;
             Probes = probes ?? new List<string>();
         }
@@ -21,9 +23,16 @@ namespace Cordyceps.Core
         public bool Rebuilt { get; }
 
         /// <summary>
+        /// True when the component <em>has</em> rebuild hooks and one of them threw — the opposite
+        /// fact from having none, and the one worth acting on: such a component is probably still
+        /// running its previous program. A component with no hooks is a normal outcome; it
+        /// recompiles from its own source member instead.
+        /// </summary>
+        public bool Failed { get; }
+
+        /// <summary>
         /// Why no rebuild happened — an absent hook, or the exception one threw. <c>null</c> when
-        /// <see cref="Rebuilt"/> is true. Absent hooks are a normal outcome, not a failure: a
-        /// component that has none recompiles off its own source member instead.
+        /// <see cref="Rebuilt"/> is true.
         /// </summary>
         public string Reason { get; }
 
@@ -32,6 +41,41 @@ namespace Cordyceps.Core
         /// debug logging by the host-side caller — this class cannot log itself, because it is
         /// linked into the unit-test project where the Rhino logging host does not exist.
         /// </summary>
+        public IReadOnlyList<string> Probes { get; }
+    }
+
+    /// <summary>
+    /// What the component's running program is, compared against the text a caller holds.
+    /// </summary>
+    public sealed class RunningSourceComparison
+    {
+        internal RunningSourceComparison(bool readable, bool diverged, string runningSource, string reason, List<string> probes)
+        {
+            Readable = readable;
+            Diverged = diverged;
+            RunningSource = runningSource;
+            Reason = reason;
+            Probes = probes ?? new List<string>();
+        }
+
+        /// <summary>
+        /// True when the running program could actually be read. False is a real answer, not a
+        /// defect — a component that has never built has no running program yet. Callers must omit
+        /// the field they would have filled rather than substituting the stored source, or they
+        /// recreate the false confirmation this exists to remove.
+        /// </summary>
+        public bool Readable { get; }
+
+        /// <summary>True when the running program was read and differs from the expected text.</summary>
+        public bool Diverged { get; }
+
+        /// <summary>The running program's source; <c>null</c> unless <see cref="Readable"/>.</summary>
+        public string RunningSource { get; }
+
+        /// <summary>Why the running program could not be read; <c>null</c> when it could.</summary>
+        public string Reason { get; }
+
+        /// <summary>Ordered trace of what was probed, for the host-side caller to log.</summary>
         public IReadOnlyList<string> Probes { get; }
     }
 
@@ -59,10 +103,12 @@ namespace Cordyceps.Core
     ///
     /// <para>Interfaces are matched by simple name <em>and</em> by the members this needs, never by
     /// assembly-qualified name: the shape is the contract, so a namespace move between Rhino
-    /// versions doesn't silently turn every rebuild into a no-op. Reflection (over
-    /// <see cref="object"/>, like <see cref="ScriptSourceWriter"/>) rather than <c>dynamic</c>, so
-    /// "absent" is a decision this can report instead of a thrown binder exception — and so the
-    /// whole thing is unit-testable against fakes with no Grasshopper types in the room.</para>
+    /// versions doesn't silently turn every rebuild into a no-op. The member search walks base
+    /// interfaces too, for the same reason — a member promoted to a base interface is the same
+    /// shape. Reflection (over <see cref="object"/>, like <see cref="ScriptSourceWriter"/>) rather
+    /// than <c>dynamic</c>, so "absent" is a decision this can report instead of a thrown binder
+    /// exception — and so the whole thing is unit-testable against fakes with no Grasshopper types
+    /// in the room.</para>
     /// </summary>
     public static class ScriptProgram
     {
@@ -78,14 +124,88 @@ namespace Cordyceps.Core
             "an IScriptObject interface with no-argument Expire() and ReBuild() methods";
 
         /// <summary>
-        /// True when <paramref name="component"/> exposes the hooks <see cref="Rebuild"/> needs.
-        /// Lets a caller decide whether a rebuild is even on the table before disturbing component
-        /// state it would otherwise have to restore.
+        /// Said wherever the stored source and the running program differ. Divergence is a fact to
+        /// hand back, not a defect on its own: Rhino rewrites the <c>RunScript</c> signature of
+        /// SDK-mode scripts as it builds them, so the two texts differ legitimately and often.
         /// </summary>
-        public static bool CanRebuild(object component)
+        public const string DivergenceNote =
+            "The stored source and the program the component runs are not identical. Rhino rewrites "
+            + "the RunScript signature of SDK-mode scripts when it builds them, so this is expected "
+            + "for C# script components; runningSource is what executes.";
+
+        /// <summary>
+        /// The response fields describing a write: whether the rebuild ran, and whether the program
+        /// the component will run was read back and matches what was written.
+        /// </summary>
+        /// <remarks>
+        /// Every branch says something. An outcome that cannot be determined is reported as such
+        /// rather than by omitting the field — a missing <c>verified</c> read as agreement is the
+        /// false confirmation this whole path exists to remove. <c>rebuildFailed</c> and
+        /// <c>rebuildSkipped</c> are deliberately different keys: a hook that threw means the
+        /// component is probably still running its previous program, while having no hooks at all
+        /// is the normal state of components that recompile on their own.
+        /// </remarks>
+        public static Dictionary<string, object> DescribeWrite(
+            ScriptRebuildResult rebuild, RunningSourceComparison comparison)
         {
-            if (component == null) return false;
-            return FindScriptObjectInterface(component.GetType(), new List<string>()) != null;
+            var fields = new Dictionary<string, object> { ["rebuilt"] = rebuild.Rebuilt };
+
+            if (!rebuild.Rebuilt)
+            {
+                if (rebuild.Failed)
+                    fields["rebuildFailed"] = rebuild.Reason;
+                else
+                    fields["rebuildSkipped"] = rebuild.Reason;
+            }
+
+            if (comparison.Readable)
+            {
+                fields["verified"] = !comparison.Diverged;
+                AddDivergence(fields, comparison);
+            }
+            else
+            {
+                fields["verificationSkipped"] = comparison.Reason;
+            }
+
+            return fields;
+        }
+
+        /// <summary>
+        /// The response fields describing a read: how the running program relates to the stored
+        /// source. <c>sourceDiverged</c> is present whenever the running program could be read, so
+        /// its absence means "could not read" — reported by <c>runningSourceUnavailable</c> — and
+        /// never has to stand in for "they agree".
+        /// </summary>
+        public static Dictionary<string, object> DescribeRead(RunningSourceComparison comparison)
+        {
+            var fields = new Dictionary<string, object>();
+
+            if (comparison.Readable)
+            {
+                fields["sourceDiverged"] = comparison.Diverged;
+                AddDivergence(fields, comparison);
+            }
+            else
+            {
+                fields["runningSourceUnavailable"] = comparison.Reason;
+            }
+
+            return fields;
+        }
+
+        /// <summary>
+        /// The running program and the note explaining it, attached only when the texts differ —
+        /// the same vocabulary at both surfaces, so an agent that learned <c>sourceDiverged</c>
+        /// from one response finds it in the other.
+        /// </summary>
+        private static void AddDivergence(Dictionary<string, object> fields, RunningSourceComparison comparison)
+        {
+            if (!comparison.Diverged) return;
+
+            fields["sourceDiverged"] = true;
+            fields["runningSource"] = comparison.RunningSource;
+            fields["divergenceNote"] = DivergenceNote;
         }
 
         /// <summary>
@@ -99,13 +219,14 @@ namespace Cordyceps.Core
             var probes = new List<string>();
 
             if (component == null)
-                return new ScriptRebuildResult(false, "Cannot rebuild: no component was supplied.", probes);
+                return new ScriptRebuildResult(false, false, "Cannot rebuild: no component was supplied.", probes);
 
             var typeName = component.GetType().Name;
             var scriptObject = FindScriptObjectInterface(component.GetType(), probes);
             if (scriptObject == null)
             {
                 return new ScriptRebuildResult(
+                    false,
                     false,
                     $"'{typeName}' exposes no rebuild hook (probed for {RequiredHooksDescription}). "
                         + "Its source was stored; components of this shape rebuild from their own "
@@ -120,52 +241,102 @@ namespace Cordyceps.Core
 
             var expireError = InvokeHook(component, expire, typeName, ExpireMemberName, probes);
             if (expireError != null)
-                return new ScriptRebuildResult(false, expireError, probes);
+                return new ScriptRebuildResult(false, true, expireError, probes);
 
             var reBuildError = InvokeHook(component, reBuild, typeName, ReBuildMemberName, probes);
             if (reBuildError != null)
-                return new ScriptRebuildResult(false, reBuildError, probes);
+                return new ScriptRebuildResult(false, true, reBuildError, probes);
 
-            return new ScriptRebuildResult(true, null, probes);
+            return new ScriptRebuildResult(true, false, null, probes);
         }
 
         /// <summary>
-        /// Read the source of the program <paramref name="component"/> will actually run, which is
-        /// the built code's text — not the text stored on the script object.
+        /// Read the program <paramref name="component"/> will actually run and compare it with
+        /// <paramref name="expected"/> — the text the caller believes it wrote, or holds.
         /// </summary>
         /// <remarks>
-        /// False when the component has never built, which is the honest answer rather than a
-        /// defect: until then there is no running program to report. Callers must omit the field
-        /// they would have filled rather than substituting the stored source, or they recreate the
-        /// false confirmation this exists to remove.
+        /// The single place the stored-vs-running question is answered, so every surface that
+        /// reports it reports the same fact in the same words. Divergence is not on its own a
+        /// defect: Rhino rewrites the <c>RunScript</c> signature of SDK-mode scripts as it builds
+        /// them, so a legitimate write can come back changed.
         /// </remarks>
-        public static bool TryReadRunningSource(object component, out string source)
+        public static RunningSourceComparison CompareRunning(object component, string expected)
         {
-            source = null;
-            if (component == null) return false;
+            var probes = new List<string>();
 
-            var scriptObject = FindScriptObjectInterface(component.GetType(), new List<string>());
-            if (scriptObject == null) return false;
+            if (component == null)
+                return new RunningSourceComparison(false, false, null, "No component was supplied.", probes);
+
+            var typeName = component.GetType().Name;
+            var scriptObject = FindScriptObjectInterface(component.GetType(), probes);
+            if (scriptObject == null)
+            {
+                return new RunningSourceComparison(
+                    false, false, null,
+                    $"'{typeName}' exposes no {ScriptObjectInterfaceName} interface to read the running program from.",
+                    probes);
+            }
 
             var tryGetCode = FindTryGetCodeMethod(scriptObject);
-            if (tryGetCode == null) return false;
+            if (tryGetCode == null)
+            {
+                probes.Add($"{typeName}'s {ScriptObjectInterfaceName} has no bool {TryGetCodeMemberName}(out ...) method");
+                return new RunningSourceComparison(
+                    false, false, null,
+                    $"'{typeName}' exposes no {TryGetCodeMemberName}() to read the running program from.",
+                    probes);
+            }
 
             object code;
             try
             {
                 var arguments = new object[] { null };
                 var result = tryGetCode.Invoke(component, arguments);
-                if (!(result is bool succeeded) || !succeeded) return false;
+                if (!(result is bool succeeded) || !succeeded)
+                {
+                    probes.Add($"{typeName}.{TryGetCodeMemberName}() reported no built code");
+                    return new RunningSourceComparison(
+                        false, false, null,
+                        $"'{typeName}' has not built its script yet, so it has no running program to read.",
+                        probes);
+                }
                 code = arguments[0];
             }
-            catch (TargetInvocationException) { return false; }
-            catch (TargetException) { return false; }
-            catch (MethodAccessException) { return false; }
-            catch (ArgumentException) { return false; }
+            catch (TargetInvocationException ex) { return UnreadableCode(typeName, ex.InnerException ?? ex, probes); }
+            catch (TargetException ex) { return UnreadableCode(typeName, ex, probes); }
+            catch (MethodAccessException ex) { return UnreadableCode(typeName, ex, probes); }
+            catch (ArgumentException ex) { return UnreadableCode(typeName, ex, probes); }
 
-            if (code == null) return false;
+            if (code == null)
+            {
+                probes.Add($"{typeName}.{TryGetCodeMemberName}() succeeded but handed back no code object");
+                return new RunningSourceComparison(
+                    false, false, null,
+                    $"'{typeName}' reported a built script but produced no code object.",
+                    probes);
+            }
 
-            return TryReadCodeText(code, out source);
+            if (!TryReadCodeText(code, probes, out var runningSource))
+            {
+                return new RunningSourceComparison(
+                    false, false, null,
+                    $"'{code.GetType().Name}' exposes no readable string {TextMemberName}, so the running program could not be read.",
+                    probes);
+            }
+
+            bool diverged = !string.Equals(runningSource, expected, StringComparison.Ordinal);
+            probes.Add($"running program read from {code.GetType().Name} — {(diverged ? "differs from" : "matches")} the expected source");
+            return new RunningSourceComparison(true, diverged, runningSource, null, probes);
+        }
+
+        private static RunningSourceComparison UnreadableCode(string typeName, Exception ex, List<string> probes)
+        {
+            var description = $"{ex.GetType().Name}: {ex.Message}";
+            probes.Add($"{typeName}.{TryGetCodeMemberName}() threw — {description}");
+            return new RunningSourceComparison(
+                false, false, null,
+                $"'{typeName}'.{TryGetCodeMemberName}() failed ({description}), so the running program could not be read.",
+                probes);
         }
 
         /// <summary>
@@ -173,7 +344,7 @@ namespace Cordyceps.Core
         /// container property and an explicitly implemented <c>ICode.Text</c> that is a plain
         /// string — so only a string-typed one is accepted, whichever carries it.
         /// </summary>
-        private static bool TryReadCodeText(object code, out string text)
+        private static bool TryReadCodeText(object code, List<string> probes, out string text)
         {
             text = null;
             var type = code.GetType();
@@ -188,13 +359,19 @@ namespace Cordyceps.Core
                         return true;
                     }
                 }
-                catch (TargetInvocationException) { }
-                catch (TargetException) { }
-                catch (MethodAccessException) { }
-                catch (ArgumentException) { }
+                catch (TargetInvocationException ex) { ProbeTextFailure(probes, type, candidate, ex.InnerException ?? ex); }
+                catch (TargetException ex) { ProbeTextFailure(probes, type, candidate, ex); }
+                catch (MethodAccessException ex) { ProbeTextFailure(probes, type, candidate, ex); }
+                catch (ArgumentException ex) { ProbeTextFailure(probes, type, candidate, ex); }
             }
 
+            probes.Add($"{type.Name} exposes no readable string {TextMemberName}");
             return false;
+        }
+
+        private static void ProbeTextFailure(List<string> probes, Type type, MethodInfo getter, Exception ex)
+        {
+            probes.Add($"{type.Name}.{getter.DeclaringType?.Name}.{TextMemberName} getter threw — {ex.GetType().Name}: {ex.Message}");
         }
 
         /// <summary>
@@ -267,17 +444,21 @@ namespace Cordyceps.Core
         }
 
         /// <summary>
-        /// The no-argument overload of <paramref name="name"/>. <c>ReBuild</c> is overloaded on
-        /// build kind; the no-argument one is the "build it the way a solve would" overload.
+        /// The no-argument overload of <paramref name="name"/> on the interface or any it extends.
+        /// <c>ReBuild</c> is overloaded on build kind; the no-argument one is the "build it the way
+        /// a solve would" overload.
         /// </summary>
         private static MethodInfo FindNoArgMethod(Type type, string name)
         {
             // GetMethods rather than GetMethod(name): GetMethod throws AmbiguousMatchException on
             // overloaded members, and an overloaded ReBuild must select a candidate, not fail.
-            foreach (var method in type.GetMethods(BindingFlags.Public | BindingFlags.Instance))
+            foreach (var declaring in WithBaseInterfaces(type))
             {
-                if (method.Name != name) continue;
-                if (method.GetParameters().Length == 0) return method;
+                foreach (var method in declaring.GetMethods(BindingFlags.Public | BindingFlags.Instance))
+                {
+                    if (method.Name != name) continue;
+                    if (method.GetParameters().Length == 0) return method;
+                }
             }
 
             return null;
@@ -286,16 +467,29 @@ namespace Cordyceps.Core
         /// <summary>The <c>bool TryGetCode(out object)</c> shape, whatever the out parameter's type.</summary>
         private static MethodInfo FindTryGetCodeMethod(Type type)
         {
-            foreach (var method in type.GetMethods(BindingFlags.Public | BindingFlags.Instance))
+            foreach (var declaring in WithBaseInterfaces(type))
             {
-                if (method.Name != TryGetCodeMemberName) continue;
-                if (method.ReturnType != typeof(bool)) continue;
+                foreach (var method in declaring.GetMethods(BindingFlags.Public | BindingFlags.Instance))
+                {
+                    if (method.Name != TryGetCodeMemberName) continue;
+                    if (method.ReturnType != typeof(bool)) continue;
 
-                var parameters = method.GetParameters();
-                if (parameters.Length == 1 && parameters[0].IsOut) return method;
+                    var parameters = method.GetParameters();
+                    if (parameters.Length == 1 && parameters[0].IsOut) return method;
+                }
             }
 
             return null;
+        }
+
+        /// <summary>
+        /// An interface followed by the interfaces it extends. <c>Type.GetMethods</c> on an
+        /// interface returns only its own declarations, so a member promoted to a base interface
+        /// would otherwise read as absent and silently turn every rebuild into a no-op.
+        /// </summary>
+        private static IEnumerable<Type> WithBaseInterfaces(Type type)
+        {
+            return new[] { type }.Concat(type.GetInterfaces());
         }
 
         /// <summary>

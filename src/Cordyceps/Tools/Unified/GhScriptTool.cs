@@ -32,7 +32,8 @@ namespace Cordyceps.Tools.Unified
                     Required = new[] { "id" },
                     Example = "action='get', id='abc-123'",
                     Tips = new[] {
-                        "'source' is the text stored on the component. When the program it is actually running differs, the response adds runningSource and sourceDiverged=true",
+                        "'source' is the text stored on the component. Whenever the running program can be read the response carries sourceDiverged (true or false), plus runningSource and divergenceNote when they differ",
+                        "If the running program cannot be read — usually because the component has never built — sourceDiverged is absent and runningSourceUnavailable says why. An absent sourceDiverged never means 'they agree'",
                         "Divergence is normal for C# script components: Rhino rewrites the RunScript signature of SDK-mode scripts as it builds them. runningSource is what executes"
                     }
                 },
@@ -49,9 +50,12 @@ namespace Cordyceps.Tools.Unified
                         "Script language is preserved automatically; start code with '#! python 3' or '// #! csharp' to set it explicitly",
                         "A bare unified 'Script' component (no language picked) returns a languageWarning until code starts with a directive — add '#! python 3' or '// #! csharp'",
                         "Components that expose their code as a visible input parameter can't be written directly — the error says so and nothing is changed; remove that parameter, or feed the code through it with gh_wire",
-                        "The component is rebuilt from the new source before the call returns: rebuilt=true means it will run the new program on its next solve. rebuilt=false carries rebuildSkipped saying why (components without rebuild hooks recompile on their own)",
-                        "verified=true means the running program was read back and matches what was written. verified=false adds runningSource — expected for C# SDK-mode scripts, whose RunScript signature Rhino rewrites as it builds. An absent verified means the program could not be read, not that it matched",
-                        "Code that fails to compile still reports success here — the write and the rebuild both succeeded. Build errors surface on the component; check gh_inspect(action='status', id=...) after setting code"
+                        "The component is rebuilt from the new source before the call returns: rebuilt=true means it will run the new program on its next solve",
+                        "rebuilt=false comes two ways: rebuildSkipped (no rebuild hooks — that component recompiles on its own) and rebuildFailed (a hook threw — the component is probably still running the old program)",
+                        "verified=true means the running program was read back and matches what was written. verified=false adds sourceDiverged and runningSource — expected for C# SDK-mode scripts, whose RunScript signature Rhino rewrites as it builds",
+                        "If the program could not be read there is no verified field at all, and verificationSkipped says why — never read an absent verified as a match",
+                        "Code that fails to compile still reports success here — the write and the rebuild both succeeded. Build errors surface on the component; check gh_inspect(action='status', id=...) after setting code",
+                        "The compile happens inside this call rather than at the next solve, so the first script write of a session can take noticeably longer"
                     }
                 },
                 ["configure"] = new ActionInfo
@@ -161,16 +165,14 @@ namespace Cordyceps.Tools.Unified
 
                 // 'source' is the text stored on the component. The program it actually runs is the
                 // built code, which Rhino keeps separately — so a clean round-trip of 'source' is
-                // not on its own evidence that a write took effect (issue #33). Report the running
-                // program whenever the two differ, and stay silent when it can't be read rather
-                // than implying agreement.
-                if (ScriptProgram.TryReadRunningSource(component, out var runningSource)
-                    && !string.Equals(runningSource, source, StringComparison.Ordinal))
-                {
-                    response["sourceDiverged"] = true;
-                    response["runningSource"] = runningSource;
-                    response["divergenceNote"] = DivergenceNote;
-                }
+                // not on its own evidence that a write took effect (issue #33).
+                var comparison = ScriptProgram.CompareRunning(component, source);
+                LogProbes(comparison.Probes);
+                if (!comparison.Readable)
+                    DebugLog.Info($"[ActionGet] running program unreadable on {component.GetType().Name} — {comparison.Reason}");
+
+                foreach (var field in ScriptProgram.DescribeRead(comparison))
+                    response[field.Key] = field.Value;
 
                 return JsonConvert.SerializeObject(response);
             });
@@ -766,16 +768,18 @@ namespace Cordyceps.Tools.Unified
         /// missing its language directive strips the component's language and makes it fail at
         /// solve time with "Can not determine input code language".
         /// </remarks>
-        /// <summary>
-        /// Said whenever the stored source and the running program differ, at either surface that
-        /// can report it. Divergence is a fact to hand back, not a defect on its own: Rhino
-        /// rewrites the <c>RunScript</c> signature of SDK-mode scripts as it builds them, so the
-        /// two texts differ legitimately and often.
-        /// </summary>
-        private const string DivergenceNote =
-            "The stored source and the program the component runs are not identical. Rhino rewrites "
-            + "the RunScript signature of SDK-mode scripts when it builds them, so this is expected "
-            + "for C# script components; runningSource is what executes.";
+        private static void WriteScriptSource(IGH_DocumentObject component, string finalSource)
+        {
+            var result = ScriptSourceWriter.Write(component, finalSource);
+
+            foreach (var probe in result.Probes)
+                DebugLog.Debug($"WriteScriptSource: {probe}");
+
+            if (!result.Success)
+                throw new InvalidOperationException(result.Error);
+
+            DebugLog.Info($"WriteScriptSource: source set on {component.GetType().Name} via {result.Method}");
+        }
 
         /// <summary>
         /// Ask <paramref name="component"/> to rebuild the program after its source was written,
@@ -788,50 +792,37 @@ namespace Cordyceps.Tools.Unified
         /// executing its previous program until something invalidates the build (issue #33). Every
         /// source-changing path inside Rhino pairs the store with a rebuild; this is ours.</para>
         /// <para>A component with no rebuild hooks is reported, not failed — Rhino 7's GhPython and
-        /// other <c>Code</c>-property components rebuild from their own source member instead. The
-        /// verification is reported the same way: <c>verified</c> is present only when the running
-        /// program could actually be read, because a missing answer must not read as a match.</para>
+        /// other <c>Code</c>-property components rebuild from their own source member instead. A
+        /// hook that <em>threw</em> is the opposite fact and gets its own key and a warning in the
+        /// log, because such a component is probably still running its previous program.</para>
         /// </remarks>
         private static Dictionary<string, object> RebuildAndVerify(IGH_DocumentObject component, string finalSource)
         {
-            var fields = new Dictionary<string, object>();
+            var typeName = component.GetType().Name;
 
             var rebuild = ScriptProgram.Rebuild(component);
-            foreach (var probe in rebuild.Probes)
-                DebugLog.Debug($"RebuildAndVerify: {probe}");
+            LogProbes(rebuild.Probes);
+            if (rebuild.Failed)
+                DebugLog.Warn($"[RebuildAndVerify] rebuild hook failed on {typeName} — {rebuild.Reason}");
+            else if (!rebuild.Rebuilt)
+                DebugLog.Info($"[RebuildAndVerify] no rebuild hook on {typeName} — {rebuild.Reason}");
 
-            fields["rebuilt"] = rebuild.Rebuilt;
-            if (!rebuild.Rebuilt)
-            {
-                fields["rebuildSkipped"] = rebuild.Reason;
-                DebugLog.Info($"RebuildAndVerify: no rebuild on {component.GetType().Name} — {rebuild.Reason}");
-            }
+            var comparison = ScriptProgram.CompareRunning(component, finalSource);
+            LogProbes(comparison.Probes);
+            if (!comparison.Readable)
+                DebugLog.Info($"[RebuildAndVerify] could not verify the write on {typeName} — {comparison.Reason}");
 
-            if (ScriptProgram.TryReadRunningSource(component, out var runningSource))
-            {
-                bool matches = string.Equals(runningSource, finalSource, StringComparison.Ordinal);
-                fields["verified"] = matches;
-                if (!matches)
-                {
-                    fields["runningSource"] = runningSource;
-                    fields["divergenceNote"] = DivergenceNote;
-                }
-            }
-
-            return fields;
+            return ScriptProgram.DescribeWrite(rebuild, comparison);
         }
 
-        private static void WriteScriptSource(IGH_DocumentObject component, string finalSource)
+        /// <summary>
+        /// Send a probe trace to the debug log. The reflection cascades cannot log themselves —
+        /// they are linked into the unit-test project, where the Rhino logging host does not exist.
+        /// </summary>
+        private static void LogProbes(IReadOnlyList<string> probes)
         {
-            var result = ScriptSourceWriter.Write(component, finalSource);
-
-            foreach (var probe in result.Probes)
-                DebugLog.Debug($"WriteScriptSource: {probe}");
-
-            if (!result.Success)
-                throw new InvalidOperationException(result.Error);
-
-            DebugLog.Info($"WriteScriptSource: source set on {component.GetType().Name} via {result.Method}");
+            foreach (var probe in probes)
+                DebugLog.Debug($"ScriptProgram: {probe}");
         }
 
         private string TryGetScriptSource(IGH_DocumentObject component)

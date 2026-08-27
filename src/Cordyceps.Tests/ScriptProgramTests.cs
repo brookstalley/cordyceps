@@ -191,59 +191,180 @@ namespace Cordyceps.Tests
             Assert.Contains("no component", result.Reason);
         }
 
-        [Fact]
-        public void CanRebuild_DistinguishesTheShapes()
-        {
-            Assert.True(ScriptProgram.CanRebuild(new ScriptComponent()));
-            Assert.False(ScriptProgram.CanRebuild(new HookLessComponent()));
-            Assert.False(ScriptProgram.CanRebuild(new LookalikeComponent()));
-            Assert.False(ScriptProgram.CanRebuild(null));
-        }
 
         #endregion
 
         #region Reading the running program
 
         [Fact]
-        public void TryReadRunningSource_PrefersTheStringTextOverTheContainerOfTheSameName()
+        public void CompareRunning_PrefersTheStringTextOverTheContainerOfTheSameName()
         {
             var component = new ScriptComponent(new FakeCode(RunningSource));
 
-            Assert.True(ScriptProgram.TryReadRunningSource(component, out var source));
-            Assert.Equal(RunningSource, source);
+            var comparison = ScriptProgram.CompareRunning(component, RunningSource);
+
+            Assert.True(comparison.Readable);
+            Assert.False(comparison.Diverged);
+            Assert.Equal(RunningSource, comparison.RunningSource);
         }
 
         [Fact]
-        public void TryReadRunningSource_ComponentThatHasNeverBuilt_ReportsNothing()
+        public void CompareRunning_RunningProgramDiffers_IsReportedAsDivergence()
+        {
+            var component = new ScriptComponent(new FakeCode(RunningSource));
+
+            var comparison = ScriptProgram.CompareRunning(component, "// #! csharp\na = 2;");
+
+            Assert.True(comparison.Readable);
+            Assert.True(comparison.Diverged);
+            Assert.Equal(RunningSource, comparison.RunningSource);
+        }
+
+        [Fact]
+        public void CompareRunning_ComponentThatHasNeverBuilt_SaysWhyRatherThanClaimingAMatch()
         {
             // No built code yet: there is no running program, and saying so is the honest answer.
             var component = new ScriptComponent(code: null);
 
-            Assert.False(ScriptProgram.TryReadRunningSource(component, out var source));
-            Assert.Null(source);
+            var comparison = ScriptProgram.CompareRunning(component, RunningSource);
+
+            Assert.False(comparison.Readable);
+            Assert.False(comparison.Diverged);
+            Assert.Null(comparison.RunningSource);
+            Assert.Contains("has not built", comparison.Reason);
+            Assert.NotEmpty(comparison.Probes);
         }
 
         [Fact]
-        public void TryReadRunningSource_HookLessComponent_ReportsNothing()
+        public void CompareRunning_HookLessComponent_SaysWhy()
         {
-            Assert.False(ScriptProgram.TryReadRunningSource(new HookLessComponent(), out var source));
-            Assert.Null(source);
+            var comparison = ScriptProgram.CompareRunning(new HookLessComponent(), RunningSource);
+
+            Assert.False(comparison.Readable);
+            Assert.Contains("no IScriptObject", comparison.Reason);
         }
 
         [Fact]
-        public void TryReadRunningSource_NullComponent_ReportsNothing()
+        public void CompareRunning_NullComponent_SaysWhy()
         {
-            Assert.False(ScriptProgram.TryReadRunningSource(null, out var source));
-            Assert.Null(source);
+            var comparison = ScriptProgram.CompareRunning(null, RunningSource);
+
+            Assert.False(comparison.Readable);
+            Assert.Contains("No component", comparison.Reason);
         }
 
         [Fact]
-        public void TryReadRunningSource_CodeWithoutReadableText_ReportsNothing()
+        public void CompareRunning_CodeWithoutReadableText_SaysWhy()
         {
             var component = new ScriptComponent(new object());
 
-            Assert.False(ScriptProgram.TryReadRunningSource(component, out var source));
-            Assert.Null(source);
+            var comparison = ScriptProgram.CompareRunning(component, RunningSource);
+
+            Assert.False(comparison.Readable);
+            Assert.Contains("no readable string Text", comparison.Reason);
+        }
+
+        #endregion
+        #region Response fields
+
+        // These cover the decision the tool response is built from: which fields appear, and what
+        // an absent one means. An inverted condition here reports agreement the component never
+        // confirmed — the false confirmation issue #33 was reported through.
+
+        private static RunningSourceComparison Matching()
+            => ScriptProgram.CompareRunning(new ScriptComponent(new FakeCode(RunningSource)), RunningSource);
+
+        private static RunningSourceComparison Diverged()
+            => ScriptProgram.CompareRunning(new ScriptComponent(new FakeCode(RunningSource)), "// #! csharp\nb = 9;");
+
+        private static RunningSourceComparison Unreadable()
+            => ScriptProgram.CompareRunning(new ScriptComponent(code: null), RunningSource);
+
+        [Fact]
+        public void DescribeWrite_RebuiltAndMatching_ReportsVerifiedWithNoDivergence()
+        {
+            var fields = ScriptProgram.DescribeWrite(ScriptProgram.Rebuild(new ScriptComponent()), Matching());
+
+            Assert.Equal(true, fields["rebuilt"]);
+            Assert.Equal(true, fields["verified"]);
+            Assert.False(fields.ContainsKey("sourceDiverged"));
+            Assert.False(fields.ContainsKey("runningSource"));
+            Assert.False(fields.ContainsKey("verificationSkipped"));
+            Assert.False(fields.ContainsKey("rebuildSkipped"));
+            Assert.False(fields.ContainsKey("rebuildFailed"));
+        }
+
+        [Fact]
+        public void DescribeWrite_RunningProgramDiffers_SpeaksBothVocabularies()
+        {
+            // An agent that learned sourceDiverged from a 'get' response must find it here too,
+            // or it reads the absence as agreement.
+            var fields = ScriptProgram.DescribeWrite(ScriptProgram.Rebuild(new ScriptComponent()), Diverged());
+
+            Assert.Equal(false, fields["verified"]);
+            Assert.Equal(true, fields["sourceDiverged"]);
+            Assert.Equal(RunningSource, fields["runningSource"]);
+            Assert.Equal(ScriptProgram.DivergenceNote, fields["divergenceNote"]);
+        }
+
+        [Fact]
+        public void DescribeWrite_UnreadableProgram_OmitsVerifiedAndSaysWhy()
+        {
+            var fields = ScriptProgram.DescribeWrite(ScriptProgram.Rebuild(new ScriptComponent()), Unreadable());
+
+            Assert.False(fields.ContainsKey("verified"));
+            Assert.Contains("has not built", (string)fields["verificationSkipped"]);
+        }
+
+        [Fact]
+        public void DescribeWrite_NoRebuildHooks_IsSkippedNotFailed()
+        {
+            var fields = ScriptProgram.DescribeWrite(ScriptProgram.Rebuild(new HookLessComponent()), Unreadable());
+
+            Assert.Equal(false, fields["rebuilt"]);
+            Assert.True(fields.ContainsKey("rebuildSkipped"));
+            Assert.False(fields.ContainsKey("rebuildFailed"));
+        }
+
+        [Fact]
+        public void DescribeWrite_RebuildHookThrew_IsFailedNotSkipped()
+        {
+            // The opposite fact from having no hooks: this component is probably still running its
+            // previous program, and a caller must be able to tell the two apart without parsing prose.
+            var fields = ScriptProgram.DescribeWrite(ScriptProgram.Rebuild(new ThrowingScriptComponent()), Unreadable());
+
+            Assert.Equal(false, fields["rebuilt"]);
+            Assert.True(fields.ContainsKey("rebuildFailed"));
+            Assert.False(fields.ContainsKey("rebuildSkipped"));
+        }
+
+        [Fact]
+        public void DescribeRead_Matching_StatesTheAgreementRatherThanImplyingIt()
+        {
+            var fields = ScriptProgram.DescribeRead(Matching());
+
+            Assert.Equal(false, fields["sourceDiverged"]);
+            Assert.False(fields.ContainsKey("runningSource"));
+            Assert.False(fields.ContainsKey("runningSourceUnavailable"));
+        }
+
+        [Fact]
+        public void DescribeRead_Diverged_CarriesTheRunningProgram()
+        {
+            var fields = ScriptProgram.DescribeRead(Diverged());
+
+            Assert.Equal(true, fields["sourceDiverged"]);
+            Assert.Equal(RunningSource, fields["runningSource"]);
+            Assert.Equal(ScriptProgram.DivergenceNote, fields["divergenceNote"]);
+        }
+
+        [Fact]
+        public void DescribeRead_Unreadable_SaysSoInsteadOfLookingLikeAgreement()
+        {
+            var fields = ScriptProgram.DescribeRead(Unreadable());
+
+            Assert.False(fields.ContainsKey("sourceDiverged"));
+            Assert.Contains("has not built", (string)fields["runningSourceUnavailable"]);
         }
 
         #endregion

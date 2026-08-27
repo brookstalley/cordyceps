@@ -62,8 +62,11 @@ prefers the built code's — so the clean round-trip the reporter checked was ne
 `TryGetCode` → `ICode.Text` to read what will actually run. Host-free reflection over `object`, like
 its sibling `ScriptSourceWriter`, so the whole thing is unit-testable against fakes. (b) `set` and
 both `configure` write paths rebuild after the params are final, then verify the write by reading
-the running program back: `rebuilt`/`rebuildSkipped`, `verified`/`runningSource`. (c) `get` adds
-`runningSource` + `sourceDiverged` when the two differ. (d) MCP `initialize` reports the
+the running program back. (c) One vocabulary at both surfaces, and every branch says something:
+`rebuildSkipped` (no hooks — normal) is a different key from `rebuildFailed` (a hook threw — probably
+still running the old program), and an unreadable program yields `verificationSkipped` /
+`runningSourceUnavailable` rather than an omitted field, because an absent `verified` read as
+agreement is the very failure being fixed. (d) MCP `initialize` reports the
 informational version, so two pre-releases of the same version are distinguishable — without it a
 tester cannot confirm they are running the build that contains this fix.
 
@@ -75,6 +78,12 @@ rc.1 change being `dynamic` → reflection onto the same `SetSource(String)`. Th
 stale program has not been reproduced here, and this bundle does not claim to have root-caused it;
 it fixes two defects provable from the Rhino source that make the reported symptom either
 impossible or visible.
+
+**What no test here can reach.** Every unit test drives fakes written to the shape the Rhino
+assemblies were read to have — which proves the reflection resolves, and cannot prove that
+`Expire()`+`ReBuild()` makes the *next solve* run the new program, nor that cluster inputs survive
+(issue #12 only manifests inside a cluster). Both are enqueued as **VRF-014**, and rc.2 exists so the
+reporter's own battery can answer them.
 
 **Descoped, explicitly.** Reporting compile diagnostics from the write call was in the first cut of
 the plan and is not reachable on public API: `ReBuild()` → `PreBuild(kind)` →

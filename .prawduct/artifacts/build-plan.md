@@ -98,44 +98,56 @@ not recalled:
 
 ### Chunk 01 — Rebuild the program after writing source
 
-`Core/ScriptProgram.cs` (new, host-free, reflection over `object` like `ScriptSourceWriter`) — one
-module for reaching a script component's live program through the public `IScriptObject` interface
-it implements explicitly:
+`src/Cordyceps/Core/ScriptProgram.cs` (new, host-free, reflection over `object` like
+`ScriptSourceWriter`) — one module for reaching a script component's live program through the public
+`IScriptObject` interface it implements explicitly:
 
-- `CanRebuild(object)` — are the hooks there?
 - `Rebuild(object)` — `Expire()` (drop the compile cache) then `ReBuild()` (build now). Returns
-  success, an ordered probe trace, and the reason when there is no hook. Reflection dispatches
-  through the *interface* `MethodInfo`, which resolves explicit implementations.
-- `TryReadRunningSource(object, out string)` — `TryGetCode(out Code)` then `ICode.Text` (a plain
-  `string`, implemented explicitly on `Code`). False before the component has ever built, which is
-  correct: there is no running program yet.
+  success, an ordered probe trace, and the reason when there is no hook — with `Failed` separating
+  "a hook threw, this component is probably still running the old program" from "no hooks, normal".
+  Reflection dispatches through the *interface* `MethodInfo`, which resolves explicit implementations.
+- `CompareRunning(object, expected)` — `TryGetCode(out Code)` then `ICode.Text` (a plain `string`,
+  implemented explicitly on `Code`), compared with what the caller holds. Unreadable before the
+  component has ever built, which is correct: there is no running program yet. Every failure path
+  carries a reason and probes, so a degraded read is visible in `gh_inspect(action='log')` instead
+  of silently omitting a field.
+- `DescribeWrite(...)` / `DescribeRead(...)` — the response fields for each surface. Host-free on
+  purpose: the decision about which fields appear, and what an absent one means, is the part that
+  must not be reasoned about only in a tool class no test can reach.
 
 Interfaces are matched by simple name **plus required member shape**, not by full name — same
-probe-by-shape philosophy as `ScriptSourceWriter`, and it survives Rhino moving the namespace.
+probe-by-shape philosophy as `ScriptSourceWriter`, and it survives Rhino moving the namespace. The
+member search walks base interfaces for the same reason: a member promoted to a base interface is
+the same shape, and rejecting it would silently turn every rebuild into a no-op.
 
 A component without the hooks (Rhino 7 GhPython, third-party) is **not** an error: it is reported as
 `rebuilt: false` with the reason, since those recompile off their own `Code` property.
 
 Wire into `GhScriptTool` `set` and both `configure` write paths, after the source write and before
 `ExpireSolution(false)`. Then verify the write by reading the running program back:
-`verified: true` when it matches what was written; when it differs, `verified: false` plus the
-actual `runningSource` — **not** a failure, because Rhino legitimately rewrites the `RunScript`
-signature of SDK-mode scripts during `UpdateCode`. Unreadable → the field is omitted rather than
-guessed.
+`verified: true` when it matches what was written; when it differs, `verified: false` plus
+`sourceDiverged`, the actual `runningSource`, and a `divergenceNote` explaining it — **not** a
+failure, because Rhino legitimately rewrites the `RunScript` signature of SDK-mode scripts during
+`UpdateCode`. Unreadable → `verified` is omitted and `verificationSkipped` carries the reason, so an
+absent answer never reads as a match.
 
 Acceptance: unit tests over fakes shaped like the real component (explicit interface implementation,
-hook-less component, throwing hook, code-less component); `set` response carries `rebuilt` and
-`verified`.
+overloaded `ReBuild`, hook-less component, throwing hook, code-less component, a `Code` whose public
+`Text` is a container), plus tests over the emitted field sets for every branch. Live-Rhino
+behaviour — that the rebuild makes the *next solve* run the new program, and that cluster inputs
+survive — cannot be tested here and is enqueued as **VRF-014**.
 
 ### Chunk 02 — `get` reports the running program
 
-`get` keeps returning `source` (the stored text) unchanged, and adds `runningSource` **and**
-`sourceDiverged: true` only when the running text is readable *and* differs. Unreadable → both
-omitted; never claim what cannot be read. Divergence is reported as a fact about stored-vs-running,
-not as an error — the SDK-mode signature rewrite makes it legitimately non-empty.
+`get` keeps returning `source` (the stored text) unchanged. When the running program is readable it
+adds `sourceDiverged` — always, true or false — plus `runningSource` and `divergenceNote` when they
+differ. When it is not readable it says `runningSourceUnavailable` with the reason. That way the
+absence of `sourceDiverged` never has to stand in for "they agree". Divergence is reported as a fact
+about stored-vs-running, not as an error: the SDK-mode signature rewrite makes it legitimately
+non-empty.
 
-Acceptance: unit tests for readable-and-equal, readable-and-different, and unreadable; the
-divergence fields appear only in the middle case.
+Acceptance: unit tests for readable-and-equal, readable-and-different, and unreadable, over both
+`CompareRunning` and the emitted `DescribeRead` field set.
 
 ### Chunk 03 — Testers can identify the build
 
@@ -143,8 +155,9 @@ divergence fields appear only in the middle case.
 falling back to the assembly version when there is no informational version. Without this, rc.1 and
 rc.2 are indistinguishable over MCP and the reporter cannot confirm they are testing the fix.
 
-Acceptance: unit test for the fallback ordering; a real `initialize` response is verified against the
-built rc.2 `.gha` before the release is published.
+Acceptance: unit test for the fallback ordering, and the informational version confirmed present in
+the built `.gha`. A live `initialize` response cannot be checked here — there is no headless Rhino on
+the build machine — so it is enqueued as operator verification (VRF-014) rather than claimed.
 
 ### Chunk 04 — Documentation audit
 
