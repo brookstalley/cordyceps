@@ -1,3 +1,7 @@
+---
+scope: script-recompile-on-set
+---
+
 # Build Plan — script recompile on write (issue #33)
 
 Branch: `fix/script-recompile-on-set` (off `develop`)

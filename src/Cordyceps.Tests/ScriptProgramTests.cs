@@ -117,6 +117,44 @@ namespace Cordyceps.Tests
             void Unrelated.IScriptObject.SomethingElse() { }
         }
 
+        /// <summary>
+        /// A future Rhino promoting the hooks onto a base interface. The members are declared one
+        /// level up, so a member search that reads only the matched interface's own declarations
+        /// finds nothing and every rebuild silently degrades to a no-op.
+        /// </summary>
+        private static class Promoted
+        {
+            internal interface IScriptObjectBase
+            {
+                void Expire();
+                void ReBuild();
+                bool TryGetCode(out object code);
+            }
+
+            /// <summary>Same simple name the probe matches on; declares nothing itself.</summary>
+            internal interface IScriptObject : IScriptObjectBase
+            {
+            }
+        }
+
+        private class InheritedHooksComponent : Promoted.IScriptObject
+        {
+            public InheritedHooksComponent(object code = null) => Code = code;
+
+            public object Code { get; }
+            public string CallOrder { get; private set; } = "";
+
+            void Promoted.IScriptObjectBase.Expire() => CallOrder += "E";
+
+            void Promoted.IScriptObjectBase.ReBuild() => CallOrder += "R";
+
+            bool Promoted.IScriptObjectBase.TryGetCode(out object code)
+            {
+                code = Code;
+                return Code != null;
+            }
+        }
+
         /// <summary>Rhino 7 GhPython shape: source lives on a Code property, no rebuild hooks.</summary>
         private class HookLessComponent
         {
@@ -180,6 +218,30 @@ namespace Cordyceps.Tests
             Assert.False(result.Rebuilt);
             Assert.Contains("language not ready", result.Reason);
             Assert.Contains("gh_inspect", result.Reason);
+        }
+
+        [Fact]
+        public void Rebuild_HooksOnABaseInterface_AreStillFound()
+        {
+            // The interface the component implements declares nothing itself; a search that does
+            // not walk base interfaces reports "no rebuild hook" and the fix quietly stops working.
+            var component = new InheritedHooksComponent();
+
+            var result = ScriptProgram.Rebuild(component);
+
+            Assert.True(result.Rebuilt);
+            Assert.Equal("ER", component.CallOrder);
+        }
+
+        [Fact]
+        public void CompareRunning_TryGetCodeOnABaseInterface_IsStillFound()
+        {
+            var component = new InheritedHooksComponent(new FakeCode(RunningSource));
+
+            var comparison = ScriptProgram.CompareRunning(component, RunningSource);
+
+            Assert.True(comparison.Readable);
+            Assert.Equal(RunningSource, comparison.RunningSource);
         }
 
         [Fact]
