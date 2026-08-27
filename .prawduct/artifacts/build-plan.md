@@ -41,8 +41,9 @@ removed in **v1.4.6** for the cluster-corruption fix — long before the reporte
 - After `gh_script(action='set'|'configure')` with new code, the component's next solve runs the
   code that was just written — because the write is followed by an explicit cache-expire + rebuild
   through Rhino's own `IScriptObject` hooks, not because a solve happens to rebuild it.
-- A source that does not compile is reported in the `set`/`configure` response instead of returning
-  a bare `success: true` — the reporter's "worst failure mode for an agent" stops being silent.
+- `set`/`configure` verify their own write: after the rebuild they read back the program the
+  component will actually run and report whether it matches what was written. An agent no longer has
+  to take `success: true` on faith — which is the reporter's core complaint.
 - `gh_script(action='get')` reports the program that actually runs, and says so when the stored and
   running texts differ.
 - A tester can tell rc.2 from rc.1 over MCP, which is a precondition for them re-running the
@@ -59,6 +60,15 @@ removed in **v1.4.6** for the cluster-corruption fix — long before the reporte
 - Folding pre-releases into `scripts/release.sh` (backlog `REL-6H4X`); rc.2 is cut by hand per
   `docs/release-process.md`.
 - Rhino 7 / GhPython paths beyond degrading gracefully when the rebuild hooks are absent.
+- **Reporting compile diagnostics from the write call — descoped, not dropped.** It was in the first
+  cut of this plan and is not reachable on public API: `IScriptObject.ReBuild()` → `PreBuild(kind)`
+  → `Context.TryBuildCode(runContext, out _)` **discards the `Diagnosis`**, and
+  `IScriptObject.HasErrors` is just "does the component have error runtime messages", which a
+  rebuild never adds. The two ways to get the text — reading the `protected ScriptContext Context`
+  field, or building the `Code` against a hand-made `RunContext` — mean reaching past the public
+  surface or building under different settings than the host would use. Build errors keep surfacing
+  where they do today: on the component at the next solve, readable via `gh_inspect(action='status')`.
+  Filed to backlog; the read-back check below covers the "did my write take effect" half.
 
 ## Requirements confidence
 
@@ -88,29 +98,41 @@ not recalled:
 
 ### Chunk 01 — Rebuild the program after writing source
 
-`Core/ScriptRebuilder.cs` (new, host-free, reflection over `object` like `ScriptSourceWriter`): find
-the component's `IScriptObject` implementation via its interface map and invoke `Expire()` then
-`ReBuild()`. Returns a result carrying success, an ordered probe trace, and the reason when no hook
-exists. A component without the hooks (Rhino 7 GhPython, third-party) is **not** an error — it is
-reported as `rebuilt: false` with the reason, because those components recompile off their own
-`Code` property.
+`Core/ScriptProgram.cs` (new, host-free, reflection over `object` like `ScriptSourceWriter`) — one
+module for reaching a script component's live program through the public `IScriptObject` interface
+it implements explicitly:
+
+- `CanRebuild(object)` — are the hooks there?
+- `Rebuild(object)` — `Expire()` (drop the compile cache) then `ReBuild()` (build now). Returns
+  success, an ordered probe trace, and the reason when there is no hook. Reflection dispatches
+  through the *interface* `MethodInfo`, which resolves explicit implementations.
+- `TryReadRunningSource(object, out string)` — `TryGetCode(out Code)` then `ICode.Text` (a plain
+  `string`, implemented explicitly on `Code`). False before the component has ever built, which is
+  correct: there is no running program yet.
+
+Interfaces are matched by simple name **plus required member shape**, not by full name — same
+probe-by-shape philosophy as `ScriptSourceWriter`, and it survives Rhino moving the namespace.
+
+A component without the hooks (Rhino 7 GhPython, third-party) is **not** an error: it is reported as
+`rebuilt: false` with the reason, since those recompile off their own `Code` property.
 
 Wire into `GhScriptTool` `set` and both `configure` write paths, after the source write and before
-`ExpireSolution(false)`: clear the component's stale runtime messages, rebuild, then read back
-`GH_RuntimeMessageLevel.Error`/`Warning` and surface them as `compileErrors`/`compileWarnings`.
-A rebuild that reports errors makes the call `success: false` — the source is stored but the program
-is broken, and that must not read as success.
+`ExpireSolution(false)`. Then verify the write by reading the running program back:
+`verified: true` when it matches what was written; when it differs, `verified: false` plus the
+actual `runningSource` — **not** a failure, because Rhino legitimately rewrites the `RunScript`
+signature of SDK-mode scripts during `UpdateCode`. Unreadable → the field is omitted rather than
+guessed.
 
 Acceptance: unit tests over fakes shaped like the real component (explicit interface implementation,
-hook-less component, throwing hook); `set` response carries `rebuilt` and, when the code is bad,
-`compileErrors` with `success: false`.
+hook-less component, throwing hook, code-less component); `set` response carries `rebuilt` and
+`verified`.
 
 ### Chunk 02 — `get` reports the running program
 
-Read the effective text through `IScriptObject.TryGetCode(out Code)` → `ICode.Text` (both explicit
-interface implementations; reflection via interface map). `get` keeps returning `source` unchanged;
-it adds `runningSource` **and** `sourceDiverged: true` only when the running text is readable *and*
-differs from the stored text. Unreadable → both omitted; never claim what cannot be read.
+`get` keeps returning `source` (the stored text) unchanged, and adds `runningSource` **and**
+`sourceDiverged: true` only when the running text is readable *and* differs. Unreadable → both
+omitted; never claim what cannot be read. Divergence is reported as a fact about stored-vs-running,
+not as an error — the SDK-mode signature rewrite makes it legitimately non-empty.
 
 Acceptance: unit tests for readable-and-equal, readable-and-different, and unreadable; the
 divergence fields appear only in the middle case.

@@ -44,8 +44,11 @@ Two ways to hand someone a `.gha` that is not a release — neither touches `mai
 
   Build with `-p:Version=` rather than editing the csproj: `validate_version` rejects prerelease
   strings and `increment_patch` would turn a stored `1.5.0-rc.1` into `1.5.0-rc.2` on the next
-  bare `prep`. The override still moves the assembly version (`1.5.0.0` vs a shipped `1.4.12.0`),
-  so a tester can confirm which build they are running via the MCP `initialize` response.
+  bare `prep`. The override sets the informational version, which the MCP `initialize` response
+  reports verbatim — `1.5.0-rc.2+build20260827180257`, the build stamp coming from the csproj's
+  `SourceRevisionId`. That is how a tester confirms which build they are running, including
+  between two pre-releases of the same version: the assembly version alone cannot tell them
+  apart, since both compile to `1.5.0.0`.
 
   Pre-releases are skipped by `/releases/latest/download/`, so the README download link is
   unaffected. `scripts/release.sh` has no command for this yet — backlog `REL-6H4X`.

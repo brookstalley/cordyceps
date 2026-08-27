@@ -30,7 +30,11 @@ namespace Cordyceps.Tools.Unified
                     Name = "get",
                     Description = "Get source code from a script component",
                     Required = new[] { "id" },
-                    Example = "action='get', id='abc-123'"
+                    Example = "action='get', id='abc-123'",
+                    Tips = new[] {
+                        "'source' is the text stored on the component. When the program it is actually running differs, the response adds runningSource and sourceDiverged=true",
+                        "Divergence is normal for C# script components: Rhino rewrites the RunScript signature of SDK-mode scripts as it builds them. runningSource is what executes"
+                    }
                 },
                 ["set"] = new ActionInfo
                 {
@@ -44,7 +48,10 @@ namespace Cordyceps.Tools.Unified
                         "Use gh_wire(action='connect', connections='<lostConnections>') to restore",
                         "Script language is preserved automatically; start code with '#! python 3' or '// #! csharp' to set it explicitly",
                         "A bare unified 'Script' component (no language picked) returns a languageWarning until code starts with a directive — add '#! python 3' or '// #! csharp'",
-                        "Components that expose their code as a visible input parameter can't be written directly — the error says so and nothing is changed; remove that parameter, or feed the code through it with gh_wire"
+                        "Components that expose their code as a visible input parameter can't be written directly — the error says so and nothing is changed; remove that parameter, or feed the code through it with gh_wire",
+                        "The component is rebuilt from the new source before the call returns: rebuilt=true means it will run the new program on its next solve. rebuilt=false carries rebuildSkipped saying why (components without rebuild hooks recompile on their own)",
+                        "verified=true means the running program was read back and matches what was written. verified=false adds runningSource — expected for C# SDK-mode scripts, whose RunScript signature Rhino rewrites as it builds. An absent verified means the program could not be read, not that it matched",
+                        "Code that fails to compile still reports success here — the write and the rebuild both succeeded. Build errors surface on the component; check gh_inspect(action='status', id=...) after setting code"
                     }
                 },
                 ["configure"] = new ActionInfo
@@ -62,7 +69,8 @@ namespace Cordyceps.Tools.Unified
                         "Script language is preserved automatically; start code with '#! python 3' or '// #! csharp' to set it explicitly",
                         "A bare unified 'Script' component (no language picked) returns a languageWarning until code starts with a directive — add '#! python 3' or '// #! csharp'",
                         "When 'code' is provided the response includes codeSet (bool); if setting the source fails after params were applied, success is false, codeSet=false, and sourceError holds the reason — the params DID change",
-                        "Components that expose their code as a visible input parameter can't be written directly — sourceError says so and the code is left unchanged"
+                        "Components that expose their code as a visible input parameter can't be written directly — sourceError says so and the code is left unchanged",
+                        "When code is written the component is rebuilt from it and the result read back: rebuilt/rebuildSkipped and verified/runningSource mean exactly what they do for action='set'"
                     }
                 },
                 ["info"] = new ActionInfo
@@ -82,6 +90,7 @@ namespace Cordyceps.Tools.Unified
             {
                 "Works with C# Script and Python 3 Script components",
                 "Source is written through the component's SetSource method when it has one, otherwise its writable Code property; a component with neither fails with an error naming the type and what was probed — never a silent no-op",
+                "Writing source does not recompile on its own — set/configure ask the component to rebuild and then read the running program back, so 'success' means the new code is the one that will run",
                 "access values: 'item' (default), 'list', 'tree'"
             }
         };
@@ -141,14 +150,29 @@ namespace Cordyceps.Tools.Unified
                     });
                 }
 
-                return JsonConvert.SerializeObject(new
+                var response = new Dictionary<string, object>
                 {
-                    success = true,
-                    id = component.InstanceGuid.ToString(),
-                    name = component.Name,
-                    source,
-                    sourceLength = source.Length
-                });
+                    ["success"] = true,
+                    ["id"] = component.InstanceGuid.ToString(),
+                    ["name"] = component.Name,
+                    ["source"] = source,
+                    ["sourceLength"] = source.Length
+                };
+
+                // 'source' is the text stored on the component. The program it actually runs is the
+                // built code, which Rhino keeps separately — so a clean round-trip of 'source' is
+                // not on its own evidence that a write took effect (issue #33). Report the running
+                // program whenever the two differ, and stay silent when it can't be read rather
+                // than implying agreement.
+                if (ScriptProgram.TryReadRunningSource(component, out var runningSource)
+                    && !string.Equals(runningSource, source, StringComparison.Ordinal))
+                {
+                    response["sourceDiverged"] = true;
+                    response["runningSource"] = runningSource;
+                    response["divergenceNote"] = DivergenceNote;
+                }
+
+                return JsonConvert.SerializeObject(response);
             });
         }
 
@@ -187,6 +211,13 @@ namespace Cordyceps.Tools.Unified
                         DebugLog.Warn($"[ActionSet] SyncScriptParams failed: {paramEx.Message}");
                     }
 
+                    // Storing source does not recompile: Rhino builds a Code from the script and
+                    // keeps running that until something invalidates it, so a write alone leaves the
+                    // component executing its previous program (issue #33). Ask for the rebuild
+                    // after the params are settled — the rebuild reads them — and verify the write
+                    // landed by reading the running program back.
+                    var rebuildFields = RebuildAndVerify(component, finalSource);
+
                     // Only expire — don't trigger a full document solution.
                     // Inside clusters, ExpireSolution(true) or NewSolution(true) on the
                     // internal document causes the parent to recreate the cluster,
@@ -213,6 +244,9 @@ namespace Cordyceps.Tools.Unified
                         ["inputs"] = inputs,
                         ["outputs"] = outputs
                     };
+
+                    foreach (var field in rebuildFields)
+                        response[field.Key] = field.Value;
 
                     // The source is stored, but a unified Script component with no language directive
                     // compiles to nothing ("Can not determine input code language") — and SetSource
@@ -272,6 +306,10 @@ namespace Cordyceps.Tools.Unified
                 // code-failed outcome is machine-readable (and overall success is false).
                 bool? codeSet = null;
                 string sourceError = null;
+                // Set once the source lands, so the rebuild that follows the parameter work can
+                // check itself against the text that was actually written.
+                string writtenSource = null;
+                Dictionary<string, object> rebuildFields = null;
 
                 try
                 {
@@ -295,6 +333,7 @@ namespace Cordyceps.Tools.Unified
                                 WriteScriptSource(component, finalSource);
                                 languageWarning = ScriptDirective.LanguageWarning(component.GetType().Name, finalSource);
                                 codeSet = true;
+                                writtenSource = finalSource;
                                 message += ", source set";
                             }
                             catch (Exception srcEx)
@@ -310,6 +349,11 @@ namespace Cordyceps.Tools.Unified
 
                         // Call VariableParameterMaintenance to finalize parameter setup
                         varParamComp.VariableParameterMaintenance();
+
+                        // Rebuild last, once the params are final: storing source doesn't recompile,
+                        // and the rebuild reads the params to shape the code's inputs and outputs.
+                        if (writtenSource != null)
+                            rebuildFields = RebuildAndVerify(component, writtenSource);
 
                         ghComponent.ExpireSolution(false);
 
@@ -336,9 +380,14 @@ namespace Cordyceps.Tools.Unified
                                 catch (Exception vpmEx) { DebugLog.Debug($"VariableParameterMaintenance skipped: {vpmEx.Message}"); }
                             }
 
+                            // See the parameter branch above: the write alone leaves the previous
+                            // program running, so ask for the rebuild once the params are final.
+                            rebuildFields = RebuildAndVerify(component, finalSource);
+
                             ghComponent.ExpireSolution(false);
                             configured = true;
                             codeSet = true;
+                            writtenSource = finalSource;
                             message = $"Source set ({ghComponent.Params.Input.Count} inputs, {ghComponent.Params.Output.Count} outputs)";
                         }
                         catch (Exception ex)
@@ -376,6 +425,11 @@ namespace Cordyceps.Tools.Unified
                     ["inputs"] = finalInputs,
                     ["outputs"] = finalOutputs
                 };
+                if (rebuildFields != null)
+                {
+                    foreach (var field in rebuildFields)
+                        configureResponse[field.Key] = field.Value;
+                }
                 if (codeSet.HasValue)
                     configureResponse["codeSet"] = codeSet.Value;
                 if (sourceError != null)
@@ -712,6 +766,61 @@ namespace Cordyceps.Tools.Unified
         /// missing its language directive strips the component's language and makes it fail at
         /// solve time with "Can not determine input code language".
         /// </remarks>
+        /// <summary>
+        /// Said whenever the stored source and the running program differ, at either surface that
+        /// can report it. Divergence is a fact to hand back, not a defect on its own: Rhino
+        /// rewrites the <c>RunScript</c> signature of SDK-mode scripts as it builds them, so the
+        /// two texts differ legitimately and often.
+        /// </summary>
+        private const string DivergenceNote =
+            "The stored source and the program the component runs are not identical. Rhino rewrites "
+            + "the RunScript signature of SDK-mode scripts when it builds them, so this is expected "
+            + "for C# script components; runningSource is what executes.";
+
+        /// <summary>
+        /// Ask <paramref name="component"/> to rebuild the program after its source was written,
+        /// then check that write by reading back the program it will actually run. Returns the
+        /// fields to merge into the tool response.
+        /// </summary>
+        /// <remarks>
+        /// <para>Writing source stores text; it does not recompile. Rhino builds a <c>Code</c> from
+        /// the script and keeps running that one, so a component whose source was replaced goes on
+        /// executing its previous program until something invalidates the build (issue #33). Every
+        /// source-changing path inside Rhino pairs the store with a rebuild; this is ours.</para>
+        /// <para>A component with no rebuild hooks is reported, not failed — Rhino 7's GhPython and
+        /// other <c>Code</c>-property components rebuild from their own source member instead. The
+        /// verification is reported the same way: <c>verified</c> is present only when the running
+        /// program could actually be read, because a missing answer must not read as a match.</para>
+        /// </remarks>
+        private static Dictionary<string, object> RebuildAndVerify(IGH_DocumentObject component, string finalSource)
+        {
+            var fields = new Dictionary<string, object>();
+
+            var rebuild = ScriptProgram.Rebuild(component);
+            foreach (var probe in rebuild.Probes)
+                DebugLog.Debug($"RebuildAndVerify: {probe}");
+
+            fields["rebuilt"] = rebuild.Rebuilt;
+            if (!rebuild.Rebuilt)
+            {
+                fields["rebuildSkipped"] = rebuild.Reason;
+                DebugLog.Info($"RebuildAndVerify: no rebuild on {component.GetType().Name} — {rebuild.Reason}");
+            }
+
+            if (ScriptProgram.TryReadRunningSource(component, out var runningSource))
+            {
+                bool matches = string.Equals(runningSource, finalSource, StringComparison.Ordinal);
+                fields["verified"] = matches;
+                if (!matches)
+                {
+                    fields["runningSource"] = runningSource;
+                    fields["divergenceNote"] = DivergenceNote;
+                }
+            }
+
+            return fields;
+        }
+
         private static void WriteScriptSource(IGH_DocumentObject component, string finalSource)
         {
             var result = ScriptSourceWriter.Write(component, finalSource);
