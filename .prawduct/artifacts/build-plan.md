@@ -173,13 +173,18 @@ becomes true between pre-releases, not just against a shipped release).
 
 ## Status
 
-- [ ] Chunk 01: Rebuild the program after writing source
-- [ ] Chunk 02: `get` reports the running program
-- [ ] Chunk 03: Testers can identify the build
-- [ ] Chunk 04: Documentation audit
+- [x] Chunk 01: Rebuild the program after writing source
+- [x] Chunk 02: `get` reports the running program
+- [x] Chunk 03: Testers can identify the build
+- [x] Chunk 04: Documentation audit
 
 ## Context
 
-Cut from issue #33 on 2026-08-27. The `.gha` for `v1.5.0-rc.2` is published by hand from `develop`
-after this lands (`docs/release-process.md` → "Getting a build without releasing"); rc.2 is a
-pre-release only — not Yak, not `main`.
+Cut from issue #33 on 2026-08-27. All four chunks reviewed (cumulative `rev-20260827T180559Z-e7c28dbe`
+plus two verify-resolutions rounds, ending clean) and merged to `develop`. The `.gha` for
+`v1.5.0-rc.2` is published by hand from `develop` (`docs/release-process.md` → "Getting a build
+without releasing"); rc.2 is a pre-release only — not Yak, not `main`.
+
+**VRF-014 is still pending, and that is the point of rc.2.** The live claims — that the rebuild makes
+the next solve run the new program, and that cluster inputs survive — have no evidence yet. The
+pre-release is the vehicle for getting it, from the issue #33 reporter and from a local Rhino.
