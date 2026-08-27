@@ -66,6 +66,8 @@ gh_script(action='set', id=[script_id], code='[your code]')
 
 > The script's language directive (`#! python 3`, `// #! csharp`) is preserved automatically, so `code` can be a plain body. To force a language, make the directive the first line of `code`.
 
+> The response reports `rebuilt` (the component was rebuilt from the new source, so the next solve runs it) and `verified` (the running program was read back and matches what you wrote). A `verified:false` with a `runningSource` is expected on C# SDK-mode scripts — Rhino rewrites their `RunScript` signature as it builds. Compile errors are *not* reported here; they surface on the component, so check `gh_inspect(action='status')` in the next step.
+
 ## Step 5: Connect Inputs and Verify
 ```
 gh_wire(action='connect', sourceId=[data_source], sourceParam='0', targetId=[script_id], targetParam='points')

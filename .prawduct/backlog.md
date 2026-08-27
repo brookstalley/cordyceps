@@ -284,6 +284,25 @@
 
   Related to REL-6H4X (pre-release command) — both touch `release.sh` and could share the harness.
 
+- **[GHS-5B7R]** Report compile diagnostics from gh_script set/configure
+  `effort: M · impact: M · area: gh-script · source: builder · added: 2026-08-27 · status: open · stage: research · related: GHS-4D8M`
+
+  Descoped from the #33 fix. `gh_script(action='set'|'configure')` can leave a script component whose
+  code does not compile, and returns success without a word about it — today build errors surface only
+  on the component at the next solve, reachable via `gh_inspect(action='status')`.
+
+  **Why it was descoped (the research question):** the build text is not reachable by any obvious API.
+  `IScriptObject.ReBuild()` discards the build `Diagnosis` — it runs `PreBuild` →
+  `Context.TryBuildCode(ctx, out _)`, dropping the out-param on the floor — and `IScriptObject.HasErrors`
+  only reflects runtime messages, which a rebuild never adds. So a rebuild tells us nothing.
+
+  Reaching the diagnostics means one of:
+  - reading the **protected `ScriptContext` field** (reflection, fragile across Rhino versions), or
+  - building the `Code` against a **hand-made `RunContext`** — which uses different settings than the
+    host does, so the diagnostics may not match what the component itself will report.
+
+  Neither is obviously right; pick one (or find a third) before scoping the fix.
+
 ## Promoted
 
 <!-- Items currently being addressed in an active build plan. /backlog pick

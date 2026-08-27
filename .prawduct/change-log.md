@@ -40,6 +40,61 @@
      They are written by hand: tick a box when its chunk's review passes, and
      nothing will overwrite it. -->
 
+## 2026-08-27: writing a script's source now recompiles it (issue #33)
+
+<!-- prawduct: type=bugfix | chunks=01,02,03,04 | scope=script-recompile-on-set -->
+
+**Why:** [GitHub #33] A reporter on a real 149-object definition found `gh_script(action='set')`
+returning `success/codeSet:true`, `get` round-tripping the new source, and the component executing
+its previous program regardless — through a slider change, a human slider drag, `recompute`, and
+solver off/on. No error, no runtime message. Reading the shipped Rhino 8.32 assemblies
+(`RhinoCodePluginGH.gha`, `RhinoCodePlatform.GH*.dll`) found two defects behind it. First, storing
+source does not recompile: Rhino builds a `Code` from the script and keeps running it, and every
+source-changing path *inside* Rhino pairs the store with a rebuild or an explicit
+`code.Text.Set(...)` — the editor and file-load paths, the language switch (`SetScript` then
+`ReBuild`), the "Discard Caches" menu item (`ExpireCache` then `ReCompute`). Cordyceps was the only
+writer that stored text and asked for nothing. Second, `get` could not see the divergence it was
+being used to rule out: `TryGetSource` returns the *stored* text, while Rhino's own `GetText()`
+prefers the built code's — so the clean round-trip the reporter checked was never evidence.
+
+**What:** (a) New `Core/ScriptProgram` reaches the component's live program through the public
+`IScriptObject` interface it implements explicitly — `Expire()` then `ReBuild()` to rebuild, and
+`TryGetCode` → `ICode.Text` to read what will actually run. Host-free reflection over `object`, like
+its sibling `ScriptSourceWriter`, so the whole thing is unit-testable against fakes. (b) `set` and
+both `configure` write paths rebuild after the params are final, then verify the write by reading
+the running program back. (c) One vocabulary at both surfaces, and every branch says something:
+`rebuildSkipped` (no hooks — normal) is a different key from `rebuildFailed` (a hook threw — probably
+still running the old program), and an unreadable program yields `verificationSkipped` /
+`runningSourceUnavailable` rather than an omitted field, because an absent `verified` read as
+agreement is the very failure being fixed. (d) MCP `initialize` reports the
+informational version, so two pre-releases of the same version are distinguishable — without it a
+tester cannot confirm they are running the build that contains this fix.
+
+**Not the regression it was reported as.** The report blames #30 for removing a per-call
+`ExpireSolution` from `set`; `git show v1.4.12` shows the path was behaviourally identical, the only
+rc.1 change being `dynamic` → reflection onto the same `SetSource(String)`. The implicit rebuild
+`set` once inherited was `SetParametersFromScript()` → `Context.OnScriptChanged()`, removed in
+**v1.4.6** for the cluster-corruption fix — long before the reporter's 1.4.12 baseline. Their exact
+stale program has not been reproduced here, and this bundle does not claim to have root-caused it;
+it fixes two defects provable from the Rhino source that make the reported symptom either
+impossible or visible.
+
+**What no test here can reach.** Every unit test drives fakes written to the shape the Rhino
+assemblies were read to have — which proves the reflection resolves, and cannot prove that
+`Expire()`+`ReBuild()` makes the *next solve* run the new program, nor that cluster inputs survive
+(issue #12 only manifests inside a cluster). Both are enqueued as **VRF-014**, and rc.2 exists so the
+reporter's own battery can answer them.
+
+**Descoped, explicitly.** Reporting compile diagnostics from the write call was in the first cut of
+the plan and is not reachable on public API: `ReBuild()` → `PreBuild(kind)` →
+`Context.TryBuildCode(runContext, out _)` discards the `Diagnosis`, and `IScriptObject.HasErrors` is
+just "does the component have error runtime messages", which a rebuild never adds. The alternatives
+— reading the `protected ScriptContext Context` field, or building the `Code` against a hand-made
+`RunContext` — mean reaching past the public surface or building under settings the host would not
+use. Build errors keep surfacing where they do today: on the component at the next solve, via
+`gh_inspect(action='status')`. Said in the help text, the errors guide and the changelog rather than
+left for a user to discover.
+
 ## 2026-08-25: the release publishes the binary it built (release-artifact provenance)
 
 <!-- prawduct: type=bugfix | chunks=01,02,03,04 | scope=release-artifact-provenance -->

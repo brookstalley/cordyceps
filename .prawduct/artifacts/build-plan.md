@@ -1,188 +1,190 @@
-# Build Plan — release-artifact-provenance
+---
+scope: script-recompile-on-set
+---
 
-Branch: `fix/release-artifact-provenance` (off `develop`)
-Size: medium · Type: bugfix / debt paydown
-Critic mode: cumulative (single review — one coherent surface, ~7 files)
+# Build Plan — script recompile on write (issue #33)
+
+Branch: `fix/script-recompile-on-set` (off `develop`)
+Size: medium · Type: bugfix
+Critic mode: cumulative (single review — one coherent surface, ~8 files)
 
 ## Problem
 
-Observable, from a real user stall: issue #29 reporter had no .NET toolchain and asked for a
-`develop` build of `Cordyceps.gha`. There was no supported way to give them one, and the
-obvious-looking sources were both wrong:
+Reported in issue #33 against `v1.5.0-rc.1`, from a real production definition: `gh_script(action='set')`
+returns `success/codeSet:true`, `gh_script(action='get')` round-trips the new source — and the
+component keeps executing its previous program. No error, no runtime message. Neither a slider
+change (via MCP or by hand), nor `gh_document(action='recompute')`, nor solver-off/on made the new
+code take effect.
 
-1. **CI publishes nothing.** `dotnet-ci.yml` builds and tests but never uploads an artifact.
-   The reporter assumed otherwise ("hopefully that's just a matter of publishing the artifact")
-   and waited a weekend on an artifact that did not exist.
-2. **The tracked `releases/Cordyceps.gha` is refreshed only at release time**, so on `develop` it
-   is the last *released* build. Had they found it and swapped it in, they would have tested code
-   containing none of the fixes and reported a false negative on #27, #29 and #30.
-3. **Any local Release build silently overwrites that tracked file** — the csproj `CopyToReleases`
-   target writes into `releases/`, which is the path README publishes as the manual-install
-   download. It dirtied the working tree twice while diagnosing this.
+Two defects behind it, both read out of the decompiled Rhino 8.32 script-component internals
+(`RhinoCodePluginGH.gha`, `RhinoCodePlatform.GH*.dll`):
 
-Underneath all three is one defect: **the binary that gets published is whatever happens to be
-sitting in the working tree, not something the release process built.** `do_publish` calls
-`prepare_dist` (which `cp`s `$RELEASES_DIR/Cordyceps.gha` into the Yak package *and* the GitHub
-Release asset) without ever calling `build_gha`. Today that is safe only by accident: the file is
-tracked, so `require_clean_tree` would catch a stray local build. That accident is the thing
-holding the release surface together.
+1. **Nothing asks the component to rebuild.** `set` stores source (`SetSource`) and expires the
+   Grasshopper solution (`ExpireSolution(false)`). Every source-changing path *inside* Rhino pairs
+   the store with a code-level update or an explicit rebuild — the editor and file-load paths do
+   `Script.Text = …` **and** `code.Text.Set(…)`; the language switch does `SetScript(…)` then
+   `ReBuild()`; the "Discard Caches" menu item does `Context.ExpireCache()` then `Context.ReCompute()`.
+   Cordyceps is the only writer that stores text and asks for nothing. Because it also never builds,
+   a compile failure cannot be reported — the silent `success: true` is structural.
+
+2. **`get` cannot see the divergence it is being used to rule out.** `TryGetSource` returns
+   `Context.Script.Text` (the *stored* text). The program that compiles and runs is the `Code`
+   object's text. Rhino's own accessor prefers the latter
+   (`ScriptContext.GetText()` → `code.Text` when a Code exists, `Script.Text` otherwise), and the two
+   are only kept in step where Rhino explicitly writes both. So a clean `get` round-trip is not
+   evidence that the running program changed — exactly the false confirmation the reporter acted on.
+
+Not a v1.5.0-rc.1 regression, contrary to the report's hypothesis: `git show v1.4.12` shows the `set`
+path was behaviourally identical (same `ExpireSolution(false)`, same `SyncScriptParams`); the only
+rc.1 change was `dynamic` → reflection onto the same `SetSource(String)`. The implicit rebuild that
+`set` used to inherit was `SetParametersFromScript()` → `Context.OnScriptChanged()` (prepare + build),
+removed in **v1.4.6** for the cluster-corruption fix — long before the reporter's 1.4.12 baseline.
 
 ## Success
 
-- `release.sh publish` ships a binary it built from the checked-out release commit, and works on
-  a fresh clone.
-- A local `dotnet build -c Release` cannot dirty the repo or stage an unreleased binary into the
-  manual-install download path.
-- The README manual-install link always resolves to a published release build.
-- A build of `develop` is obtainable without a .NET toolchain.
+- After `gh_script(action='set'|'configure')` with new code, the component's next solve runs the
+  code that was just written — because the write is followed by an explicit cache-expire + rebuild
+  through Rhino's own `IScriptObject` hooks, not because a solve happens to rebuild it.
+- `set`/`configure` verify their own write: after the rebuild they read back the program the
+  component will actually run and report whether it matches what was written. An agent no longer has
+  to take `success: true` on faith — which is the reporter's core complaint.
+- `gh_script(action='get')` reports the program that actually runs, and says so when the stored and
+  running texts differ.
+- A tester can tell rc.2 from rc.1 over MCP, which is a precondition for them re-running the
+  battery against this fix at all.
+- No cluster regression: nothing added calls `ExpireSolution(true)` or `NewSolution` (issue #12 /
+  v1.4.6).
 
 ## Out of scope
 
-- The Yak publishing flow itself, `yak build`/`push`, manifest handling.
-- Folding pre-releases into `release.sh` (today's `v1.5.0-rc.1` was cut by hand; a repeatable
-  pre-release command is a separate ask — filed to backlog rather than built here).
-- Rewriting history to drop the old `.gha` blobs. Untracking stops future churn; the existing
-  blobs stay. Repo size is not a reported problem.
-- Anything in the #27/#29/#30 product code.
+- Reproducing the reporter's exact failure in a live Rhino. It has not been reproduced here and this
+  plan does not claim to have root-caused *their* stale program — it fixes two defects that are
+  provable from the Rhino source and that make the reported symptom either impossible or visible.
+- Changing `SyncScriptParams` / the surgical param sync (cluster-safety constraint stands).
+- Folding pre-releases into `scripts/release.sh` (backlog `REL-6H4X`); rc.2 is cut by hand per
+  `docs/release-process.md`.
+- Rhino 7 / GhPython paths beyond degrading gracefully when the rebuild hooks are absent.
+- **Reporting compile diagnostics from the write call — descoped, not dropped.** It was in the first
+  cut of this plan and is not reachable on public API: `IScriptObject.ReBuild()` → `PreBuild(kind)`
+  → `Context.TryBuildCode(runContext, out _)` **discards the `Diagnosis`**, and
+  `IScriptObject.HasErrors` is just "does the component have error runtime messages", which a
+  rebuild never adds. The two ways to get the text — reading the `protected ScriptContext Context`
+  field, or building the `Code` against a hand-made `RunContext` — mean reaching past the public
+  surface or building under different settings than the host would use. Build errors keep surfacing
+  where they do today: on the component at the next solve, readable via `gh_inspect(action='status')`.
+  Filed to backlog; the read-back check below covers the "did my write take effect" half.
 
 ## Requirements confidence
 
-High. The failure is observed, not hypothesized, and every claim below was checked against the
-code or the live GitHub API rather than recalled:
+High for the two defects, and deliberately **not** claimed for the reporter's root cause. Every
+mechanism below was read out of the shipped Rhino assemblies on this machine (8.32.26160.13002),
+not recalled:
 
-- `do_publish` (`scripts/release.sh`) has no `build_gha` call — read.
-- `prepare_dist` copies from `$RELEASES_DIR` — read (line ~383).
-- `create_github_release` attaches `$RELEASES_DIR/Cordyceps.gha#Cordyceps.gha` — read (~530), so
-  the release asset is *already* named `Cordyceps.gha`.
-- `https://github.com/brookstalley/cordyceps/releases/latest/download/Cordyceps.gha` → HTTP 200
-  today, resolving to v1.4.12. `/releases/latest` excludes pre-releases, so `v1.5.0-rc.1` is not
-  served by it — verified against the API after publishing the rc.
-- README's manual-install link is pinned to `raw/main/...`, not the current branch — read.
+- `BaseScriptComponent.SetSource(string)` → `Context.SetScript(new Grasshopper1Script(text))` —
+  replaces the whole script object; the old `Code` is disposed.
+- `BaseScriptComponent.TryGetSource(out string)` → `Context.Script.Text` (stored, not running).
+- `ScriptContext<T>.GetText()` → `code.Text` when a Code exists — Rhino treats the Code as the
+  effective program.
+- `ScriptContext<T>.SetText`, `BaseScriptComponent.Read` — both write `Script.Text` *and*
+  `code.Text.Set(…)`.
+- `IScriptObject.Expire()` → `code.ExpireCache()`; `IScriptObject.ReBuild()` → `PreBuild(Run)` →
+  `Context.TryBuildCode(...)`; both are explicit interface implementations, neither schedules or
+  expires a Grasshopper solution — so both are cluster-safe.
+- `Menu_DestroyAssemblyCaches` (the "Discard Caches" item) = `Context.ExpireCache()` +
+  `Context.ReCompute()` — the in-product precedent for expire-then-rebuild.
+- `Rhino.Runtime.Code.Code` implements `ICode.Text` explicitly as a plain `string` — readable by
+  reflection without referencing any Rhino assembly.
+- `McpServer.GetServerInfo` reports `Assembly.GetName().Version` → `1.5.0.0` for *both* rc.1 and
+  rc.2, since `-p:Version=1.5.0-rc.2` only moves the informational version.
+  `docs/release-process.md` currently promises testers can identify their build this way.
 
 ## Chunks
 
-### Chunk 01 — Publish builds what it ships
+### Chunk 01 — Rebuild the program after writing source
 
-`do_publish` calls `build_gha` before `prepare_dist`. Provenance becomes explicit: the artifact
-in the Yak package and the GitHub Release is compiled from the commit being released.
+`src/Cordyceps/Core/ScriptProgram.cs` (new, host-free, reflection over `object` like
+`ScriptSourceWriter`) — one module for reaching a script component's live program through the public
+`IScriptObject` interface it implements explicitly:
 
-This is the prerequisite for chunk 02 — once the file is untracked, `require_clean_tree` no
-longer guards it, and on a fresh clone of `main` it would not exist at all.
+- `Rebuild(object)` — `Expire()` (drop the compile cache) then `ReBuild()` (build now). Returns
+  success, an ordered probe trace, and the reason when there is no hook — with `Failed` separating
+  "a hook threw, this component is probably still running the old program" from "no hooks, normal".
+  Reflection dispatches through the *interface* `MethodInfo`, which resolves explicit implementations.
+- `CompareRunning(object, expected)` — `TryGetCode(out Code)` then `ICode.Text` (a plain `string`,
+  implemented explicitly on `Code`), compared with what the caller holds. Unreadable before the
+  component has ever built, which is correct: there is no running program yet. Every failure path
+  carries a reason and probes, so a degraded read is visible in `gh_inspect(action='log')` instead
+  of silently omitting a field.
+- `DescribeWrite(...)` / `DescribeRead(...)` — the response fields for each surface. Host-free on
+  purpose: the decision about which fields appear, and what an absent one means, is the part that
+  must not be reasoned about only in a tool class no test can reach.
 
-**Done when:** `publish --dry-run` reports the build step; a publish run on a tree with no
-`releases/` directory succeeds.
+Interfaces are matched by simple name **plus required member shape**, not by full name — same
+probe-by-shape philosophy as `ScriptSourceWriter`, and it survives Rhino moving the namespace. The
+member search walks base interfaces for the same reason: a member promoted to a base interface is
+the same shape, and rejecting it would silently turn every rebuild into a no-op.
 
-### Chunk 02 — Untrack the built artifact
+A component without the hooks (Rhino 7 GhPython, third-party) is **not** an error: it is reported as
+`rebuilt: false` with the reason, since those recompile off their own `Code` property.
 
-- `git rm --cached releases/Cordyceps.gha`; add `releases/` to `.gitignore`.
-- Drop the `.gha` from `commit_release`'s `git add` (and correct the comment that says it "rides
-  to main").
-- Repoint README manual-install at `https://github.com/brookstalley/cordyceps/releases/latest/download/Cordyceps.gha`.
-- Update `check_readme`'s guard, which greps for the literal `releases/Cordyceps.gha` and would
-  otherwise warn on every prep forever.
+Wire into `GhScriptTool` `set` and both `configure` write paths, after the source write and before
+`ExpireSolution(false)`. Then verify the write by reading the running program back:
+`verified: true` when it matches what was written; when it differs, `verified: false` plus
+`sourceDiverged`, the actual `runningSource`, and a `divergenceNote` explaining it — **not** a
+failure, because Rhino legitimately rewrites the `RunScript` signature of SDK-mode scripts during
+`UpdateCode`. Unreadable → `verified` is omitted and `verificationSkipped` carries the reason, so an
+absent answer never reads as a match.
 
-**Done when:** a `dotnet build -c Release` leaves `git status` clean; README's link resolves to
-the current release asset.
+Acceptance: unit tests over fakes shaped like the real component (explicit interface implementation,
+overloaded `ReBuild`, hook-less component, throwing hook, code-less component, a `Code` whose public
+`Text` is a container), plus tests over the emitted field sets for every branch. Live-Rhino
+behaviour — that the rebuild makes the *next solve* run the new program, and that cluster inputs
+survive — cannot be tested here and is enqueued as **VRF-014**.
 
-### Chunk 03 — CI publishes a downloadable build
+### Chunk 02 — `get` reports the running program
 
-`dotnet-ci.yml` uploads the built `.gha` via `actions/upload-artifact` on `develop`/`main` pushes,
-so a build of any commit is obtainable without a toolchain.
+`get` keeps returning `source` (the stored text) unchanged. When the running program is readable it
+adds `sourceDiverged` — always, true or false — plus `runningSource` and `divergenceNote` when they
+differ. When it is not readable it says `runningSourceUnavailable` with the reason. That way the
+absence of `sourceDiverged` never has to stand in for "they agree". Divergence is reported as a fact
+about stored-vs-running, not as an error: the SDK-mode signature rewrite makes it legitimately
+non-empty.
 
-Known limits, to be stated in the docs rather than discovered: Actions artifacts expire (90 days
-default) and require a GitHub login to download. They are a convenience for testers, not the
-distribution channel — that stays GitHub Releases + Yak.
+Acceptance: unit tests for readable-and-equal, readable-and-different, and unreadable, over both
+`CompareRunning` and the emitted `DescribeRead` field set.
 
-**Done when:** the workflow uploads the artifact and the run page offers it.
+### Chunk 03 — Testers can identify the build
+
+`McpServer` reports `AssemblyInformationalVersion` (`1.5.0-rc.2`) as the MCP `serverInfo.version`,
+falling back to the assembly version when there is no informational version. Without this, rc.1 and
+rc.2 are indistinguishable over MCP and the reporter cannot confirm they are testing the fix.
+
+Acceptance: unit test for the fallback ordering, and the informational version confirmed present in
+the built `.gha`. A live `initialize` response cannot be checked here — there is no headless Rhino on
+the build machine — so it is enqueued as operator verification (VRF-014) rather than claimed.
 
 ### Chunk 04 — Documentation audit
 
-Per CLAUDE.md's mandatory documentation audit: `docs/release-process.md` (publish now builds; the
-artifact is no longer committed), `CLAUDE.md` (its Publishing section names "the downloadable
-`releases/Cordyceps.gha`"), README manual-install wording, and a CHANGELOG entry under
-`## [Unreleased]`.
-
-Also retire the learning this change makes obsolete. `.prawduct/learnings.md` carries "Building
-dirties the tracked `releases/Cordyceps.gha` binary", whose rule is *"run `git checkout --
-releases/Cordyceps.gha` after building"* — a standing manual workaround for precisely the defect
-chunk 02 removes. Leaving it would have every future session performing a no-op ritual against a
-gitignored file. Rewrite it as the resolved fact (why the artifact is untracked, where the
-download comes from) rather than deleting the history of it.
-
-Two pre-existing inconsistencies surfaced while reading, fixed here rather than left (no
-"pre-existing" exception):
-
-- `project-preferences.md` records **Parallelization: xUnit default**, but
-  `src/Cordyceps.Tests/AssemblyInfo.cs` sets `DisableTestParallelization = true` deliberately, to
-  keep timing-sensitive tests off a 2-core CI runner where `build-test` — the required check for
-  `main` — flaked twice. The preferences line is stale and contradicts a learning.
-- `release.sh`'s `check_readme` greps for a literal path that chunk 02 removes (covered there,
-  noted here so the audit is complete).
-
-**Done when:** no doc still describes the artifact as committed to the repo, and no learning
-instructs a reader to clean up after a build that no longer dirties anything.
-
-## Verification
-
-- Full C# suite green (`dotnet test ... -c Release`) — this change must not touch it; 550/550 is
-  the pre-change baseline.
-- `bash -n scripts/release.sh` and `shellcheck` if available.
-- **Scratch-clone dry-run**: clone to the scratchpad, create local `develop`/`main`, apply the
-  change, and run both `prep --dry-run` and `publish --dry-run` there. `require_branch` blocks
-  running them from a feature branch in the real checkout, and dry-run pushes nothing, so a
-  scratch clone is the honest way to exercise the real code paths.
-- `git status` clean after a Release build.
-
-## Recorded decisions
-
-**Existing `raw/main/releases/Cordyceps.gha` links break.** Deleting the tracked blob means any
-link of the form `https://github.com/brookstalley/cordyceps/raw/main/releases/Cordyceps.gha` —
-the README's own link until this change, so plausibly copied into forum posts, bookmarks and
-third-party install notes — now 404s. Weighed and accepted:
-
-- GitHub serves no redirect for a deleted path, so there is no way to keep the old URL alive
-  short of continuing to track the binary, which is the defect being fixed.
-- A 404 is a loud failure. The alternative the old link produced — silently serving a build that
-  is not the release you think it is — is the failure mode that nearly cost three false-negative
-  bug reports.
-- The README, the Rhino Package Manager path, and every GitHub Release page continue to work, and
-  `/releases/latest/download/Cordyceps.gha` is the stable replacement.
-- Old *release tags* are unaffected: their assets are attached to the Release objects, not to the
-  tracked path.
-
-**History is not rewritten.** The 56 historical `.gha` blobs (~27.4 MiB) stay. Untracking stops
-future churn; a rewrite would break every existing clone and commit reference for a repo-size
-problem nobody has reported.
-
-## Verification results (2026-08-25)
-
-- C# suite: 550/550 green, recorded via `test-evidence record`. The suite is a **regression guard
-  only** — this change is shell/YAML/docs and adds no C# tests. Do not read green as evidence the
-  release paths work; the items below are that evidence.
-- `bash -n scripts/release.sh` passes. `shellcheck` is not installed on this machine, so the
-  static-analysis pass was not run — flagged rather than claimed.
-- Scratch clone (`--no-hardlinks`, origin removed, local `develop`/`main` at the change):
-  - `prep --dry-run` — green; `check_readme` reports "README.md looks good" against the new
-    release-asset URL, and the commit step now announces a version bump with no `.gha`.
-  - `publish --dry-run` — green; "Building Cordyceps..." now precedes "Preparing distribution
-    directory...".
-  - Real `dotnet build -c Release` **in a clone with no `releases/` directory** produces
-    `releases/Cordyceps.gha` (698,368 bytes) and leaves `git status --untracked-files=all` empty.
-    This is the case that was broken before: publish would have hit a bare `cp` failure here.
-  - `prepare_dist` exercised verbatim (extracted from the real script) both ways: with an empty
-    releases dir it exits 1 with the named error; with the built artifact it populates `dist/`
-    with `.gha` + `manifest.yml` + `icon.png`.
-- `create_github_release`'s existing-Release branch exercised verbatim against a stubbed `gh`,
-  both ways: upload succeeds -> asset attached with `--clobber` and the Release marked `--latest`,
-  exit 0; upload fails -> exits 1 with the actionable message instead of falling through to
-  "Release published!". Not testable against the live `v1.5.0-rc.1`, since `gh release edit
-  --latest` would promote the pre-release and break the README download link.
-- Not verified: the CI upload step. YAML parses and the step list is correct, but
-  `actions/upload-artifact` cannot run until the branch is pushed. Confirm on the first CI run.
+`ActionInfo` tips for `set`/`get`/`configure`; `McpServer.GetServerInstructions()`;
+`Knowledge/CommonErrorsGuide.md` (stale-program failure mode and what `rebuilt`/`sourceDiverged`
+mean); `Knowledge/Prompts/SetupScriptComponent.md` if the workflow changes; `CHANGELOG.md` under
+`## [Unreleased]`; `docs/release-process.md` (its "confirm which build via MCP initialize" claim
+becomes true between pre-releases, not just against a shipped release).
 
 ## Status
 
-- [x] Chunk 01: Publish builds what it ships
-- [x] Chunk 02: Untrack the built artifact
-- [x] Chunk 03: CI publishes a downloadable build
+- [x] Chunk 01: Rebuild the program after writing source
+- [x] Chunk 02: `get` reports the running program
+- [x] Chunk 03: Testers can identify the build
 - [x] Chunk 04: Documentation audit
+
+## Context
+
+Cut from issue #33 on 2026-08-27. All four chunks reviewed (cumulative `rev-20260827T180559Z-e7c28dbe`
+plus two verify-resolutions rounds, ending clean) and merged to `develop`. The `.gha` for
+`v1.5.0-rc.2` is published by hand from `develop` (`docs/release-process.md` → "Getting a build
+without releasing"); rc.2 is a pre-release only — not Yak, not `main`.
+
+**VRF-014 is still pending, and that is the point of rc.2.** The live claims — that the rebuild makes
+the next solve run the new program, and that cluster inputs survive — have no evidence yet. The
+pre-release is the vehicle for getting it, from the issue #33 reporter and from a local Rhino.

@@ -617,7 +617,13 @@ namespace Cordyceps
 
         private object HandleInitialize()
         {
-            var version = Assembly.GetExecutingAssembly().GetName().Version?.ToString() ?? "1.0.0";
+            // Informational, not assembly, version: the assembly version drops the pre-release tag,
+            // so every 1.5.0 pre-release reports an identical 1.5.0.0 and a tester cannot confirm
+            // which build they are on — the thing pre-releases exist to let them do.
+            var assembly = Assembly.GetExecutingAssembly();
+            var informational = assembly
+                .GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion;
+            var version = BuildVersion.Describe(informational, assembly.GetName().Version);
             return new
             {
                 protocolVersion = "2025-06-18",
@@ -642,7 +648,7 @@ UNIFIED TOOLS (use action='help' for details):
 - gh_canvas: add, delete, move, rename, find, search, list, info, bounds, validate, constant, bake, zoom, view, get, set, config, preview, enable, group_create, group_delete, group_add, group_remove, group_list, group_rename, group_color, group_move, zoomable, modifier
 - gh_wire: connect, disconnect, list, clear, validate
 - gh_document: info, save, clear, solver, recompute (rejected while a solution is running), undo, redo (both disabled — use snapshot/revert), snapshot, revert, snapshots, snapshot_delete (max 20 snapshots kept; oldest evicted), capture_canvas, capture_viewport, capture_region, capture_views
-- gh_script: get, set, configure, info
+- gh_script: get, set, configure, info (set/configure rebuild the component from the new source and report rebuilt/verified; compile errors surface on the component — check gh_inspect(action='status') after writing code)
 - gh_inspect: connection, status, outputs, trace, disconnected, geometry, log, reports, categories, docs
 - rhino_scene: objects, select, deselect, set_layer, set_name, layers, layer_create, layer_set, layer_delete, hide, show, delete, set_color, bbox, place_image, script
 - rhino_render: display, camera, zoom, modes, render, settings, ground, sun, skylight, view_save, view_load, view_list, view_delete, light_add, light_list, light_set, light_delete, material_list, material_library, material_instantiate, material_create, material_texture, material_apply, material_delete, env_list, env_current, env_set, env_create, env_delete

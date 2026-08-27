@@ -361,3 +361,35 @@ branch a REAL Rhino 8 script component takes is only observable live.
 - **`IsScriptComponent` widening did not false-positive:** confirm ordinary non-script components
   are still rejected by `gh_script` (the gate now also accepts any component with a public writable
   `string Code` property).
+
+## VRF-014 — script-recompile-on-set Chunks 01–03 — the write actually recompiles (issue #33)
+
+**Status:** pending
+**Added:** 2026-08-27 (script-recompile-on-set, shipped for verification as `v1.5.0-rc.2`)
+**Where to verify:** Rhino 8 + Grasshopper, `v1.5.0-rc.2` installed, an MCP client connected.
+
+**Why this needs a human:** the whole fix is a conversation with a live Rhino script component.
+`Core/ScriptProgram` is unit-tested against fakes that reproduce the real shapes (explicit
+`IScriptObject` implementation, overloaded `ReBuild`, a `Code` whose public `Text` is a container
+and whose string `Text` is on `ICode`), which proves the reflection resolves — but no fake can prove
+that Rhino's own `Expire()`/`ReBuild()` make the *next solve* run the new program. The build agent
+has no headless Rhino; this was read out of the decompiled 8.32 assemblies and statically reasoned,
+not executed. The reporter's stale program was never reproduced here.
+
+**Verify:**
+- **The reported repro, on the canvas:** fresh C# Script component → `gh_script(action='set')` with
+  unmistakable output → a Panel on the output shows the new values. Ground truth on the canvas, not
+  through the outputs API.
+- **The response tells the truth:** that same call returns `rebuilt: true`, and `verified: true`
+  when the program read back matches. A `verified: false` should come with a `runningSource` that
+  differs only in the `RunScript` signature (SDK-mode C#) — anything else is a real finding.
+- **Python 3 Script components** behave the same as C# ones.
+- **Cluster safety (the regression risk):** set script source on a component *inside* a cluster
+  editor. The cluster's input hooks must survive and the editor must stay attached — the rebuild
+  hooks were chosen because they never call `ExpireSolution(true)`/`NewSolution`, which is what
+  corrupted clusters before v1.4.6.
+- **Latency:** `set` now compiles inline, so the first script write of a session can take
+  noticeably longer. Confirm it is seconds, not minutes — a compile over ~120s would start tripping
+  the document-lock timeout for concurrent requests.
+- **Version reporting (Chunk 03):** the MCP `initialize` response reports
+  `1.5.0-rc.2+build<stamp>`, not `1.5.0.0`. This is what lets a tester prove which build they are on.
