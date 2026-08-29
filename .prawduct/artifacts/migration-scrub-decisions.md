@@ -171,6 +171,16 @@ to restore in place — a reversal would have to recover the file from git histo
 first (see the recovery command above). This is part of the accepted cost of the
 deletion, not a separate decision.
 
+**A reversal cannot be a restore.** The recovered file is a *cutover-time snapshot*:
+items filed natively after the cutover carry no PFX id and appear in it nowhere — #76
+already, plus #77 / #78 / #79 filed by this bundle's own review, and the set grows with
+every native filing. Restoring the snapshot and closing the migrated issues would
+silently drop all of them. Any reversal must therefore enumerate the post-cutover
+issues from the tracker (`gh issue list --state all --limit 200`, everything outside the
+`#35`-`#75` migrated range) and carry them across by hand. There is no mechanism for
+this and there is not meant to be one — it is a further reason the deletion is treated
+as irreversible rather than merely inconvenient.
+
 **No code path breaks.** Every reader is either gated on `backlog_service_repo`
 (`briefing.py:982` sits after the post-cutover branch and already guards
 `is_file()`; `release_readiness._markdown_backlog_unavailable_reason`;

@@ -75,7 +75,9 @@ Full rationale, the target/scope decisions, and the plugin build that performed 
 **Follow-up:** `backlog counts` reports `untriaged: 0` on this repo while `backlog list --untriaged`
 correctly finds the 11 pre-existing reporter issues, folding them into `shipped` instead. Does not
 affect the migration (the gate is the authority, not the count arithmetic) but looks like an
-upstream prawduct defect worth reporting.
+upstream prawduct defect. Filed as **#78**; the upstream `/prawduct:report-bug` is still owed.
+The PR's own Critic and PR reviews filed two more: **#77** (`CLAUDE.md` is ~35 lines over the
+project-content ceiling) and **#79** (the janitor build plan declares no frontmatter `scope:`).
 
 ## 2026-08-29: document the silently-never-invoked RunScript trap (issue #33)
 
