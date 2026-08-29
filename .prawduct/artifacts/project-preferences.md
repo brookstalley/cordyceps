@@ -50,7 +50,7 @@ Developer preferences for how code is written in this project. Captured during d
 - **Branching**: feature-branches (default: feature-branches — create a branch for medium+ work, direct commits to protected branches only for trivial fixes; set to "direct" for solo projects where committing to main is OK)
 - **Protected branches**: main (branches that should not receive direct commits unless branching is "direct")
 - **PR creation**: wait_for_user (default: wait_for_user — only create PRs when explicitly asked; set to "automatic" to create PRs after Critic review passes)
-- **PR merge**: wait_for_user (default: wait_for_user — present the PR for user review before merging; set to "automatic" to merge after CI passes and review is clean)
+- **PR merge**: automatic (default: wait_for_user — present the PR for user review before merging; set to "automatic" to merge after CI passes and review is clean). Feature→`develop` PRs merge without a second ask once CI is green and the PR review carries no blocking findings. Scope limit: this does **not** touch the `develop`→`main` release, which stays a manual, owner-run promotion (`scripts/release.sh`), and a blocking finding still stops the merge.
 - **Commit attribution**: none (default: none — no `Co-Authored-By`, `Signed-off-by`, or "Generated with …" trailers on commits or PR bodies; set to "co-authored" to add a Claude `Co-Authored-By` trailer)
 
 ---

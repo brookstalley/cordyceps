@@ -40,6 +40,24 @@
      They are written by hand: tick a box when its chunk's review passes, and
      nothing will overwrite it. -->
 
+## 2026-08-29: merge feature PRs automatically once CI and review are clean
+
+<!-- prawduct: type=tooling | scope=pr-merge-preference -->
+
+**Why:** Owner asked for it while merging #80. `PR merge: wait_for_user` meant every feature PR
+stopped for a second ask after CI was already green and the independent review had already
+returned zero blocking findings — the ask carried no new information, so it was a round-trip that
+decided nothing.
+
+**What changed:** `PR merge` in `.prawduct/artifacts/project-preferences.md` is now `automatic`.
+`/prawduct:pr` merges a feature->`develop` PR once CI passes and the review is blocking-free.
+
+**Scope limit:** unchanged for the release surface. The `develop`->`main` promotion is not a
+`/prawduct:pr` merge at all (the skill's release-promotion guard hands it back), so it stays
+manual and owner-run via `scripts/release.sh`. `PR creation` also stays `wait_for_user` — PRs are
+still only opened when asked; only the merge step lost its second ask. A blocking finding still
+stops the merge.
+
 ## 2026-08-29: migrate the backlog from markdown to GitHub Issues
 
 <!-- prawduct: type=tooling | scope=backlog-service-migration -->
