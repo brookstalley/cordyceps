@@ -19,19 +19,33 @@
 
 ## Installation
 
-1. **[Download Cordyceps.gha](https://github.com/brookstalley/cordyceps/raw/main/releases/Cordyceps.gha)**
+### Rhino Package Manager (recommended)
+
+1. In Rhino 8, run the **`PackageManager`** command (or *Tools → Package Manager*)
+2. Search for **Cordyceps** and click **Install**
+3. Restart Rhino
+
+The Package Manager downloads the plugin, places it in the right folder, and unblocks it for you — and future updates are one click.
+
+### Manual install
+
+1. **[Download Cordyceps.gha](https://github.com/brookstalley/cordyceps/releases/latest/download/Cordyceps.gha)** — always the current release (see [all releases](https://github.com/brookstalley/cordyceps/releases))
 
 2. Copy to your Grasshopper components folder:
    *File → Special Folders → Components Folder*
 
-3. **Windows users**: Right-click the file → Properties → check "Unblock" → OK
+3. Unblock the file so Rhino will load it:
+   - **Windows**: right-click → Properties → check "Unblock" → OK
+   - **macOS**: clear the quarantine flag (e.g. `xattr -dr com.apple.quarantine <path-to-Cordyceps.gha>`)
+
+4. Restart Rhino
 
 ## Usage
 
 1. Drop the **Cordyceps** component on your canvas (*Params → Util → Cordyceps*)
 
    The server starts on port 26929 by default. Optional inputs:
-   - **Port**: Change the HTTP port
+   - **HttpPort**: Change the HTTP port
    - **DebugLevel**: Set to 1+ to see request/response traffic in Rhino
 
 2. Configure your MCP client:
@@ -125,17 +139,17 @@ See the [MCP Python SDK](https://github.com/modelcontextprotocol/python-sdk) for
 
 ## Tools
 
-Cordyceps provides **7 tools with 110+ actions** — consolidated to minimize context window usage. Related operations are grouped under a single tool with an `action` parameter.
+Cordyceps provides **7 tools with over 100 actions** — consolidated to minimize context window usage. Related operations are grouped under a single tool with an `action` parameter.
 
 ### Grasshopper
 
 | Tool | Description |
 |------|-------------|
-| `gh_canvas` | Components, values, groups, baking, variable parameters |
+| `gh_canvas` | Components, values, groups, baking, variable parameters, data modifiers (flatten/graft/simplify/reverse) |
 | `gh_wire` | Connection management |
-| `gh_document` | Save, clear, undo/redo, snapshots, canvas capture |
+| `gh_document` | Save, clear, snapshots (max 20 kept, oldest evicted), solver control, canvas capture (undo/redo are disabled — use snapshots) |
 | `gh_script` | Script component configuration |
-| `gh_inspect` | Status, outputs, data tracing, debugging |
+| `gh_inspect` | Connection/liveness probe, status, outputs, data tracing, debugging |
 
 ### Rhino
 
@@ -154,7 +168,7 @@ Browse the documentation directly: [`src/Cordyceps/Knowledge/`](src/Cordyceps/Kn
 
 | Problem | Solution |
 |---------|----------|
-| Plugin won't load | Verify Rhino 8.21+. Unblock the .gha file (Windows) or clear quarantine (macOS). |
+| Plugin won't load | Verify Rhino 8.21+. If you installed manually, unblock the .gha file (Windows) or clear its quarantine flag (macOS) — the Package Manager does this for you. |
 | Can't connect | Ensure Cordyceps component is on canvas. Check the port. |
 | Claude Desktop can't connect | Ensure Node.js is installed. Check Rhino is running with Cordyceps. Restart Claude Desktop after config changes. |
 | Component not found | Use `gh_canvas(action='search', query='...')` to find exact names. |
@@ -163,8 +177,10 @@ Browse the documentation directly: [`src/Cordyceps/Knowledge/`](src/Cordyceps/Kn
 ## Building
 
 ```bash
-dotnet build src/Cordyceps/Cordyceps.csproj
+dotnet build src/Cordyceps/Cordyceps.csproj -c Release
 ```
+
+Only Release builds are supported — a Debug build (the `dotnet build` default) fails with an error.
 
 ---
 

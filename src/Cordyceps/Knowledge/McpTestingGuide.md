@@ -42,7 +42,7 @@ Use `action='help'` on any tool to discover capabilities. For each area: try ope
 
 Test graceful failure: invalid names, bad IDs, invalid connections, out-of-range values, protected component modification. Errors should be informative; system should stay usable.
 
-A failed tool call returns a normal result with the MCP `isError` flag set to `true` and a body of `{"success": false, "error": "<message>"}` — this holds whether the tool returns the failure or throws internally. Reserve JSON-RPC protocol errors (e.g. code `-32603`) for request-level problems like an unknown tool or a missing required parameter, not for tool-execution failures.
+A failed tool call returns a normal result with the MCP `isError` flag set to `true` and a body containing `"success": false` and an `"error"` message (responses also carry a `status` member — match on the fields you care about rather than the whole object) — this holds whether the tool returns the failure or throws internally. Reserve JSON-RPC protocol errors (e.g. code `-32603`) for request-level problems like an unknown tool or a missing required parameter, not for tool-execution failures.
 
 ## Summary Template
 

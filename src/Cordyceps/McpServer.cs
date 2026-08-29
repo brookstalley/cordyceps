@@ -33,7 +33,9 @@ namespace Cordyceps
         private CancellationTokenSource _cts;
         private Task _listenerTask;
         private int _port;
-        private GrasshopperContext _context;
+        // volatile: written on the UI thread (Start) and nulled by Stop()'s background teardown
+        // task, read once (captured into a local, null-guarded) on HTTP worker threads.
+        private volatile GrasshopperContext _context;
         private readonly List<ToolInfo> _tools = new List<ToolInfo>();
         // In-flight request handlers, tracked so Stop() can drain them before tearing down
         // shared state instead of detaching them mid-request.
@@ -42,9 +44,34 @@ namespace Cordyceps
         private DateTime _startTime;
 
         /// <summary>
-        /// Whether the server is currently running
+        /// Cached so publish and withdraw hand the status registry the SAME delegate instance —
+        /// the registry compares by reference, and converting a method group creates a fresh
+        /// delegate every time, which would leave a stopped server's provider registered forever.
         /// </summary>
-        public bool IsRunning { get; private set; }
+        private readonly Func<Core.StatusInputs> _statusProvider;
+
+        public McpServer()
+        {
+            _statusProvider = CurrentStatusInputs;
+        }
+
+        /// <summary>
+        /// Lifecycle single source of truth (MCP-9F3Q). All lifecycle reads and writes go
+        /// through this field; <see cref="IsRunning"/> is derived from it. Written on the UI
+        /// thread (Start, and Stop's synchronous half) and by Stop()'s background teardown task
+        /// (the final Stopped transition); read from worker threads — hence volatile.
+        /// </summary>
+        private volatile Core.ServerState _state = Core.ServerState.Stopped;
+
+        /// <summary>
+        /// Current lifecycle state of the server.
+        /// </summary>
+        public Core.ServerState State => _state;
+
+        /// <summary>
+        /// Whether the server is currently running (derived from <see cref="State"/>)
+        /// </summary>
+        public bool IsRunning => _state == Core.ServerState.Running;
 
         /// <summary>
         /// Actionable reason the last <see cref="Start"/> failed (e.g. the port is held by another
@@ -81,12 +108,13 @@ namespace Cordyceps
         /// </summary>
         public void Start(int port = DEFAULT_PORT)
         {
-            if (IsRunning)
+            if (!Core.ServerStateTransitions.CanStart(_state))
             {
-                Core.DebugLog.WriteLine("MCP server already running", "INFO", 1);
+                Core.DebugLog.WriteLine($"MCP server Start() ignored: state is {_state}", "INFO", 1);
                 return;
             }
 
+            _state = Core.ServerState.Starting;
             _port = port;
             _cts = new CancellationTokenSource();
             StartError = null;
@@ -109,8 +137,13 @@ namespace Cordyceps
                 // Start listening in background
                 _listenerTask = Task.Run(() => ListenLoopAsync(_cts.Token), _cts.Token);
 
-                IsRunning = true;
+                _state = Core.ServerState.Running;
                 _startTime = DateTime.UtcNow;
+
+                // Publish our counters so tool classes, which hold no server reference, can report
+                // the Cordyceps layer of the status block without a back-reference into this type.
+                Core.SolverState.Shared.PublishServerSnapshot(_statusProvider);
+
                 Core.DebugLog.WriteLine($"MCP server started on http://127.0.0.1:{_port}/mcp", "INFO", 0);
             }
             catch (Exception ex) // prawduct:allow prawduct/broad-except -- startup boundary: any failure (bind/reflection) must leave the server cleanly not-running with an actionable reason, never crash the host component's solve
@@ -128,52 +161,86 @@ namespace Cordyceps
                 _cts = null;
                 _listener?.Close();
                 _listener = null;
+                _context = null; // Failed carries the same no-live-plumbing invariant as Stopped
+                _state = Core.ServerState.Failed;
             }
         }
 
         /// <summary>
-        /// Stop the MCP server
+        /// Stop the MCP server. The synchronous half (listener cancel/close) frees the port
+        /// before returning so a replacement server can bind immediately; the in-flight-handler
+        /// drain and final teardown run on a background task (see MCP-3D8V below). After this
+        /// returns the state is <see cref="Core.ServerState.Stopping"/> until the drain
+        /// completes, then <see cref="Core.ServerState.Stopped"/>.
         /// </summary>
         public void Stop()
         {
-            if (!IsRunning) return;
+            if (!Core.ServerStateTransitions.CanStop(_state)) return;
 
-            Core.DebugLog.WriteLine("Stopping MCP server...", "INFO", 1);
+            _state = Core.ServerState.Stopping;
+            Core.DebugLog.WriteLine($"Stopping MCP server (port {_port})...", "INFO", 1);
 
             try
             {
                 _cts?.Cancel();
                 _listener?.Stop();
                 _listener?.Close();
-
-                try { _listenerTask?.Wait(TimeSpan.FromSeconds(SHUTDOWN_TIMEOUT_SECONDS)); }
-                catch (AggregateException ex)
-                {
-                    Core.DebugLog.WriteLine($"Shutdown exception (expected): {ex.InnerException?.Message}", "DEBUG", 1);
-                }
-
-                // Drain in-flight request handlers within the shutdown budget so they finish
-                // against a still-valid context before the finally block releases it. A handler
-                // that outlives the budget is detached; it reads the context defensively (see
-                // HandleToolCallAsync) and the Chunk-01 document-lock timeout bounds any wedged
-                // work, so this wait stays finite.
-                if (!_inFlight.DrainWithin(TimeSpan.FromSeconds(SHUTDOWN_TIMEOUT_SECONDS)))
-                    Core.DebugLog.WriteLine($"Shutdown: {_inFlight.Count} request(s) still in flight after {SHUTDOWN_TIMEOUT_SECONDS}s; detaching", "WARN", 1);
             }
-            catch (Exception ex)
+            catch (Exception ex) // prawduct:allow prawduct/broad-except -- teardown boundary: a listener stop/close failure must never throw into the host component's solve; log and continue so the background teardown still releases state
             {
                 Core.DebugLog.WriteLine($"Error stopping server: {ex.Message}", "ERROR", 0);
             }
-            finally
+
+            // Hand the disposable pieces to the background task and clear the fields now, so a
+            // half-torn-down server never presents live-looking plumbing.
+            var cts = _cts;
+            var listenerTask = _listenerTask;
+            _cts = null;
+            _listener = null;
+            _listenerTask = null;
+
+            // Drain OFF the calling thread (MCP-3D8V). Stop() is invoked on the UI thread (the
+            // component's port-change, RemovedFromDocument, and DocumentContextChanged paths),
+            // while an in-flight handler is typically a worker blocked in RhinoApp.InvokeAndWait
+            // waiting for that same UI thread — so a synchronous drain here could never succeed
+            // for exactly the handlers it protects and stalled the UI for the full budget.
+            // Returning first lets the blocked handler's UI work run, so the drain genuinely
+            // observes handlers finishing against a still-valid context; only then is the
+            // context released. A handler that outlives the budget is detached; it reads the
+            // context defensively (see HandleToolCallAsync) and the document-lock timeout
+            // bounds any wedged work, so the background wait stays finite.
+            Task.Run(() =>
             {
-                _cts?.Dispose();
-                _cts = null;
-                _listener = null;
-                _listenerTask = null;
-                _context = null;
-                IsRunning = false;
-                Core.DebugLog.WriteLine("MCP server stopped", "INFO", 0);
-            }
+                try
+                {
+                    try { listenerTask?.Wait(TimeSpan.FromSeconds(SHUTDOWN_TIMEOUT_SECONDS)); }
+                    catch (AggregateException ex)
+                    {
+                        Core.DebugLog.WriteLine($"Shutdown exception (expected): {ex.InnerException?.Message}", "DEBUG", 1);
+                    }
+
+                    if (_inFlight.DrainWithin(TimeSpan.FromSeconds(SHUTDOWN_TIMEOUT_SECONDS)))
+                        Core.DebugLog.WriteLine($"Shutdown (port {_port}): all in-flight requests drained", "DEBUG", 1);
+                    else
+                        Core.DebugLog.WriteLine($"Shutdown (port {_port}): {_inFlight.Count} request(s) still in flight after {SHUTDOWN_TIMEOUT_SECONDS}s; detaching", "WARN", 1);
+                }
+                catch (Exception ex) // prawduct:allow prawduct/broad-except -- background teardown: an unexpected failure here would otherwise vanish as an unobserved task exception; log it, then let finally release state regardless
+                {
+                    Core.DebugLog.WriteLine($"Shutdown (port {_port}): background teardown error: {ex.Message}", "ERROR", 0);
+                }
+                finally
+                {
+                    // State transition BEFORE disposal: if Dispose ever threw, the instance
+                    // must not be left stuck in Stopping with the context still pinned.
+                    _context = null;
+                    // Only withdraws if we are still the published provider, so a replacement
+                    // server that started meanwhile keeps reporting.
+                    Core.SolverState.Shared.ClearServerSnapshot(_statusProvider);
+                    _state = Core.ServerState.Stopped;
+                    Core.DebugLog.WriteLine($"MCP server (port {_port}) stopped", "INFO", 0);
+                    cts?.Dispose();
+                }
+            });
         }
 
         /// <summary>
@@ -223,17 +290,9 @@ namespace Cordyceps
             }
         }
 
-        private static string ConvertToSnakeCase(string name)
-        {
-            var sb = new StringBuilder();
-            for (int i = 0; i < name.Length; i++)
-            {
-                if (i > 0 && char.IsUpper(name[i]))
-                    sb.Append('_');
-                sb.Append(char.ToLower(name[i]));
-            }
-            return sb.ToString();
-        }
+        // The PascalCase -> snake_case tool-name mapping lives in Core.McpNaming (host-free,
+        // unit-tested there — the real tool names are pinned as a contract in Cordyceps.Tests).
+        private static string ConvertToSnakeCase(string name) => Core.McpNaming.ToSnakeCase(name);
 
         private static string GetJsonType(Type type) => Core.JsonTypeConverter.GetJsonType(type);
 
@@ -256,7 +315,7 @@ namespace Cordyceps
                 catch (Exception ex)
                 {
                     if (!ct.IsCancellationRequested)
-                        Core.DebugLog.WriteLine($"Listener error: {ex.Message}", "ERROR", 1);
+                        Core.DebugLog.WriteLine($"Listener error: {ex.Message}", "ERROR", 0);
                 }
             }
         }
@@ -314,7 +373,7 @@ namespace Cordyceps
             }
             catch (Exception ex)
             {
-                Core.DebugLog.WriteLine($"Request error: {ex.Message}", "ERROR", 1);
+                Core.DebugLog.WriteLine($"Request error: {ex.Message}", "ERROR", 0);
                 try
                 {
                     response.StatusCode = 500;
@@ -377,38 +436,38 @@ namespace Cordyceps
         }
 
         /// <summary>
-        /// Handle health check requests
+        /// Handle health check requests.
+        ///
+        /// <para>Answers entirely from cached state. It previously read
+        /// <c>Instances.ActiveCanvas?.Document</c> directly on this HTTP worker thread — a
+        /// Grasshopper read off the UI thread, and one that returns nothing useful precisely when
+        /// the host is wedged. The document identity now comes from the UI-thread heartbeat, which
+        /// is both thread-correct and the only way this endpoint can keep answering while the UI
+        /// thread is blocked.</para>
         /// </summary>
         private async Task HandleHealthCheckAsync(HttpListenerResponse response)
         {
             response.StatusCode = 200;
             response.ContentType = "application/json";
 
-            // Get active document name if available
-            string documentName = null;
-            try
-            {
-                var doc = Grasshopper.Instances.ActiveCanvas?.Document;
-                documentName = doc?.DisplayName;
-            }
-            catch (Exception ex) // prawduct:allow prawduct/broad-except -- best-effort status read; the health endpoint must still report if the document name is unavailable
-            {
-                Core.DebugLog.Debug($"Could not read active document name for status: {ex.Message}");
-            }
+            var status = Core.SolverState.Shared.Derive(CurrentStatusInputs());
 
-            var uptimeSeconds = (int)(DateTime.UtcNow - _startTime).TotalSeconds;
-
-            var health = JsonSerializer.Serialize(new
+            var health = new Newtonsoft.Json.Linq.JObject
             {
-                status = "ok",
-                server = "Cordyceps MCP",
-                transport = "streamable-http",
-                toolCount = _tools.Count,
-                commandCount = CommandCount,
-                uptimeSeconds,
-                activeDocument = documentName
-            });
-            var bytes = Encoding.UTF8.GetBytes(health);
+                // "ok" means the HTTP endpoint answered. Whether the HOST is healthy is the
+                // three-layer block below — conflating the two is what made a wedged Rhino
+                // indistinguishable from a healthy one.
+                ["status"] = "ok",
+                ["server"] = "Cordyceps MCP",
+                ["transport"] = "streamable-http",
+                ["toolCount"] = _tools.Count,
+                ["commandCount"] = status.CommandCount,
+                ["uptimeSeconds"] = status.UptimeSeconds,
+                ["activeDocument"] = status.DocumentName,
+                ["host"] = Core.StatusEnvelope.ToFullJson(status),
+            };
+
+            var bytes = Encoding.UTF8.GetBytes(health.ToString(Newtonsoft.Json.Formatting.None));
             await response.OutputStream.WriteAsync(bytes, 0, bytes.Length);
             response.Close();
         }
@@ -423,9 +482,10 @@ namespace Cordyceps
 
             try
             {
-                // Validate Accept header - require application/json (SSE optional since we're stateless)
+                // Validate Accept header - require application/json (SSE optional since we're
+                // stateless). Wildcards ("*/*", "application/*") accept JSON too.
                 var accept = request.Headers["Accept"] ?? "";
-                if (!accept.Contains("application/json"))
+                if (!accept.Contains("application/json") && !accept.Contains("*/*") && !accept.Contains("application/*"))
                 {
                     Core.DebugLog.WriteLine($"Invalid Accept header (must include application/json): {accept}", "WARN", 1);
                     response.StatusCode = 406; // Not Acceptable
@@ -436,8 +496,17 @@ namespace Cordyceps
                 // Add CORS header for actual requests (echo validated origin)
                 response.Headers.Add("Access-Control-Allow-Origin", origin ?? "*");
 
-                // Check request body size limit (10MB) to prevent memory exhaustion
+                // Check request body size limit (10MB) to prevent memory exhaustion.
+                // ContentLength64 < 0 means no Content-Length header (e.g. chunked transfer),
+                // which would bypass the cap entirely — require a declared length (411).
                 const long MAX_BODY_SIZE = 10 * 1024 * 1024;
+                if (request.ContentLength64 < 0)
+                {
+                    Core.DebugLog.WriteLine("Request without Content-Length (chunked?) rejected: body size cap cannot be enforced", "WARN", 1);
+                    response.StatusCode = 411; // Length Required
+                    response.Close();
+                    return;
+                }
                 if (request.ContentLength64 > MAX_BODY_SIZE)
                 {
                     Core.DebugLog.WriteLine($"Request body too large: {request.ContentLength64} bytes (max {MAX_BODY_SIZE})", "WARN", 1);
@@ -455,11 +524,14 @@ namespace Cordyceps
                 var root = doc.RootElement;
 
                 var method = root.TryGetProperty("method", out var m) ? m.GetString() : null;
-                var hasId = root.TryGetProperty("id", out var id);
                 var paramsEl = root.TryGetProperty("params", out var p) ? p : default;
 
-                // JSON-RPC 2.0: Notifications (no id) MUST NOT receive a response
-                bool isNotification = !hasId || id.ValueKind == JsonValueKind.Undefined;
+                // Notification detection and lossless id echo live in Core.JsonRpcEnvelope
+                // (host-free, unit-tested): notifications are ABSENT-id only ("id": null still
+                // gets a response), and the id is computed BEFORE dispatch so a malformed id can
+                // never destroy the response after the tool's side effects ran.
+                bool isNotification = Core.JsonRpcEnvelope.IsNotification(root);
+                JsonElement? responseId = Core.JsonRpcEnvelope.EchoId(root);
 
                 object result = null;
                 string errorMessage = null;
@@ -488,32 +560,11 @@ namespace Cordyceps
                 response.ContentType = "application/json";
                 response.StatusCode = 200;
 
-                var responseObj = new Dictionary<string, object> { ["jsonrpc"] = "2.0" };
-
-                // Add id to response (required for non-notification responses)
-                if (id.ValueKind == JsonValueKind.Number)
-                    responseObj["id"] = id.GetInt32();
-                else if (id.ValueKind == JsonValueKind.String)
-                    responseObj["id"] = id.GetString();
-
-                if (errorMessage != null)
-                {
-                    responseObj["error"] = new Dictionary<string, object>
-                    {
-                        ["code"] = errorCode,
-                        ["message"] = errorMessage
-                    };
-                }
-                else
-                {
-                    responseObj["result"] = result;
-                }
-
-                var responseJson = JsonSerializer.Serialize(responseObj, new JsonSerializerOptions
-                {
-                    WriteIndented = false,
-                    DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull
-                });
+                // Envelope construction + serialization live in Core.JsonRpcEnvelope
+                // (host-free, unit-tested): lossless id echo, "id": null survival under
+                // WhenWritingNull, error-vs-result shape.
+                var responseObj = Core.JsonRpcEnvelope.Build(responseId, result, errorMessage, errorCode);
+                var responseJson = Core.JsonRpcEnvelope.Serialize(responseObj);
 
                 Core.DebugLog.WriteLine($"Responding: {responseJson.Substring(0, Math.Min(LOG_TRUNCATE_LENGTH, responseJson.Length))}...", "INFO", 1);
 
@@ -524,7 +575,7 @@ namespace Cordyceps
             }
             catch (Exception ex)
             {
-                Core.DebugLog.WriteLine($"JSON-RPC error: {ex.Message}", "ERROR", 1);
+                Core.DebugLog.WriteLine($"JSON-RPC error: {ex.Message}", "ERROR", 0);
                 response.StatusCode = 400;
             }
             finally
@@ -566,7 +617,13 @@ namespace Cordyceps
 
         private object HandleInitialize()
         {
-            var version = Assembly.GetExecutingAssembly().GetName().Version?.ToString() ?? "1.0.0";
+            // Informational, not assembly, version: the assembly version drops the pre-release tag,
+            // so every 1.5.0 pre-release reports an identical 1.5.0.0 and a tester cannot confirm
+            // which build they are on — the thing pre-releases exist to let them do.
+            var assembly = Assembly.GetExecutingAssembly();
+            var informational = assembly
+                .GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion;
+            var version = BuildVersion.Describe(informational, assembly.GetName().Version);
             return new
             {
                 protocolVersion = "2025-06-18",
@@ -588,18 +645,31 @@ namespace Cordyceps
 READ FIRST: gh://docs/getting-started (use resources/read)
 
 UNIFIED TOOLS (use action='help' for details):
-- gh_canvas: add, delete, move, rename, find, search, list, info, bounds, validate, constant, bake, zoom, view, get, set, config, preview, enable, group_create, group_delete, group_add, group_remove, group_list, group_rename, group_color, group_move, zoomable
+- gh_canvas: add, delete, move, rename, find, search, list, info, bounds, validate, constant, bake, zoom, view, get, set, config, preview, enable, group_create, group_delete, group_add, group_remove, group_list, group_rename, group_color, group_move, zoomable, modifier
 - gh_wire: connect, disconnect, list, clear, validate
-- gh_document: info, save, clear, solver, recompute, undo, redo, snapshot, revert, snapshots, capture_canvas, capture_viewport, capture_region, capture_views
-- gh_script: get, set, configure, info
-- gh_inspect: status, outputs, trace, disconnected, geometry, log, reports, categories, docs
+- gh_document: info, save, clear, solver, recompute (rejected while a solution is running), undo, redo (both disabled — use snapshot/revert), snapshot, revert, snapshots, snapshot_delete (max 20 snapshots kept; oldest evicted), capture_canvas, capture_viewport, capture_region, capture_views
+- gh_script: get, set, configure, info (set/configure rebuild the component from the new source and report rebuilt/verified; compile errors surface on the component — check gh_inspect(action='status') after writing code)
+- gh_inspect: connection, status, outputs, trace, disconnected, geometry, log, reports, categories, docs
 - rhino_scene: objects, select, deselect, set_layer, set_name, layers, layer_create, layer_set, layer_delete, hide, show, delete, set_color, bbox, place_image, script
 - rhino_render: display, camera, zoom, modes, render, settings, ground, sun, skylight, view_save, view_load, view_list, view_delete, light_add, light_list, light_set, light_delete, material_list, material_library, material_instantiate, material_create, material_texture, material_apply, material_delete, env_list, env_current, env_set, env_create, env_delete
+
+STATUS BLOCK: every tool response carries a compact ""status"" object — {document, ui, solving}, plus
+solving_since / modal_inferred / solving_document / hint when something is off. ""document"" is the
+.gh file the call acted on; check it, because tools follow whichever canvas tab the human focused.
+""solving_document"" appears only when a DIFFERENT open definition is the one holding the solver.
+
+BUSY IS NOT DEAD. If a call is slow or silent, call gh_inspect(action='connection') — it answers from
+cached state and never touches the document, so it replies even when everything else is stuck:
+- ui='blocked' + solving=true  -> Grasshopper is mid-solve. WAIT and retry; heavy solves take minutes.
+- modal_inferred=true          -> a modal dialog is open in Rhino. Only a HUMAN can clear it. Stop
+                                  retrying and tell the user what to dismiss.
+- ui='responsive'              -> the host is fine; treat any error as a real tool error.
 
 Key points:
 - Disable solver: gh_document(action='solver', enabled=false)
 - Ambiguous names: use GUID or Category/Name format
 - Spacing: 150px horizontal, 70px vertical
+- Annotate with labeled groups (group_create with name/color), panels, or scribbles — do NOT rename components while building; renamed components are hard to find on the canvas and it is not the Grasshopper convention. Track components by the returned id
 - CRITICAL: Inside a cluster editor, NEVER advise the user to press F5 or use Grasshopper's native recompute. It will destroy cluster inputs. Use gh_document(action='recompute') instead — it is cluster-safe.
 
 VERIFY PERIODICALLY: After completing a section of work, run gh_inspect(action='status')
@@ -645,46 +715,49 @@ Resources: gh://docs/getting-started, gh://docs/data-trees, gh://docs/common-err
                     new InvalidOperationException("MCP server is shutting down; the request was not processed."));
                 return new
                 {
-                    content = new[] { new { type = "text", text = shuttingDown } },
+                    content = new[] { new { type = "text", text = WithStatus(shuttingDown) } },
                     isError = true
                 };
             }
 
             RecordCommand(name);
 
+            // Unknown tool stays a protocol error (the client addressed a tool that doesn't
+            // exist); everything past this point concerns a KNOWN tool, so failures become
+            // structured {success:false} tool results instead.
             var tool = _tools.FirstOrDefault(t => t.Name == name);
             if (tool == null)
                 throw new Exception($"Unknown tool: {name}");
 
-            // Create tool instance (all tool classes take GrasshopperContext)
-            var instance = Activator.CreateInstance(tool.DeclaringType, ctx);
-
-            // Build method arguments
-            var methodParams = tool.Method.GetParameters();
-            var args = new object[methodParams.Length];
-
-            for (int i = 0; i < methodParams.Length; i++)
-            {
-                var param = methodParams[i];
-                if (arguments.ValueKind == JsonValueKind.Object &&
-                    arguments.TryGetProperty(param.Name, out var argVal))
-                {
-                    args[i] = ConvertJsonValue(argVal, param.ParameterType);
-                }
-                else if (param.HasDefaultValue)
-                {
-                    args[i] = param.DefaultValue;
-                }
-                else
-                {
-                    // Required parameter is missing - throw a clear error
-                    throw new Exception($"Missing required parameter: {param.Name}");
-                }
-            }
-
             object result;
             try
             {
+                // Create tool instance (all tool classes take GrasshopperContext)
+                var instance = Activator.CreateInstance(tool.DeclaringType, ctx);
+
+                // Build method arguments
+                var methodParams = tool.Method.GetParameters();
+                var args = new object[methodParams.Length];
+
+                for (int i = 0; i < methodParams.Length; i++)
+                {
+                    var param = methodParams[i];
+                    if (arguments.ValueKind == JsonValueKind.Object &&
+                        arguments.TryGetProperty(param.Name, out var argVal))
+                    {
+                        args[i] = ConvertJsonValue(argVal, param.ParameterType);
+                    }
+                    else if (param.HasDefaultValue)
+                    {
+                        args[i] = param.DefaultValue;
+                    }
+                    else
+                    {
+                        // Required parameter is missing - throw a clear error
+                        throw new InvalidOperationException($"Missing required parameter: {param.Name}");
+                    }
+                }
+
                 // Invoke the tool method
                 result = tool.Method.Invoke(instance, args);
 
@@ -696,26 +769,71 @@ Resources: gh://docs/getting-started, gh://docs/data-trees, gh://docs/common-err
                     result = resultProperty?.GetValue(task);
                 }
             }
-            catch (Exception ex) // prawduct:allow prawduct/broad-except -- tool-invocation boundary: any tool-body failure must become a structured {success:false} result, not a JSON-RPC protocol error (project error-handling contract)
+            catch (Exception ex) // prawduct:allow prawduct/broad-except -- tool-invocation boundary: any failure for a KNOWN tool (construction, argument coercion, missing required param, tool body) must become a structured {success:false} result, not a JSON-RPC protocol error (project error-handling contract)
             {
                 // Log the full exception (type + stack) operator-side for root-causing; the client
                 // payload stays message-only via FormatExceptionResult.
-                Core.DebugLog.WriteLine($"Tool '{name}' threw: {ex}", "ERROR", 1);
+                Core.DebugLog.WriteLine($"Tool '{name}' threw: {ex}", "ERROR", 0);
                 var errorText = Core.McpResultFormatter.FormatExceptionResult(ex);
                 return new
                 {
-                    content = new[] { new { type = "text", text = errorText } },
+                    // A failure is exactly when the caller most needs to know whether the host was
+                    // busy, wedged, or fine — so the status block rides on errors too.
+                    content = new[] { new { type = "text", text = WithStatus(errorText) } },
                     isError = true
                 };
             }
 
             // Format as MCP tool result. isError reflects the tool's own success flag
             // (see Core.McpResultFormatter) so clients see a failed tool result as an error.
-            var resultText = result?.ToString() ?? "";
+            // Status is folded in FIRST so isError is computed from the payload the caller
+            // actually receives.
+            var resultText = WithStatus(result?.ToString() ?? "");
             return new
             {
                 content = new[] { new { type = "text", text = resultText } },
                 isError = Core.McpResultFormatter.IsErrorResult(resultText)
+            };
+        }
+
+        /// <summary>
+        /// The single choke point where every tool result gains its compact status block. Doing it
+        /// here rather than in each tool is what makes the block always-on: 19 tool files cannot
+        /// drift out of sync with one they never mention.
+        ///
+        /// <para>Never throws and never blocks. It reads only cached liveness state — no marshaling
+        /// to the UI thread, no document lock — and any failure returns the original result
+        /// untouched, because a diagnostic that can break a tool result is worse than no
+        /// diagnostic.</para>
+        /// </summary>
+        private string WithStatus(string resultText)
+        {
+            try
+            {
+                return Core.StatusEnvelope.InjectCompact(resultText, Core.SolverState.Shared.Derive());
+            }
+            catch (Exception ex) // prawduct:allow prawduct/broad-except -- the status block is advisory: whatever goes wrong deriving or injecting it, the caller must still receive the tool's own result
+            {
+                Core.DebugLog.WriteLine($"Status injection failed: {ex.Message}", "WARN", 1);
+                return resultText;
+            }
+        }
+
+        /// <summary>
+        /// This server's own counters for the Cordyceps layer of the status block. Reads volatile
+        /// fields only — it is invoked on HTTP worker threads while answering, so it must stay
+        /// allocation-cheap and lock-free.
+        /// </summary>
+        private Core.StatusInputs CurrentStatusInputs()
+        {
+            var running = _state == Core.ServerState.Running;
+            return new Core.StatusInputs
+            {
+                ServerListening = running,
+                Port = _port,
+                InFlightRequests = _inFlight.Count,
+                UptimeSeconds = running ? (int)(DateTime.UtcNow - _startTime).TotalSeconds : 0,
+                CommandCount = CommandCount,
             };
         }
 

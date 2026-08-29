@@ -73,7 +73,7 @@ namespace Cordyceps.Tests
         }
 
         [Fact]
-        public void DrainWithin_TakesSnapshot_IgnoresTasksTrackedAfterItStarts()
+        public async Task DrainWithin_TakesSnapshot_IgnoresTasksTrackedAfterItStarts()
         {
             // Locks in the "a request that arrives after shutdown begins can't extend the wait"
             // contract: DrainWithin must observe only the handlers tracked at call time, not the
@@ -84,23 +84,64 @@ namespace Cordyceps.Tests
             var late = new TaskCompletionSource<bool>();
             inflight.Track(snapshotted.Task);
 
+            // Deterministic seam: DrainWithin signals right after it captures its snapshot, so
+            // `late` is guaranteed to be tracked after the snapshot — no sleep-and-hope timing.
+            var snapshotTaken = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+            inflight.OnDrainSnapshot = () => snapshotTaken.TrySetResult(true);
+
             // Start the drain on its own thread; it snapshots the set, then blocks waiting.
             var drain = Task.Run(() => inflight.DrainWithin(AmpleBudget));
 
-            // After the drain has taken its snapshot and entered the wait, track a second handler
-            // that never completes. (The drain's snapshot is its first statement, so this brief
-            // pause is ample for it to run before `late` is added.)
-            System.Threading.Thread.Sleep(250);
+            // Once the snapshot is confirmed taken, track a second handler that never completes.
+            Assert.True(await Task.WhenAny(snapshotTaken.Task, Task.Delay(AmpleBudget)) == snapshotTaken.Task,
+                "drain never reached its snapshot point");
             inflight.Track(late.Task);
 
             // Complete only the snapshotted handler. The drain must now finish promptly, ignoring
             // the still-pending `late` task.
             snapshotted.SetResult(true);
 
-            Assert.True(drain.Wait(TimeSpan.FromSeconds(3)), "drain did not return — it waited on a task tracked after it started");
-            Assert.True(drain.Result);
+            Assert.True(await Task.WhenAny(drain, Task.Delay(TimeSpan.FromSeconds(3))) == drain,
+                "drain did not return — it waited on a task tracked after it started");
+            Assert.True(await drain);
 
             late.SetResult(true); // cleanup: leave nothing running
+        }
+
+        [Fact]
+        public void DrainWithin_FaultCoincidingWithTimeout_ReturnsFalse()
+        {
+            // MCP-5T7W regression: a handler fault must not mask a budget timeout. With one
+            // handler faulted and another still running when the budget expires, the drain did
+            // NOT complete — DrainWithin must say so, whatever exception plumbing Task.WaitAll
+            // uses for the fault.
+            var inflight = new InFlightRequests();
+            var stillRunning = new TaskCompletionSource<bool>();
+            inflight.Track(Task.FromException(new InvalidOperationException("boom")));
+            inflight.Track(stillRunning.Task); // never completes during the assertion window
+
+            Assert.False(inflight.DrainWithin(ShortBudget));
+
+            stillRunning.SetResult(true); // cleanup: leave nothing running
+        }
+
+        [Fact]
+        public async Task DrainWithin_FaultedPlusLateCompleting_WithinBudget_ReturnsTrue()
+        {
+            // Companion to the timeout case: when the faulted handler's peers DO finish inside
+            // the budget, the drain succeeded — the fault alone must not flip the result either
+            // way. Drives the mixed fault+success completion path with real concurrency.
+            var inflight = new InFlightRequests();
+            var gate = new TaskCompletionSource<bool>();
+            inflight.Track(Task.FromException(new InvalidOperationException("boom")));
+            inflight.Track(gate.Task);
+
+            var drain = Task.Run(() => inflight.DrainWithin(AmpleBudget));
+            _ = Task.Run(async () => { await Task.Delay(20); gate.SetResult(true); });
+
+            Assert.True(await Task.WhenAny(drain, Task.Delay(TimeSpan.FromSeconds(3))) == drain,
+                "drain did not return within its budget");
+            Assert.True(await drain);
         }
 
         [Fact]

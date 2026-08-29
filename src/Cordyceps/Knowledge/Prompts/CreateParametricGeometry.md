@@ -13,7 +13,10 @@ Add Number Sliders for each parameter you need:
 ```
 gh_canvas(action='add', type='Number Slider', x=50, y=50)
 gh_canvas(action='config', id=[slider_id], min=0, max=100, value=50)
-gh_canvas(action='rename', id=[slider_id], nickname='Parameter1')
+```
+Don't rename the sliders — group them with a label instead once they're placed:
+```
+gh_canvas(action='group_create', name='Parameters', ids='[slider_ids]')
 ```
 
 ## Step 3: Create Geometry Component

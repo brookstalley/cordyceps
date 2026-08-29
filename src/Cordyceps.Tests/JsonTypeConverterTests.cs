@@ -99,6 +99,69 @@ public class ConvertJsonValueTests
     public void NumberZeroToBool() =>
         Assert.Equal(false, JsonTypeConverter.ConvertJsonValue(Parse("0"), typeof(bool)));
 
+    // --- Whole-valued doubles into int/long (clients often send 300.0 for 300) ---
+
+    [Fact]
+    public void WholeValuedDoubleToInt() =>
+        Assert.Equal(300, JsonTypeConverter.ConvertJsonValue(Parse("300.0"), typeof(int)));
+
+    [Fact]
+    public void NegativeWholeValuedDoubleToInt() =>
+        Assert.Equal(-42, JsonTypeConverter.ConvertJsonValue(Parse("-42.0"), typeof(int)));
+
+    [Fact]
+    public void WholeValuedDoubleToLong() =>
+        Assert.Equal(300L, JsonTypeConverter.ConvertJsonValue(Parse("300.0"), typeof(long)));
+
+    [Fact]
+    public void FractionalNumberToIntThrowsClearError()
+    {
+        var ex = Assert.Throws<InvalidOperationException>(() =>
+            JsonTypeConverter.ConvertJsonValue(Parse("3.14"), typeof(int)));
+        Assert.Contains("whole number", ex.Message);
+    }
+
+    [Fact]
+    public void FractionalNumberToLongThrowsClearError()
+    {
+        var ex = Assert.Throws<InvalidOperationException>(() =>
+            JsonTypeConverter.ConvertJsonValue(Parse("3.14"), typeof(long)));
+        Assert.Contains("whole number", ex.Message);
+    }
+
+    [Fact]
+    public void OutOfIntRangeNumberToIntThrows() =>
+        Assert.Throws<InvalidOperationException>(() =>
+            JsonTypeConverter.ConvertJsonValue(Parse("9999999999"), typeof(int)));
+
+    [Fact]
+    public void ExactlyTwoToThe63ToLongThrowsInsteadOfOverflowing()
+    {
+        // long.MaxValue rounds UP to 2^63 as a double; an inclusive upper bound
+        // would cast it to long.MinValue. Must reject, not wrap.
+        var ex = Assert.Throws<InvalidOperationException>(() =>
+            JsonTypeConverter.ConvertJsonValue(Parse("9223372036854775808.0"), typeof(long)));
+        Assert.Contains("long range", ex.Message);
+    }
+
+    // --- Number → bool: nonzero truthiness for ANY numeric value (never FormatException) ---
+
+    [Fact]
+    public void FractionalNumberToBoolIsTrue() =>
+        Assert.Equal(true, JsonTypeConverter.ConvertJsonValue(Parse("1.5"), typeof(bool)));
+
+    [Fact]
+    public void LargeNonInt32NumberToBoolIsTrue() =>
+        Assert.Equal(true, JsonTypeConverter.ConvertJsonValue(Parse("9999999999"), typeof(bool)));
+
+    [Fact]
+    public void NegativeNumberToBoolIsTrue() =>
+        Assert.Equal(true, JsonTypeConverter.ConvertJsonValue(Parse("-2"), typeof(bool)));
+
+    [Fact]
+    public void ZeroPointZeroToBoolIsFalse() =>
+        Assert.Equal(false, JsonTypeConverter.ConvertJsonValue(Parse("0.0"), typeof(bool)));
+
     // --- Error cases ---
 
     [Fact]

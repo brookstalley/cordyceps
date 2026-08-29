@@ -59,6 +59,21 @@ Before connecting, ask: **"Do these lists have 1:1 correspondence, or should eve
 | Shift Path | Add/remove levels | Align depths |
 | Flip Matrix | Swap rows/columns | Reorganize 2D |
 
+## Modifiers on the Port Itself
+
+Graft, Flatten, Simplify and Reverse are usually set on the port rather than by inserting a
+component — that is the idiomatic Grasshopper form and keeps the canvas readable:
+
+```
+gh_canvas(action='modifier', id='<component>', side='input', param='B', mapping='graft')
+gh_canvas(action='modifier', id='<component>', side='input', param='B')   # read current state
+```
+
+`mapping` is `none` | `flatten` | `graft`; `simplify` and `reverse` are true/false. Omitted
+modifiers are left unchanged, and a call with none of them reads instead of writing. `param` is a
+name or 0-based index. `gh_canvas(action='info', id='...')` reports `modifiers` for every param —
+that's how you detect an existing Graft you didn't set.
+
 ## Example
 
 ```

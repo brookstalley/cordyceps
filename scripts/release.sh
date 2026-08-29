@@ -1,26 +1,29 @@
 #!/bin/bash
 #
-# Cordyceps Release Script (Cross-platform: macOS, Windows via Git Bash)
+# Cordyceps Release Script — gitflow two-step (Cross-platform: macOS, Windows via Git Bash)
 #
-# Usage:
-#   ./scripts/release.sh           # Auto-increment patch version (1.0.0.5 -> 1.0.0.6)
-#   ./scripts/release.sh 1.0.1.0   # Set specific version
-#   ./scripts/release.sh --dry-run # Show what would happen without making changes
+# Under gitflow, `main` is strict-protected: nothing pushes to it directly. A release is
+# therefore split in two around a develop->main PR (branch protection guards branches, not
+# tags — so the publish half pushes only the version tag, which is allowed):
 #
-# This script:
-#   1. Verifies CHANGELOG.md has an entry for the new version
-#   2. Checks README.md for stale version references
-#   3. Updates version in csproj
-#   4. Builds the GHA
-#   5. Commits and pushes to GitHub with a version tag
-#   6. Creates a GitHub Release with the .gha attached and CHANGELOG notes
-#   7. Builds and pushes the Yak package
+#   ./scripts/release.sh prep [VERSION]      # on develop: bump version + CHANGELOG, build the
+#                                            #   .gha, commit "Release vX.Y.Z", push develop, and
+#                                            #   open a develop->main PR. Then merge that PR.
+#   ./scripts/release.sh publish [VERSION]   # on main (after the prep PR merged + pulled): build
+#                                            #   the .gha and the yak package, tag vX.Y.Z, push the
+#                                            #   tag, publish the GitHub Release with the .gha
+#                                            #   attached, and push to yak.
+#
+#   ./scripts/release.sh prep --dry-run      # preview either half without making changes
+#   ./scripts/release.sh --help
+#
+# Full walk-through: docs/release-process.md. Don't run the yak/gh commands by hand — this
+# script keeps the csproj version, manifest version, GitHub tag, and yak package in lockstep.
 #
 # Prerequisites:
-#   - dotnet CLI
-#   - git
-#   - gh CLI (GitHub CLI), authenticated (gh auth login) - creates the GitHub Release
-#   - Rhino 8 installed (for yak CLI)
+#   prep:    dotnet CLI, git push access to origin, gh CLI (authenticated)
+#   publish: dotnet CLI (it builds the .gha it ships), git push access, gh CLI (authenticated),
+#            Rhino 8 (for the yak CLI), yak login
 #
 
 set -e
@@ -34,7 +37,12 @@ README="$PROJECT_ROOT/README.md"
 RELEASES_DIR="$PROJECT_ROOT/releases"
 DIST_DIR="$PROJECT_ROOT/dist"
 
+# gitflow branches
+INTEGRATION_BRANCH="develop"   # where prep runs and the release PR is opened from
+RELEASE_BRANCH="main"          # where publish runs; strict-protected (PR + tag only)
+
 DRY_RUN=false
+SUBCOMMAND=""
 NEW_VERSION=""
 YAK=""
 
@@ -49,6 +57,26 @@ log_info() { echo -e "${BLUE}[INFO]${NC} $1"; }
 log_success() { echo -e "${GREEN}[OK]${NC} $1"; }
 log_warn() { echo -e "${YELLOW}[WARN]${NC} $1"; }
 log_error() { echo -e "${RED}[ERROR]${NC} $1"; }
+
+usage() {
+    echo "Usage: $0 <prep|publish> [VERSION] [--dry-run]"
+    echo ""
+    echo "Commands:"
+    echo "  prep [VERSION]     On '$INTEGRATION_BRANCH': bump version + CHANGELOG, build the .gha,"
+    echo "                     commit 'Release vX.Y.Z', push, and open a '$INTEGRATION_BRANCH'->'$RELEASE_BRANCH' PR."
+    echo "                     Omit VERSION to auto-increment the patch (e.g. 1.4.12 -> 1.4.13)."
+    echo "  publish [VERSION]  On '$RELEASE_BRANCH' (after the prep PR is merged + pulled): build the .gha"
+    echo "                     and yak package, tag vX.Y.Z, push the tag, publish the GitHub Release"
+    echo "                     with the .gha attached, push to yak."
+    echo "                     Omit VERSION to use the version already on '$RELEASE_BRANCH' (csproj)."
+    echo ""
+    echo "Options:"
+    echo "  --dry-run          Show what would happen without making changes"
+    echo "  --help, -h         Show this help"
+    echo ""
+    echo "Supported platforms: macOS, Windows (Git Bash). Run from the repo root."
+    echo "Full process: docs/release-process.md"
+}
 
 # Find Yak CLI dynamically
 find_yak() {
@@ -157,10 +185,10 @@ ensure_yak_login() {
     fi
 }
 
-# Verify the GitHub CLI is installed and authenticated (used to create the Release)
+# Verify the GitHub CLI is installed and authenticated (used to open PRs and create the Release)
 ensure_gh() {
     if ! command -v gh &> /dev/null; then
-        log_error "GitHub CLI ('gh') not found - it creates the GitHub Release."
+        log_error "GitHub CLI ('gh') not found - it opens the release PR and creates the GitHub Release."
         log_error "Install it (https://cli.github.com) and run 'gh auth login', then retry."
         exit 1
     fi
@@ -178,31 +206,36 @@ ensure_gh() {
     log_success "GitHub CLI authenticated"
 }
 
-# Parse arguments
-while [[ $# -gt 0 ]]; do
-    case $1 in
-        --dry-run)
-            DRY_RUN=true
-            shift
-            ;;
-        --help|-h)
-            echo "Usage: $0 [VERSION] [--dry-run]"
-            echo ""
-            echo "Options:"
-            echo "  VERSION     Specific version to set (e.g., 1.0.1.0)"
-            echo "  --dry-run   Show what would happen without making changes"
-            echo ""
-            echo "If no version is specified, the patch number is auto-incremented."
-            echo ""
-            echo "Supported platforms: macOS, Windows (Git Bash)"
-            exit 0
-            ;;
-        *)
-            NEW_VERSION="$1"
-            shift
-            ;;
-    esac
-done
+# Verify dotnet is available (both halves build the .gha)
+ensure_dotnet() {
+    if ! command -v dotnet &> /dev/null; then
+        log_error "dotnet CLI not found. Install .NET SDK."
+        exit 1
+    fi
+}
+
+# Require the current git branch to equal the expected one
+require_branch() {
+    local expected="$1"
+    local current
+    current=$(git -C "$PROJECT_ROOT" rev-parse --abbrev-ref HEAD)
+    if [[ "$current" != "$expected" ]]; then
+        log_error "This command must run on '$expected', but you are on '$current'."
+        log_error "Run: git checkout $expected"
+        exit 1
+    fi
+    log_success "On branch '$expected'"
+}
+
+# Require a clean working tree (no uncommitted changes)
+require_clean_tree() {
+    if [[ -n "$(git -C "$PROJECT_ROOT" status --porcelain)" ]]; then
+        log_error "Working tree is not clean - commit or stash changes before releasing."
+        git -C "$PROJECT_ROOT" status --short
+        exit 1
+    fi
+    log_success "Working tree clean"
+}
 
 # Get current version from csproj (portable across BSD/GNU sed)
 get_current_version() {
@@ -240,7 +273,33 @@ sed_inplace() {
     fi
 }
 
-# Check CHANGELOG has entry for version
+# Rename CHANGELOG's top "## [Unreleased]" section to "## [version] - DATE" (prep). If the
+# version section already exists, leave it. If neither exists, abort - there are no notes.
+rename_changelog_unreleased() {
+    local version="$1"
+    local today
+    today=$(date +%Y-%m-%d)
+
+    if grep -q "## \[$version\]" "$CHANGELOG"; then
+        log_success "CHANGELOG.md already has a section for $version"
+        return 0
+    fi
+
+    if ! grep -q "## \[Unreleased\]" "$CHANGELOG"; then
+        log_error "CHANGELOG.md has neither a [Unreleased] nor a [$version] section."
+        log_error "Add your notes under '## [Unreleased]' first (Keep a Changelog convention)."
+        exit 1
+    fi
+
+    if [[ "$DRY_RUN" == true ]]; then
+        log_info "[DRY-RUN] Would rename CHANGELOG '## [Unreleased]' -> '## [$version] - $today'"
+    else
+        sed_inplace "s|## \[Unreleased\]|## [$version] - $today|" "$CHANGELOG"
+        log_success "Renamed CHANGELOG '## [Unreleased]' -> '## [$version] - $today'"
+    fi
+}
+
+# Check CHANGELOG has an entry for version (publish-side guard)
 check_changelog() {
     local version="$1"
     log_info "Checking CHANGELOG.md for version $version..."
@@ -250,10 +309,7 @@ check_changelog() {
         return 0
     else
         log_error "CHANGELOG.md missing entry for version $version"
-        log_error "Please add a section: ## [$version] - $(date +%Y-%m-%d)"
-        log_error ""
-        log_error "Recent CHANGELOG entries:"
-        head -20 "$CHANGELOG" | tail -15
+        log_error "Expected a '## [$version]' section (the prep step adds it)."
         exit 1
     fi
 }
@@ -275,9 +331,9 @@ check_readme() {
         fi
     fi
 
-    # Check download link points to releases
-    if ! grep -q "releases/Cordyceps.gha" "$README"; then
-        log_warn "README may be missing download link to releases/Cordyceps.gha"
+    # Check download link points at the published release asset
+    if ! grep -q "releases/latest/download/Cordyceps.gha" "$README"; then
+        log_warn "README may be missing the download link to the latest release asset"
         issues=$((issues + 1))
     fi
 
@@ -325,6 +381,12 @@ prepare_dist() {
     if [[ "$DRY_RUN" == true ]]; then
         log_info "[DRY-RUN] Would create $DIST_DIR with GHA, manifest, and icon"
     else
+        if [[ ! -f "$RELEASES_DIR/Cordyceps.gha" ]]; then
+            log_error "No built plugin at $RELEASES_DIR/Cordyceps.gha"
+            log_error "The build reported success but produced no .gha there - check the csproj"
+            log_error "CopyToReleases target. (The file is a build output, not tracked in git.)"
+            exit 1
+        fi
         rm -rf "$DIST_DIR"
         mkdir -p "$DIST_DIR"
         cp "$RELEASES_DIR/Cordyceps.gha" "$DIST_DIR/"
@@ -349,43 +411,31 @@ build_yak() {
     fi
 }
 
-# Git commit and tag
-git_commit_and_tag() {
+# Commit the version bump on the integration branch (prep)
+commit_release() {
     local version="$1"
-    log_info "Committing and tagging..."
-
+    log_info "Committing release bump..."
     if [[ "$DRY_RUN" == true ]]; then
-        log_info "[DRY-RUN] Would commit version bump and tag as v$version"
-    else
-        # Add required files (manifest bumped by update_manifest_version must be committed too)
-        git add "$CSPROJ" "$MANIFEST" "$RELEASES_DIR/Cordyceps.gha"
-
-        # Add CHANGELOG if it was modified
-        if git diff --cached --quiet "$CHANGELOG" 2>/dev/null || git diff --quiet "$CHANGELOG" 2>/dev/null; then
-            # Check if CHANGELOG has unstaged changes
-            if ! git diff --quiet "$CHANGELOG" 2>/dev/null; then
-                git add "$CHANGELOG"
-                log_info "Including CHANGELOG.md in commit"
-            fi
-        fi
-
-        git commit -m "Release v$version"
-
-        git tag -a "v$version" -m "Release v$version"
-        log_success "Committed and tagged as v$version"
+        log_info "[DRY-RUN] Would commit version bump as 'Release v$version' on $INTEGRATION_BRANCH"
+        return 0
     fi
+
+    # Only the bumped sources ride to main via the PR. The .gha is a build output, not a tracked
+    # file: publish rebuilds it and attaches it to the GitHub Release, which is where the README
+    # download points. CHANGELOG was renamed by rename_changelog_unreleased.
+    git -C "$PROJECT_ROOT" add "$CSPROJ" "$MANIFEST" "$CHANGELOG"
+    git -C "$PROJECT_ROOT" commit -m "Release v$version"
+    log_success "Committed 'Release v$version'"
 }
 
-# Push to GitHub
-git_push() {
-    local version="$1"
-    log_info "Pushing to GitHub..."
+# Push the integration branch (prep)
+push_integration_branch() {
+    log_info "Pushing $INTEGRATION_BRANCH..."
     if [[ "$DRY_RUN" == true ]]; then
-        log_info "[DRY-RUN] Would push commits and tags to origin"
+        log_info "[DRY-RUN] Would push $INTEGRATION_BRANCH to origin"
     else
-        git push origin main
-        git push origin "v$version"
-        log_success "Pushed to GitHub"
+        git -C "$PROJECT_ROOT" push origin "$INTEGRATION_BRANCH"
+        log_success "Pushed $INTEGRATION_BRANCH"
     fi
 }
 
@@ -401,6 +451,65 @@ extract_changelog_notes() {
     ' "$CHANGELOG"
 }
 
+# Open the develop->main release PR (prep). A release PR is an integration PR, not a feature
+# PR, so it does not go through /prawduct:pr's feature gates (each feature was already reviewed
+# on its own feature->develop PR). It does run CI (build-test) as a required check on main.
+open_release_pr() {
+    local version="$1"
+    log_info "Opening $INTEGRATION_BRANCH -> $RELEASE_BRANCH release PR..."
+
+    if [[ "$DRY_RUN" == true ]]; then
+        log_info "[DRY-RUN] Would open PR $INTEGRATION_BRANCH -> $RELEASE_BRANCH titled 'Release v$version'"
+        return 0
+    fi
+
+    # Re-use the existing PR if one is already open for this branch.
+    local existing
+    existing=$(gh pr list --head "$INTEGRATION_BRANCH" --base "$RELEASE_BRANCH" --state open \
+        --json url --jq '.[0].url' 2>/dev/null || true)
+    if [[ -n "$existing" ]]; then
+        log_warn "A $INTEGRATION_BRANCH -> $RELEASE_BRANCH PR is already open: $existing"
+        log_info "Merge it, then run: $0 publish $version"
+        return 0
+    fi
+
+    local notes_file
+    notes_file=$(mktemp)
+    {
+        echo "Release **v$version**."
+        echo ""
+        extract_changelog_notes "$version"
+    } > "$notes_file"
+
+    local pr_url
+    if ! pr_url=$(gh pr create --base "$RELEASE_BRANCH" --head "$INTEGRATION_BRANCH" \
+        --title "Release v$version" --body-file "$notes_file"); then
+        rm -f "$notes_file"
+        log_error "gh pr create failed - open the $INTEGRATION_BRANCH -> $RELEASE_BRANCH PR manually."
+        exit 1
+    fi
+    rm -f "$notes_file"
+    log_success "Release PR opened: $pr_url"
+}
+
+# Tag the release commit on main and push ONLY the tag (branch protection allows tag pushes)
+tag_and_push() {
+    local version="$1"
+    log_info "Tagging v$version and pushing the tag..."
+    if [[ "$DRY_RUN" == true ]]; then
+        log_info "[DRY-RUN] Would tag v$version on $RELEASE_BRANCH and push the tag (not the branch)"
+        return 0
+    fi
+
+    if git -C "$PROJECT_ROOT" rev-parse "v$version" &> /dev/null; then
+        log_warn "Tag v$version already exists locally - skipping tag creation"
+    else
+        git -C "$PROJECT_ROOT" tag -a "v$version" -m "Release v$version"
+    fi
+    git -C "$PROJECT_ROOT" push origin "v$version"
+    log_success "Tag v$version pushed"
+}
+
 # Create the GitHub Release from the pushed tag, attaching the .gha and CHANGELOG notes
 create_github_release() {
     local version="$1"
@@ -411,9 +520,23 @@ create_github_release() {
         return 0
     fi
 
-    # A tag can be pushed without a Release object; re-running must not hard-fail.
+    # A tag can be pushed without a Release object; re-running must not hard-fail. But skipping
+    # outright would leave a Release with no .gha, and the README's manual-install link resolves
+    # to that asset - a missing one is a 404 for every user, not a cosmetic gap. So reconcile the
+    # existing Release instead of returning blind.
     if gh release view "v$version" &> /dev/null; then
-        log_warn "GitHub Release v$version already exists - skipping creation"
+        log_warn "GitHub Release v$version already exists - reconciling asset and latest flag"
+        if ! gh release upload "v$version" "$RELEASES_DIR/Cordyceps.gha#Cordyceps.gha" --clobber; then
+            log_error "Could not attach Cordyceps.gha to the existing Release v$version."
+            log_error "The README download link resolves to that asset - attach it manually."
+            exit 1
+        fi
+        if ! gh release edit "v$version" --latest; then
+            log_error "Could not mark Release v$version as latest."
+            log_error "/releases/latest/download/Cordyceps.gha serves whichever Release is latest."
+            exit 1
+        fi
+        log_success "GitHub Release v$version reconciled (asset attached, marked latest)"
         return 0
     fi
 
@@ -465,54 +588,24 @@ yak_push() {
     log_success "Published to Yak package manager"
 }
 
-# Main execution
-main() {
+# ----------------------------------------------------------------------------
+# prep: on develop, bump + CHANGELOG + build + commit + push + open release PR
+# ----------------------------------------------------------------------------
+do_prep() {
     echo ""
     echo "=========================================="
-    echo "       Cordyceps Release Script"
+    echo "    Cordyceps Release - PREP"
     echo "=========================================="
     echo ""
 
-    # Find Yak CLI
-    if ! find_yak; then
-        log_error "Yak CLI not found."
-        log_error "Make sure Rhino 8 is installed."
-        case "$(uname -s)" in
-            Darwin*)
-                log_error "Expected at: /Applications/Rhino 8.app/Contents/Resources/bin/yak"
-                ;;
-            MINGW*|MSYS*|CYGWIN*)
-                log_error "Expected at: C:\\Program Files\\Rhino 8\\System\\yak.exe"
-                ;;
-        esac
-        exit 1
-    fi
+    require_branch "$INTEGRATION_BRANCH"
+    require_clean_tree
+    ensure_dotnet
+    ensure_gh   # opens the PR
 
-    log_info "Platform: $PLATFORM"
-    log_info "Yak CLI: $YAK"
-
-    # Check prerequisites
-    if [[ ! -f "$CSPROJ" ]]; then
-        log_error "Cannot find $CSPROJ"
-        exit 1
-    fi
-
-    if ! command -v dotnet &> /dev/null; then
-        log_error "dotnet CLI not found. Install .NET SDK."
-        exit 1
-    fi
-
-    # Verify GitHub CLI early (a half-done release with no GitHub Release is worse than failing here)
-    ensure_gh
-
-    # Check Yak login status early
-    ensure_yak_login
-
-    # Get current version
     CURRENT_VERSION=$(get_current_version)
     log_info "Current version: $CURRENT_VERSION"
 
-    # Determine new version
     if [[ -z "$NEW_VERSION" ]]; then
         NEW_VERSION=$(increment_patch "$CURRENT_VERSION")
         log_info "Auto-incrementing to: $NEW_VERSION"
@@ -521,17 +614,18 @@ main() {
         log_info "Setting version to: $NEW_VERSION"
     fi
 
-    # Verify version is actually different
     if [[ "$NEW_VERSION" == "$CURRENT_VERSION" ]]; then
-        log_error "New version must be different from current version"
+        log_error "New version must differ from current version ($CURRENT_VERSION)"
         exit 1
     fi
 
     echo ""
-
-    # Pre-flight checks
     log_info "Running pre-flight checks..."
-    check_changelog "$NEW_VERSION"
+    # rename_changelog_unreleased already aborts when there are no notes (neither a
+    # [version] nor an [Unreleased] section), so a separate check_changelog here would be
+    # redundant in the real path and wrong under --dry-run (the rename only logs, so the
+    # [version] section wouldn't exist yet). publish keeps its check_changelog.
+    rename_changelog_unreleased "$NEW_VERSION"
     check_readme "$NEW_VERSION"
     echo ""
 
@@ -540,23 +634,95 @@ main() {
         echo ""
     fi
 
-    # Execute release steps
     update_csproj_version "$NEW_VERSION"
     update_manifest_version "$NEW_VERSION"
     build_gha
+    commit_release "$NEW_VERSION"
+    push_integration_branch
+    open_release_pr "$NEW_VERSION"
+
+    echo ""
+    echo "=========================================="
+    if [[ "$DRY_RUN" == true ]]; then
+        log_success "Dry run (prep) completed - no changes made"
+    else
+        log_success "Prep for v$NEW_VERSION completed!"
+        echo ""
+        echo "  Next: review + merge the release PR (CI 'build-test' must pass), then run:"
+        echo "    $0 publish $NEW_VERSION"
+    fi
+    echo "=========================================="
+    echo ""
+}
+
+# ----------------------------------------------------------------------------
+# publish: on main (after the prep PR merged), build yak + tag + GH Release + yak push
+# ----------------------------------------------------------------------------
+do_publish() {
+    echo ""
+    echo "=========================================="
+    echo "    Cordyceps Release - PUBLISH"
+    echo "=========================================="
+    echo ""
+
+    # Find Yak CLI (publish needs it)
+    if ! find_yak; then
+        log_error "Yak CLI not found. Make sure Rhino 8 is installed."
+        case "$(uname -s)" in
+            Darwin*) log_error "Expected at: /Applications/Rhino 8.app/Contents/Resources/bin/yak" ;;
+            MINGW*|MSYS*|CYGWIN*) log_error "Expected at: C:\\Program Files\\Rhino 8\\System\\yak.exe" ;;
+        esac
+        exit 1
+    fi
+    log_info "Platform: $PLATFORM"
+    log_info "Yak CLI: $YAK"
+
+    require_branch "$RELEASE_BRANCH"
+    require_clean_tree
+    ensure_dotnet   # publish builds the .gha it ships
+    ensure_gh
+    ensure_yak_login
+
+    # Version comes from main (the prep PR already bumped it); an explicit arg must match.
+    CURRENT_VERSION=$(get_current_version)
+    if [[ -z "$NEW_VERSION" ]]; then
+        NEW_VERSION="$CURRENT_VERSION"
+        log_info "Publishing version from $RELEASE_BRANCH csproj: $NEW_VERSION"
+    else
+        validate_version "$NEW_VERSION"
+        if [[ "$NEW_VERSION" != "$CURRENT_VERSION" ]]; then
+            log_error "Requested $NEW_VERSION but $RELEASE_BRANCH csproj is at $CURRENT_VERSION."
+            log_error "Did the prep PR ($INTEGRATION_BRANCH -> $RELEASE_BRANCH) merge and did you 'git pull'?"
+            exit 1
+        fi
+    fi
+
+    echo ""
+    log_info "Running pre-flight checks..."
+    check_changelog "$NEW_VERSION"
+    echo ""
+
+    if [[ "$DRY_RUN" == true ]]; then
+        log_warn "DRY RUN MODE - No changes will be made"
+        echo ""
+    fi
+
+    # Build here, not just in prep: the .gha is not tracked, so what lands in the Yak package and
+    # the GitHub Release must be compiled from the commit being released rather than whatever a
+    # local build happened to leave in releases/ (on a fresh clone, nothing at all).
+    build_gha
     prepare_dist
     build_yak "$NEW_VERSION"
-    git_commit_and_tag "$NEW_VERSION"
-    git_push "$NEW_VERSION"
+    tag_and_push "$NEW_VERSION"
     create_github_release "$NEW_VERSION"
     yak_push "$NEW_VERSION"
 
     echo ""
     echo "=========================================="
     if [[ "$DRY_RUN" == true ]]; then
-        log_success "Dry run completed - no changes made"
+        log_success "Dry run (publish) completed - no changes made"
     else
-        log_success "Release v$NEW_VERSION completed!"
+        log_success "Release v$NEW_VERSION published!"
         echo ""
         echo "  GitHub: https://github.com/brookstalley/cordyceps/releases/tag/v$NEW_VERSION"
         echo "  Yak:    https://yak.rhino3d.com/packages/cordyceps"
@@ -565,4 +731,59 @@ main() {
     echo ""
 }
 
-main
+# Parse arguments: <subcommand> [VERSION] [--dry-run]
+while [[ $# -gt 0 ]]; do
+    case $1 in
+        --dry-run)
+            DRY_RUN=true
+            shift
+            ;;
+        --help|-h)
+            usage
+            exit 0
+            ;;
+        prep|publish)
+            SUBCOMMAND="$1"
+            shift
+            ;;
+        *)
+            if [[ -z "$NEW_VERSION" ]]; then
+                NEW_VERSION="$1"
+            else
+                log_error "Unexpected argument: $1"
+                usage
+                exit 1
+            fi
+            shift
+            ;;
+    esac
+done
+
+# Default PLATFORM for sed_inplace when publish's find_yak hasn't run (prep path)
+case "$(uname -s)" in
+    Darwin*) PLATFORM="${PLATFORM:-mac}" ;;
+    MINGW*|MSYS*|CYGWIN*) PLATFORM="${PLATFORM:-windows}" ;;
+    *) PLATFORM="${PLATFORM:-unknown}" ;;
+esac
+
+# Prerequisites common to both halves
+if [[ ! -f "$CSPROJ" ]]; then
+    log_error "Cannot find $CSPROJ"
+    exit 1
+fi
+
+case "$SUBCOMMAND" in
+    prep) do_prep ;;
+    publish) do_publish ;;
+    "")
+        log_error "Missing command. Expected 'prep' or 'publish'."
+        echo ""
+        usage
+        exit 1
+        ;;
+    *)
+        log_error "Unknown command: $SUBCOMMAND"
+        usage
+        exit 1
+        ;;
+esac

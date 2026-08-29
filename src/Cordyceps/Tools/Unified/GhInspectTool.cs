@@ -24,12 +24,26 @@ namespace Cordyceps.Tools.Unified
             Description = "Diagnostic and inspection operations for debugging definitions",
             Actions = new Dictionary<string, ActionInfo>
             {
+                ["connection"] = new ActionInfo
+                {
+                    Name = "connection",
+                    Description = "Is the bridge alive, busy, or blocked? Answers from cached state without touching the Grasshopper document, so it replies even while the Rhino UI thread is wedged",
+                    Example = "action='connection'",
+                    Tips = new[]
+                    {
+                        "Use this when a call times out or goes quiet: it is the only action guaranteed to answer.",
+                        "rhino.ui='blocked' + grasshopper.solving=true means BUSY — wait and retry.",
+                        "rhino.modal_inferred=true means a modal dialog is open in Rhino and only a human can clear it — stop retrying and say so.",
+                        "Every other tool response already carries a compact 'status' block; use this action when you need the full picture or the last call returned nothing."
+                    }
+                },
                 ["status"] = new ActionInfo
                 {
                     Name = "status",
                     Description = "Get status of all components (OK, ERROR, WARNING, DISCONNECTED)",
                     Optional = new[] { "category" },
-                    Example = "action='status' OR action='status', category='Curve'"
+                    Example = "action='status' OR action='status', category='Curve'",
+                    Tips = new[] { "Returns success=false with a busy/blocked status instead of hanging when the Rhino UI thread is not responding — use action='connection' to see why." }
                 },
                 ["outputs"] = new ActionInfo
                 {
@@ -97,7 +111,8 @@ namespace Cordyceps.Tools.Unified
             Notes = new[]
             {
                 "Use 'status' to quickly identify errors and warnings",
-                "Use 'trace' to understand data flow through your definition"
+                "Use 'trace' to understand data flow through your definition",
+                "Use 'connection' when a call is slow or silent — it distinguishes a busy solver from a host blocked by a modal dialog"
             }
         };
 
@@ -106,7 +121,7 @@ namespace Cordyceps.Tools.Unified
             _context = context;
         }
 
-        [McpServerTool, Description("Inspection operations. Actions: status|outputs|trace|disconnected|geometry|log|reports|categories|docs|help")]
+        [McpServerTool, Description("Inspection operations. Actions: connection|status|outputs|trace|disconnected|geometry|log|reports|categories|docs|help")]
         public string GhInspect(
             [Description("Action to perform")] string action,
             [Description("Component GUID")] string id = null,
@@ -138,6 +153,7 @@ namespace Cordyceps.Tools.Unified
 
             return action.ToLowerInvariant() switch
             {
+                "connection" => ActionConnection(),
                 "status" => ActionStatus(category),
                 "outputs" => ActionOutputs(id),
                 "trace" => ActionTrace(id, direction),
@@ -151,8 +167,27 @@ namespace Cordyceps.Tools.Unified
             };
         }
 
+        /// <summary>
+        /// The connection probe. Deliberately does NOT call <c>_context.ExecuteOnUiThread</c>: that
+        /// is what takes the document lock and marshals onto the Rhino UI thread, and this is the
+        /// one call that must answer <em>while that thread is wedged</em>. Everything it reports
+        /// comes from <see cref="SolverState"/>, which the UI thread writes and any thread can read.
+        /// Keep it that way — a probe that can block is not a probe.
+        /// </summary>
+        private string ActionConnection()
+            => StatusEnvelope.ProbeResult(SolverState.Shared.Derive());
+
         private string ActionStatus(string category)
         {
+            // Enumerating component status needs the UI thread. If that thread is not responding,
+            // marshaling would hang until the document lock's timeout (or, behind a modal dialog,
+            // until a human intervenes) — the unbounded silence this feature exists to remove.
+            // Answer immediately with the reason instead. Checked BEFORE marshaling, from cached
+            // state only.
+            var liveness = SolverState.Shared.Derive();
+            if (liveness.Ui == UiLiveness.Blocked)
+                return StatusEnvelope.BusyResult(liveness);
+
             return _context.ExecuteOnUiThread(() =>
             {
                 if (!ToolHelpers.TryGetActiveDocument(_context, out var doc, out var error))
@@ -258,22 +293,25 @@ namespace Cordyceps.Tools.Unified
         {
             return _context.ExecuteOnUiThread(() =>
             {
-                if (!ToolHelpers.TryGetUnprotectedComponent(_context, id, out var component, out var error))
+                if (!ToolHelpers.TryGetUnprotectedComponentWithDoc(_context, id, out var doc, out var component, out var error))
                     return ToolHelpers.ErrorResponse(error);
 
                 var traced = new List<object>();
                 var visited = new HashSet<Guid>();
+                // Infrastructure stays invisible in trace results, like everywhere else.
+                var infraIds = ToolHelpers.GetCordycepsInfrastructureIds(doc);
+                var effectiveDirection = direction?.ToLowerInvariant() ?? "upstream";
 
-                if (direction.ToLowerInvariant() == "downstream")
-                    TraceDownstream(component, traced, visited, 0);
+                if (effectiveDirection == "downstream")
+                    TraceDownstream(component, traced, visited, 0, infraIds);
                 else
-                    TraceUpstream(component, traced, visited, 0);
+                    TraceUpstream(component, traced, visited, 0, infraIds);
 
                 return JsonConvert.SerializeObject(new
                 {
                     success = true,
                     start = new { id = component.InstanceGuid.ToString(), name = component.Name },
-                    direction,
+                    direction = effectiveDirection,
                     count = traced.Count,
                     trace = traced
                 });
@@ -505,7 +543,7 @@ namespace Cordyceps.Tools.Unified
             return new { type = val.GetType().Name, value = val.ToString() };
         }
 
-        private void TraceUpstream(IGH_DocumentObject obj, List<object> traced, HashSet<Guid> visited, int depth)
+        private void TraceUpstream(IGH_DocumentObject obj, List<object> traced, HashSet<Guid> visited, int depth, HashSet<Guid> infraIds)
         {
             if (visited.Contains(obj.InstanceGuid) || depth > MAX_TRACE_DEPTH) return;
             visited.Add(obj.InstanceGuid);
@@ -517,14 +555,18 @@ namespace Cordyceps.Tools.Unified
             {
                 foreach (var source in input.Sources)
                 {
-                    var src = source.Attributes.GetTopLevel.DocObject;
+                    // Null-safe like ToolHelpers.GetActiveObjects: phantom params can lack
+                    // attributes/owner. Infrastructure stays invisible to callers.
+                    var src = source.Attributes?.GetTopLevel?.DocObject;
+                    if (src == null) continue;
+                    if (infraIds.Contains(src.InstanceGuid)) continue;
                     traced.Add(new { id = src.InstanceGuid.ToString(), name = src.Name, depth = depth + 1, via = $"{source.Name}->{input.Name}" });
-                    TraceUpstream(src, traced, visited, depth + 1);
+                    TraceUpstream(src, traced, visited, depth + 1, infraIds);
                 }
             }
         }
 
-        private void TraceDownstream(IGH_DocumentObject obj, List<object> traced, HashSet<Guid> visited, int depth)
+        private void TraceDownstream(IGH_DocumentObject obj, List<object> traced, HashSet<Guid> visited, int depth, HashSet<Guid> infraIds)
         {
             if (visited.Contains(obj.InstanceGuid) || depth > MAX_TRACE_DEPTH) return;
             visited.Add(obj.InstanceGuid);
@@ -536,9 +578,13 @@ namespace Cordyceps.Tools.Unified
             {
                 foreach (var recipient in output.Recipients)
                 {
-                    var rec = recipient.Attributes.GetTopLevel.DocObject;
+                    // Null-safe like ToolHelpers.GetActiveObjects: phantom params can lack
+                    // attributes/owner. Infrastructure stays invisible to callers.
+                    var rec = recipient.Attributes?.GetTopLevel?.DocObject;
+                    if (rec == null) continue;
+                    if (infraIds.Contains(rec.InstanceGuid)) continue;
                     traced.Add(new { id = rec.InstanceGuid.ToString(), name = rec.Name, depth = depth + 1, via = $"{output.Name}->{recipient.Name}" });
-                    TraceDownstream(rec, traced, visited, depth + 1);
+                    TraceDownstream(rec, traced, visited, depth + 1, infraIds);
                 }
             }
         }

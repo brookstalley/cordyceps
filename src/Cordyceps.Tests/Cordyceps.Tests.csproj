@@ -27,13 +27,28 @@
     <Compile Include="..\Cordyceps\Core\InFlightRequests.cs" Link="InFlightRequests.cs" />
     <Compile Include="..\Cordyceps\Core\CommandStats.cs" Link="CommandStats.cs" />
     <Compile Include="..\Cordyceps\Core\ScriptDirective.cs" Link="ScriptDirective.cs" />
+    <Compile Include="..\Cordyceps\Core\ScriptParamDefs.cs" Link="ScriptParamDefs.cs" />
+    <Compile Include="..\Cordyceps\Core\ScriptSourceWriter.cs" Link="ScriptSourceWriter.cs" />
+    <Compile Include="..\Cordyceps\Core\ScriptProgram.cs" Link="ScriptProgram.cs" />
+    <Compile Include="..\Cordyceps\Core\BuildVersion.cs" Link="BuildVersion.cs" />
     <Compile Include="..\Cordyceps\Core\GhArchiveSave.cs" Link="GhArchiveSave.cs" />
     <Compile Include="..\Cordyceps\Core\SliderConfig.cs" Link="SliderConfig.cs" />
+    <Compile Include="..\Cordyceps\Core\DataModifiers.cs" Link="DataModifiers.cs" />
     <Compile Include="..\Cordyceps\Core\ParamSyncPlan.cs" Link="ParamSyncPlan.cs" />
     <Compile Include="..\Cordyceps\Core\McpResultFormatter.cs" Link="McpResultFormatter.cs" />
     <Compile Include="..\Cordyceps\Core\RequestValidator.cs" Link="RequestValidator.cs" />
     <Compile Include="..\Cordyceps\Core\UnifiedToolHelpers.cs" Link="UnifiedToolHelpers.cs" />
     <Compile Include="..\Cordyceps\Core\PlaceImageValidation.cs" Link="PlaceImageValidation.cs" />
+    <Compile Include="..\Cordyceps\Core\ParseHelpers.cs" Link="ParseHelpers.cs" />
+    <Compile Include="..\Cordyceps\Core\ResponseHelpers.cs" Link="ResponseHelpers.cs" />
+    <Compile Include="..\Cordyceps\Core\McpNaming.cs" Link="McpNaming.cs" />
+    <Compile Include="..\Cordyceps\Core\PromptTemplate.cs" Link="PromptTemplate.cs" />
+    <Compile Include="..\Cordyceps\Core\LogBuffer.cs" Link="LogBuffer.cs" />
+    <Compile Include="..\Cordyceps\Core\JsonRpcEnvelope.cs" Link="JsonRpcEnvelope.cs" />
+    <Compile Include="..\Cordyceps\Core\ServerState.cs" Link="ServerState.cs" />
+    <Compile Include="..\Cordyceps\Core\SnapshotStore.cs" Link="SnapshotStore.cs" />
+    <Compile Include="..\Cordyceps\Core\SolverState.cs" Link="SolverState.cs" />
+    <Compile Include="..\Cordyceps\Core\StatusEnvelope.cs" Link="StatusEnvelope.cs" />
   </ItemGroup>
 
 </Project>

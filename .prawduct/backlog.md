@@ -64,71 +64,6 @@
 
 <!-- Items available to pick up. -->
 
-- **[MCP-9F3Q]** Introduce a ServerState enum as the single source of truth for server lifecycle
-  `effort: M · impact: M · area: mcp-server · source: critic · added: 2026-06-21 · status: open · stage: ready`
-
-  Stage-1 cumulative Critic NOTE (non-blocking, forward-looking, on Chunk 01/02 code). Server
-  lifecycle state in `McpServer` is currently reconstructed from 3 interdependent signals —
-  `IsRunning` + `StartError` + `_context` — with no single source of truth. No invalid combination
-  is currently reachable, but Stage 2+ will add conditions that increase the combinatorial surface.
-
-  **Fix shape:** introduce a `ServerState` enum (e.g. Stopped/Starting/Running/Failed) as the single
-  source of truth, and derive `IsRunning`/`StartError` from it, before that Stage 2+ complexity lands.
-  Refactor, behavior-preserving. Doc-audit: internal lifecycle only; check whether any tool surfaces
-  server status to clients.
-
-- **[MCP-5T7W]** Decide + test InFlightRequests.DrainWithin timeout-coincident-with-fault behavior
-  `effort: S · impact: M · area: mcp-server · source: critic · added: 2026-06-21 · status: open · stage: ready`
-
-  Stage-1 cumulative Critic NOTE (non-blocking, forward-looking, on Chunk 01/02 code).
-  `Core/InFlightRequests.DrainWithin` returns `true` on any `AggregateException`, which can mask a
-  budget-timeout that coincided with a handler fault. The masking loses only a WARN log — correctness
-  is still protected by the `_context == null` guard — but the timeout+fault combination is currently
-  untested.
-
-  **Fix shape:** make an explicit decision about the correct return value when a drain timeout
-  coincides with a handler fault, then add a regression test covering that combination. Touches
-  `Core/InFlightRequests.cs` + the test project.
-
-- **[GHD-6M2J]** Bound or evict GhDocumentTool snapshot store (unbounded process-lifetime)
-  `effort: S · impact: S · area: gh-document · source: critic · added: 2026-06-21 · status: open · stage: ready`
-
-  Stage-1 cumulative Critic NOTE (non-blocking, forward-looking, low priority). `GhDocumentTool._snapshots`
-  is an unbounded process-lifetime store (pre-existing; Chunk 03 only changed the collection type for
-  thread-safety). Snapshots accumulate for the life of the Rhino session with no eviction or cap.
-
-  **Fix shape:** consider a bound (max snapshot count) or an eviction policy (e.g. LRU / oldest-first).
-  Gated by explicit user action, so memory growth is operator-driven and low priority. Doc-audit: if a
-  cap is introduced, check `gh_document` snapshot ActionInfo for the new limit semantics.
-
-- **[GHS-4D8M]** gh_script(set/configure) silently succeeds when it leaves a Script component unable to determine its language (Rhino LanguageSpec wipe — upstream)
-  `effort: M · impact: M · area: gh-script · source: user · added: 2026-06-24 · status: open · stage: ready · reviewed: 2026-06-24 · related: GHS-7K2P · refs: issue #15, docs/upstream-rhino-scriptcomponent-languagespec.md`
-
-  `gh_script(set/configure)` silently returns `{"success": true}` in a case where it leaves a unified
-  `ScriptComponent` unable to determine its language — the component then fails at solve time (the same
-  class of failure as GHS-7K2P, but via a different mechanism). A partial fix landed this session: a
-  `languageWarning` guard was added so the tool now surfaces a warning instead of silently reporting
-  success (issue #15, partial).
-
-  **[2026-06-24] Investigation + upstream report drafted.** A McNeel bug report is drafted at
-  `docs/upstream-rhino-scriptcomponent-languagespec.md`, pending filing on McNeel Discourse/YouTrack
-  (next action). Investigation findings:
-  - The unified `ScriptComponent` silently loses its language on a **directive-less `SetSource`** — the
-    error surfaces only at solve time, **not** from `SetSource` itself.
-  - It **IS recoverable** via a directive-bearing `SetSource` — this **corrects the original
-    "permanently broken" claim**.
-  - Setting `LanguageSpec` via reflection **does not stick**.
-
-  **Cordyceps mitigation shipped in v1.4.11:** the `languageWarning` guard + directive preservation
-  (the latter via `Core/ScriptDirective.cs`, GHS-7K2P). The remaining root cause — Rhino's
-  `LanguageSpec` being wiped — is **upstream in Rhino 8's `ScriptComponent` and is not
-  cordyceps-fixable**. This item now tracks the upstream report through filing.
-
-  **Next action:** file the drafted report with McNeel (Discourse / YouTrack). Related to GHS-7K2P
-  (the directive-preservation fix via `Core/ScriptDirective.cs`); distinct mechanism, same `gh-script`
-  area. Doc-audit: if the warning surfaces in tool responses, check `gh_script` ActionInfo + server
-  instructions.
-
 - **[GHC-2N8K]** De-duplicate the host-bound slider-apply block shared by gh_canvas add and config
   `effort: S · impact: S · area: gh-canvas · source: critic · added: 2026-06-24 · status: open · stage: ready · related: GHC-7X4B, GHS-3W9N`
 
@@ -150,16 +85,443 @@
   operator-verification parity check (VRF-004) — that parity is what this item protects against future
   drift. Doc-audit: internal refactor, behavior-preserving; no user-facing surface expected to change.
 
+- **[DOC-4Q7N]** Author api-contract.md for the MCP tool surface
+  `effort: M · impact: M · area: documentation · source: janitor · added: 2026-07-02 · status: open · stage: requirements`
+
+  Surfaced by the 2026-07-02 janitor audit. The product's defining trait is an external programmatic
+  contract (7 tools, ~106 actions) consumed by agents and scripts, but `.prawduct/artifacts` has no
+  api-contract artifact (the plugin ships a template at `templates/api-contract.md`).
+
+  **Requirements work:** decide + record a versioning/deprecation policy for tool actions
+  (project-state 'accommodate' already names a deprecation registry) and publish the contract
+  surface with stability tiers.
+
+- **[TST-2R5H]** Scripted MCP smoke-test harness for live-Rhino verification
+  `effort: M · impact: M · area: tooling · source: janitor · added: 2026-07-02 · status: open · stage: requirements · related: TST-8B3D`
+
+  Surfaced by the 2026-07-02 janitor audit. The Grasshopper host can't run headless, so all host
+  glue is verified manually via the operator-verification queue (7 pending entries). A small
+  scripted MCP client (Python/TS) that runs a canned smoke sequence against a live Cordyceps server
+  (add/wire/set/inspect/layer/material/place_image round-trips with assertions) would make VRF
+  burn-downs cheap and repeatable.
+
+  **Requirements to decide:** where it lives, and how results are recorded as evidence.
+
+- **[TST-8B3D]** Burn down the operator-verification queue (VRF-001..VRF-007)
+  `effort: S · impact: L · area: tooling · source: janitor · added: 2026-07-02 · status: open · stage: ready · related: TST-2R5H`
+
+  Surfaced by the 2026-07-02 janitor audit. All 7 entries are pending; VRF-001..005 cover changes
+  ALREADY SHIPPED to users in v1.4.10–12 (wedge-hang recovery, lifecycle teardown, slider parity,
+  configure wire preservation) and VRF-007 covers the janitor HIGH fixes. One session in Rhino 8
+  following the written steps; VRF-006 folds into the next release.
+
+- **[TST-5N9X]** Dependency/toolchain refresh: test stack + csproj comments + SDK pin policy
+  `effort: S · impact: S · area: tooling · source: janitor · added: 2026-07-02 · status: open · stage: ready`
+
+  Surfaced by the 2026-07-02 janitor audit. Test packages are ~2 years old (Microsoft.NET.Test.Sdk
+  17.8.0, xunit 2.6.6, runner 2.5.6 — batch-bump within the v2 line); two stale csproj comments
+  (a net7 reference, and a 'Rhino 8.21+' claim vs the Grasshopper 8.0.23304 pin); and
+  decide + document whether the oldest-8.x SDK pin is a deliberate min-version strategy.
+
+- **[CQ-9W2F]** Repo structure cosmetics: Tools/Unified flatten, Knowledge/Prompts naming, dedup follow-ups
+  `effort: M · impact: S · area: code-quality · source: janitor · added: 2026-07-02 · status: open · stage: requirements · reviewed: 2026-08-25`
+
+  Surfaced by the 2026-07-02 janitor audit. Three cosmetic/structural nits to batch when convenient
+  (low priority):
+  - `Tools/Unified` is the only `Tools/` subdir (vestigial from the v1.3 unification) — consider
+    flattening.
+  - `Knowledge/Prompts` (markdown templates) vs `Prompts/` (registry code) is confusable naming.
+  - `releases/Cordyceps.gha` is a tracked binary (56 blobs, 27.4 MiB across history, pack still
+    compact) — consider LFS or GitHub-Release-asset-only at a future major cleanup.
+    **RESOLVED 2026-08-25** on branch `fix/release-artifact-provenance` (commit `94572ed`): the
+    GitHub-Release-asset-only option was taken. `releases/` is now gitignored, `release.sh publish`
+    builds the `.gha` and attaches it to the GitHub Release, and the README manual-install link
+    points at `/releases/latest/download/Cordyceps.gha`. Caveat: history still carries the 56 old
+    blobs (~27.4 MiB) — untracking stops future churn but does not rewrite history, and repo size
+    is not a reported problem, so no history rewrite is planned.
+
+  **[2026-07-02] Scope extended (cumulative Critic, design reviewer)** — three code-quality dedup
+  follow-ups, same batch-when-convenient priority:
+  - (a) Migrate call sites from the `ToolHelpers` forwarders to `Core/ParseHelpers` +
+    `Core/ResponseHelpers` and delete the forwarders (or mark them internal/`[Obsolete]`) — dual
+    public API for identical behavior.
+  - (b) Extract the ~20-line bulk-result bookkeeping (notFound list + zero-effect check + error
+    construction) copy-pasted across 9 `rhino_scene`/`rhino_render` actions into a shared helper
+    (e.g. `BulkOutcome`), keeping per-action response field names.
+  - (c) Have `RhinoSceneTool.PlaceImage` `FindOrCreateLayer` delegate its resolution phase to
+    `Layers.ResolveLayerIndex` so the two ambiguity contracts (including the verbatim error string)
+    can't drift.
+
+- **[MCP-7D2N]** Fold `_disposed` into the ServerState model or guard Start() after Dispose()
+  `effort: S · impact: S · area: mcp-server · source: critic · added: 2026-07-02 · status: open · stage: ready · related: MCP-9F3Q, MCP-3D8V`
+
+  From the reliability cumulative Critic (2026-07-02, NOTE severity): `McpServer._disposed` remains
+  an independent bool the `ServerState` enum never consults — a disposed instance ends in `Stopped`,
+  where `CanStart` returns true, so `Start()` on a disposed server would proceed. Pre-existing and
+  unreachable via `CordycepsComponent` (stopped instances are removed from `_servers` and restart
+  paths construct fresh instances), so no user-reachable invalid state today.
+
+  **Fix shape:** either add a `Disposed` terminal state to `Core/ServerState` (`CanStart` false) or
+  guard `Start()` on `_disposed`; add a transition-table test either way.
+
+- **[GHD-5R7Q]** Tools silently retarget when the user switches Grasshopper canvas tabs
+  `effort: M · impact: L · area: document-resolution · source: user · added: 2026-08-21 · status: open · stage: requirements`
+
+  Every tool resolves its document through `ToolHelpers.TryGetActiveDocument` →
+  `Grasshopper.Instances.ActiveCanvas?.Document` (`src/Cordyceps/Core/ToolHelpers.cs:173`; also
+  `McpServer.cs:430`). Grasshopper can have multiple documents open at once, so when the human
+  focuses a different canvas tab, the **entire MCP surface silently retargets mid-session**. An agent
+  can believe it is editing `wall-study.gh` while actually editing the definition the user just
+  clicked over to. Nothing in any response signals the switch, and there is no way for a client to
+  pin a target.
+
+  **Blast radius:** all 7 tools — every mutating action resolves this way (gh_canvas, gh_wire,
+  gh_document, gh_script, gh_inspect, plus the Rhino tools' document assumptions).
+
+  Discovered by the user while designing the liveness/status work for issues #29/#30. That cycle
+  makes the hazard **visible but not safe**: the always-on status block now names the document
+  (DisplayName + DocumentID) on every response, and solver state is tracked per-document, so an
+  attentive agent can notice a switch after the fact. It still cannot prevent one.
+
+  **Fix shape** (needs requirements work first — hence `stage: requirements`; the options are a real
+  contract decision):
+  - (a) **Explicit pinning** — `gh_document(action='target', id=...)`, with every resolution honoring
+    the pin and a clear error when the pinned doc closes.
+  - (b) **Anchor to the bridge component's document** (`this.OnPingDocument()`) instead of the
+    focused canvas — most stable for unattended runs, but a silent behavior change for existing
+    users who rely on tab-following.
+  - (c) **Leave resolution alone** and require callers to pass a document id explicitly on mutating
+    actions.
+
+  **Open question the requirements pass must answer:** is tab-following a *feature* for interactive
+  human+agent pairing, and only a hazard for unattended runs? If so the answer may be mode-dependent
+  rather than a single global rule.
+
+  Related: the always-on status envelope shipped in the liveness cycle (issues #27/#29/#30, PR #31)
+  is the mitigation, not the fix.
+
+- **[MCP-4T8V]** SolverState holds ONE server-snapshot slot but the bridge supports several servers
+  `effort: S · impact: M · area: liveness · source: critic · added: 2026-08-21 · status: open · stage: ready`
+
+  `SolverState.Shared` keeps a single `Func<StatusInputs>` provider; `McpServer.Start` publishes it
+  and `Stop` withdraws it. But `CordycepsComponent` keys `_servers`/`_portOwners` **by port**, and
+  its own error text tells the user to "Change this component's port input to use a different port"
+  — so concurrent servers are the designed remedy, not an edge case. With two bridges up, the
+  second overwrites the first's provider; when the second stops, `ClearServerSnapshot` nulls the
+  slot and the still-listening first server reports `cordyceps.listening: false` on every response.
+
+  Only the cordyceps layer is affected — Rhino/Grasshopper layers and the modal inference are
+  process-wide and stay correct. Fix shape: key providers by port and aggregate, or have the status
+  layer resolve the provider for the port serving the current request.
+
+- **[GHC-6P2M]** Parameter resolution by name-or-index is implemented twice, with different semantics
+  `effort: S · impact: S · area: code-quality · source: critic · added: 2026-08-21 · status: open · stage: ready`
+
+  `GhWireTool.GetParameter` (`src/Cordyceps/Tools/Unified/GhWireTool.cs:506`) and
+  `GhCanvasTool.Modifiers`' `ResolveModifierParam` both resolve a param spec by name or 0-based
+  index, and they already disagree: the modifier copy errors on an out-of-range index while the
+  wire copy falls through to name matching, and only the modifier copy null-guards the spec.
+  CLAUDE.md states name-or-index resolution as a project-wide rule, so the divergence is a contract
+  inconsistency rather than a style nit. Fix shape: one shared helper in `Core/`, host-free enough
+  to unit-test the resolution matrix (the wire copy has no tests today either).
+
+- **[GHS-9K3T]** gh_script(action='info') hand-rolls its param list and omits modifiers/optional
+  `effort: S · impact: S · area: code-quality · source: critic · added: 2026-08-21 · status: open · stage: ready`
+
+  `ToolHelpers.BuildParameterList` and the free-floating branch of `BuildFullComponentInfo` both
+  report a `modifiers` object per param. `GhScriptTool.ActionInfo` builds its own input/output
+  dictionaries instead of calling that helper, so a script component's params report neither
+  `modifiers` nor `optional` — the same field visible on every other component is missing here for
+  no stated reason. This is the shape `learnings.md` warns about under tracing consumers of a shared
+  helper: the helper gained a field and a hand-rolled duplicate silently did not.
+
+- **[REL-6H4X]** `scripts/release.sh` has no pre-release command
+  `effort: S · impact: M · area: release-tooling · source: user · added: 2026-08-25 · status: open · stage: requirements · related: REL-4K7D · reviewed: 2026-08-25`
+
+  Handing testers/issue-reporters a verification build is a manual, error-prone ritual today. On
+  2026-08-25 the `v1.5.0-rc.1` verification build had to be cut by hand: `gh release create
+  --prerelease --target <sha>` plus a `-p:Version` override on the `dotnet build`, because
+  `scripts/release.sh` only supports the two-step `prep` → `publish` flow that targets `main` + Yak.
+  Two specific blockers in the script:
+  - `validate_version` rejects prerelease version strings (`1.5.0-rc.1`), and
+  - `increment_patch` would mangle a prerelease string if one were stored in the `.csproj`.
+
+  **Wanted:** a repeatable `./scripts/release.sh prerelease [version]` that builds the `.gha`, cuts a
+  GitHub pre-release off an arbitrary commit/branch (no `main` merge, no Yak push, no tag on the
+  release surface), and leaves the tracked version untouched — so shipping a tester build is routine
+  instead of improvised.
+
+  **Open design questions** (why this is `stage: requirements`, not `ready`): whether the prerelease
+  version is written to the `.csproj` at all or only passed as a build-time `-p:Version` override;
+  whether a `vX.Y.Z-rc.N` tag is pushed or the release is attached to a bare SHA; and how
+  `validate_version` / `increment_patch` should treat SemVer prerelease suffixes without loosening
+  the guards that protect the real release path.
+
+- **[REL-4K7D]** `scripts/release.sh` has no automated regression guard
+  `effort: M · impact: M · area: release-tooling · source: critic · added: 2026-08-25 · status: open · stage: ready · related: REL-6H4X`
+
+  Critic finding R-4 of review `rev-20260825T145837Z-e594dbc8` (2026-08-25).
+
+  The release script now carries real branching logic: `publish` builds the `.gha` it ships
+  (`build_gha` before `prepare_dist`), `prepare_dist` fails closed when no build exists, and
+  `create_github_release` reconciles an already-existing Release by uploading the asset with
+  `--clobber` and marking it `--latest` rather than skipping. None of that is covered by an
+  automated test — the C# suite (550 tests) does not touch shell.
+
+  Verification during that cycle was ad-hoc: `--dry-run` runs in a throwaway clone, plus two
+  hand-rolled harnesses that `sed`-extracted single functions (`prepare_dist`,
+  `create_github_release`) out of the script and ran them against stub `gh`/dirs. Those harnesses
+  proved the branches and were then thrown away — which is itself the evidence this is worth
+  having: the same extraction was improvised twice in one session.
+
+  **Wanted:** a small `bats` (or plain-bash) suite that sources the script's functions with stubbed
+  `gh`/`dotnet`/`yak` and asserts the failure-closed paths — no built `.gha`, existing Release,
+  failed asset upload, failed `--latest`.
+
+  **Note:** the script is 700+ lines and sourcing it executes the arg dispatch at the bottom, so it
+  likely needs a guard (e.g. dispatch only when `BASH_SOURCE[0] == $0`) before it can be sourced
+  cleanly — that refactor is part of the work.
+
+  Related to REL-6H4X (pre-release command) — both touch `release.sh` and could share the harness.
+
+- **[GHS-5B7R]** Report compile diagnostics from gh_script set/configure
+  `effort: M · impact: M · area: gh-script · source: builder · added: 2026-08-27 · status: open · stage: research · related: GHS-4D8M`
+
+  Descoped from the #33 fix. `gh_script(action='set'|'configure')` can leave a script component whose
+  code does not compile, and returns success without a word about it — today build errors surface only
+  on the component at the next solve, reachable via `gh_inspect(action='status')`.
+
+  **Why it was descoped (the research question):** the build text is not reachable by any obvious API.
+  `IScriptObject.ReBuild()` discards the build `Diagnosis` — it runs `PreBuild` →
+  `Context.TryBuildCode(ctx, out _)`, dropping the out-param on the floor — and `IScriptObject.HasErrors`
+  only reflects runtime messages, which a rebuild never adds. So a rebuild tells us nothing.
+
+  Reaching the diagnostics means one of:
+  - reading the **protected `ScriptContext` field** (reflection, fragile across Rhino versions), or
+  - building the `Code` against a **hand-made `RunContext`** — which uses different settings than the
+    host does, so the diagnostics may not match what the component itself will report.
+
+  Neither is obviously right; pick one (or find a third) before scoping the fix.
+
+- **[GHS-6QN4]** Heuristic warning on gh_script set/configure for a never-invoked RunScript
+  `effort: M · impact: M · area: gh-script · source: user · added: 2026-08-29 · status: open · stage: research · related: GHS-5B7R`
+
+  Surfaced in the comment thread on GitHub issue #33 (2026-08-27), after the reporter's own
+  false-positive regression report was traced to this trap.
+
+  **The trap.** A C# script component whose code only *defines* a function —
+  `void RunScript(object x, object y, out object a, out object b) { a = ...; }` — with no top-level
+  statements compiles cleanly, and the component even syncs its output ports from the signature, so it
+  looks alive. The function is never invoked. Outputs stay null with `runtimeMessageLevel: Blank` and no
+  error, warning or runtime message anywhere. Behaves identically on 1.4.12, 1.5.0-rc.1 and rc.2, so this
+  is long-standing host behavior, not a regression.
+
+  **Why the existing machinery cannot catch it.** The divergence check compares stored source against
+  the running program. On C# the two are byte-identical here, so `set` correctly reports
+  `verified: true` and there is nothing to flag. Python 3 *is* caught today — Rhino rewrites the
+  signature to `def RunScript(self, x, y)`, so `verified: false` / `sourceDiverged: true` — meaning the
+  language where users most need the warning is exactly the one the current machinery is blind to. A
+  guard therefore has to inspect the source shape ("defines RunScript, has no top-level statements"),
+  not lean on divergence.
+
+  **Why this is `stage: research` and not `ready`.** The write path already sees the source, so the hook
+  location is easy; the open questions are what the rule actually is. Namely: what counts as a top-level
+  statement, per language; whether SDK-mode vs script-mode C# changes the answer (SDK-mode legitimately
+  carries a class with a RunScript method); whether this warns or errors; and what the false-positive
+  cost is of misjudging user code we do not otherwise parse. Getting that wrong means warning on correct
+  scripts, which is worse than the silence it replaces.
+
+  **Already shipped in v1.5.0, separately:** the documentation half — a row in
+  `Knowledge/CommonErrorsGuide.md` and a note in `Knowledge/Prompts/SetupScriptComponent.md`. This item
+  is the code heuristic only.
+
+  Doc-audit note when implemented: a new warning field on set/configure would need ActionInfo help
+  metadata, `GetServerInstructions()`, `CommonErrorsGuide.md` (row exists, would need the field named)
+  and CHANGELOG.
+
 ## Promoted
 
 <!-- Items currently being addressed in an active build plan. /backlog pick
      skips these by default (work is already in flight). -->
 
-_(none currently in flight)_
-
 ## Archive
 
 <!-- Shipped and dropped items, kept for searchability. Never deleted. -->
+
+- **[MCP-9F3Q]** Introduce a ServerState enum as the single source of truth for server lifecycle
+  `effort: M · impact: M · area: mcp-server · source: critic · added: 2026-06-21 · status: shipped · stage: ready · reviewed: 2026-07-02 · closed-by: build-plan-reliability chunk-02 (PR #26) · related: MCP-3D8V`
+
+  Stage-1 cumulative Critic NOTE (non-blocking, forward-looking, on Chunk 01/02 code). Server
+  lifecycle state in `McpServer` is currently reconstructed from 3 interdependent signals —
+  `IsRunning` + `StartError` + `_context` — with no single source of truth. No invalid combination
+  is currently reachable, but Stage 2+ will add conditions that increase the combinatorial surface.
+
+  **Fix shape:** introduce a `ServerState` enum (e.g. Stopped/Starting/Running/Failed) as the single
+  source of truth, and derive `IsRunning`/`StartError` from it, before that Stage 2+ complexity lands.
+  Refactor, behavior-preserving. Doc-audit: internal lifecycle only; check whether any tool surfaces
+  server status to clients.
+
+  **[2026-07-02] Promoted** into the active build plan (today's triage).
+
+  **[2026-07-02] Shipped:** delivered by the reliability follow-through plan
+  (build-plan-reliability chunk 02); merged to develop via PR #26 (squash 04feba7, branch
+  `feat/reliability-follow-through`). Release-pending: change-log entry is `status=merged` and flips
+  to shipped at the next develop→main release.
+
+- **[MCP-3D8V]** McpServer.Stop() drain runs on the UI thread it is waiting for
+  `effort: M · impact: M · area: mcp-server · source: janitor · added: 2026-07-02 · status: shipped · stage: ready · reviewed: 2026-07-02 · closed-by: build-plan-reliability chunk-03 (PR #26) · related: MCP-9F3Q, MCP-5T7W`
+
+  Surfaced by the 2026-07-02 janitor audit. `Stop()` is always invoked from the UI thread (the
+  `SolveInstance` port-change path, `RemovedFromDocument`, and now `DocumentContextChanged`) while
+  holding `CordycepsComponent._lock`. An in-flight tool handler is a worker blocked in
+  `RhinoApp.InvokeAndWait` waiting for that same UI thread — so `_inFlight.DrainWithin(2s)` can
+  **never** succeed for exactly the handlers it protects. Result: a guaranteed ~2s UI stall + detach
+  whenever teardown overlaps a request, and the `McpServer.cs` comment claiming handlers finish
+  against a still-valid context is wrong for that case.
+
+  Correctness is protected by the captured-context guard (no NRE), so this is a **latency/topology
+  fix**, not a correctness fix: run the drain off the UI thread (cancel + fire-and-forget teardown
+  task) or skip the drain when `!RhinoApp.InvokeRequired`. Pairs naturally with MCP-9F3Q's
+  ServerState enum; MCP-5T7W covers the adjacent DrainWithin timeout-vs-fault return-value question.
+
+  **[2026-07-02] Promoted** into the active build plan (today's triage).
+
+  **[2026-07-02] Shipped:** delivered by the reliability follow-through plan
+  (build-plan-reliability chunk 03); merged to develop via PR #26 (squash 04feba7, branch
+  `feat/reliability-follow-through`). Host-observable behavior queued as VRF-009 operator
+  verification. Release-pending: change-log entry is `status=merged` and flips to shipped at the
+  next develop→main release.
+
+- **[MCP-5T7W]** Decide + test InFlightRequests.DrainWithin timeout-coincident-with-fault behavior
+  `effort: S · impact: M · area: mcp-server · source: critic · added: 2026-06-21 · status: shipped · stage: ready · reviewed: 2026-07-02 · closed-by: build-plan-reliability chunk-01 (PR #26) · related: MCP-3D8V`
+
+  Stage-1 cumulative Critic NOTE (non-blocking, forward-looking, on Chunk 01/02 code).
+  `Core/InFlightRequests.DrainWithin` returns `true` on any `AggregateException`, which can mask a
+  budget-timeout that coincided with a handler fault. The masking loses only a WARN log — correctness
+  is still protected by the `_context == null` guard — but the timeout+fault combination is currently
+  untested.
+
+  **Fix shape:** make an explicit decision about the correct return value when a drain timeout
+  coincides with a handler fault, then add a regression test covering that combination. Touches
+  `Core/InFlightRequests.cs` + the test project.
+
+  **[2026-07-02] Promoted** into the active build plan (today's triage).
+
+  **[2026-07-02] Shipped:** delivered by the reliability follow-through plan
+  (build-plan-reliability chunk 01); merged to develop via PR #26 (squash 04feba7, branch
+  `feat/reliability-follow-through`). Release-pending: change-log entry is `status=merged` and flips
+  to shipped at the next develop→main release.
+
+- **[GHD-6M2J]** Bound or evict GhDocumentTool snapshot store (unbounded process-lifetime)
+  `effort: S · impact: M · area: gh-document · source: critic · added: 2026-06-21 · status: shipped · stage: ready · reviewed: 2026-07-02 · closed-by: build-plan-reliability chunk-04 (PR #26)`
+
+  Stage-1 cumulative Critic NOTE (non-blocking, forward-looking, low priority). `GhDocumentTool._snapshots`
+  is an unbounded process-lifetime store (pre-existing; Chunk 03 only changed the collection type for
+  thread-safety). Snapshots accumulate for the life of the Rhino session with no eviction or cap.
+
+  **Fix shape:** consider a bound (max snapshot count) or an eviction policy (e.g. LRU / oldest-first).
+  Gated by explicit user action, so memory growth is operator-driven and low priority. Doc-audit: if a
+  cap is introduced, check `gh_document` snapshot ActionInfo for the new limit semantics.
+
+  **[2026-07-02] Impact raised S→M (cumulative Critic, sustainability).** The 2026-07-02 janitor
+  branch materially increases pressure on this store: undo/redo are now advertised as DISABLED in
+  ActionInfo/server-instructions/README with explicit "use action='snapshot' before changes and
+  action='revert'" guidance, steering every agent mutation workflow into this unbounded
+  process-lifetime ConcurrentDictionary of full document serializations. Auto-timestamped names mean
+  repeated unnamed snapshots never overwrite. Fix shape unchanged (cap + oldest-first eviction — the
+  LogBuffer pattern is now in-tree — and/or a snapshot_delete action).
+
+  **[2026-07-02] Promoted** into the active build plan (today's triage).
+
+  **[2026-07-02] Shipped:** delivered by the reliability follow-through plan
+  (build-plan-reliability chunk 04); merged to develop via PR #26 (squash 04feba7, branch
+  `feat/reliability-follow-through`). Release-pending: change-log entry is `status=merged` and flips
+  to shipped at the next develop→main release.
+
+- **[RSC-6K1W]** Wrap multi-step Rhino mutations in undo records
+  `effort: M · impact: L · area: rhino-scene · source: janitor · added: 2026-07-02 · status: shipped · stage: ready · reviewed: 2026-07-02 · closed-by: build-plan-reliability chunk-05 (PR #26)`
+
+  Surfaced by the 2026-07-02 janitor audit. No code path calls
+  `RhinoDoc.BeginUndoRecord`/`EndUndoRecord` (grep-verified), so each per-object mutation is its own
+  undo step: a user pressing Ctrl-Z after an MCP `layer_delete` gets back one object of fifty.
+  User-felt impact.
+
+  **Fix shape:** wrap each mutating `rhino_scene`/`rhino_render` action body in
+  `BeginUndoRecord("Cordyceps <action>")` / `EndUndoRecord` in a `finally`. Doc-audit: mention undo
+  grouping in tool notes.
+
+  **[2026-07-02] Promoted** into the active build plan (today's triage).
+
+  **[2026-07-02] Shipped:** delivered by the reliability follow-through plan
+  (build-plan-reliability chunk 05); merged to develop via PR #26 (squash 04feba7, branch
+  `feat/reliability-follow-through`). Host-observable behavior queued as VRF-010 operator
+  verification. Release-pending: change-log entry is `status=merged` and flips to shipped at the
+  next develop→main release.
+
+- **[GHC-8V3T]** Stop renaming/nicknaming components on the canvas — annotate via groups instead
+  `effort: M · impact: M · area: gh-canvas · source: user · added: 2026-07-02 · status: shipped · stage: ready · reviewed: 2026-07-02 · closed-by: build-plan-reliability chunk-06 (PR #26)`
+
+  **User decision (2026-07-02, from user reports):** Cordyceps must NOT rename/nickname components —
+  renamed components are hard to find on the canvas. Most Grasshopper users never rename components;
+  the native convention is annotation via **groups with labels** (plus panels/scribbles), so Cordyceps
+  should snap to that convention.
+
+  **Scope resolution (user decision, 2026-07-02):** the main open contract question is decided — do
+  **NOT** remove or deprecate the rename capability. The `gh_canvas` `rename` action and the
+  `nickname` parameter stay fully functional (a user/agent who explicitly wants to rename still can).
+  What changes is the **propensity** to rename as part of building: Cordyceps guidance must stop
+  encouraging renaming/nicknaming during normal canvas construction. This supersedes the earlier
+  deprecate-or-remove question in (a)/(b) below; the contract question is closed, so the item is now
+  implementable (`stage: ready`).
+
+  **Remaining scope (implementable):**
+  - (a) audit all guidance surfaces — server instructions (`McpServer.cs` `GetServerInstructions()`),
+    ActionInfo descriptions/tips/examples, Knowledge guides (CanvasLayoutGuide / BestPractices /
+    GettingStarted), and prompt templates — and remove anything that encourages nicknaming components
+    while building; recommend groups with labels (and panels/scribbles) for annotation instead;
+  - (b) check whether any Cordyceps code path auto-applies nicknames unprompted (e.g. `add` or script
+    `configure` defaulting a nickname) and stop doing so;
+  - (c) add an explicit note in the rename/add ActionInfo that renaming makes components hard to find
+    and groups are the preferred annotation mechanism;
+  - (d) note groups already have create/rename/color actions that serve the annotation need — no new
+    capability required for the replacement convention.
+
+  **[2026-07-02] Promoted** into the active build plan (today's triage).
+
+  **[2026-07-02] Shipped:** delivered by the reliability follow-through plan
+  (build-plan-reliability chunk 06); merged to develop via PR #26 (squash 04feba7, branch
+  `feat/reliability-follow-through`). Release-pending: change-log entry is `status=merged` and flips
+  to shipped at the next develop→main release.
+
+- **[GHS-4D8M]** gh_script(set/configure) silently succeeds when it leaves a Script component unable to determine its language (Rhino LanguageSpec wipe — upstream)
+  `effort: M · impact: M · area: gh-script · source: user · added: 2026-06-24 · status: shipped · stage: ready · reviewed: 2026-07-02 · closed-by: mcneel-upstream-filing · related: GHS-7K2P · refs: issue #15, docs/upstream-rhino-scriptcomponent-languagespec.md`
+
+  `gh_script(set/configure)` silently returns `{"success": true}` in a case where it leaves a unified
+  `ScriptComponent` unable to determine its language — the component then fails at solve time (the same
+  class of failure as GHS-7K2P, but via a different mechanism). A partial fix landed this session: a
+  `languageWarning` guard was added so the tool now surfaces a warning instead of silently reporting
+  success (issue #15, partial).
+
+  **[2026-06-24] Investigation + upstream report drafted.** A McNeel bug report is drafted at
+  `docs/upstream-rhino-scriptcomponent-languagespec.md`, pending filing on McNeel Discourse/YouTrack
+  (next action). Investigation findings:
+  - The unified `ScriptComponent` silently loses its language on a **directive-less `SetSource`** — the
+    error surfaces only at solve time, **not** from `SetSource` itself.
+  - It **IS recoverable** via a directive-bearing `SetSource` — this **corrects the original
+    "permanently broken" claim**.
+  - Setting `LanguageSpec` via reflection **does not stick**.
+
+  **Cordyceps mitigation shipped in v1.4.11:** the `languageWarning` guard + directive preservation
+  (the latter via `Core/ScriptDirective.cs`, GHS-7K2P). The remaining root cause — Rhino's
+  `LanguageSpec` being wiped — is **upstream in Rhino 8's `ScriptComponent` and is not
+  cordyceps-fixable**. This item then tracked the upstream report through filing.
+
+  **[2026-07-02] Closed — filed upstream, McNeel acknowledged.** The drafted report was filed with
+  McNeel; McNeel acknowledged it and promised a fix in a future Rhino release (user-reported
+  2026-07-02). All Cordyceps-side work is done (mitigation shipped in v1.4.11; upstream report filed
+  and accepted) — the remaining wait is on McNeel's fix, not on us, so the item is archived. If the
+  upstream fix lands and warrants verification or removal of the `languageWarning` mitigation, file a
+  fresh item then. Related to GHS-7K2P (directive-preservation fix via `Core/ScriptDirective.cs`).
 
 - **[GHC-7X4B]** gh_canvas(action='add') silently drops slider min/max/value/decimals
   `effort: S · impact: M · area: gh-canvas · source: user · added: 2026-06-24 · status: shipped · stage: ready · reviewed: 2026-06-24 · closed-by: fix/add-slider-params-and-configure-wires`

@@ -37,7 +37,9 @@ namespace Cordyceps.Tools.Unified
                         "Use 'Category/Name' format for ambiguous names (e.g., 'Curve/Circle')",
                         "Use GUID for guaranteed accuracy",
                         "Adding a slider: pass min/max/value/decimals to configure it in one call (e.g. type='slider', min=0, max=100, value=50, decimals=2). Non-slider components ignore these.",
-                        "Set min/max before value: value is clamped to the range. Same slider config as action='config'."
+                        "Set min/max before value: value is clamped to the range. Same slider config as action='config'.",
+                        "A slider value that doesn't parse as a number is an error — the component is NOT added (parity with action='config').",
+                        "Leave 'nickname' unset during normal building — renamed components are hard to find on the canvas. Annotate with labeled groups (group_create) instead and track the returned id."
                     }
                 },
                 ["delete"] = new ActionInfo
@@ -63,7 +65,11 @@ namespace Cordyceps.Tools.Unified
                     Name = "rename",
                     Description = "Change a component's nickname (display name)",
                     Required = new[] { "id", "nickname" },
-                    Example = "action='rename', id='abc-123', nickname='MyCircle'"
+                    Example = "action='rename', id='abc-123', nickname='MyCircle'",
+                    Tips = new[]
+                    {
+                        "Avoid renaming components as part of normal building — renamed components are hard to find on the canvas and it is not the Grasshopper convention. Annotate with labeled groups (group_create), panels, or scribbles instead; only rename when the user explicitly asks for it"
+                    }
                 },
                 ["find"] = new ActionInfo
                 {
@@ -71,7 +77,8 @@ namespace Cordyceps.Tools.Unified
                     Description = "Find component(s) by nickname",
                     Required = new[] { "nickname" },
                     Optional = new[] { "exact" },
-                    Example = "action='find', nickname='MyCircle'"
+                    Example = "action='find', nickname='Circle'",
+                    Tips = new[] { "Matches default nicknames too (e.g. 'Circle', 'Slider') — no need to rename components to make them findable; prefer tracking the id returned from add" }
                 },
                 ["search"] = new ActionInfo
                 {
@@ -79,14 +86,15 @@ namespace Cordyceps.Tools.Unified
                     Description = "Search available component types (not on canvas)",
                     Required = new[] { "query" },
                     Optional = new[] { "category", "limit" },
-                    Example = "action='search', query='circle', category='Curve'"
+                    Example = "action='search', query='circle', category='Curve'",
+                    Tips = new[] { "'type' is accepted as an alias for 'query'" }
                 },
                 ["list"] = new ActionInfo
                 {
                     Name = "list",
                     Description = "List components currently on the canvas",
-                    Optional = new[] { "category", "type", "group" },
-                    Example = "action='list' OR action='list', category='Curve'"
+                    Optional = new[] { "category", "typeFilter", "group" },
+                    Example = "action='list' OR action='list', category='Curve' OR action='list', typeFilter='Number Slider'"
                 },
                 ["info"] = new ActionInfo
                 {
@@ -123,7 +131,7 @@ namespace Cordyceps.Tools.Unified
                     Required = new[] { "id" },
                     Optional = new[] { "layer", "name" },
                     Example = "action='bake', id='abc-123', layer='Baked'",
-                    Tips = new[] { "Creates permanent Rhino objects from component output", "Specify layer to organize baked geometry" }
+                    Tips = new[] { "Creates permanent Rhino objects from component output", "Specify layer to organize baked geometry", "All baked objects land in one undo record — a single Ctrl-Z in Rhino removes the whole bake" }
                 },
                 ["zoom"] = new ActionInfo
                 {
@@ -169,7 +177,10 @@ namespace Cordyceps.Tools.Unified
                     Required = new[] { "id" },
                     Optional = new[] { "min", "max", "value", "decimals", "items" },
                     Example = "action='config', id='abc', min=0, max=100, value=50",
-                    Tips = new[] { "For value lists: items='[{\"name\":\"A\",\"value\":\"0\"}]'" }
+                    Tips = new[] {
+                        "For value lists: items='[{\"name\":\"A\",\"value\":\"0\"}]'",
+                        "A non-numeric 'value' is rejected with an error before anything is applied (parity with action='set')"
+                    }
                 },
                 ["preview"] = new ActionInfo
                 {
@@ -177,7 +188,11 @@ namespace Cordyceps.Tools.Unified
                     Description = "Set component preview visibility",
                     Required = new[] { "enabled" },
                     Optional = new[] { "id", "ids" },
-                    Example = "action='preview', id='abc', enabled=false"
+                    Example = "action='preview', id='abc', enabled=false",
+                    Tips = new[] {
+                        "Returns per-id results with changedCount/failedCount; unresolvable ids or components without preview support are per-id failures and overall success is false",
+                        "enabled accepts true/false, 1/0, yes/no (case-insensitive); anything else is a validation error"
+                    }
                 },
                 ["enable"] = new ActionInfo
                 {
@@ -185,7 +200,11 @@ namespace Cordyceps.Tools.Unified
                     Description = "Enable or disable component computation",
                     Required = new[] { "enabled" },
                     Optional = new[] { "id", "ids" },
-                    Example = "action='enable', id='abc', enabled=false"
+                    Example = "action='enable', id='abc', enabled=false",
+                    Tips = new[] {
+                        "Returns per-id results with changedCount/failedCount; unresolvable ids or components that can't be locked are per-id failures and overall success is false",
+                        "enabled accepts true/false, 1/0, yes/no (case-insensitive); anything else is a validation error"
+                    }
                 },
                 // Group actions (from gh_group)
                 ["group_create"] = new ActionInfo
@@ -194,7 +213,8 @@ namespace Cordyceps.Tools.Unified
                     Description = "Create a visual group",
                     Required = new[] { "name" },
                     Optional = new[] { "ids", "color" },
-                    Example = "action='group_create', name='Inputs', ids='[\"a\",\"b\"]', color='#FF6B6B'"
+                    Example = "action='group_create', name='Inputs', ids='[\"a\",\"b\"]', color='#FF6B6B'",
+                    Tips = new[] { "Malformed 'ids' JSON is rejected with an error — no group is created" }
                 },
                 ["group_delete"] = new ActionInfo
                 {
@@ -209,7 +229,8 @@ namespace Cordyceps.Tools.Unified
                     Description = "Add components to a group",
                     Required = new[] { "ids" },
                     Optional = new[] { "id", "name", "color" },
-                    Example = "action='group_add', ids='[\"a\",\"b\"]', name='MyGroup'"
+                    Example = "action='group_add', ids='[\"a\",\"b\"]', name='MyGroup'",
+                    Tips = new[] { "If 'id' is provided it must resolve to an existing group (error otherwise); omit 'id' to create a new group" }
                 },
                 ["group_remove"] = new ActionInfo
                 {
@@ -258,6 +279,23 @@ namespace Cordyceps.Tools.Unified
                         "count: target number for 'set_count'",
                         "index: specific position for 'add'/'remove'"
                     }
+                },
+                ["modifier"] = new ActionInfo
+                {
+                    Name = "modifier",
+                    Description = "Read or set a parameter's data modifiers (flatten/graft, simplify, reverse)",
+                    Required = new[] { "id" },
+                    Optional = new[] { "side", "param", "mapping", "simplify", "reverse" },
+                    Example = "action='modifier', id='abc', side='input', param='P', mapping='graft'",
+                    Tips = new[] {
+                        "Omit mapping/simplify/reverse to READ the current state; each one you pass is applied, the rest are left unchanged",
+                        "mapping: 'none', 'flatten', or 'graft' (Grasshopper's DataMapping)",
+                        "simplify/reverse: true or false",
+                        "param: name or 0-based index of the port; not needed for a free-floating parameter",
+                        "side: 'input' or 'output' (default: 'input')",
+                        "Clear everything with mapping='none', simplify=false, reverse=false",
+                        "action='info' reports the same modifiers for every param of a component"
+                    }
                 }
             },
             Notes = new[]
@@ -274,10 +312,10 @@ namespace Cordyceps.Tools.Unified
             _context = context;
         }
 
-        [McpServerTool, Description("Component operations. Actions: add|delete|move|rename|find|search|list|info|bounds|validate|constant|bake|zoom|view|get|set|config|preview|enable|group_create|group_delete|group_add|group_remove|group_list|group_rename|group_color|group_move|zoomable|help")]
+        [McpServerTool, Description("Component operations. Actions: add|delete|move|rename|find|search|list|info|bounds|validate|constant|bake|zoom|view|get|set|config|preview|enable|group_create|group_delete|group_add|group_remove|group_list|group_rename|group_color|group_move|zoomable|modifier|help")]
         public string GhCanvas(
             [Description("Action to perform")] string action,
-            [Description("Component type for 'add', or search query for 'search'")] string type = null,
+            [Description("Component type for 'add', search query for 'search', or type filter for 'list'")] string type = null,
             [Description("X position")] double x = double.NaN,
             [Description("Y position")] double y = double.NaN,
             [Description("Component GUID")] string id = null,
@@ -311,7 +349,12 @@ namespace Cordyceps.Tools.Unified
             [Description("Parameter side: 'input' or 'output'")] string side = null,
             [Description("Operation: 'add', 'remove', 'set_count'")] string operation = null,
             [Description("Target count for set_count")] int count = -1,
-            [Description("Index for add/remove")] int index = -1)
+            [Description("Index for add/remove")] int index = -1,
+            // Data modifier params
+            [Description("Parameter name or 0-based index for 'modifier'")] string param = null,
+            [Description("Data mapping for 'modifier': 'none', 'flatten', or 'graft'")] string mapping = null,
+            [Description("Simplify state for 'modifier': true or false")] string simplify = null,
+            [Description("Reverse state for 'modifier': true or false")] string reverse = null)
         {
             // Handle help action
             if (string.Equals(action, "help", StringComparison.OrdinalIgnoreCase))
@@ -355,16 +398,37 @@ namespace Cordyceps.Tools.Unified
                 ("side", side),
                 ("operation", operation),
                 ("count", count >= 0 ? (object)count : null),
-                ("index", index >= 0 ? (object)index : null)
+                ("index", index >= 0 ? (object)index : null),
+                // Data modifier params
+                ("param", param),
+                ("mapping", mapping),
+                ("simplify", simplify),
+                ("reverse", reverse)
             );
+
+            // 'type' doubles as the search query (documented on the param), so let a provided
+            // 'type' satisfy the 'search' action's required 'query' — keeping the query??type
+            // fallback in the dispatch reachable.
+            if (string.Equals(action, "search", StringComparison.OrdinalIgnoreCase)
+                && !providedParams.ContainsKey("query") && type != null)
+            {
+                providedParams["query"] = type;
+            }
 
             // Validate action and required params
             var validationError = UnifiedToolHelpers.ValidateAction(ToolInfo, action, providedParams);
             if (validationError != null)
                 return validationError;
 
-            // Parse enabled - default to true if not specified (for preview/enable actions)
-            bool enabledBool = string.IsNullOrEmpty(enabled) || ToolHelpers.ParseBool(enabled, true);
+            // Parse enabled strictly for preview/enable ('enabled' is required for both):
+            // an unrecognized string must be a validation error, not silently coerced to true.
+            bool enabledBool = true;
+            if (string.Equals(action, "preview", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(action, "enable", StringComparison.OrdinalIgnoreCase))
+            {
+                if (!ToolHelpers.TryParseBool(enabled, out enabledBool))
+                    return ToolHelpers.ErrorResponse($"Invalid 'enabled' value: '{enabled}'. Use true/false, 1/0, or yes/no.");
+            }
 
             // Dispatch to action handler
             return action.ToLowerInvariant() switch
@@ -375,7 +439,7 @@ namespace Cordyceps.Tools.Unified
                 "rename" => ActionRename(id, nickname),
                 "find" => ActionFind(nickname, exact),
                 "search" => ActionSearch(query ?? type, category, limit),
-                "list" => ActionList(category, typeFilter, group),
+                "list" => ActionList(category, typeFilter ?? type, group),
                 "info" => ActionInfo(id),
                 "bounds" => ActionBounds(id),
                 "validate" => ActionValidate(),
@@ -399,6 +463,7 @@ namespace Cordyceps.Tools.Unified
                 "group_color" => ActionGroupColor(id, color),
                 "group_move" => ActionGroupMove(id, dx, dy),
                 "zoomable" => ActionZoomable(id, side, operation, count, index),
+                "modifier" => ActionModifier(id, side, param, mapping, simplify, reverse),
                 _ => JsonConvert.SerializeObject(new { success = false, error = $"Unknown action: {action}" })
             };
         }
@@ -450,6 +515,19 @@ namespace Cordyceps.Tools.Unified
                         component.NickName = nickname;
 
                     component.Attributes.Pivot = new PointF((float)x, (float)y);
+
+                    // Validate slider configuration BEFORE adding to the document so an
+                    // unparseable value never leaves a half-configured slider on the canvas.
+                    // Parity with action='config': an invalid value is an explicit error,
+                    // never a silent success with the value ignored.
+                    SliderConfigPlan sliderPlan = null;
+                    if (component is GH_NumberSlider)
+                    {
+                        sliderPlan = SliderConfig.Plan(min, max, value, decimals);
+                        if (sliderPlan.ValueInvalid)
+                            return ToolHelpers.ErrorResponse($"Invalid number: {value}");
+                    }
+
                     doc.AddObject(component, false);
 
                     // Apply slider configuration when the caller passed min/max/value/decimals on add.
@@ -457,7 +535,7 @@ namespace Cordyceps.Tools.Unified
                     // with the 'config' action so add and config configure a slider identically.
                     if (component is GH_NumberSlider addedSlider)
                     {
-                        var plan = SliderConfig.Plan(min, max, value, decimals);
+                        var plan = sliderPlan;
                         if (plan.SetMinimum) addedSlider.Slider.Minimum = plan.Minimum;
                         if (plan.SetMaximum) addedSlider.Slider.Maximum = plan.Maximum;
                         if (plan.SetDecimals) addedSlider.Slider.DecimalPlaces = plan.Decimals;
@@ -543,7 +621,11 @@ namespace Cordyceps.Tools.Unified
                 var deletedIds = new List<string>();
                 int succeeded = 0, failed = 0;
 
-                IGH_DocumentObject lastDeleted = null;
+                // Recipients must be captured BEFORE RemoveObject severs the wires — expiring the
+                // deleted object afterwards reaches nothing. Collect every deleted object's former
+                // recipients (top-level owners) and expire the survivors once all deletions are done.
+                var deletedGuids = new HashSet<Guid>();
+                var formerRecipients = new Dictionary<Guid, IGH_DocumentObject>();
                 foreach (var compId in idList)
                 {
                     if (!ToolHelpers.TryGetUnprotectedComponent(_context, compId, out var component, out var compError))
@@ -555,9 +637,22 @@ namespace Cordyceps.Tools.Unified
 
                     try
                     {
+                        IEnumerable<IGH_Param> outputs = component is IGH_Component comp
+                            ? comp.Params.Output
+                            : component is IGH_Param param ? new[] { param } : Enumerable.Empty<IGH_Param>();
+                        foreach (var output in outputs)
+                        {
+                            foreach (var recipient in output.Recipients)
+                            {
+                                var recObj = recipient.Attributes?.GetTopLevel?.DocObject;
+                                if (recObj != null)
+                                    formerRecipients[recObj.InstanceGuid] = recObj;
+                            }
+                        }
+
                         var ownerDoc = ToolHelpers.GetOwnerDocument(component, doc);
                         ownerDoc.RemoveObject(component, true);
-                        lastDeleted = component;
+                        deletedGuids.Add(component.InstanceGuid);
                         deletedIds.Add(compId);
                         results.Add(new { id = compId, success = true });
                         succeeded++;
@@ -569,8 +664,12 @@ namespace Cordyceps.Tools.Unified
                     }
                 }
 
-                if (succeeded > 0 && lastDeleted is IGH_ActiveObject activeDel)
-                    activeDel.ExpireSolution(false);
+                foreach (var kvp in formerRecipients)
+                {
+                    if (deletedGuids.Contains(kvp.Key)) continue;
+                    if (kvp.Value is IGH_ActiveObject activeRec)
+                        activeRec.ExpireSolution(false);
+                }
 
                 if (idList.Count == 1)
                 {
@@ -913,7 +1012,7 @@ namespace Cordyceps.Tools.Unified
 
         private string ActionBake(string id, string layer, string name)
         {
-            return _context.ExecuteOnUiThread(() =>
+            return _context.ExecuteOnUiThread(() => ToolHelpers.WithUndoRecord(Rhino.RhinoDoc.ActiveDoc, "bake", () =>
             {
                 if (!ToolHelpers.TryGetUnprotectedComponent(_context, id, out var component, out var error))
                     return ToolHelpers.ErrorResponse(error);
@@ -996,7 +1095,7 @@ namespace Cordyceps.Tools.Unified
                     layer = layer ?? "Default",
                     objectIds = bakedIds
                 });
-            });
+            }));
         }
 
         private string ActionZoom(string id, int padding)

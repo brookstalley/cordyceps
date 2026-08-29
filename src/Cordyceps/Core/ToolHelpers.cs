@@ -121,7 +121,8 @@ namespace Cordyceps.Core
         #region GUID Parsing
 
         /// <summary>
-        /// Try to parse a string as a GUID.
+        /// Try to parse a string as a GUID. Forwards to <see cref="ParseHelpers.TryParseGuid"/>
+        /// (host-free, unit-tested there).
         /// </summary>
         /// <param name="id">The string to parse</param>
         /// <param name="guid">Output: the parsed GUID if successful</param>
@@ -129,20 +130,7 @@ namespace Cordyceps.Core
         /// <returns>True if parsing succeeded, false otherwise</returns>
         public static bool TryParseGuid(string id, out Guid guid, out string error)
         {
-            if (string.IsNullOrEmpty(id))
-            {
-                guid = Guid.Empty;
-                error = "Component ID is required";
-                return false;
-            }
-
-            if (!Guid.TryParse(id, out guid))
-            {
-                error = "Invalid component ID format";
-                return false;
-            }
-            error = null;
-            return true;
+            return ParseHelpers.TryParseGuid(id, out guid, out error);
         }
 
         #endregion
@@ -483,6 +471,8 @@ namespace Cordyceps.Core
 
         #region JSON Response Helpers
 
+        // Forwarders to ResponseHelpers (host-free, unit-tested there).
+
         /// <summary>
         /// Create a success JSON response with optional data.
         /// </summary>
@@ -490,7 +480,7 @@ namespace Cordyceps.Core
         /// <returns>JSON string</returns>
         public static string SuccessResponse(object data)
         {
-            return JsonConvert.SerializeObject(data);
+            return ResponseHelpers.SuccessResponse(data);
         }
 
         /// <summary>
@@ -500,7 +490,7 @@ namespace Cordyceps.Core
         /// <returns>JSON string with success=false and error message</returns>
         public static string ErrorResponse(string message)
         {
-            return JsonConvert.SerializeObject(new { success = false, error = message });
+            return ResponseHelpers.ErrorResponse(message);
         }
 
         /// <summary>
@@ -508,7 +498,41 @@ namespace Cordyceps.Core
         /// </summary>
         public static string SimpleSuccess()
         {
-            return JsonConvert.SerializeObject(new { success = true });
+            return ResponseHelpers.SimpleSuccess();
+        }
+
+        #endregion
+
+        #region Undo Records
+
+        /// <summary>
+        /// Run a mutating Rhino action inside one named undo record so a single Ctrl-Z reverts
+        /// the whole action instead of one internal step (RSC-6K1W — e.g. a bulk set_layer of
+        /// fifty objects previously left fifty undo steps). Must be called on the UI thread
+        /// (inside ExecuteOnUiThread), alongside the document mutation it brackets.
+        ///
+        /// Verified RhinoCommon semantics (api-notes-rhinocommon.md): BeginUndoRecord returns 0
+        /// when a record is already active (nesting, or recording disabled) — EndUndoRecord is
+        /// skipped in that case, so nested wrappers and native commands' own records stay safe.
+        /// </summary>
+        /// <param name="doc">The document being mutated; null runs the body unwrapped
+        /// (the body reports its own no-document error).</param>
+        /// <param name="actionName">Tool action name; the undo record appears in Rhino's undo
+        /// stack as "Cordyceps &lt;actionName&gt;".</param>
+        /// <param name="body">The action body to bracket.</param>
+        public static string WithUndoRecord(Rhino.RhinoDoc doc, string actionName, Func<string> body)
+        {
+            if (doc == null) return body();
+
+            uint serial = doc.BeginUndoRecord($"Cordyceps {actionName}");
+            try
+            {
+                return body();
+            }
+            finally
+            {
+                if (serial != 0) doc.EndUndoRecord(serial);
+            }
         }
 
         #endregion
@@ -591,7 +615,8 @@ namespace Cordyceps.Core
                         nickname = param.NickName,
                         type = param.TypeName,
                         sourceCount = param.SourceCount,
-                        optional = param.Optional
+                        optional = param.Optional,
+                        modifiers = BuildModifierInfo(param)
                     });
                 }
                 else
@@ -601,11 +626,60 @@ namespace Cordyceps.Core
                         name = param.Name,
                         nickname = param.NickName,
                         type = param.TypeName,
-                        recipientCount = param.Recipients.Count
+                        recipientCount = param.Recipients.Count,
+                        modifiers = BuildModifierInfo(param)
                     });
                 }
             }
             return result;
+        }
+
+        /// <summary>
+        /// Report a parameter's data modifiers — the Flatten/Graft/Simplify/Reverse options
+        /// Grasshopper puts on a port's right-click menu. Without this, a document round-tripped
+        /// through the API silently loses them and a caller cannot even detect that a Graft exists.
+        /// </summary>
+        /// <remarks>
+        /// Emits the same lowercase mapping names <c>gh_canvas(action='modifier')</c> accepts, so
+        /// a reported state feeds straight back in as an argument.
+        /// </remarks>
+        public static object BuildModifierInfo(IGH_Param param)
+        {
+            return new
+            {
+                mapping = DataModifiers.MappingName(ToMappingChoice(param.DataMapping)),
+                simplify = param.Simplify,
+                reverse = param.Reverse
+            };
+        }
+
+        /// <summary>
+        /// Bridge Grasshopper's <see cref="GH_DataMapping"/> to the host-free
+        /// <see cref="DataMappingChoice"/>. Mapped by name rather than cast, so the host-free
+        /// enum never becomes silently coupled to Grasshopper's member ordering.
+        /// </summary>
+        public static DataMappingChoice ToMappingChoice(GH_DataMapping mapping)
+        {
+            switch (mapping)
+            {
+                case GH_DataMapping.Flatten: return DataMappingChoice.Flatten;
+                case GH_DataMapping.Graft: return DataMappingChoice.Graft;
+                default: return DataMappingChoice.None;
+            }
+        }
+
+        /// <summary>
+        /// Bridge the host-free <see cref="DataMappingChoice"/> back to Grasshopper's
+        /// <see cref="GH_DataMapping"/>.
+        /// </summary>
+        public static GH_DataMapping ToGhDataMapping(DataMappingChoice choice)
+        {
+            switch (choice)
+            {
+                case DataMappingChoice.Flatten: return GH_DataMapping.Flatten;
+                case DataMappingChoice.Graft: return GH_DataMapping.Graft;
+                default: return GH_DataMapping.None;
+            }
         }
 
         /// <summary>
@@ -698,6 +772,7 @@ namespace Cordyceps.Core
                 info["sourceCount"] = param.SourceCount;
                 info["recipientCount"] = param.Recipients.Count;
                 info["dataCount"] = param.VolatileDataCount;
+                info["modifiers"] = BuildModifierInfo(param);
             }
 
             return info;
@@ -742,6 +817,8 @@ namespace Cordyceps.Core
 
         #region JSON Deserialization Helpers
 
+        // Forwarders to ParseHelpers (host-free, unit-tested there).
+
         /// <summary>
         /// Try to deserialize a JSON string to a list with null checking.
         /// </summary>
@@ -749,33 +826,10 @@ namespace Cordyceps.Core
         /// <param name="json">JSON string to parse</param>
         /// <param name="result">Output: the parsed list if successful</param>
         /// <param name="error">Output: error message if failed</param>
-        /// <returns>True if deserialization succeeded and result is not null/empty, false otherwise</returns>
+        /// <returns>True if deserialization succeeded and result is not null, false otherwise</returns>
         public static bool TryDeserializeList<T>(string json, out List<T> result, out string error)
         {
-            result = null;
-            error = null;
-
-            if (string.IsNullOrEmpty(json))
-            {
-                error = "JSON input is required";
-                return false;
-            }
-
-            try
-            {
-                result = JsonConvert.DeserializeObject<List<T>>(json);
-                if (result == null)
-                {
-                    error = "Failed to parse JSON array";
-                    return false;
-                }
-                return true;
-            }
-            catch (JsonException ex)
-            {
-                error = $"Invalid JSON format: {ex.Message}";
-                return false;
-            }
+            return ParseHelpers.TryDeserializeList(json, out result, out error);
         }
 
         /// <summary>
@@ -788,30 +842,7 @@ namespace Cordyceps.Core
         /// <returns>True if deserialization succeeded and result is not null, false otherwise</returns>
         public static bool TryDeserializeArray<T>(string json, out T[] result, out string error)
         {
-            result = null;
-            error = null;
-
-            if (string.IsNullOrEmpty(json))
-            {
-                error = "JSON input is required";
-                return false;
-            }
-
-            try
-            {
-                result = JsonConvert.DeserializeObject<T[]>(json);
-                if (result == null)
-                {
-                    error = "Failed to parse JSON array";
-                    return false;
-                }
-                return true;
-            }
-            catch (JsonException ex)
-            {
-                error = $"Invalid JSON format: {ex.Message}";
-                return false;
-            }
+            return ParseHelpers.TryDeserializeArray(json, out result, out error);
         }
 
         /// <summary>
@@ -823,24 +854,7 @@ namespace Cordyceps.Core
         /// <returns>True if all GUIDs parsed successfully, false otherwise</returns>
         public static bool TryParseGuidArray(string json, out List<Guid> guids, out string error)
         {
-            guids = null;
-
-            if (!TryDeserializeArray<string>(json, out var idStrings, out error))
-                return false;
-
-            guids = new List<Guid>(idStrings.Length);
-            foreach (var idStr in idStrings)
-            {
-                if (!Guid.TryParse(idStr, out var guid))
-                {
-                    error = $"Invalid GUID in array: {idStr}";
-                    guids = null;
-                    return false;
-                }
-                guids.Add(guid);
-            }
-
-            return true;
+            return ParseHelpers.TryParseGuidArray(json, out guids, out error);
         }
 
         #endregion
@@ -869,12 +883,15 @@ namespace Cordyceps.Core
 
         #region Color Utilities
 
+        // ColorToHex(Color), TryParseColor, ParseBool, and TryParseBool forward to
+        // ParseHelpers (host-free, unit-tested there).
+
         /// <summary>
         /// Convert a System.Drawing.Color to hex string (#RRGGBB format).
         /// </summary>
         public static string ColorToHex(Color color)
         {
-            return $"#{color.R:X2}{color.G:X2}{color.B:X2}";
+            return ParseHelpers.ColorToHex(color);
         }
 
         /// <summary>
@@ -893,66 +910,7 @@ namespace Cordyceps.Core
         /// <returns>True if parsing succeeded, false otherwise</returns>
         public static bool TryParseColor(string colorStr, out Color color)
         {
-            color = Color.Black;
-
-            if (string.IsNullOrEmpty(colorStr))
-                return false;
-
-            // Try hex format: #RRGGBB or RRGGBB
-            var hexStr = colorStr;
-            if (hexStr.StartsWith("#"))
-                hexStr = hexStr.Substring(1);
-
-            if (hexStr.Length == 6)
-            {
-                try
-                {
-                    int r = Convert.ToInt32(hexStr.Substring(0, 2), 16);
-                    int g = Convert.ToInt32(hexStr.Substring(2, 2), 16);
-                    int b = Convert.ToInt32(hexStr.Substring(4, 2), 16);
-                    color = Color.FromArgb(r, g, b);
-                    return true;
-                }
-                catch (FormatException)
-                {
-                    // Not valid hex digits; fall through to try RGB / named formats.
-                }
-            }
-
-            // Try RGB format: R,G,B
-            var parts = colorStr.Split(',');
-            if (parts.Length == 3)
-            {
-                if (int.TryParse(parts[0].Trim(), out int r) &&
-                    int.TryParse(parts[1].Trim(), out int g) &&
-                    int.TryParse(parts[2].Trim(), out int b))
-                {
-                    r = Math.Max(0, Math.Min(255, r));
-                    g = Math.Max(0, Math.Min(255, g));
-                    b = Math.Max(0, Math.Min(255, b));
-                    color = Color.FromArgb(r, g, b);
-                    return true;
-                }
-            }
-
-            // Try named color format (Red, Blue, Green, etc.)
-            try
-            {
-                var namedColor = Color.FromName(colorStr);
-                // Color.FromName returns a color with A=0,R=0,G=0,B=0 if the name is not recognized
-                // IsKnownColor will be true for valid named colors
-                if (namedColor.IsKnownColor)
-                {
-                    color = namedColor;
-                    return true;
-                }
-            }
-            catch (Exception ex)
-            {
-                DebugLog.Debug($"TryParseColor: named-color lookup for '{colorStr}' threw: {ex.Message}");
-            }
-
-            return false;
+            return ParseHelpers.TryParseColor(colorStr, out color);
         }
 
         /// <summary>
@@ -964,36 +922,40 @@ namespace Cordyceps.Core
         /// <returns>Parsed boolean or default value</returns>
         public static bool ParseBool(string value, bool defaultValue = false)
         {
-            if (string.IsNullOrEmpty(value))
-                return defaultValue;
+            return ParseHelpers.ParseBool(value, defaultValue);
+        }
 
-            if (bool.TryParse(value, out bool result))
-                return result;
-
-            // Also accept "1"/"0"
-            if (value == "1") return true;
-            if (value == "0") return false;
-
-            return defaultValue;
+        /// <summary>
+        /// Strictly parse a boolean string. Accepts true/false, 1/0, yes/no (case-insensitive,
+        /// trimmed); anything else fails. Use this where an unrecognized value must surface as a
+        /// validation error; use <see cref="ParseBool"/> where a default is genuinely wanted.
+        /// </summary>
+        /// <param name="value">String value to parse</param>
+        /// <param name="result">Output: parsed boolean if successful</param>
+        /// <returns>True if the value was recognized, false otherwise</returns>
+        public static bool TryParseBool(string value, out bool result)
+        {
+            return ParseHelpers.TryParseBool(value, out result);
         }
 
         /// <summary>
         /// Try to parse a Point3d from a comma-separated string "x,y,z".
+        /// Thin Rhino-typed wrapper over <see cref="ParseHelpers.TryParseXyz"/> (host-free,
+        /// unit-tested there), which parses components with the invariant culture ('.' decimal
+        /// separator) so the wire format is stable regardless of the host machine's locale —
+        /// current-culture parsing on comma-decimal locales would mis-split "10.5,0,3.2"
+        /// catastrophically.
         /// </summary>
         /// <param name="value">String in "x,y,z" format</param>
         /// <param name="result">Output: parsed Point3d if successful</param>
         /// <returns>True if parsing succeeded, false otherwise</returns>
         public static bool TryParsePoint3d(string value, out Rhino.Geometry.Point3d result)
         {
-            result = Rhino.Geometry.Point3d.Unset;
-            if (string.IsNullOrEmpty(value)) return false;
-
-            var parts = value.Split(',');
-            if (parts.Length != 3) return false;
-
-            if (!double.TryParse(parts[0].Trim(), out var x)) return false;
-            if (!double.TryParse(parts[1].Trim(), out var y)) return false;
-            if (!double.TryParse(parts[2].Trim(), out var z)) return false;
+            if (!ParseHelpers.TryParseXyz(value, out var x, out var y, out var z))
+            {
+                result = Rhino.Geometry.Point3d.Unset;
+                return false;
+            }
 
             result = new Rhino.Geometry.Point3d(x, y, z);
             return true;

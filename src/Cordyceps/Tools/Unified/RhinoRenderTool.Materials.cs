@@ -86,7 +86,7 @@ namespace Cordyceps.Tools.Unified
 
         private string ActionMaterialTexture(string name, string slot, string path, string repeat, double amount)
         {
-            return _context.ExecuteOnUiThread(() =>
+            return _context.ExecuteOnUiThread(() => ToolHelpers.WithUndoRecord(RhinoDoc.ActiveDoc, "material_texture", () =>
             {
                 var rhinoDoc = RhinoDoc.ActiveDoc;
                 if (rhinoDoc == null)
@@ -195,7 +195,7 @@ namespace Cordyceps.Tools.Unified
                     catch (Exception endEx) { DebugLog.Debug($"EndChange during texture-error cleanup failed: {endEx.Message}"); }
                     return ToolHelpers.ErrorResponse($"Failed to set texture: {ex.Message}");
                 }
-            });
+            }));
         }
 
         private string ActionMaterialLibrary()
@@ -237,7 +237,7 @@ namespace Cordyceps.Tools.Unified
 
         private string ActionMaterialInstantiate(string type, string name, string color)
         {
-            return _context.ExecuteOnUiThread(() =>
+            return _context.ExecuteOnUiThread(() => ToolHelpers.WithUndoRecord(RhinoDoc.ActiveDoc, "material_instantiate", () =>
             {
                 var rhinoDoc = RhinoDoc.ActiveDoc;
                 if (rhinoDoc == null)
@@ -332,12 +332,12 @@ namespace Cordyceps.Tools.Unified
                 {
                     return ToolHelpers.ErrorResponse($"Failed to instantiate material: {ex.Message}");
                 }
-            });
+            }));
         }
 
         private string ActionMaterialCreate(string name, string color, double roughness, double metallic, double transparency, string emission, double ior)
         {
-            return _context.ExecuteOnUiThread(() =>
+            return _context.ExecuteOnUiThread(() => ToolHelpers.WithUndoRecord(RhinoDoc.ActiveDoc, "material_create", () =>
             {
                 var rhinoDoc = RhinoDoc.ActiveDoc;
                 if (rhinoDoc == null)
@@ -374,11 +374,26 @@ namespace Cordyceps.Tools.Unified
                     IndexOfRefraction = ior
                 };
 
-                var renderMaterial = RenderMaterial.CreateBasicMaterial(basicMaterial, rhinoDoc);
-
+                // Set the PBR parameters on the Rhino.DocObjects.Material BEFORE creating the
+                // document RenderMaterial. The previous approach called
+                // RenderMaterial.ConvertToPhysicallyBased(), which returns a DETACHED converted
+                // copy — setting PBR values on it never reached the material added to the doc,
+                // so roughness/metallic/emission/opacity were silently discarded.
+                var notApplied = new List<string>();
+                // Which PBR params did the caller actually provide? (Detected as differs-from-
+                // default: roughness=0.5, metallic=0, transparency=0 -> opacity, ior=1.0,
+                // emission non-empty.) Fallback paths report only these in notApplied instead of
+                // unconditionally listing every PBR param the caller may never have passed.
+                var providedPbrParams = new List<string>();
+                if (roughness != 0.5) providedPbrParams.Add("roughness");
+                if (metallic != 0) providedPbrParams.Add("metallic");
+                if (!string.IsNullOrEmpty(emission)) providedPbrParams.Add("emission");
+                if (transparency != 0 || ior != 1.0) providedPbrParams.Add("opacity");
+                RenderMaterial renderMaterial;
                 try
                 {
-                    var pbr = renderMaterial.ConvertToPhysicallyBased(RenderTexture.TextureGeneration.Allow);
+                    basicMaterial.ToPhysicallyBased(); // in-place conversion (RhinoCommon 7.0+)
+                    var pbr = basicMaterial.PhysicallyBased;
                     if (pbr != null)
                     {
                         pbr.BaseColor = Color4f.FromArgb(1, baseColor.R / 255f, baseColor.G / 255f, baseColor.B / 255f);
@@ -387,15 +402,40 @@ namespace Cordyceps.Tools.Unified
                         pbr.Opacity = 1.0 - transparency;
                         pbr.OpacityIOR = ior;
 
-                        if (!string.IsNullOrEmpty(emission) && ToolHelpers.TryParseColor(emission, out var emissionColor))
-                            pbr.Emission = Color4f.FromArgb(1, emissionColor.R / 255f, emissionColor.G / 255f, emissionColor.B / 255f);
+                        if (!string.IsNullOrEmpty(emission))
+                        {
+                            if (ToolHelpers.TryParseColor(emission, out var emissionColor))
+                                pbr.Emission = Color4f.FromArgb(1, emissionColor.R / 255f, emissionColor.G / 255f, emissionColor.B / 255f);
+                            else
+                                notApplied.Add($"emission (invalid color: '{emission}')");
+                        }
+
+                        pbr.SynchronizeLegacyMaterial();
                     }
+                    else
+                    {
+                        notApplied.AddRange(providedPbrParams);
+                        DebugLog.Warn("material_create: PhysicallyBased accessor unavailable after ToPhysicallyBased(); PBR params not applied");
+                    }
+
+                    // FromMaterial creates a Physically Based render material when
+                    // material.IsPhysicallyBased is true, carrying the PBR values into the doc.
+                    renderMaterial = RenderMaterial.FromMaterial(basicMaterial, rhinoDoc);
                 }
                 catch (Exception ex)
                 {
-                    DebugLog.Debug($"PBR conversion failed (using basic material): {ex.Message}");
+                    DebugLog.Warn($"material_create: PBR conversion failed, falling back to basic material: {ex.Message}");
+                    notApplied.Clear(); // the emission entry may already be there; rebuild from provided params only
+                    notApplied.AddRange(providedPbrParams);
+                    renderMaterial = null;
                 }
 
+                if (renderMaterial == null)
+                    renderMaterial = RenderMaterial.CreateBasicMaterial(basicMaterial, rhinoDoc);
+                if (renderMaterial == null)
+                    return ToolHelpers.ErrorResponse($"Failed to create render material '{name}'");
+
+                renderMaterial.Name = name;
                 rhinoDoc.RenderMaterials.Add(renderMaterial);
 
                 return JsonConvert.SerializeObject(new
@@ -408,14 +448,18 @@ namespace Cordyceps.Tools.Unified
                     roughness,
                     metallic,
                     transparency,
-                    ior
+                    ior,
+                    notApplied = notApplied.Count > 0 ? notApplied : null,
+                    note = notApplied.Count > 0
+                        ? "Some PBR parameters could not be applied through the SDK; the listed values were dropped."
+                        : null
                 });
-            });
+            }));
         }
 
         private string ActionMaterialApply(string objectIds, string material)
         {
-            return _context.ExecuteOnUiThread(() =>
+            return _context.ExecuteOnUiThread(() => ToolHelpers.WithUndoRecord(RhinoDoc.ActiveDoc, "material_apply", () =>
             {
                 var rhinoDoc = RhinoDoc.ActiveDoc;
                 if (rhinoDoc == null)
@@ -430,9 +474,12 @@ namespace Cordyceps.Tools.Unified
                 int materialIndex = -1;
                 if (renderMaterial == null)
                 {
-                    if (int.TryParse(material, out var idx) && idx >= 0 && idx < rhinoDoc.Materials.Count)
+                    // Legacy materials: resolve by name first (same lookup material_delete
+                    // uses), then fall back to a numeric-index string.
+                    materialIndex = rhinoDoc.Materials.Find(material, true);
+                    if (materialIndex < 0 && int.TryParse(material, out var idx) && idx >= 0 && idx < rhinoDoc.Materials.Count)
                         materialIndex = idx;
-                    else
+                    if (materialIndex < 0)
                         return ToolHelpers.ErrorResponse($"Material '{material}' not found");
                 }
 
@@ -467,12 +514,12 @@ namespace Cordyceps.Tools.Unified
                     failed,
                     material = renderMaterial?.Name ?? material
                 });
-            });
+            }));
         }
 
         private string ActionMaterialDelete(string name)
         {
-            return _context.ExecuteOnUiThread(() =>
+            return _context.ExecuteOnUiThread(() => ToolHelpers.WithUndoRecord(RhinoDoc.ActiveDoc, "material_delete", () =>
             {
                 var rhinoDoc = RhinoDoc.ActiveDoc;
                 if (rhinoDoc == null)
@@ -484,18 +531,22 @@ namespace Cordyceps.Tools.Unified
                 if (renderMaterial != null)
                 {
                     var deleted = rhinoDoc.RenderMaterials.Remove(renderMaterial);
-                    return JsonConvert.SerializeObject(new { success = deleted, name, deleted });
+                    if (!deleted)
+                        return ToolHelpers.ErrorResponse($"Failed to delete material '{name}' — it may be in use by objects or layers; unassign it first");
+                    return JsonConvert.SerializeObject(new { success = true, name, deleted = true });
                 }
 
                 var materialIndex = rhinoDoc.Materials.Find(name, true);
                 if (materialIndex >= 0)
                 {
                     var deleted = rhinoDoc.Materials.DeleteAt(materialIndex);
-                    return JsonConvert.SerializeObject(new { success = deleted, name, deleted });
+                    if (!deleted)
+                        return ToolHelpers.ErrorResponse($"Failed to delete legacy material '{name}' — it may be in use by objects or layers; unassign it first");
+                    return JsonConvert.SerializeObject(new { success = true, name, deleted = true });
                 }
 
                 return ToolHelpers.ErrorResponse($"Material '{name}' not found");
-            });
+            }));
         }
 
         #endregion
@@ -566,7 +617,7 @@ namespace Cordyceps.Tools.Unified
 
         private string ActionEnvSet(string environment, string usage)
         {
-            return _context.ExecuteOnUiThread(() =>
+            return _context.ExecuteOnUiThread(() => ToolHelpers.WithUndoRecord(RhinoDoc.ActiveDoc, "env_set", () =>
             {
                 var rhinoDoc = RhinoDoc.ActiveDoc;
                 if (rhinoDoc == null)
@@ -629,12 +680,12 @@ namespace Cordyceps.Tools.Unified
                     environmentId = targetEnv.Id.ToString(),
                     modified
                 });
-            });
+            }));
         }
 
         private string ActionEnvCreate(string name, string color)
         {
-            return _context.ExecuteOnUiThread(() =>
+            return _context.ExecuteOnUiThread(() => ToolHelpers.WithUndoRecord(RhinoDoc.ActiveDoc, "env_create", () =>
             {
                 var rhinoDoc = RhinoDoc.ActiveDoc;
                 if (rhinoDoc == null)
@@ -675,12 +726,12 @@ namespace Cordyceps.Tools.Unified
                     name = renderEnv.Name,
                     color = ToolHelpers.ColorToHex(bgColor)
                 });
-            });
+            }));
         }
 
         private string ActionEnvDelete(string name)
         {
-            return _context.ExecuteOnUiThread(() =>
+            return _context.ExecuteOnUiThread(() => ToolHelpers.WithUndoRecord(RhinoDoc.ActiveDoc, "env_delete", () =>
             {
                 var rhinoDoc = RhinoDoc.ActiveDoc;
                 if (rhinoDoc == null)
@@ -694,9 +745,11 @@ namespace Cordyceps.Tools.Unified
 
                 var envId = env.Id.ToString();
                 var deleted = rhinoDoc.RenderEnvironments.Remove(env);
+                if (!deleted)
+                    return ToolHelpers.ErrorResponse($"Failed to delete environment '{name}' — it may be in use (e.g. assigned as background, skylight, or reflection environment)");
 
-                return JsonConvert.SerializeObject(new { success = deleted, name, id = envId, deleted });
-            });
+                return JsonConvert.SerializeObject(new { success = true, name, id = envId, deleted = true });
+            }));
         }
 
         #endregion

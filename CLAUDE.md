@@ -12,7 +12,7 @@ Cordyceps is a Grasshopper plugin that exposes Grasshopper and Rhino functionali
 # Build the plugin (Release configuration required)
 dotnet build src/Cordyceps/Cordyceps.csproj -c Release
 
-# The built .gha file is automatically copied to releases/
+# The built .gha file is automatically copied to releases/ (gitignored - a build output)
 ```
 
 The project targets .NET 8.0 and outputs a Grasshopper plugin (`.gha` file). Debug builds are blocked—always use `-c Release`.
@@ -54,11 +54,11 @@ AI agents discover Cordyceps through a layered documentation system. All of thes
 Each tool class is marked with `[McpServerToolType]` and contains a single method marked with `[McpServerTool]`. The method name is converted to snake_case for the MCP tool name (e.g., `GhCanvas` -> `gh_canvas`). Each tool uses an `action` parameter to dispatch to different operations.
 
 **Grasshopper Tools (5):**
-- **GhCanvasTool** (`gh_canvas`) - Components, values, groups: add, delete, move, find, search, list, bake, get/set values, group management, zoomable parameter management
+- **GhCanvasTool** (`gh_canvas`) - Components, values, groups: add, delete, move, find, search, list, bake, get/set values, group management, zoomable parameter management, per-parameter data modifiers (flatten/graft/simplify/reverse)
 - **GhWireTool** (`gh_wire`) - Connect/disconnect components, bulk wiring, validate connections
 - **GhDocumentTool** (`gh_document`) - Save, clear documents; snapshots; solver control; capture canvas/viewport
 - **GhScriptTool** (`gh_script`) - Configure C#/Python script components
-- **GhInspectTool** (`gh_inspect`) - Get component status, trace data flow, retrieve debug output
+- **GhInspectTool** (`gh_inspect`) - Non-blocking connection/liveness probe, component status, trace data flow, retrieve debug output
 
 **Rhino Tools (2):**
 - **RhinoSceneTool** (`rhino_scene`) - Object management, selection, layers (full CRUD), visibility
@@ -116,24 +116,40 @@ After any code change, check each of these and update as needed:
 - Newtonsoft.Json for JSON serialization
 - .NET 8.0
 
-## Publishing
+## Branch model & Publishing
 
-Releases publish to **both** GitHub (`Release vX.Y.Z` commit + tag on `main`, a published
-**GitHub Release** with the `.gha` attached, and the downloadable `releases/Cordyceps.gha`)
-and the **Yak** package manager (how Rhino's Package Manager installs Cordyceps). Both are
-driven by one script — don't run the yak commands by hand.
+This repo uses **gitflow**: **`develop`** is the default/integration branch (features branch off it
+and merge back via `/prawduct:pr`); **`main`** is the release surface and is **strict-protected**
+(no direct pushes; a `develop → main` PR with the `build-test` check is required; no bypass).
+
+Releases publish to **both** GitHub (`Release vX.Y.Z` commit + tag on `main`, and a published
+**GitHub Release** with the `.gha` attached — that asset is the download the README links to) and
+the **Yak** package manager. The `.gha` is a build output and is **not** tracked in git; `publish`
+compiles it from the release commit and attaches it. Because `main` rejects direct pushes,
+`scripts/release.sh` is a **two-step** flow around the release PR (branch protection guards
+branches, not tags, so the publish step pushes only the `vX.Y.Z` tag). Don't run the yak/gh
+commands by hand.
 
 ```bash
-# Add a `## [X.Y.Z]` section to CHANGELOG.md (rename the top [Unreleased] section), then:
-./scripts/release.sh            # auto-increment patch (e.g. 1.4.9 -> 1.4.10)
-./scripts/release.sh 1.4.10     # or set an explicit version
-./scripts/release.sh --dry-run  # preview every step without changing anything
+# Keep notes under a top `## [Unreleased]` in CHANGELOG.md; prep renames it. Then:
+
+# 1) prep — on develop: bump version + CHANGELOG, build .gha, commit, push, open develop->main PR
+git checkout develop && git pull
+./scripts/release.sh prep            # auto-increment patch (e.g. 1.4.12 -> 1.4.13)
+./scripts/release.sh prep 1.4.13     # or an explicit version
+
+# 2) merge the develop->main release PR (merge commit, after build-test passes)
+
+# 3) publish — on main: build/push yak, push the vX.Y.Z tag, create the GitHub Release
+git checkout main && git pull
+./scripts/release.sh publish 1.4.13
+
+# --dry-run previews either step without changing anything.
 ```
 
-The script bumps the version (csproj + `manifest.yml`), builds the `.gha`, builds and
-pushes the yak package, commits/tags/pushes to `main`, and creates the GitHub Release.
-Prerequisites (dotnet, Rhino 8 for the yak CLI, yak login, and the `gh` CLI authenticated)
-and the full step-by-step flow are in
+Prerequisites (dotnet, Rhino 8 for the yak CLI, yak login, `gh` authenticated), the post-release
+Prawduct bookkeeping (tag each shipped change-log entry `release=vX.Y.Z`, then
+`prawduct-hook plan-backfill --apply`), and the full step-by-step flow are in
 [`docs/release-process.md`](docs/release-process.md).
 
 <!-- PRAWDUCT:ANCHOR — static governance pointer managed by the prawduct plugin. Keep it small and version-free: principles, methodology, and the active version live in the plugin and are injected at session start. -->

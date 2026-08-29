@@ -9,7 +9,7 @@
    gh_document(action='solver', enabled=true)
    ```
 
-2. **Name components**: `gh_canvas(action='add', ..., nickname='Radius')` — enables `gh_canvas(action='find', nickname='...')`
+2. **Annotate with labeled groups, not renames**: `gh_canvas(action='group_create', name='Radius controls', ids='[...]')` — the Grasshopper convention. Do NOT rename components while building (`nickname=` on add, or action='rename'): renamed components are hard to find on the canvas. Track components by the `id` returned from `add`; panels and scribbles also work for annotation.
 
 3. **Validate before connecting**: `gh_wire(action='validate', ...)` — failed connections don't error, they just disconnect
 

@@ -75,6 +75,27 @@ public class UnifiedToolHelpersValidateActionTests
         Assert.Null(UnifiedToolHelpers.ValidateAction(SampleTool(), "add", provided));
     }
 
+    [Theory]
+    [InlineData("Add")]
+    [InlineData("ADD")]
+    [InlineData("aDd")]
+    public void MatchesActionCaseInsensitively_LikeDispatch(string action)
+    {
+        // Dispatch lowercases the action, so validation must accept any casing of a known
+        // action — and still enforce its required params.
+        var provided = new Dictionary<string, object> { ["type"] = "Circle" };
+        Assert.Null(UnifiedToolHelpers.ValidateAction(SampleTool(), action, provided));
+    }
+
+    [Fact]
+    public void EnforcesRequiredParams_ForMixedCaseAction()
+    {
+        var result = UnifiedToolHelpers.ValidateAction(SampleTool(), "ADD", new Dictionary<string, object>());
+        var obj = JObject.Parse(result);
+        Assert.False(obj["success"].Value<bool>());
+        Assert.Contains("type", obj["error"].Value<string>());
+    }
+
     [Fact]
     public void ReturnsNull_WhenActionHasNoRequiredParams()
     {
@@ -157,7 +178,7 @@ public class UnifiedToolHelpersGetParamTests
     public void ReturnsDefault_WhenConversionThrows()
     {
         // "abc" -> int goes through Convert.ToInt32, which throws FormatException;
-        // GetParam swallows it (UnifiedToolHelpers.cs:171) and returns the default.
+        // the catch in UnifiedToolHelpers.GetParam swallows it and returns the default.
         var p = new Dictionary<string, object> { ["n"] = "abc" };
         Assert.Equal(-1, UnifiedToolHelpers.GetParam(p, "n", -1));
     }

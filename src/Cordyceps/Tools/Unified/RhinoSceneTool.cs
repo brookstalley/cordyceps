@@ -30,15 +30,25 @@ namespace Cordyceps.Tools.Unified
                     Description = "List objects in scene with optional filtering",
                     Optional = new[] { "type", "layer", "objectName", "selected", "includeHidden", "limit" },
                     Example = "action='objects' OR action='objects', type='brep', layer='Default'",
-                    Tips = new[] { "types: brep, curve, mesh, point, surface, etc.", "limit defaults to 100", "includeHidden defaults to true" }
+                    Tips = new[] {
+                        "types: brep, curve, mesh, point, surface, etc.",
+                        "limit defaults to 100 (clamped to >= 1); truncated=true only when more matches exist beyond the limit",
+                        "includeHidden defaults to true",
+                        "layer matches a full path 'Parent::Child' exactly, otherwise all layers with that short name"
+                    }
                 },
                 ["select"] = new ActionInfo
                 {
                     Name = "select",
-                    Description = "Select objects by ID or filter",
+                    Description = "Select objects by ID or filter (requires ids, type, or layer)",
                     Optional = new[] { "ids", "type", "layer", "add" },
-                    Example = "action='select', ids='[\"abc\"]' OR action='select', layer='Layer01'",
-                    Tips = new[] { "add=true adds to selection, false replaces" }
+                    Example = "action='select', ids='[\"abc\"]' OR action='select', layer='Layer01' OR action='select', type='all'",
+                    Tips = new[] {
+                        "add=true adds to selection, false replaces",
+                        "At least one of ids/type/layer is required; type='all' explicitly selects everything",
+                        "Locked/hidden objects cannot be selected — they are reported in notSelectable; stale ids in notFound",
+                        "layer matches a full path 'Parent::Child' exactly, otherwise all layers with that short name"
+                    }
                 },
                 ["deselect"] = new ActionInfo
                 {
@@ -52,7 +62,10 @@ namespace Cordyceps.Tools.Unified
                     Description = "Move objects to a layer",
                     Required = new[] { "ids", "layer" },
                     Example = "action='set_layer', ids='[\"abc\"]', layer='NewLayer'",
-                    Tips = new[] { "Creates layer if it doesn't exist" }
+                    Tips = new[] {
+                        "Creates the layer (including 'Parent::Child' hierarchies) if it doesn't exist",
+                        "A bare short name matching multiple existing layers is an error listing the candidate full paths"
+                    }
                 },
                 ["set_name"] = new ActionInfo
                 {
@@ -81,7 +94,8 @@ namespace Cordyceps.Tools.Unified
                     Description = "Modify layer properties",
                     Required = new[] { "name" },
                     Optional = new[] { "color", "visible", "locked" },
-                    Example = "action='layer_set', name='MyLayer', visible='false'"
+                    Example = "action='layer_set', name='MyLayer', visible='false'",
+                    Tips = new[] { "name accepts a full path 'Parent::Child'; a bare short name matching multiple layers is an error listing the candidate full paths" }
                 },
                 ["layer_delete"] = new ActionInfo
                 {
@@ -90,7 +104,11 @@ namespace Cordyceps.Tools.Unified
                     Required = new[] { "name" },
                     Optional = new[] { "deleteObjects" },
                     Example = "action='layer_delete', name='MyLayer'",
-                    Tips = new[] { "deleteObjects=true deletes objects, false moves to default layer" }
+                    Tips = new[] {
+                        "deleteObjects=true deletes objects; false moves them to another layer (reported as movedToLayer)",
+                        "Deleting the current layer works: another layer is made current first; deleting the only layer fails without changing anything",
+                        "name accepts a full path 'Parent::Child'; a bare short name matching multiple layers is an error listing the candidate full paths"
+                    }
                 },
                 ["hide"] = new ActionInfo
                 {
@@ -142,8 +160,9 @@ namespace Cordyceps.Tools.Unified
                         "width/height are model units along the plane's X/Y; both must be > 0",
                         "rotation is in-plane about Z in degrees (default 0); placement is flat on world-XY",
                         "layer auto-creates if missing; defaults to the current layer",
-                        "replace=true with a 'name' deletes prior same-named objects on the target layer first (idempotent re-placement); returns 'replaced' count",
-                        "selfIllumination (default true) keeps the picture visible without scene lights"
+                        "replace=true with a 'name' deletes prior same-named objects on the target layer once the new add succeeds (idempotent re-placement); returns 'replaced' count",
+                        "selfIllumination (default true) keeps the picture visible without scene lights",
+                        "If layer/name attributes can't be applied after the add, the response includes a 'warning' field"
                     }
                 },
                 ["script"] = new ActionInfo
@@ -162,7 +181,9 @@ namespace Cordyceps.Tools.Unified
             Notes = new[]
             {
                 "Object IDs are GUIDs that can be used across calls",
-                "Use 'layers' to see valid layer names for filtering"
+                "Use 'layers' to see valid layer names for filtering",
+                "Bulk id actions (delete, hide, show, set_layer, set_name, set_color) report stale ids in a 'notFound' array and return success:false with an error when no requested object was affected",
+                "Document-mutating actions (objects, layers, place_image) run inside one undo record ('Cordyceps <action>'), so a single Ctrl-Z in Rhino reverts the whole action — including bulk operations. Exceptions: action='script' (native Rhino commands create their own undo records) and select/deselect (selection is not undoable)"
             }
         };
 
@@ -284,27 +305,34 @@ namespace Cordyceps.Tools.Unified
                 if (doc == null)
                     return ToolHelpers.ErrorResponse("No active Rhino document");
 
+                if (limit < 1) limit = 1;
+
                 var objects = new List<object>();
+                bool truncated = false;
                 var typeFilter = ParseObjectType(type);
+                var layerFilter = string.IsNullOrEmpty(layer) ? null : GetLayerFilterIndices(doc, layer);
 
                 foreach (var obj in doc.Objects)
                 {
-                    if (objects.Count >= limit) break;
                     if (obj.IsDeleted) continue;
 
                     if (!includeHidden && obj.IsHidden) continue;
                     if (typeFilter.HasValue && obj.ObjectType != typeFilter.Value) continue;
-                    if (!string.IsNullOrEmpty(layer))
-                    {
-                        var objLayer = doc.Layers[obj.Attributes.LayerIndex];
-                        if (!objLayer.Name.Equals(layer, StringComparison.OrdinalIgnoreCase)) continue;
-                    }
+                    if (layerFilter != null && !layerFilter.Contains(obj.Attributes.LayerIndex)) continue;
                     if (!string.IsNullOrEmpty(objectName))
                     {
                         var name = obj.Attributes.Name ?? "";
                         if (!name.Contains(objectName, StringComparison.OrdinalIgnoreCase)) continue;
                     }
                     if (selectedOnly && obj.IsSelected(true) == 0) continue;
+
+                    // Only report truncation when a match beyond the limit actually exists —
+                    // a document with exactly `limit` matches is complete, not truncated.
+                    if (objects.Count >= limit)
+                    {
+                        truncated = true;
+                        break;
+                    }
 
                     var bbox = obj.Geometry?.GetBoundingBox(true) ?? BoundingBox.Unset;
                     objects.Add(new
@@ -323,7 +351,7 @@ namespace Cordyceps.Tools.Unified
                 {
                     success = true,
                     count = objects.Count,
-                    truncated = objects.Count >= limit,
+                    truncated,
                     objects
                 });
             });
@@ -331,51 +359,102 @@ namespace Cordyceps.Tools.Unified
 
         private string ActionSelect(string ids, string type, string layer, bool add)
         {
+            // A bare select must never silently grab the whole document — selecting everything
+            // is an explicit opt-in via type='all'.
+            if (string.IsNullOrEmpty(ids) && string.IsNullOrEmpty(type) && string.IsNullOrEmpty(layer))
+                return ToolHelpers.ErrorResponse("select requires ids, type, or layer — to select everything pass type='all'");
+
             return _context.ExecuteOnUiThread(() =>
             {
                 var doc = RhinoDoc.ActiveDoc;
                 if (doc == null)
                     return ToolHelpers.ErrorResponse("No active Rhino document");
 
-                if (!add)
-                    doc.Objects.UnselectAll();
-
                 int selectedCount = 0;
+                var notFound = new List<string>();
+                var notSelectable = new List<string>();
 
                 if (!string.IsNullOrEmpty(ids))
                 {
                     if (!ToolHelpers.TryParseGuidArray(ids, out var guids, out var error))
                         return ToolHelpers.ErrorResponse(error);
 
+                    // Resolve every id BEFORE UnselectAll: if all ids are stale the call fails
+                    // without destroying the user's existing selection as a side effect.
+                    var resolved = new List<Guid>();
                     foreach (var guid in guids)
                     {
-                        var obj = doc.Objects.FindId(guid);
-                        if (obj != null)
-                        {
-                            doc.Objects.Select(guid);
+                        if (doc.Objects.FindId(guid) != null)
+                            resolved.Add(guid);
+                        else
+                            notFound.Add(guid.ToString());
+                    }
+
+                    if (!add && resolved.Count > 0)
+                        doc.Objects.UnselectAll();
+
+                    foreach (var guid in resolved)
+                    {
+                        // Select() fails for locked/hidden objects — report, don't miscount.
+                        if (doc.Objects.Select(guid))
                             selectedCount++;
-                        }
+                        else
+                            notSelectable.Add(guid.ToString());
                     }
                 }
                 else
                 {
-                    var typeFilter = ParseObjectType(type);
+                    bool selectAll = type != null && type.Equals("all", StringComparison.OrdinalIgnoreCase);
+                    var typeFilter = selectAll ? null : ParseObjectType(type);
+                    if (!selectAll && !string.IsNullOrEmpty(type) && !typeFilter.HasValue)
+                        return ToolHelpers.ErrorResponse($"Unknown type filter: '{type}'. Use brep, curve, mesh, point, surface, annotation, extrusion, subd, pointcloud, hatch, light — or 'all' to select everything");
+
+                    HashSet<int> layerFilter = null;
+                    if (!string.IsNullOrEmpty(layer))
+                    {
+                        layerFilter = GetLayerFilterIndices(doc, layer);
+                        if (layerFilter.Count == 0)
+                            return ToolHelpers.ErrorResponse($"Layer '{layer}' not found");
+                    }
+
+                    if (!add)
+                        doc.Objects.UnselectAll();
+
                     foreach (var obj in doc.Objects)
                     {
                         if (obj.IsDeleted || obj.IsHidden) continue;
                         if (typeFilter.HasValue && obj.ObjectType != typeFilter.Value) continue;
-                        if (!string.IsNullOrEmpty(layer))
-                        {
-                            var objLayer = doc.Layers[obj.Attributes.LayerIndex];
-                            if (!objLayer.Name.Equals(layer, StringComparison.OrdinalIgnoreCase)) continue;
-                        }
-                        doc.Objects.Select(obj.Id);
-                        selectedCount++;
+                        if (layerFilter != null && !layerFilter.Contains(obj.Attributes.LayerIndex)) continue;
+                        if (doc.Objects.Select(obj.Id))
+                            selectedCount++;
+                        else
+                            notSelectable.Add(obj.Id.ToString());
                     }
                 }
 
                 doc.Views.Redraw();
-                return JsonConvert.SerializeObject(new { success = true, selectedCount });
+
+                if (selectedCount == 0 && (notFound.Count > 0 || notSelectable.Count > 0))
+                {
+                    return JsonConvert.SerializeObject(new
+                    {
+                        success = false,
+                        error = notFound.Count > 0 && notSelectable.Count == 0
+                            ? "No objects selected: none of the given ids exist in the document"
+                            : "No objects selected: the matching objects are locked or hidden",
+                        selectedCount,
+                        notFound = notFound.Count > 0 ? notFound : null,
+                        notSelectable = notSelectable.Count > 0 ? notSelectable : null
+                    });
+                }
+
+                return JsonConvert.SerializeObject(new
+                {
+                    success = true,
+                    selectedCount,
+                    notFound = notFound.Count > 0 ? notFound : null,
+                    notSelectable = notSelectable.Count > 0 ? notSelectable : null
+                });
             });
         }
 
@@ -395,7 +474,7 @@ namespace Cordyceps.Tools.Unified
 
         private string ActionSetLayer(string ids, string layer)
         {
-            return _context.ExecuteOnUiThread(() =>
+            return _context.ExecuteOnUiThread(() => ToolHelpers.WithUndoRecord(RhinoDoc.ActiveDoc, "set_layer", () =>
             {
                 var doc = RhinoDoc.ActiveDoc;
                 if (doc == null)
@@ -408,15 +487,20 @@ namespace Cordyceps.Tools.Unified
                     return ToolHelpers.ErrorResponse(error);
 
                 // Find or create layer (shared with place_image)
-                var layerIndex = FindOrCreateLayer(doc, layer);
+                var layerIndex = FindOrCreateLayer(doc, layer, out var layerError);
                 if (layerIndex < 0)
-                    return ToolHelpers.ErrorResponse($"Failed to create layer '{layer}'");
+                    return ToolHelpers.ErrorResponse(layerError ?? $"Failed to create layer '{layer}'");
 
                 int movedCount = 0;
+                var notFound = new List<string>();
                 foreach (var guid in guids)
                 {
                     var obj = doc.Objects.FindId(guid);
-                    if (obj == null) continue;
+                    if (obj == null)
+                    {
+                        notFound.Add(guid.ToString());
+                        continue;
+                    }
 
                     var attrs = obj.Attributes.Duplicate();
                     attrs.LayerIndex = layerIndex;
@@ -425,13 +509,31 @@ namespace Cordyceps.Tools.Unified
                 }
 
                 doc.Views.Redraw();
-                return JsonConvert.SerializeObject(new { success = true, movedCount, layer });
-            });
+
+                if (movedCount == 0 && guids.Count > 0)
+                    return JsonConvert.SerializeObject(new
+                    {
+                        success = false,
+                        error = "No objects were moved: " + (notFound.Count == guids.Count
+                            ? "none of the given ids exist in the document"
+                            : "the attribute change was rejected for every object"),
+                        movedCount,
+                        notFound = notFound.Count > 0 ? notFound : null
+                    });
+
+                return JsonConvert.SerializeObject(new
+                {
+                    success = true,
+                    movedCount,
+                    layer = doc.Layers[layerIndex].FullPath,
+                    notFound = notFound.Count > 0 ? notFound : null
+                });
+            }));
         }
 
         private string ActionSetName(string ids, string name)
         {
-            return _context.ExecuteOnUiThread(() =>
+            return _context.ExecuteOnUiThread(() => ToolHelpers.WithUndoRecord(RhinoDoc.ActiveDoc, "set_name", () =>
             {
                 var doc = RhinoDoc.ActiveDoc;
                 if (doc == null)
@@ -444,10 +546,15 @@ namespace Cordyceps.Tools.Unified
                     return ToolHelpers.ErrorResponse(error);
 
                 int renamedCount = 0;
+                var notFound = new List<string>();
                 foreach (var guid in guids)
                 {
                     var obj = doc.Objects.FindId(guid);
-                    if (obj == null) continue;
+                    if (obj == null)
+                    {
+                        notFound.Add(guid.ToString());
+                        continue;
+                    }
 
                     var attrs = obj.Attributes.Duplicate();
                     attrs.Name = name;
@@ -456,13 +563,31 @@ namespace Cordyceps.Tools.Unified
                 }
 
                 doc.Views.Redraw();
-                return JsonConvert.SerializeObject(new { success = true, renamedCount, name });
-            });
+
+                if (renamedCount == 0 && guids.Count > 0)
+                    return JsonConvert.SerializeObject(new
+                    {
+                        success = false,
+                        error = "No objects were renamed: " + (notFound.Count == guids.Count
+                            ? "none of the given ids exist in the document"
+                            : "the attribute change was rejected for every object"),
+                        renamedCount,
+                        notFound = notFound.Count > 0 ? notFound : null
+                    });
+
+                return JsonConvert.SerializeObject(new
+                {
+                    success = true,
+                    renamedCount,
+                    name,
+                    notFound = notFound.Count > 0 ? notFound : null
+                });
+            }));
         }
 
         private string ActionSetColor(string ids, string color)
         {
-            return _context.ExecuteOnUiThread(() =>
+            return _context.ExecuteOnUiThread(() => ToolHelpers.WithUndoRecord(RhinoDoc.ActiveDoc, "set_color", () =>
             {
                 var doc = RhinoDoc.ActiveDoc;
                 if (doc == null)
@@ -478,10 +603,15 @@ namespace Cordyceps.Tools.Unified
                     return ToolHelpers.ErrorResponse(error);
 
                 int coloredCount = 0;
+                var notFound = new List<string>();
                 foreach (var guid in guids)
                 {
                     var obj = doc.Objects.FindId(guid);
-                    if (obj == null) continue;
+                    if (obj == null)
+                    {
+                        notFound.Add(guid.ToString());
+                        continue;
+                    }
 
                     var attrs = obj.Attributes.Duplicate();
                     attrs.ColorSource = ObjectColorSource.ColorFromObject;
@@ -491,8 +621,26 @@ namespace Cordyceps.Tools.Unified
                 }
 
                 doc.Views.Redraw();
-                return JsonConvert.SerializeObject(new { success = true, coloredCount, color = ToolHelpers.ColorToHex(parsedColor) });
-            });
+
+                if (coloredCount == 0 && guids.Count > 0)
+                    return JsonConvert.SerializeObject(new
+                    {
+                        success = false,
+                        error = "No objects were recolored: " + (notFound.Count == guids.Count
+                            ? "none of the given ids exist in the document"
+                            : "the attribute change was rejected for every object"),
+                        coloredCount,
+                        notFound = notFound.Count > 0 ? notFound : null
+                    });
+
+                return JsonConvert.SerializeObject(new
+                {
+                    success = true,
+                    coloredCount,
+                    color = ToolHelpers.ColorToHex(parsedColor),
+                    notFound = notFound.Count > 0 ? notFound : null
+                });
+            }));
         }
 
         private string ActionBbox(string ids)
@@ -545,7 +693,7 @@ namespace Cordyceps.Tools.Unified
 
         private string ActionHide(string ids, bool selectedOnly)
         {
-            return _context.ExecuteOnUiThread(() =>
+            return _context.ExecuteOnUiThread(() => ToolHelpers.WithUndoRecord(RhinoDoc.ActiveDoc, "hide", () =>
             {
                 var doc = RhinoDoc.ActiveDoc;
                 if (doc == null)
@@ -555,6 +703,8 @@ namespace Cordyceps.Tools.Unified
                     return ToolHelpers.ErrorResponse("Either 'ids' or 'selected=true' is required for hide action");
 
                 int hiddenCount = 0;
+                int alreadyHidden = 0;
+                var notFound = new List<string>();
 
                 if (!string.IsNullOrEmpty(ids))
                 {
@@ -563,28 +713,58 @@ namespace Cordyceps.Tools.Unified
 
                     foreach (var guid in guids)
                     {
+                        var obj = doc.Objects.FindId(guid);
+                        if (obj == null)
+                        {
+                            notFound.Add(guid.ToString());
+                            continue;
+                        }
+                        if (obj.IsHidden)
+                        {
+                            alreadyHidden++; // idempotent: desired state already holds
+                            continue;
+                        }
                         if (doc.Objects.Hide(guid, true))
                             hiddenCount++;
                     }
-                }
-                else if (selectedOnly)
-                {
-                    var selected = doc.Objects.GetSelectedObjects(false, false);
-                    foreach (var obj in selected)
+
+                    doc.Views.Redraw();
+
+                    if (hiddenCount == 0 && alreadyHidden == 0 && guids.Count > 0)
+                        return JsonConvert.SerializeObject(new
+                        {
+                            success = false,
+                            error = "No objects were hidden: " + (notFound.Count == guids.Count
+                                ? "none of the given ids exist in the document"
+                                : "the matching objects could not be hidden (e.g. locked)"),
+                            hiddenCount,
+                            notFound = notFound.Count > 0 ? notFound : null
+                        });
+
+                    return JsonConvert.SerializeObject(new
                     {
-                        if (doc.Objects.Hide(obj.Id, true))
-                            hiddenCount++;
-                    }
+                        success = true,
+                        hiddenCount,
+                        alreadyHidden = alreadyHidden > 0 ? (int?)alreadyHidden : null,
+                        notFound = notFound.Count > 0 ? notFound : null
+                    });
+                }
+
+                var selected = doc.Objects.GetSelectedObjects(false, false);
+                foreach (var obj in selected)
+                {
+                    if (doc.Objects.Hide(obj.Id, true))
+                        hiddenCount++;
                 }
 
                 doc.Views.Redraw();
                 return JsonConvert.SerializeObject(new { success = true, hiddenCount });
-            });
+            }));
         }
 
         private string ActionShow(string ids, bool showAll)
         {
-            return _context.ExecuteOnUiThread(() =>
+            return _context.ExecuteOnUiThread(() => ToolHelpers.WithUndoRecord(RhinoDoc.ActiveDoc, "show", () =>
             {
                 var doc = RhinoDoc.ActiveDoc;
                 if (doc == null)
@@ -602,27 +782,59 @@ namespace Cordyceps.Tools.Unified
                         if (obj.IsHidden && doc.Objects.Show(obj.Id, true))
                             shownCount++;
                     }
-                }
-                else if (!string.IsNullOrEmpty(ids))
-                {
-                    if (!ToolHelpers.TryParseGuidArray(ids, out var guids, out var error))
-                        return ToolHelpers.ErrorResponse(error);
 
-                    foreach (var guid in guids)
+                    doc.Views.Redraw();
+                    return JsonConvert.SerializeObject(new { success = true, shownCount });
+                }
+
+                if (!ToolHelpers.TryParseGuidArray(ids, out var guids, out var error))
+                    return ToolHelpers.ErrorResponse(error);
+
+                int alreadyVisible = 0;
+                var notFound = new List<string>();
+                foreach (var guid in guids)
+                {
+                    var obj = doc.Objects.FindId(guid);
+                    if (obj == null)
                     {
-                        if (doc.Objects.Show(guid, true))
-                            shownCount++;
+                        notFound.Add(guid.ToString());
+                        continue;
                     }
+                    if (!obj.IsHidden)
+                    {
+                        alreadyVisible++; // idempotent: desired state already holds
+                        continue;
+                    }
+                    if (doc.Objects.Show(guid, true))
+                        shownCount++;
                 }
 
                 doc.Views.Redraw();
-                return JsonConvert.SerializeObject(new { success = true, shownCount });
-            });
+
+                if (shownCount == 0 && alreadyVisible == 0 && guids.Count > 0)
+                    return JsonConvert.SerializeObject(new
+                    {
+                        success = false,
+                        error = "No objects were shown: " + (notFound.Count == guids.Count
+                            ? "none of the given ids exist in the document"
+                            : "the matching objects could not be shown"),
+                        shownCount,
+                        notFound = notFound.Count > 0 ? notFound : null
+                    });
+
+                return JsonConvert.SerializeObject(new
+                {
+                    success = true,
+                    shownCount,
+                    alreadyVisible = alreadyVisible > 0 ? (int?)alreadyVisible : null,
+                    notFound = notFound.Count > 0 ? notFound : null
+                });
+            }));
         }
 
         private string ActionDelete(string ids)
         {
-            return _context.ExecuteOnUiThread(() =>
+            return _context.ExecuteOnUiThread(() => ToolHelpers.WithUndoRecord(RhinoDoc.ActiveDoc, "delete", () =>
             {
                 var doc = RhinoDoc.ActiveDoc;
                 if (doc == null)
@@ -632,15 +844,38 @@ namespace Cordyceps.Tools.Unified
                     return ToolHelpers.ErrorResponse(error);
 
                 int deletedCount = 0;
+                var notFound = new List<string>();
                 foreach (var guid in guids)
                 {
+                    if (doc.Objects.FindId(guid) == null)
+                    {
+                        notFound.Add(guid.ToString());
+                        continue;
+                    }
                     if (doc.Objects.Delete(guid, true))
                         deletedCount++;
                 }
 
                 doc.Views.Redraw();
-                return JsonConvert.SerializeObject(new { success = true, deletedCount });
-            });
+
+                if (deletedCount == 0 && guids.Count > 0)
+                    return JsonConvert.SerializeObject(new
+                    {
+                        success = false,
+                        error = "No objects were deleted: " + (notFound.Count == guids.Count
+                            ? "none of the given ids exist in the document"
+                            : "the matching objects could not be deleted (e.g. locked)"),
+                        deletedCount,
+                        notFound = notFound.Count > 0 ? notFound : null
+                    });
+
+                return JsonConvert.SerializeObject(new
+                {
+                    success = true,
+                    deletedCount,
+                    notFound = notFound.Count > 0 ? notFound : null
+                });
+            }));
         }
 
         private string ActionScript(string cmd)
@@ -653,6 +888,29 @@ namespace Cordyceps.Tools.Unified
                 bool result = RhinoApp.RunScript(cmd, false);
                 return JsonConvert.SerializeObject(new { success = result, cmd });
             });
+        }
+
+        /// <summary>
+        /// Resolve a layer filter (objects/select) to the set of matching layer indices.
+        /// An exact full-path match ("Parent::Child") wins; otherwise all non-deleted layers
+        /// whose short name matches case-insensitively are included, so a short name that
+        /// exists under several parents filters across all of them.
+        /// </summary>
+        private static HashSet<int> GetLayerFilterIndices(RhinoDoc doc, string layer)
+        {
+            var indices = new HashSet<int>();
+            var exact = doc.Layers.FindByFullPath(layer, -1);
+            if (exact >= 0)
+            {
+                indices.Add(exact);
+                return indices;
+            }
+            foreach (var l in doc.Layers)
+            {
+                if (!l.IsDeleted && l.Name.Equals(layer, StringComparison.OrdinalIgnoreCase))
+                    indices.Add(l.Index);
+            }
+            return indices;
         }
 
         private ObjectType? ParseObjectType(string type)

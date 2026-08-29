@@ -1,5 +1,4 @@
 using System;
-using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.ComponentModel;
 using System.Drawing;
@@ -26,10 +25,13 @@ namespace Cordyceps.Tools.Unified
     {
         private readonly GrasshopperContext _context;
 
-        // Snapshot storage. Written under ExecuteOnUiThread (snapshot/revert) but the
-        // list-snapshots path reads it off the HTTP worker thread, so it must be a concurrent
-        // collection — a plain Dictionary read concurrently with a write can throw or tear.
-        private static readonly ConcurrentDictionary<string, byte[]> _snapshots = new ConcurrentDictionary<string, byte[]>();
+        // Snapshot storage (GHD-6M2J): bounded with oldest-first eviction — snapshots are full
+        // document serializations, and with undo/redo disabled every documented mutation
+        // workflow funnels through this store, so it must not grow for the life of the Rhino
+        // session. Written under ExecuteOnUiThread (snapshot/revert/delete); the list path
+        // reads it off the HTTP worker thread (SnapshotStore is internally locked).
+        private const int MaxSnapshots = 20;
+        private static readonly SnapshotStore _snapshots = new SnapshotStore(MaxSnapshots);
 
         private static readonly UnifiedToolInfo ToolInfo = new UnifiedToolInfo
         {
@@ -55,7 +57,8 @@ namespace Cordyceps.Tools.Unified
                 {
                     Name = "clear",
                     Description = "Clear all components (except Cordyceps infrastructure)",
-                    Example = "action='clear'"
+                    Example = "action='clear'",
+                    Tips = new[] { "Inside a cluster editor, cluster input/output hooks are preserved (reported as preservedClusterHooks) so the cluster interface stays intact" }
                 },
                 ["solver"] = new ActionInfo
                 {
@@ -63,30 +66,38 @@ namespace Cordyceps.Tools.Unified
                     Description = "Enable or disable the solver",
                     Required = new[] { "enabled" },
                     Example = "action='solver', enabled=false",
-                    Tips = new[] { "Disable before bulk operations for performance" }
+                    Tips = new[] {
+                        "Disable before bulk operations for performance",
+                        "enabled accepts true/false, 1/0, yes/no (case-insensitive); anything else is a validation error"
+                    }
                 },
                 ["recompute"] = new ActionInfo
                 {
                     Name = "recompute",
-                    Description = "Trigger a solution recompute",
-                    Example = "action='recompute'"
+                    Description = "Trigger a solution recompute (cluster-safe). Rejected while a solution is already running, or while the UI thread is blocked by a modal dialog",
+                    Example = "action='recompute'",
+                    Tips = new[]
+                    {
+                        "If a solution is already running you get success=false with solving=true and solving_since — wait for it to finish and call again, do not retry in a tight loop.",
+                        "Use gh_inspect(action='connection') to see whether the host is busy solving or blocked by a modal dialog."
+                    }
                 },
                 ["undo"] = new ActionInfo
                 {
                     Name = "undo",
-                    Description = "Undo the last action",
-                    Example = "action='undo'"
+                    Description = "DISABLED (threading issues) - always returns an error. Use action='snapshot' before changes and action='revert' to restore instead",
+                    Example = "action='snapshot', name='before_changes' (instead of undo)"
                 },
                 ["redo"] = new ActionInfo
                 {
                     Name = "redo",
-                    Description = "Redo a previously undone action",
-                    Example = "action='redo'"
+                    Description = "DISABLED (threading issues) - always returns an error. Use snapshots (action='snapshot'/'revert') instead",
+                    Example = "action='revert', name='before_changes' (instead of redo)"
                 },
                 ["snapshot"] = new ActionInfo
                 {
                     Name = "snapshot",
-                    Description = "Create a named snapshot of current state",
+                    Description = "Create a named snapshot of current state. At most 20 snapshots are kept: saving a new name beyond that evicts the oldest (evicted names are returned in `evicted`); re-using a name replaces that snapshot",
                     Optional = new[] { "name" },
                     Example = "action='snapshot', name='before_changes'"
                 },
@@ -100,8 +111,15 @@ namespace Cordyceps.Tools.Unified
                 ["snapshots"] = new ActionInfo
                 {
                     Name = "snapshots",
-                    Description = "List all available snapshots",
+                    Description = "List all available snapshots (oldest first, max 20 kept)",
                     Example = "action='snapshots'"
+                },
+                ["snapshot_delete"] = new ActionInfo
+                {
+                    Name = "snapshot_delete",
+                    Description = "Delete a named snapshot to free memory / make room under the 20-snapshot cap",
+                    Required = new[] { "name" },
+                    Example = "action='snapshot_delete', name='before_changes'"
                 },
                 ["help"] = new ActionInfo
                 {
@@ -153,7 +171,7 @@ namespace Cordyceps.Tools.Unified
             _context = context;
         }
 
-        [McpServerTool, Description("Document operations. Actions: info|save|clear|solver|recompute|undo|redo|snapshot|revert|snapshots|capture_canvas|capture_viewport|capture_region|capture_views|help")]
+        [McpServerTool, Description("Document operations. Actions: info|save|clear|solver|recompute|undo|redo|snapshot|revert|snapshots|snapshot_delete|capture_canvas|capture_viewport|capture_region|capture_views|help")]
         public string GhDocument(
             [Description("Action to perform")] string action,
             [Description("File path for save/capture")] string path = null,
@@ -198,15 +216,13 @@ namespace Cordyceps.Tools.Unified
             if (validationError != null)
                 return validationError;
 
-            // Parse enabled as bool for solver action
+            // Parse enabled strictly for solver ('enabled' is required for it): an unrecognized
+            // string must be a validation error, not silently coerced to false.
             bool enabledBool = true;
-            if (!string.IsNullOrEmpty(enabled))
+            if (string.Equals(action, "solver", StringComparison.OrdinalIgnoreCase))
             {
-                if (!bool.TryParse(enabled, out enabledBool))
-                {
-                    // Also accept "1"/"0" and case variations
-                    enabledBool = enabled.Equals("1") || enabled.Equals("true", StringComparison.OrdinalIgnoreCase);
-                }
+                if (!ToolHelpers.TryParseBool(enabled, out enabledBool))
+                    return ToolHelpers.ErrorResponse($"Invalid 'enabled' value: '{enabled}'. Use true/false, 1/0, or yes/no.");
             }
 
             return action.ToLowerInvariant() switch
@@ -221,6 +237,7 @@ namespace Cordyceps.Tools.Unified
                 "snapshot" => ActionSnapshot(name),
                 "revert" => ActionRevert(name),
                 "snapshots" => ActionListSnapshots(),
+                "snapshot_delete" => ActionSnapshotDelete(name),
                 // Capture actions
                 "capture_canvas" => ActionCaptureCanvas(path, fitBool, padding),
                 "capture_viewport" => ActionCaptureViewport(path, view, width, height, transparentBool),
@@ -302,8 +319,21 @@ namespace Cordyceps.Tools.Unified
                     return ToolHelpers.ErrorResponse(error);
 
                 var infraIds = ToolHelpers.GetCordycepsInfrastructureIds(doc);
+
+                // Inside a cluster editor, doc.Objects includes the cluster's input/output hooks.
+                // They are not Cordyceps infrastructure but deleting them destroys the cluster's
+                // interface — exclude them and report the exclusion.
+                HashSet<Guid> hookIds = null;
+                if (doc.Owner != null)
+                {
+                    hookIds = new HashSet<Guid>(doc.ClusterInputHooks().Select(h => h.InstanceGuid));
+                    foreach (var hook in doc.ClusterOutputHooks())
+                        hookIds.Add(hook.InstanceGuid);
+                }
+
                 var toRemove = doc.Objects
-                    .Where(o => !ToolHelpers.IsCordycepsInfrastructure(o, infraIds))
+                    .Where(o => !ToolHelpers.IsCordycepsInfrastructure(o, infraIds)
+                                && (hookIds == null || !hookIds.Contains(o.InstanceGuid)))
                     .ToList();
 
                 int count = toRemove.Count;
@@ -313,6 +343,17 @@ namespace Cordyceps.Tools.Unified
                 }
 
                 doc.NewSolution(false);
+
+                if (hookIds != null)
+                {
+                    return JsonConvert.SerializeObject(new
+                    {
+                        success = true,
+                        removedCount = count,
+                        preservedClusterHooks = hookIds.Count,
+                        note = "Inside a cluster editor: cluster input/output hooks were preserved to keep the cluster interface intact"
+                    });
+                }
 
                 return JsonConvert.SerializeObject(new
                 {
@@ -353,6 +394,15 @@ namespace Cordyceps.Tools.Unified
 
         private string ActionRecompute()
         {
+            // Refuse rather than queue or block while a solution is already running, or while the
+            // UI thread is stuck behind a dialog. Queueing would give the caller no completion
+            // signal; blocking would hold the request open for the whole solve, which is the
+            // unbounded silence this refusal exists to replace. The result names the running
+            // document and when it started so the caller can decide how long to wait.
+            var liveness = SolverState.Shared.Derive();
+            if (liveness.Solving || liveness.ModalInferred)
+                return StatusEnvelope.BusyResult(liveness);
+
             return _context.ExecuteOnUiThread(() =>
             {
                 if (!ToolHelpers.TryGetActiveDocument(_context, out var doc, out var error))
@@ -370,18 +420,17 @@ namespace Cordyceps.Tools.Unified
 
         private string ActionUndo()
         {
-            // TODO: Undo has threading issues with HTTP response handling.
-            // The Grasshopper undo system interacts with UI thread in ways that
-            // cause the HTTP response to be disposed before it can be sent.
-            // Use snapshots (action='snapshot'/'revert') as an alternative.
-            return ToolHelpers.ErrorResponse("Undo is temporarily disabled due to threading issues. Use snapshots instead: gh_document(action='snapshot', name='...') to save state, gh_document(action='revert', name='...') to restore.");
+            // Undo is formally cut (2026-07-02 janitor close-out), not pending work: the
+            // Grasshopper undo system interacts with the UI thread in ways that cause the HTTP
+            // response to be disposed before it can be sent. Snapshots (action='snapshot'/
+            // 'revert') are the supported alternative.
+            return ToolHelpers.ErrorResponse("Undo is disabled (threading issues with the Grasshopper undo stack). Use snapshots instead: gh_document(action='snapshot', name='...') before changes, gh_document(action='revert', name='...') to restore.");
         }
 
         private string ActionRedo()
         {
-            // TODO: Redo has threading issues with HTTP response handling.
-            // See ActionUndo for details.
-            return ToolHelpers.ErrorResponse("Redo is temporarily disabled due to threading issues. Use snapshots instead.");
+            // Redo is formally cut alongside undo — see ActionUndo for details.
+            return ToolHelpers.ErrorResponse("Redo is disabled (threading issues with the Grasshopper undo stack). Use snapshots instead (action='snapshot'/'revert').");
         }
 
         private string ActionSnapshot(string name)
@@ -403,14 +452,22 @@ namespace Cordyceps.Tools.Unified
                     if (data == null || data.Length == 0)
                         return ToolHelpers.ErrorResponse("Failed to serialize document to binary");
 
-                    _snapshots[snapshotName] = data;
+                    var evicted = _snapshots.Save(snapshotName, data);
+
+                    // Eviction destroys a full document backup; the agent sees it in the
+                    // response's `evicted` field, but log it too so an operator debugging a
+                    // later "Snapshot not found" has a trail via gh_inspect(action='log').
+                    if (evicted.Count > 0)
+                        DebugLog.WriteLine($"Snapshot cap ({_snapshots.MaxSnapshots}) reached: evicted {string.Join(", ", evicted)}", "INFO", 0);
 
                     return JsonConvert.SerializeObject(new
                     {
                         success = true,
                         name = snapshotName,
                         sizeBytes = data.Length,
-                        totalSnapshots = _snapshots.Count
+                        totalSnapshots = _snapshots.Count,
+                        maxSnapshots = _snapshots.MaxSnapshots,
+                        evicted
                     });
                 }
                 catch (Exception ex)
@@ -427,8 +484,13 @@ namespace Cordyceps.Tools.Unified
                 if (string.IsNullOrEmpty(name))
                     return ToolHelpers.ErrorResponse("Snapshot name is required");
 
-                if (!_snapshots.TryGetValue(name, out var data))
-                    return ToolHelpers.ErrorResponse($"Snapshot not found: {name}. Available: {string.Join(", ", _snapshots.Keys)}");
+                if (!_snapshots.TryGet(name, out var data))
+                    return ToolHelpers.ErrorResponse($"Snapshot not found: {name}. Available: {string.Join(", ", _snapshots.List().Select(s => s.Name))}");
+
+                // Without a canvas there is nothing to install the reverted document into —
+                // fail up front instead of deserializing and silently reporting success.
+                if (Instances.ActiveCanvas == null)
+                    return ToolHelpers.ErrorResponse("No active Grasshopper canvas");
 
                 try
                 {
@@ -463,17 +525,40 @@ namespace Cordyceps.Tools.Unified
 
         private string ActionListSnapshots()
         {
-            var snapshots = _snapshots.Select(kvp => new
+            var snapshots = _snapshots.List().Select(s => new
             {
-                name = kvp.Key,
-                sizeBytes = kvp.Value.Length
+                name = s.Name,
+                sizeBytes = s.SizeBytes,
+                createdAtUtc = s.CreatedAtUtc
             }).ToList();
 
             return JsonConvert.SerializeObject(new
             {
                 success = true,
                 count = snapshots.Count,
+                maxSnapshots = _snapshots.MaxSnapshots,
                 snapshots
+            });
+        }
+
+        private string ActionSnapshotDelete(string name)
+        {
+            return _context.ExecuteOnUiThread(() =>
+            {
+                if (string.IsNullOrEmpty(name))
+                    return ToolHelpers.ErrorResponse("Snapshot name is required");
+
+                // A missing name is an error, never silent success — the caller's mental model
+                // of the store would otherwise drift.
+                if (!_snapshots.Remove(name))
+                    return ToolHelpers.ErrorResponse($"Snapshot not found: {name}. Available: {string.Join(", ", _snapshots.List().Select(s => s.Name))}");
+
+                return JsonConvert.SerializeObject(new
+                {
+                    success = true,
+                    deleted = name,
+                    totalSnapshots = _snapshots.Count
+                });
             });
         }
 

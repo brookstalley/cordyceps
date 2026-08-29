@@ -5,31 +5,25 @@ using Rhino;
 namespace Cordyceps.Core
 {
     /// <summary>
-    /// Centralized debug logging that captures messages for retrieval via MCP
+    /// Centralized debug logging that captures messages for retrieval via MCP.
+    /// The buffer/gating logic lives in the host-free <see cref="LogBuffer"/> (unit-tested in
+    /// Cordyceps.Tests); this static wrapper owns the host-coupled RhinoApp.WriteLine emission
+    /// and keeps the public API the tools consume.
     /// </summary>
     public static class DebugLog
     {
-        private static readonly object _lock = new object();
-        private static readonly Queue<LogEntry> _entries = new Queue<LogEntry>();
         private const int MaxEntries = 500;
+        private static readonly LogBuffer _buffer = new LogBuffer(MaxEntries);
 
         /// <summary>
         /// Current debug level. Messages with level > DebugLevel are not written to Rhino command history.
         /// Level 0: Server start/stop/URL only. Level 1+: Request/response details.
-        /// Uses volatile for thread-safe reads/writes across HTTP worker threads and UI thread.
+        /// Thread-safe across HTTP worker threads and UI thread (volatile inside LogBuffer).
         /// </summary>
-        private static volatile int _debugLevel = 0;
         public static int DebugLevel
         {
-            get => _debugLevel;
-            set => _debugLevel = value;
-        }
-
-        public class LogEntry
-        {
-            public DateTime Timestamp { get; set; }
-            public string Level { get; set; }
-            public string Message { get; set; }
+            get => _buffer.DebugLevel;
+            set => _buffer.DebugLevel = value;
         }
 
         /// <summary>
@@ -38,24 +32,9 @@ namespace Cordyceps.Core
         /// </summary>
         public static void WriteLine(string message, string level = "INFO", int messageLevel = 1)
         {
-            var entry = new LogEntry
-            {
-                Timestamp = DateTime.UtcNow,
-                Level = level,
-                Message = message
-            };
-
-            lock (_lock)
-            {
-                _entries.Enqueue(entry);
-                while (_entries.Count > MaxEntries)
-                {
-                    _entries.Dequeue();
-                }
-            }
-
-            // Only write to Rhino command line if message level is within configured debug level
-            if (messageLevel <= DebugLevel)
+            // Every message is buffered; Add returns whether it passes the level gate for
+            // console emission.
+            if (_buffer.Add(message, level, messageLevel))
             {
                 RhinoApp.WriteLine($"Cordyceps [{level}]: {message}");
             }
@@ -72,9 +51,10 @@ namespace Cordyceps.Core
         public static void Warn(string message) => WriteLine(message, "WARN");
 
         /// <summary>
-        /// Write an error message
+        /// Write an error message. messageLevel 0 so errors always reach the Rhino command
+        /// line regardless of the configured DebugLevel (warnings stay at level 1).
         /// </summary>
-        public static void Error(string message) => WriteLine(message, "ERROR");
+        public static void Error(string message) => WriteLine(message, "ERROR", 0);
 
         /// <summary>
         /// Write a debug message
@@ -84,36 +64,17 @@ namespace Cordyceps.Core
         /// <summary>
         /// Get all log entries and optionally clear the buffer
         /// </summary>
-        public static List<LogEntry> GetEntries(bool clear = false)
+        public static List<LogBuffer.LogEntry> GetEntries(bool clear = false)
         {
-            lock (_lock)
-            {
-                var result = new List<LogEntry>(_entries);
-                if (clear)
-                {
-                    _entries.Clear();
-                }
-                return result;
-            }
+            return _buffer.GetEntries(clear);
         }
 
         /// <summary>
         /// Get entries since a specific time
         /// </summary>
-        public static List<LogEntry> GetEntriesSince(DateTime since)
+        public static List<LogBuffer.LogEntry> GetEntriesSince(DateTime since)
         {
-            lock (_lock)
-            {
-                var result = new List<LogEntry>();
-                foreach (var entry in _entries)
-                {
-                    if (entry.Timestamp >= since)
-                    {
-                        result.Add(entry);
-                    }
-                }
-                return result;
-            }
+            return _buffer.GetEntriesSince(since);
         }
 
         /// <summary>
@@ -121,24 +82,12 @@ namespace Cordyceps.Core
         /// </summary>
         public static void Clear()
         {
-            lock (_lock)
-            {
-                _entries.Clear();
-            }
+            _buffer.Clear();
         }
 
         /// <summary>
         /// Get the count of stored entries
         /// </summary>
-        public static int Count
-        {
-            get
-            {
-                lock (_lock)
-                {
-                    return _entries.Count;
-                }
-            }
-        }
+        public static int Count => _buffer.Count;
     }
 }

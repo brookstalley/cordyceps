@@ -16,7 +16,7 @@ namespace Cordyceps.Tools.Unified
 
         private string ActionSettings(string style, string colorTop, string colorBottom, string transparent)
         {
-            return _context.ExecuteOnUiThread(() =>
+            return _context.ExecuteOnUiThread(() => ToolHelpers.WithUndoRecord(RhinoDoc.ActiveDoc, "settings", () =>
             {
                 var rhinoDoc = RhinoDoc.ActiveDoc;
                 if (rhinoDoc == null)
@@ -74,12 +74,12 @@ namespace Cordyceps.Tools.Unified
                     transparentBackground = rs.TransparentBackground,
                     modified
                 });
-            });
+            }));
         }
 
         private string ActionGround(string enabled, double altitude, string autoAltitude, string shadowOnly, string material)
         {
-            return _context.ExecuteOnUiThread(() =>
+            return _context.ExecuteOnUiThread(() => ToolHelpers.WithUndoRecord(RhinoDoc.ActiveDoc, "ground", () =>
             {
                 var rhinoDoc = RhinoDoc.ActiveDoc;
                 if (rhinoDoc == null)
@@ -139,12 +139,12 @@ namespace Cordyceps.Tools.Unified
                     shadowOnly = gp.ShadowOnly,
                     modified
                 });
-            });
+            }));
         }
 
         private string ActionSun(string enabled, double azimuth, double altitude, double intensity, double latitude, double longitude, string dateTime)
         {
-            return _context.ExecuteOnUiThread(() =>
+            return _context.ExecuteOnUiThread(() => ToolHelpers.WithUndoRecord(RhinoDoc.ActiveDoc, "sun", () =>
             {
                 var rhinoDoc = RhinoDoc.ActiveDoc;
                 if (rhinoDoc == null)
@@ -195,6 +195,18 @@ namespace Cordyceps.Tools.Unified
                     modified.Add("manualControl");
                 }
 
+                // Latitude/longitude/dateTime only affect the sun position while manual control
+                // is OFF. When they are provided without azimuth/altitude in the same call, the
+                // caller wants the computed position — switch manual control off so the values
+                // take effect instead of being silent no-ops.
+                bool hasManual = !double.IsNaN(azimuth) || !double.IsNaN(altitude);
+                bool hasComputed = !double.IsNaN(latitude) || !double.IsNaN(longitude) || !string.IsNullOrEmpty(dateTime);
+                if (hasComputed && !hasManual && sun.ManualControlOn)
+                {
+                    sun.ManualControlOn = false;
+                    modified.Add("manualControl");
+                }
+
                 if (!double.IsNaN(latitude))
                 {
                     if (latitude < -90 || latitude > 90)
@@ -226,17 +238,18 @@ namespace Cordyceps.Tools.Unified
                     success = true,
                     enabled = sun.Enabled,
                     manualControl = sun.ManualControlOn,
+                    mode = sun.ManualControlOn ? "manual" : "computed",
                     azimuth = sun.Azimuth,
                     altitude = sun.Altitude,
                     intensity = sun.Intensity,
                     modified
                 });
-            });
+            }));
         }
 
         private string ActionSkylight(string enabled, double shadowIntensity, string customEnvironment)
         {
-            return _context.ExecuteOnUiThread(() =>
+            return _context.ExecuteOnUiThread(() => ToolHelpers.WithUndoRecord(RhinoDoc.ActiveDoc, "skylight", () =>
             {
                 var rhinoDoc = RhinoDoc.ActiveDoc;
                 if (rhinoDoc == null)
@@ -283,7 +296,7 @@ namespace Cordyceps.Tools.Unified
                     customEnvironmentOn = rs.RenderEnvironmentOverride(RenderSettings.EnvironmentUsage.Skylighting),
                     modified
                 });
-            });
+            }));
         }
 
         #endregion

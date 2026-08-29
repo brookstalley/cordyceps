@@ -7,8 +7,8 @@ Visual dataflow graph for parametric 3D. Components on canvas connect via wires.
 Use `action='help'` on any tool for parameters.
 
 **Grasshopper:**
-- `gh_canvas` — components, values, groups, bake, zoomable params
-- `gh_wire` — connect, disconnect, list, validate
+- `gh_canvas` — components, values, groups, bake, zoomable params, data modifiers
+- `gh_wire` — connect, disconnect, list, clear, validate
 - `gh_document` — save, clear, solver, snapshots, capture
 - `gh_script` — get/set script code, configure params
 - `gh_inspect` — status, outputs, trace, disconnected
@@ -21,8 +21,8 @@ Use `action='help'` on any tool for parameters.
 
 ```
 gh_document(action='solver', enabled=false)
-gh_canvas(action='add', type='...', x=..., y=..., nickname='...')
-gh_wire(action='connect', connections='[{"source":"id1:0","target":"id2:R"}]')
+gh_canvas(action='add', type='...', x=..., y=...)
+gh_wire(action='connect', connections='[{"sourceId":"id1","sourceParam":"0","targetId":"id2","targetParam":"R"}]')
 gh_document(action='solver', enabled=true)
 gh_inspect(action='status')
 ```
@@ -45,8 +45,25 @@ gh_inspect(action='status')
 
 ## Variable Parameters (ZUI)
 
-- `gh_canvas(action='zoomable', id='...', operation='list')`
-- `gh_canvas(action='zoomable', id='...', operation='add', param='...')`
+- `gh_canvas(action='zoomable', id='...', operation='add', side='input')` — append a param (optional `index` for position)
+- `gh_canvas(action='zoomable', id='...', operation='remove', side='input', index=2)` — remove a param
+- `gh_canvas(action='zoomable', id='...', operation='set_count', side='input', count=4)` — set total param count
+
+Operations: `add`, `remove`, `set_count`. Params: `side` ('input'/'output', default 'input'), `index`, `count`. Use `gh_canvas(action='info')` to list current params.
+
+## Data Modifiers (Flatten / Graft / Simplify / Reverse)
+
+The per-port right-click options, on any component parameter or free-floating param:
+
+- `gh_canvas(action='modifier', id='...', side='input', param='B', mapping='graft')` — graft one input
+- `gh_canvas(action='modifier', id='...', side='output', param='0', simplify=true)` — simplify an output
+- `gh_canvas(action='modifier', id='...', side='input', param='B')` — READ the current state
+- `gh_canvas(action='modifier', id='...', side='input', param='B', mapping='none', simplify=false, reverse=false)` — clear
+
+`mapping`: `none` | `flatten` | `graft`. `simplify`/`reverse`: true/false. Partial update — whatever you
+omit stays as it is, and passing none of the three reads instead of writing. `param` takes a name or a
+0-based index and is unnecessary for a free-floating param. `gh_canvas(action='info')` reports
+`modifiers` for every param, so state round-trips.
 
 ## Capture
 
@@ -71,8 +88,19 @@ gh_inspect(action='status')
 
 ## Layout
 
-Avoid backwards wires. Stack inputs vertically at x=50. Processing columns at x=300, 380, 460...
+Avoid backwards wires. Stack inputs vertically at x=50 (70px vertical gaps). Processing columns at x=300, 450, 600... (150px horizontal gaps).
 Use `gh_canvas(action='validate')` for overlaps. See `gh://docs/canvas-layout`.
+
+## Busy vs. dead
+
+Every tool response carries a compact `status` block — `{document, ui, solving}` — telling you which
+`.gh` file the call acted on and whether the host is healthy. If a call is slow or silent, call
+`gh_inspect(action='connection')`: it reads cached state and never touches the document, so it answers
+even when everything else is stuck. `ui: "blocked"` with `solving: true` means **wait**;
+`modal_inferred: true` means a dialog is open in Rhino and **only a human can clear it**.
+
+`gh_document(action='recompute')` refuses (with `solving: true`) while a solution is already
+running, rather than queueing silently. See `gh://docs/common-errors`.
 
 ## Clusters
 

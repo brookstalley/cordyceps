@@ -26,6 +26,14 @@ namespace Cordyceps.Core
         public int Count => _tasks.Count;
 
         /// <summary>
+        /// Test seam: invoked by <see cref="DrainWithin"/> immediately after it captures its
+        /// snapshot of the tracked set, before it starts waiting. Lets the snapshot test track
+        /// a late task at a deterministic point instead of sleeping and hoping the drain has
+        /// started. Null (a no-op) in production.
+        /// </summary>
+        internal Action OnDrainSnapshot;
+
+        /// <summary>
         /// Begin tracking a handler task. The task removes itself once it completes (success,
         /// fault, or cancellation), so the set does not grow without bound under normal traffic.
         /// </summary>
@@ -49,6 +57,7 @@ namespace Cordyceps.Core
         public bool DrainWithin(TimeSpan budget)
         {
             var pending = _tasks.Keys.ToArray();
+            OnDrainSnapshot?.Invoke();
             if (pending.Length == 0)
                 return true;
 
@@ -58,10 +67,17 @@ namespace Cordyceps.Core
             }
             catch (AggregateException)
             {
-                // One or more handlers faulted or were cancelled but all observed tasks completed
-                // within the budget. A completed-with-error handler is still drained — it is no
-                // longer touching shared state — so this counts as a successful drain.
-                return true;
+                // One or more observed handlers faulted or were cancelled. A completed-with-error
+                // handler is still drained — it is no longer touching shared state — but a fault
+                // must never mask a budget timeout (decision MCP-5T7W): report success only if
+                // every snapshotted handler actually completed. Empirically Task.WaitAll only
+                // throws here when they all did (a timeout returns false instead of throwing),
+                // so this check's false branch is unreachable today — it is a defensive assertion
+                // that keeps the contract independent of that undocumented BCL nuance, not a path
+                // any test can reach. The observable fault/timeout contract is characterized by
+                // InFlightRequestsTests.DrainWithin_FaultCoincidingWithTimeout_ReturnsFalse and
+                // DrainWithin_FaultedPlusLateCompleting_WithinBudget_ReturnsTrue.
+                return pending.All(t => t.IsCompleted);
             }
         }
     }
