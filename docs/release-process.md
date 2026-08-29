@@ -80,6 +80,10 @@ The script supports macOS and Windows (via Git Bash). Run it from the repo root.
 
 ## Cutting a release
 
+> **Executing a release?** Follow `.prawduct/runbooks/ship-a-release.md` — the step-by-step
+> checklist, with the pre-flight checks, the post-publish verification, and the issue
+> close-out that this document does not cover. Read on here for what each step does and why.
+
 Versioning is **semver `X.Y.Z`**; a `+0.0.1` patch is the default. The csproj `<Version>` is the
 source of truth — `prep` reads it and increments the last component unless you pass a version.
 
