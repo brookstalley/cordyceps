@@ -176,3 +176,35 @@ The hardest rules (everything else is in the plugin):
 **blocks** if code changed against an active build plan with no Critic findings.
 The session-start banner shows the active version and what changed — this anchor
 stays version-free.
+
+## Backlog — GitHub Issues, not a file
+
+**There is no `.prawduct/backlog.md`.** The backlog cut over to **GitHub Issues on
+`brookstalley/cordyceps`** on 2026-08-29 and the source markdown was deleted; if you
+are looking for that file, this section is the answer. The live backlog is reached
+through the backlog service, never by reading a file:
+
+```bash
+prawduct-hook backlog list --repo brookstalley/cordyceps    # open items
+prawduct-hook backlog pick --repo brookstalley/cordyceps    # ready work, ranked
+prawduct-hook backlog get  GHS-6QN4                         # one item by its PFX id
+prawduct-hook backlog cache-query search "script" --repo brookstalley/cordyceps
+```
+
+Or just use `/prawduct:backlog`, which routes to the service automatically.
+
+**`PFX-XXXX` ids still work and still resolve.** Every item kept its hand-minted id as
+an `id:PFX` alias, so a citation like `RSC-2H9K` in `docs/place-image-action.md` or
+`REL-6H4X` in `docs/release-process.md` resolves to its issue
+(`backlog cache-query resolve RSC-2H9K --repo brookstalley/cordyceps`). Prefer the id
+over the issue number when writing new references — it survives further migrations.
+
+Items are filed with `backlog file`, not by editing anything. Issues carry a
+```prawduct``` body block plus `<facet>:`-namespaced labels
+(`area:`/`stage:`/`kind:`/`effort:`/`impact:`/`source:`/`id:`); that block is
+adapter-owned — never hand-write or hand-edit one.
+
+The pre-cutover markdown is recoverable from git history
+(`git show <cutover-commit>:.prawduct/backlog.md`). The migration's target, scope,
+accepted costs, and the plugin build that ran it are recorded in
+[`.prawduct/artifacts/migration-scrub-decisions.md`](.prawduct/artifacts/migration-scrub-decisions.md).

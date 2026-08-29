@@ -472,6 +472,18 @@ operator_verification_required: false
 # backlog_external_imports: []
 backlog_last_groomed_at: 2026-07-02
 
+# CUTOVER 2026-08-29 — the live backlog is GitHub Issues, not `.prawduct/backlog.md`.
+# This single key repoints every reader at the service (API §2.4): the session
+# briefing reads the GV2 snapshot, and the markdown-premise probes
+# (legacy-backlog-format / legacy-section-schema / backlog-overdue-grooming /
+# revisit-due) retire. `backlog_last_groomed_at` above is vestigial from here on.
+# The source markdown was migrated (41 items, issues #35-#75), verified by
+# `backlog verify-migration` at exit 0, and then DELETED by owner decision — see
+# .prawduct/artifacts/migration-scrub-decisions.md for the target, the
+# archive-scope choice, the accepted cost of the deletion, and the plugin build
+# that performed it. Recovery of the pre-cutover file is via git history.
+backlog_service_repo: brookstalley/cordyceps
+
 # =============================================================================
 # CHANGE LOG
 # =============================================================================
