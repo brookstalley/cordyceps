@@ -181,30 +181,29 @@ stays version-free.
 
 **There is no `.prawduct/backlog.md`.** The backlog cut over to **GitHub Issues on
 `brookstalley/cordyceps`** on 2026-08-29 and the source markdown was deleted; if you
-are looking for that file, this section is the answer. The live backlog is reached
-through the backlog service, never by reading a file:
+are looking for that file, this section is the answer. Use `/prawduct:backlog`, which
+routes to the service automatically — the plugin owns the item shape, the labels, and
+the commands, and this repo does not restate them.
 
-```bash
-prawduct-hook backlog list --repo brookstalley/cordyceps    # open items
-prawduct-hook backlog pick --repo brookstalley/cordyceps    # ready work, ranked
-prawduct-hook backlog get  GHS-6QN4                         # one item by its PFX id
-prawduct-hook backlog cache-query search "script" --repo brookstalley/cordyceps
-```
-
-Or just use `/prawduct:backlog`, which routes to the service automatically.
+**This makes the backlog an external dependency.** Reading or filing needs network
+access plus an authenticated `gh` (`gh auth status`); there is no offline copy, and a
+fresh clone carries no backlog content until the cache is built. A read that fails with
+an auth or network error is telling you about your environment, not about the backlog.
 
 **`PFX-XXXX` ids still work and still resolve.** Every item kept its hand-minted id as
-an `id:PFX` alias, so a citation like `RSC-2H9K` in `docs/place-image-action.md` or
-`REL-6H4X` in `docs/release-process.md` resolves to its issue
-(`backlog cache-query resolve RSC-2H9K --repo brookstalley/cordyceps`). Prefer the id
-over the issue number when writing new references — it survives further migrations.
+an `id:PFX` alias, so citations like `RSC-2H9K` in `docs/place-image-action.md` and
+`REL-6H4X` in `docs/release-process.md` still resolve. Pass `--repo brookstalley/cordyceps`
+when resolving a bare id — the hook cannot infer the target repo from the id alone.
+PFX ids are the durable handle for the **migrated corpus only** — `backlog file` mints
+no PFX, so items filed after the cutover (such as #76) are cited by issue number.
 
-Items are filed with `backlog file`, not by editing anything. Issues carry a
-```prawduct``` body block plus `<facet>:`-namespaced labels
-(`area:`/`stage:`/`kind:`/`effort:`/`impact:`/`source:`/`id:`); that block is
-adapter-owned — never hand-write or hand-edit one.
+The pre-cutover markdown is recoverable from git history. The deletion commit does not
+contain the file, so read it from that commit's parent:
 
-The pre-cutover markdown is recoverable from git history
-(`git show <cutover-commit>:.prawduct/backlog.md`). The migration's target, scope,
-accepted costs, and the plugin build that ran it are recorded in
+```bash
+git show "$(git rev-list -1 HEAD -- .prawduct/backlog.md)^:.prawduct/backlog.md"
+```
+
+The migration's target, scope, accepted costs, the plugin build that ran it, and the
+full `PFX -> issue` mapping are recorded in
 [`.prawduct/artifacts/migration-scrub-decisions.md`](.prawduct/artifacts/migration-scrub-decisions.md).
