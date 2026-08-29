@@ -176,3 +176,34 @@ The hardest rules (everything else is in the plugin):
 **blocks** if code changed against an active build plan with no Critic findings.
 The session-start banner shows the active version and what changed — this anchor
 stays version-free.
+
+## Backlog — GitHub Issues, not a file
+
+**There is no `.prawduct/backlog.md`.** The backlog cut over to **GitHub Issues on
+`brookstalley/cordyceps`** on 2026-08-29 and the source markdown was deleted; if you
+are looking for that file, this section is the answer. Use `/prawduct:backlog`, which
+routes to the service automatically — the plugin owns the item shape, the labels, and
+the commands, and this repo does not restate them.
+
+**This makes the backlog an external dependency.** Reading or filing needs network
+access plus an authenticated `gh` (`gh auth status`); there is no offline copy, and a
+fresh clone carries no backlog content until the cache is built. A read that fails with
+an auth or network error is telling you about your environment, not about the backlog.
+
+**`PFX-XXXX` ids still work and still resolve.** Every item kept its hand-minted id as
+an `id:PFX` alias, so citations like `RSC-2H9K` in `docs/place-image-action.md` and
+`REL-6H4X` in `docs/release-process.md` still resolve. Pass `--repo brookstalley/cordyceps`
+when resolving a bare id — the hook cannot infer the target repo from the id alone.
+PFX ids are the durable handle for the **migrated corpus only** — `backlog file` mints
+no PFX, so items filed after the cutover (such as #76) are cited by issue number.
+
+The pre-cutover markdown is recoverable from git history. The deletion commit does not
+contain the file, so read it from that commit's parent:
+
+```bash
+git show "$(git rev-list -1 HEAD -- .prawduct/backlog.md)^:.prawduct/backlog.md"
+```
+
+The migration's target, scope, accepted costs, the plugin build that ran it, and the
+full `PFX -> issue` mapping are recorded in
+[`.prawduct/artifacts/migration-scrub-decisions.md`](.prawduct/artifacts/migration-scrub-decisions.md).
