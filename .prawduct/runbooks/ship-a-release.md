@@ -36,6 +36,18 @@ Missing any of these strands you mid-release, and `publish` is the half that str
   `/Applications/Rhino 8.app/Contents/Resources/bin/yak` (macOS)
 - **Yak login** — `yak login` once; the token persists at `~/Documents/.mcneel/yak.yml`
 
+`scripts/release.sh` checks only that the token *file exists*, not that it is still valid. An
+expired token therefore passes its check and fails at `yak push` — the very last action of
+`publish`, after the tag and the GitHub Release are already live. Probe it before you start:
+
+    /Applications/Rhino\ 8.app/Contents/Resources/bin/yak owner list cordyceps
+
+**Expected:** `brooks`. If it errors, run `yak login` before step 1.
+
+> 🚧 **UNVERIFIED** — this command succeeds with a valid token, but it has not been observed
+> failing against an expired one, so it may be a public read that proves nothing.
+> Confirm the next time a token actually expires; until then treat a pass as weak evidence.
+
 ## Phase A — Pre-flight (on `develop`)
 
 1. Get onto a clean, current `develop`:

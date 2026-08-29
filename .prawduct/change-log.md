@@ -42,7 +42,7 @@
 
 ## 2026-08-29: document the silently-never-invoked RunScript trap (issue #33)
 
-<!-- prawduct: type=docs | scope=runscript-never-invoked-docs -->
+<!-- prawduct: type=docs | scope=runscript-never-invoked-docs | release=v1.5.0 -->
 
 **Why:** The reporter on #33 filed a regression against v1.5.0-rc.1 that turned out to be their
 own test code: a C# script whose body only *defines* `RunScript`, with no top-level statements,
@@ -67,7 +67,7 @@ Entry content is unchanged — 34 bullets before and after.
 
 ## 2026-08-27: writing a script's source now recompiles it (issue #33)
 
-<!-- prawduct: type=bugfix | chunks=01,02,03,04 | scope=script-recompile-on-set -->
+<!-- prawduct: type=bugfix | chunks=01,02,03,04 | scope=script-recompile-on-set | release=v1.5.0 -->
 
 **Why:** [GitHub #33] A reporter on a real 149-object definition found `gh_script(action='set')`
 returning `success/codeSet:true`, `get` round-tripping the new source, and the component executing
@@ -122,7 +122,7 @@ left for a user to discover.
 
 ## 2026-08-25: the release publishes the binary it built (release-artifact provenance)
 
-<!-- prawduct: type=bugfix | chunks=01,02,03,04 | scope=release-artifact-provenance -->
+<!-- prawduct: type=bugfix | chunks=01,02,03,04 | scope=release-artifact-provenance | release=v1.5.0 -->
 
 **Why:** [GitHub #29] A reporter with no .NET toolchain asked for a `develop` build and there was
 no supported way to give them one. CI built and tested but uploaded nothing, and the two
@@ -183,7 +183,7 @@ first time.
 
 ## 2026-08-21: bridge liveness, solution safety, status envelope (issues #30, #29)
 
-<!-- prawduct: type=feature | chunks=01,02,03 | scope=issues-2026-08 | status=built -->
+<!-- prawduct: type=feature | chunks=01,02,03 | scope=issues-2026-08 | status=built | release=v1.5.0 -->
 
 **Why:** [GitHub #30, #29] Two companion reports from one agent-driven session. Every MCP call
 refreshed the bridge component by expiring it immediately; landing mid-solve, that raised
@@ -218,7 +218,7 @@ for the wrong thing.
 
 ## 2026-08-21: per-parameter data modifiers on gh_canvas (issue #27)
 
-<!-- prawduct: type=feature | chunks=04 | scope=issues-2026-08 | status=built -->
+<!-- prawduct: type=feature | chunks=04 | scope=issues-2026-08 | status=built | release=v1.5.0 -->
 
 **Why:** [GitHub #27] Flatten/Graft/Simplify/Reverse — the right-click options on component ports —
 were unreachable through the API, and `action='info'` did not report them, so an agent could not
@@ -238,7 +238,7 @@ than these three. Reparameterize stays out of scope (the issue calls it phase 2)
 
 ## 2026-08-21: script source write cascade (issue #28 finding)
 
-<!-- prawduct: type=fix | chunks=05 | scope=issues-2026-08 | status=built -->
+<!-- prawduct: type=fix | chunks=05 | scope=issues-2026-08 | status=built | release=v1.5.0 -->
 
 **Why:** [GitHub #28] An external source audit found the read path probing a five-member cascade
 while the write path called `SetSource` bare through `dynamic`. A script component without
@@ -259,7 +259,7 @@ naturally at Rhino 9.
 
 ## 2026-08-21: System.Text.Json to Newtonsoft conversion dropped (issue #28 finding)
 
-<!-- prawduct: type=decision | chunks=06,06a | scope=issues-2026-08 | status=deferred -->
+<!-- prawduct: type=decision | chunks=06,06a | scope=issues-2026-08 | status=deferred | release=v1.5.0 -->
 
 **Why:** [user decision 2026-08-21] The conversion's sole justification was a net48 assembly-load
 conflict: on `net48` System.Text.Json arrives as a package needing `System.Memory` >= 4.0.1.2 and
@@ -281,7 +281,7 @@ does not, and the emitted null is required.
 
 ## 2026-07-02: stop encouraging component renames — annotate via groups (reliability chunk 06)
 
-<!-- prawduct: type=feature | chunks=06 | scope=reliability | status=merged -->
+<!-- prawduct: type=feature | chunks=06 | scope=reliability | status=merged | release=v1.5.0 -->
 
 **Why:** [GHC-8V3T, user decision 2026-07-02] Renamed components are hard to find on the canvas
 and renaming is not the Grasshopper convention (labeled groups, panels, scribbles are). Cordyceps
@@ -305,7 +305,7 @@ list/typeFilter/group and note that find matches default nicknames.
 
 ## 2026-07-02: Rhino undo records around mutating actions (reliability chunk 05)
 
-<!-- prawduct: type=feature | chunks=05 | scope=reliability | status=merged -->
+<!-- prawduct: type=feature | chunks=05 | scope=reliability | status=merged | release=v1.5.0 -->
 
 **Why:** [RSC-6K1W] No code path called `RhinoDoc.BeginUndoRecord`/`EndUndoRecord`, so each
 per-object mutation was its own undo step — Ctrl-Z after a bulk MCP `set_layer` reverted one
@@ -326,7 +326,7 @@ section, CHANGELOG. Host behavior queued as VRF-010.
 
 ## 2026-07-02: bounded snapshot store + snapshot_delete (reliability chunk 04)
 
-<!-- prawduct: type=feature | chunks=04 | scope=reliability | status=merged -->
+<!-- prawduct: type=feature | chunks=04 | scope=reliability | status=merged | release=v1.5.0 -->
 
 **Why:** [GHD-6M2J] `GhDocumentTool._snapshots` was an unbounded process-lifetime dictionary of
 full document serializations — and with undo/redo formally cut, every documented mutation
@@ -344,7 +344,7 @@ comments retired (PR #25 reviewer note). 406/406 green.
 
 ## 2026-07-02: Stop() drain moved off the UI thread (reliability chunk 03)
 
-<!-- prawduct: type=bugfix | chunks=03 | scope=reliability | status=merged -->
+<!-- prawduct: type=bugfix | chunks=03 | scope=reliability | status=merged | release=v1.5.0 -->
 
 **Why:** [MCP-3D8V] `McpServer.Stop()` always runs on the UI thread (component port-change,
 `RemovedFromDocument`, `DocumentContextChanged`), while an in-flight handler is a worker blocked
@@ -364,7 +364,7 @@ restart-while-draining) queued as VRF-009; 399/399 green.
 
 ## 2026-07-02: ServerState enum as lifecycle single source of truth (reliability chunk 02)
 
-<!-- prawduct: type=refactor | chunks=02 | scope=reliability | status=merged -->
+<!-- prawduct: type=refactor | chunks=02 | scope=reliability | status=merged | release=v1.5.0 -->
 
 **Why:** [MCP-9F3Q] `McpServer` lifecycle was reconstructed from three interdependent signals
 (`IsRunning` + `StartError` + `_context`); upcoming teardown-topology work (chunk 03) adds a
@@ -379,7 +379,7 @@ Behavior-preserving: component status output strings unchanged; 399/399 green.
 
 ## 2026-07-02: DrainWithin fault-vs-timeout contract pinned (reliability chunk 01)
 
-<!-- prawduct: type=bugfix | chunks=01 | scope=reliability | status=merged -->
+<!-- prawduct: type=bugfix | chunks=01 | scope=reliability | status=merged | release=v1.5.0 -->
 
 **Why:** [MCP-5T7W] `InFlightRequests.DrainWithin` returned `true` on any `AggregateException`,
 which could mask a drain-budget timeout coinciding with a handler fault — the combination was
@@ -395,7 +395,7 @@ fault+late-completion within budget → true), 389/389 green.
 
 ## 2026-07-02: janitor full reliability audit — hygiene, doc contract, HIGH bugs, MEDIUM sweeps, testability
 
-<!-- prawduct: type=maintenance | chunks=01,02,03,04,05,06 | scope=janitor-2026-07-02 | status=merged -->
+<!-- prawduct: type=maintenance | chunks=01,02,03,04,05,06 | scope=janitor-2026-07-02 | status=merged | release=v1.5.0 -->
 
 **Why:** The user requested a thorough audit ("quality, bugs, consistency, gaps — ultra reliable
 and stable"). A six-agent survey found the dominant defect class was mutate-then-report-success
