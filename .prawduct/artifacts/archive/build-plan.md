@@ -1,6 +1,11 @@
 ---
 scope: script-recompile-on-set
+lifecycle: completed
+archived: 2026-08-29
+maintained: false
 ---
+
+> **Archived — no longer maintained.** This plan records what was built, not what will be. Do not edit it to reflect later changes; write those where they are true.
 
 # Build Plan — script recompile on write (issue #33)
 

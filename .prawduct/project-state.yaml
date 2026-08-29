@@ -378,7 +378,7 @@ build_state:
 # artifacts/archive/ rather than deleted. artifacts/build-plan-reliability.md is
 # a second retained plan, held live until the next develop->main release per the
 # gitflow plan lifecycle.
-active_build_plan: artifacts/build-plan.md
+active_build_plan:
 
 # =============================================================================
 # COVERAGE EVIDENCE (opt-in, v1.4+)

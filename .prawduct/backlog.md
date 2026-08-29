@@ -303,6 +303,42 @@
 
   Neither is obviously right; pick one (or find a third) before scoping the fix.
 
+- **[GHS-6QN4]** Heuristic warning on gh_script set/configure for a never-invoked RunScript
+  `effort: M · impact: M · area: gh-script · source: user · added: 2026-08-29 · status: open · stage: research · related: GHS-5B7R`
+
+  Surfaced in the comment thread on GitHub issue #33 (2026-08-27), after the reporter's own
+  false-positive regression report was traced to this trap.
+
+  **The trap.** A C# script component whose code only *defines* a function —
+  `void RunScript(object x, object y, out object a, out object b) { a = ...; }` — with no top-level
+  statements compiles cleanly, and the component even syncs its output ports from the signature, so it
+  looks alive. The function is never invoked. Outputs stay null with `runtimeMessageLevel: Blank` and no
+  error, warning or runtime message anywhere. Behaves identically on 1.4.12, 1.5.0-rc.1 and rc.2, so this
+  is long-standing host behavior, not a regression.
+
+  **Why the existing machinery cannot catch it.** The divergence check compares stored source against
+  the running program. On C# the two are byte-identical here, so `set` correctly reports
+  `verified: true` and there is nothing to flag. Python 3 *is* caught today — Rhino rewrites the
+  signature to `def RunScript(self, x, y)`, so `verified: false` / `sourceDiverged: true` — meaning the
+  language where users most need the warning is exactly the one the current machinery is blind to. A
+  guard therefore has to inspect the source shape ("defines RunScript, has no top-level statements"),
+  not lean on divergence.
+
+  **Why this is `stage: research` and not `ready`.** The write path already sees the source, so the hook
+  location is easy; the open questions are what the rule actually is. Namely: what counts as a top-level
+  statement, per language; whether SDK-mode vs script-mode C# changes the answer (SDK-mode legitimately
+  carries a class with a RunScript method); whether this warns or errors; and what the false-positive
+  cost is of misjudging user code we do not otherwise parse. Getting that wrong means warning on correct
+  scripts, which is worse than the silence it replaces.
+
+  **Already shipped in v1.5.0, separately:** the documentation half — a row in
+  `Knowledge/CommonErrorsGuide.md` and a note in `Knowledge/Prompts/SetupScriptComponent.md`. This item
+  is the code heuristic only.
+
+  Doc-audit note when implemented: a new warning field on set/configure would need ActionInfo help
+  metadata, `GetServerInstructions()`, `CommonErrorsGuide.md` (row exists, would need the field named)
+  and CHANGELOG.
+
 ## Promoted
 
 <!-- Items currently being addressed in an active build plan. /backlog pick

@@ -40,6 +40,31 @@
      They are written by hand: tick a box when its chunk's review passes, and
      nothing will overwrite it. -->
 
+## 2026-08-29: document the silently-never-invoked RunScript trap (issue #33)
+
+<!-- prawduct: type=docs | scope=runscript-never-invoked-docs -->
+
+**Why:** The reporter on #33 filed a regression against v1.5.0-rc.1 that turned out to be their
+own test code: a C# script whose body only *defines* `RunScript`, with no top-level statements,
+compiles and syncs its output ports from the signature but is never invoked — null outputs,
+`runtimeMessageLevel: Blank`, no diagnostic anywhere. It cost a full false-positive report and a
+production rollback to 1.4.12 while it was investigated.
+
+**What:** A row in `Knowledge/CommonErrorsGuide.md` and a note in
+`Knowledge/Prompts/SetupScriptComponent.md`, both naming the fix (write top-level statements) and
+the reason the machinery stays quiet: on C# the stored and running text are identical, so
+`verified:true` is correct and has nothing to flag. Python 3 does surface it via the signature
+rewrite, which is why the blind spot lands on the language that needs the warning most.
+
+**Not done:** the source-shape heuristic on `set`/`configure` that would catch this at write time.
+Backlogged rather than bolted on — the rule ("defines RunScript, no top-level statements") needs a
+requirements pass on what counts as a top-level statement per language and how SDK-mode C# differs,
+and a wrong rule warns on correct scripts.
+
+**Also:** merged three duplicate `### Fixed`/`### Changed` headings under `## [Unreleased]` in
+CHANGELOG.md, which `release.sh prep` would otherwise have shipped into the 1.5.0 section verbatim.
+Entry content is unchanged — 34 bullets before and after.
+
 ## 2026-08-27: writing a script's source now recompiles it (issue #33)
 
 <!-- prawduct: type=bugfix | chunks=01,02,03,04 | scope=script-recompile-on-set -->
