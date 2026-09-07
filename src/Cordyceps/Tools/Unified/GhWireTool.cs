@@ -30,7 +30,7 @@ namespace Cordyceps.Tools.Unified
                     Required = new string[0],
                     Optional = new[] { "sourceId", "sourceParam", "targetId", "targetParam", "connections" },
                     Example = "action='connect', sourceId='a', sourceParam='0', targetId='b', targetParam='R'",
-                    Tips = new[] { "Use param name, nickname, or index (0-based)", "An index that does not exist is refused with the valid range — it never falls back to a name match", "For bulk: connections='[{sourceId,sourceParam,targetId,targetParam},...]'" }
+                    Tips = new[] { "Use param name, nickname, or index (0-based)", "On a component, an index that does not exist is refused with the valid range — it never falls back to a name match; a free-floating param object is itself the target and ignores the spec", "For bulk: connections='[{sourceId,sourceParam,targetId,targetParam},...]'" }
                 },
                 ["disconnect"] = new ActionInfo
                 {
@@ -38,7 +38,7 @@ namespace Cordyceps.Tools.Unified
                     Description = "Remove a wire between components",
                     Required = new[] { "sourceId", "sourceParam", "targetId", "targetParam" },
                     Example = "action='disconnect', sourceId='a', sourceParam='0', targetId='b', targetParam='R'",
-                    Tips = new[] { "If the wire doesn't exist, the error lists the target input's current sources (currentSources) so you can correct the call", "An index that does not exist is refused with the valid range — it never falls back to a name match" }
+                    Tips = new[] { "If the wire doesn't exist, the error lists the target input's current sources (currentSources) so you can correct the call", "On a component, an index that does not exist is refused with the valid range — it never falls back to a name match; a free-floating param object is itself the target and ignores the spec" }
                 },
                 ["list"] = new ActionInfo
                 {
@@ -70,7 +70,7 @@ namespace Cordyceps.Tools.Unified
             },
             Notes = new[]
             {
-                "Parameters can be specified by name, nickname, or 0-based index; an index outside the port list is refused with the valid range rather than matched as a name",
+                "On a component, parameters are specified by name, nickname, or 0-based index; an index outside the port list is refused with the valid range rather than matched as a name. A free-floating param object is itself the target",
                 "Disable solver before bulk wiring: gh_document(action='solver', enabled=false)"
             }
         };

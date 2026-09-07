@@ -116,6 +116,14 @@ namespace Cordyceps.Core
                     $"(0-{parameters.Count - 1}). Available: {available}");
             }
 
+            // A spec written as a number but too large to fit in an int is still a number. Letting
+            // it fall through to the name matchers would reopen this very defect at the far end of
+            // the range, so it is refused the same way an in-range parse that misses is.
+            if (IsAsciiInteger(spec))
+                return ParamLookupResult.Failed(
+                    $"Parameter index '{spec}' is out of range for the {sideName} side " +
+                    $"(0-{parameters.Count - 1}). Available: {available}");
+
             for (int i = 0; i < parameters.Count; i++)
             {
                 if (parameters[i].Name.Equals(spec, StringComparison.OrdinalIgnoreCase) ||
@@ -132,6 +140,26 @@ namespace Cordyceps.Core
             return ParamLookupResult.Failed(
                 $"Parameter '{spec}' not found on the {sideName} side of '{ownerName}'. " +
                 $"Available: {available}");
+        }
+
+        /// <summary>
+        /// Whether the spec is written as a plain base-10 integer, with an optional sign. Deliberately
+        /// ASCII-only, matching what the invariant-culture parse above accepts, so exactly one of the
+        /// two ever calls a spec numeric.
+        /// </summary>
+        private static bool IsAsciiInteger(string spec)
+        {
+            int start = spec[0] == '+' || spec[0] == '-' ? 1 : 0;
+            if (start >= spec.Length)
+                return false;
+
+            for (int i = start; i < spec.Length; i++)
+            {
+                if (spec[i] < '0' || spec[i] > '9')
+                    return false;
+            }
+
+            return true;
         }
     }
 }

@@ -68,6 +68,41 @@ namespace Cordyceps.Tests
             Assert.Equal(1, result.Index);
         }
 
+        [Theory]
+        [InlineData("99999999999999999999")]
+        [InlineData("-99999999999999999999")]
+        public void Resolve_WithAnIndexTooLargeForAnInt_StillRefusesRatherThanSearchingNames(string spec)
+        {
+            // The defect this rule exists to close, at the far end of the range: a spec written as
+            // a number is a number even when it does not fit in an int, so it must not reach the
+            // name matchers.
+            var result = ParamSpecLookup.Resolve(spec, DigitBearingSide(), isInput: true, ownerName: "Frame");
+
+            Assert.False(result.IsResolved);
+            Assert.Contains("out of range", result.Error);
+            Assert.Contains("(0-1)", result.Error);
+        }
+
+        [Fact]
+        public void Resolve_WithASignedInRangeIndex_ResolvesIt()
+        {
+            var result = ParamSpecLookup.Resolve("+1", DigitBearingSide(), isInput: true, ownerName: "Frame");
+
+            Assert.True(result.IsResolved);
+            Assert.Equal(1, result.Index);
+        }
+
+        [Fact]
+        public void Resolve_WithASignAndNoDigits_IsTreatedAsAName()
+        {
+            var side = new[] { new ParamIdentity("Plane"), new ParamIdentity("-") };
+
+            var result = ParamSpecLookup.Resolve("-", side, isInput: true, ownerName: "Frame");
+
+            Assert.True(result.IsResolved);
+            Assert.Equal(1, result.Index);
+        }
+
         [Fact]
         public void Resolve_MatchesNameCaseInsensitively()
         {
@@ -108,6 +143,20 @@ namespace Cordyceps.Tests
 
             Assert.True(result.IsResolved);
             Assert.Equal(1, result.Index);
+        }
+
+        [Fact]
+        public void Resolve_WithAnAmbiguousSubstring_TakesTheLowestIndexedPort()
+        {
+            // Pinning a deliberate choice, not endorsing it: "Plane" is a substring of both names,
+            // and the caller is told which port it got (the tools report the resolved name back).
+            // It is asserted because rewriting the loop would flip the answer with the suite still
+            // green, and landing on a port nobody asked for is the shape this whole rule exists
+            // to close — reached by a name here rather than by a number.
+            var result = ParamSpecLookup.Resolve("Plane", DigitBearingSide(), isInput: true, ownerName: "Frame");
+
+            Assert.True(result.IsResolved);
+            Assert.Equal(0, result.Index);
         }
 
         [Fact]

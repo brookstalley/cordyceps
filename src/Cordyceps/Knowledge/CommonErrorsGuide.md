@@ -13,7 +13,7 @@
 | Error | Cause | Fix |
 |-------|-------|-----|
 | "Source/Target: Parameter 'X' not found" | Bad param name | The error lists the available names; `gh_canvas(action='info', id='...')` to see params |
-| "Source/Target: Parameter index N is out of range" | The port does not exist — commonly a variable-parameter component whose input count has not been raised yet | The error names the valid range. Add the port first (`gh_canvas(action='zoomable', id='...', side='input', operation='add')`), then wire. An index is never rescued as a name match, so re-sending the same number will not connect |
+| "Source/Target: Parameter index N is out of range" | The port does not exist — commonly a variable-parameter component whose input count has not been raised yet | The error names the valid range. Add the port first (`gh_canvas(action='zoomable', id='...', side='input', operation='add')`), then wire. An index is never rescued as a name match, so re-sending the same number will not connect. (A free-floating param object has no ports of its own — it is the target and the spec is ignored) |
 | "Type mismatch" | Incompatible types | `gh_wire(action='validate', ...)` first; add conversion component |
 
 ## Data Tree Errors
