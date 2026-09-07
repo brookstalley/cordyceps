@@ -668,6 +668,9 @@ cached state and never touches the document, so it replies even when everything 
 Key points:
 - Disable solver: gh_document(action='solver', enabled=false)
 - Ambiguous names: use GUID or Category/Name format
+- Param specs (param/sourceParam/targetParam): a name, a nickname, or a 0-based index. An index
+  that does not exist is refused and the error names the valid range — it is never rescued as a
+  name match, so add the port first (gh_canvas action='zoomable') rather than re-asking
 - Spacing: 150px horizontal, 70px vertical
 - Annotate with labeled groups (group_create with name/color), panels, or scribbles — do NOT rename components while building; renamed components are hard to find on the canvas and it is not the Grasshopper convention. Track components by the returned id
 - CRITICAL: Inside a cluster editor, NEVER advise the user to press F5 or use Grasshopper's native recompute. It will destroy cluster inputs. Use gh_document(action='recompute') instead — it is cluster-safe.

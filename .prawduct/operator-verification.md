@@ -393,3 +393,29 @@ not executed. The reporter's stale program was never reproduced here.
   the document-lock timeout for concurrent requests.
 - **Version reporting (Chunk 03):** the MCP `initialize` response reports
   `1.5.0-rc.2+build<stamp>`, not `1.5.0.0`. This is what lets a tester prove which build they are on.
+
+## VRF-015 — param-spec Chunk 1 — an out-of-range index refuses instead of wiring the wrong port
+
+**Status:** pending
+**Added:** 2026-09-07 (param-spec, BRO-3)
+**Where to verify:** Rhino 8 + Grasshopper with the Cordyceps component placed and an MCP client connected.
+
+**Why this needs a human:** `Core/ParamSpecLookup` is unit-tested in CI, but the glue that reads
+`comp.Params.Input/Output` and indexes back into the live list needs real `IGH_Param` objects, which
+the test project cannot load. The behaviour that used to be wrong — the *wire actually created* —
+only exists in a running document.
+
+**Verify:**
+
+1. Place a component with exactly two inputs whose second input's name contains a digit — a variable-
+   parameter component whose ports Grasshopper auto-numbers is the natural case, or add a second input
+   with `gh_canvas(action='zoomable', id='...', side='input', operation='add')`.
+2. `gh_wire(action='connect', sourceId=..., targetId=..., targetParam='2')`.
+   Expect `success: false`, an error reading `Target: Parameter index 2 is out of range for the input
+   side (0-1). Available: ...`, and **no new wire on the canvas**.
+3. `gh_wire(action='connect', ..., targetParam='1')` connects to the second port (by position, not by
+   the digit in its name).
+4. `gh_wire(action='disconnect', ..., sourceParam='', targetParam='0')` now reports
+   `Source: 'sourceParam' is required for a component — …` instead of silently disconnecting port 0.
+5. `gh_canvas(action='modifier', id='...', side='input', param='2')` still reports the same
+   out-of-range message it did before this change (unchanged behaviour, now from the shared rule).

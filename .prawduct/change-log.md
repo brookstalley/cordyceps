@@ -40,6 +40,40 @@
      They are written by hand: tick a box when its chunk's review passes, and
      nothing will overwrite it. -->
 
+## 2026-09-07: one rule for reading a parameter spec
+
+<!-- prawduct: type=bugfix | chunks=1 | scope=param-spec -->
+
+**Why:** BRO-3. `gh_wire` folded its range check into the same condition as the numeric parse
+(`int.TryParse(spec, out i) && i >= 0 && i < list.Count`), so an index past the end of a
+component's port list was indistinguishable from a spec that was never a number. Execution fell
+through to the exact-name matchers and then to a substring matcher, which accepts a digit
+appearing anywhere in a name — so `targetParam='2'` against a two-input component connected to
+`Plane 2` and reported success. Grasshopper auto-numbers duplicated nicknames on exactly the
+variable-parameter components this tool targets, so digit-bearing names are ordinary there.
+
+**What changed:** the resolution rule now lives once, in host-free `Core/ParamSpecLookup.cs`, with
+`ParamSpecLookupTests` covering each branch (the anchor: an out-of-range index against a
+digit-bearing list reports the range, it does not match). `GhWireTool` and
+`GhCanvasTool.Modifiers` both call it. The modifier tool's semantics are the ones kept — an index
+means an index, and every miss carries a reason — so the wire tool's six call sites now return
+that reason instead of composing their own bare "not found" text, prefixed `Source:`/`Target:` so
+a bulk connect names the failing end.
+
+**Two behaviour changes beyond the reported defect**, both in the same direction (never conflate
+"unparseable" with "empty"): an empty `sourceParam`/`targetParam` on `disconnect` used to match
+port 0, because an empty string is a substring of every name, and now reports the missing
+argument; and a `null` spec used to throw out of `String.IndexOf` rather than return an error.
+
+**Deliberately not done:** `availableOutputs`/`availableInputs` on connect failures are kept
+rather than folded into the reason string — `boundary-patterns.md` makes the response shape an
+additively-evolved surface, and dropping a field an agent may read is a silent removal. The wire
+tool's `IGH_Param` early return (a bare param object ignores both the spec and the side) is out of
+the task's scope and unchanged.
+
+**Verification:** 594/594 tests green (579 baseline + 15 new); Release build 0 warnings. The live
+half — that no wire is created — needs a running Rhino and is enqueued as VRF-015.
+
 ## 2026-08-29: merge feature PRs automatically once CI and review are clean
 
 <!-- prawduct: type=tooling | scope=pr-merge-preference -->

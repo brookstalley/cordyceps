@@ -4,6 +4,13 @@ All notable changes to Cordyceps will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [Unreleased]
+
+### Fixed
+
+- **An out-of-range parameter index no longer wires the wrong port** - `gh_wire(action='connect'/'disconnect'/'validate')` folded its range check into the same condition as the numeric parse, so an index past the end of a component's port list was indistinguishable from a spec that was never a number: it fell through to the name matchers and could connect to a parameter whose name merely *contains* that digit (`Plane 2` for `targetParam='2'`). The wire landed on a port nobody asked for and the call reported success. Grasshopper auto-numbers duplicated nicknames on exactly the variable-parameter components this hits, so digit-bearing names are ordinary there. A numeric spec now means an index and nothing else — an index outside the list is refused, naming the valid range, and no wire is created. The same rule (`Core/ParamSpecLookup`) now serves `gh_canvas(action='modifier')`, which already behaved this way, so both tools read a parameter spec identically.
+- **`gh_wire` parameter errors say what was wrong** - A failed lookup previously reported only `"Source output not found: X"`; every wire-tool call site now returns the resolver's reason — the valid range for a bad index, the available names for a bad name — prefixed `Source:`/`Target:` so a bulk `connect` result says which end failed. The structured `availableOutputs`/`availableInputs` fields on `connect` failures are unchanged. One consequence: `disconnect` with an empty `sourceParam`/`targetParam` is now an error naming the missing argument, where it previously matched the first port (an empty string is a substring of every name) and disconnected a wire the caller never named.
+
 ## [1.5.0] - 2026-08-29
 
 ### Added
