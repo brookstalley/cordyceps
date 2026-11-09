@@ -139,11 +139,23 @@ can publish.
 
 ## Governance bookkeeping (Prawduct)
 
-Under gitflow, a feature's change-log entry carries **no `release=` tag** after its
-`feature → develop` PR — that absence is the release-pending state. When the `develop → main`
-release ships those entries, add `release=vX.Y.Z` to each. That tag is the whole release-time
-edit: nothing is regenerated from it, and `prawduct-hook check-releasability` reads the *absence*
-of `release=` to enumerate what is still pending, so never write a placeholder value.
+Pending work is recorded as one fragment per scope in `.prawduct/changes/<scope>.md`. A
+feature's `feature → develop` PR adds its fragment, and every file in that directory is
+release-pending. `.prawduct/change-log.md` holds no pending entries; it is shipped history only,
+and nothing new is added to it. When the `develop → main` release ships those fragments, cut them:
+
+```bash
+prawduct-hook cut-change-log --release vX.Y.Z --scope <scope>...           # dry run: names what ships, what stays
+prawduct-hook cut-change-log --release vX.Y.Z --scope <scope>... --apply
+```
+
+Pass one `--scope` per shipping fragment (its filename stem), or write
+`.prawduct/artifacts/release-plan-vX.Y.Z.md` with a `## Release classification` table and omit
+`--scope`. Without either, the cut refuses with `no-release-plan`. For each shipping fragment it
+writes an entry tagged `release=vX.Y.Z` into `.prawduct/change-log-archive/YYYY-MM.md`, then
+removes the fragment. A fragment left out stays pending for the next release. The cut writes
+nothing on any refusal. Never hand-write a `release=` tag, because any value at all drops the
+scope out of `prawduct-hook check-releasability`'s pending set.
 
 Then archive the build plans this release shipped:
 
