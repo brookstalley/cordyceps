@@ -299,71 +299,40 @@ namespace Cordyceps.Core
         /// <returns>HashSet of GUIDs to filter out</returns>
         public static HashSet<Guid> GetCordycepsInfrastructureIds(GH_Document doc)
         {
-            var infraIds = new HashSet<Guid>();
-            if (doc == null) return infraIds;
+            if (doc == null) return new HashSet<Guid>();
 
-            // Find the Cordyceps component
-            IGH_Component cordycepsComp = null;
+            // Every Cordyceps bridge component is infrastructure, not just the first.
+            var bridges = new List<BridgeLinks>();
+            var groups = new List<GroupMembers>();
             foreach (var obj in doc.Objects)
             {
                 if (obj is IGH_Component comp && IsCordycepsComponent(comp))
                 {
-                    cordycepsComp = comp;
-                    infraIds.Add(comp.InstanceGuid);
-                    break;
-                }
-            }
-
-            if (cordycepsComp == null) return infraIds;
-
-            // Find all components connected TO the Cordyceps component (sources of its inputs)
-            foreach (var input in cordycepsComp.Params.Input)
-            {
-                foreach (var source in input.Sources)
-                {
-                    var sourceObj = source.Attributes?.GetTopLevel?.DocObject;
-                    if (sourceObj != null)
-                    {
-                        infraIds.Add(sourceObj.InstanceGuid);
-                    }
-                }
-            }
-
-            // Find all components connected FROM the Cordyceps component (recipients of its outputs)
-            foreach (var output in cordycepsComp.Params.Output)
-            {
-                foreach (var recipient in output.Recipients)
-                {
-                    var recipientObj = recipient.Attributes?.GetTopLevel?.DocObject;
-                    if (recipientObj != null)
-                    {
-                        infraIds.Add(recipientObj.InstanceGuid);
-                    }
-                }
-            }
-
-            // Find any groups that contain infrastructure components
-            foreach (var obj in doc.Objects)
-            {
-                if (obj is Grasshopper.Kernel.Special.GH_Group group)
-                {
-                    var memberIds = group.ObjectIDs;
-                    if (memberIds != null)
-                    {
-                        // If any member of this group is infrastructure, the whole group is infrastructure
-                        foreach (var memberId in memberIds)
+                    var sources = new List<Guid>();
+                    foreach (var input in comp.Params.Input)
+                        foreach (var source in input.Sources)
                         {
-                            if (infraIds.Contains(memberId))
-                            {
-                                infraIds.Add(group.InstanceGuid);
-                                break;
-                            }
+                            var o = source.Attributes?.GetTopLevel?.DocObject;
+                            if (o != null) sources.Add(o.InstanceGuid);
                         }
-                    }
+
+                    var recipients = new List<Guid>();
+                    foreach (var output in comp.Params.Output)
+                        foreach (var recipient in output.Recipients)
+                        {
+                            var o = recipient.Attributes?.GetTopLevel?.DocObject;
+                            if (o != null) recipients.Add(o.InstanceGuid);
+                        }
+
+                    bridges.Add(new BridgeLinks(comp.InstanceGuid, sources, recipients));
+                }
+                else if (obj is Grasshopper.Kernel.Special.GH_Group group)
+                {
+                    groups.Add(new GroupMembers(group.InstanceGuid, group.ObjectIDs));
                 }
             }
 
-            return infraIds;
+            return InfrastructureIds.Compute(bridges, groups);
         }
 
         /// <summary>
