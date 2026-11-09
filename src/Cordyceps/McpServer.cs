@@ -667,6 +667,7 @@ cached state and never touches the document, so it replies even when everything 
 
 Key points:
 - Disable solver: gh_document(action='solver', enabled=false)
+- Argument names are exact (case-sensitive). An argument that is not a parameter of the tool is an error that names it, suggests the closest parameter, and lists the valid ones - the call is not run
 - Ambiguous names: use GUID or Category/Name format
 - Param specs (param/sourceParam/targetParam) on a COMPONENT: a name, a nickname, or a 0-based
   index. An index that does not exist is refused and the error names the valid range — it is never
@@ -740,28 +741,9 @@ Resources: gh://docs/getting-started, gh://docs/data-trees, gh://docs/common-err
                 // Create tool instance (all tool classes take GrasshopperContext)
                 var instance = Activator.CreateInstance(tool.DeclaringType, ctx);
 
-                // Build method arguments
-                var methodParams = tool.Method.GetParameters();
-                var args = new object[methodParams.Length];
-
-                for (int i = 0; i < methodParams.Length; i++)
-                {
-                    var param = methodParams[i];
-                    if (arguments.ValueKind == JsonValueKind.Object &&
-                        arguments.TryGetProperty(param.Name, out var argVal))
-                    {
-                        args[i] = ConvertJsonValue(argVal, param.ParameterType);
-                    }
-                    else if (param.HasDefaultValue)
-                    {
-                        args[i] = param.DefaultValue;
-                    }
-                    else
-                    {
-                        // Required parameter is missing - throw a clear error
-                        throw new InvalidOperationException($"Missing required parameter: {param.Name}");
-                    }
-                }
+                // Validate and bind arguments: rejects unknown names / non-object arguments
+                // before the tool method runs (see Core.ToolArgumentBinder).
+                var args = Core.ToolArgumentBinder.Bind(tool.Method, arguments);
 
                 // Invoke the tool method
                 result = tool.Method.Invoke(instance, args);
