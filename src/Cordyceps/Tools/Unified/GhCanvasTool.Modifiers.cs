@@ -1,6 +1,5 @@
 using System;
 using System.Collections.Generic;
-using System.Globalization;
 using System.Linq;
 using Cordyceps.Core;
 using Grasshopper.Kernel;
@@ -113,10 +112,10 @@ namespace Cordyceps.Tools.Unified
         /// target, while a component port is named or given as a 0-based index.
         /// </summary>
         /// <remarks>
-        /// Mirrors <c>GhWireTool.GetParameter</c> but tolerates a missing spec — the wire tool
-        /// always defaults its spec before calling, and this action's <c>param</c> is genuinely
-        /// optional (a floating param needs none), so an absent spec must produce a message
-        /// rather than an exception.
+        /// The spec itself is read by <see cref="ParamSpecLookup"/>, shared with
+        /// <c>GhWireTool</c> so both tools refuse an out-of-range index identically rather than
+        /// each carrying its own rule. What stays here is the part that needs Grasshopper types:
+        /// an object that is not a component has no side to search.
         /// </remarks>
         private static IGH_Param ResolveModifierParam(IGH_DocumentObject obj, string paramSpec,
             bool isInput, out string error)
@@ -132,45 +131,20 @@ namespace Cordyceps.Tools.Unified
                 return null;
             }
 
-            string sideName = isInput ? "input" : "output";
             var list = isInput ? comp.Params.Input : comp.Params.Output;
-            if (list.Count == 0)
+            var lookup = ParamSpecLookup.Resolve(
+                paramSpec,
+                list.Select(p => new ParamIdentity(p.Name, p.NickName)).ToList(),
+                isInput,
+                comp.NickName);
+
+            if (!lookup.IsResolved)
             {
-                error = $"Component '{comp.NickName}' has no {sideName} parameters";
+                error = lookup.Error;
                 return null;
             }
 
-            var available = string.Join(", ", list.Select(p => p.Name));
-
-            if (string.IsNullOrWhiteSpace(paramSpec))
-            {
-                error = $"'param' is required for a component — pass a name or 0-based index. " +
-                        $"Available {sideName} params: {available}";
-                return null;
-            }
-
-            var spec = paramSpec.Trim();
-
-            if (int.TryParse(spec, NumberStyles.Integer, CultureInfo.InvariantCulture, out int index))
-            {
-                if (index >= 0 && index < list.Count)
-                    return list[index];
-
-                error = $"Parameter index {index} is out of range for the {sideName} side " +
-                        $"(0-{list.Count - 1}). Available: {available}";
-                return null;
-            }
-
-            var match = list.FirstOrDefault(p =>
-                    p.Name.Equals(spec, StringComparison.OrdinalIgnoreCase) ||
-                    p.NickName.Equals(spec, StringComparison.OrdinalIgnoreCase))
-                ?? list.FirstOrDefault(p => p.Name.IndexOf(spec, StringComparison.OrdinalIgnoreCase) >= 0);
-
-            if (match == null)
-                error = $"Parameter '{paramSpec}' not found on the {sideName} side of " +
-                        $"'{comp.NickName}'. Available: {available}";
-
-            return match;
+            return list[lookup.Index];
         }
 
         #endregion

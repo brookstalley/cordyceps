@@ -30,7 +30,7 @@ namespace Cordyceps.Tools.Unified
                     Required = new string[0],
                     Optional = new[] { "sourceId", "sourceParam", "targetId", "targetParam", "connections" },
                     Example = "action='connect', sourceId='a', sourceParam='0', targetId='b', targetParam='R'",
-                    Tips = new[] { "Use param name or index (0-based)", "For bulk: connections='[{sourceId,sourceParam,targetId,targetParam},...]'" }
+                    Tips = new[] { "Use param name, nickname, or index (0-based)", "On a component, an index that does not exist is refused with the valid range — it never falls back to a name match; a free-floating param object is itself the target and ignores the spec", "For bulk: connections='[{sourceId,sourceParam,targetId,targetParam},...]'" }
                 },
                 ["disconnect"] = new ActionInfo
                 {
@@ -38,7 +38,7 @@ namespace Cordyceps.Tools.Unified
                     Description = "Remove a wire between components",
                     Required = new[] { "sourceId", "sourceParam", "targetId", "targetParam" },
                     Example = "action='disconnect', sourceId='a', sourceParam='0', targetId='b', targetParam='R'",
-                    Tips = new[] { "If the wire doesn't exist, the error lists the target input's current sources (currentSources) so you can correct the call" }
+                    Tips = new[] { "If the wire doesn't exist, the error lists the target input's current sources (currentSources) so you can correct the call", "On a component, an index that does not exist is refused with the valid range — it never falls back to a name match; a free-floating param object is itself the target and ignores the spec" }
                 },
                 ["list"] = new ActionInfo
                 {
@@ -70,7 +70,7 @@ namespace Cordyceps.Tools.Unified
             },
             Notes = new[]
             {
-                "Parameters can be specified by name or 0-based index",
+                "On a component, parameters are specified by name, nickname, or 0-based index; an index outside the port list is refused with the valid range rather than matched as a name. A free-floating param object is itself the target",
                 "Disable solver before bulk wiring: gh_document(action='solver', enabled=false)"
             }
         };
@@ -198,13 +198,13 @@ namespace Cordyceps.Tools.Unified
                         continue;
                     }
 
-                    var sourceOutput = GetOutputParameter(srcObj, srcParam);
-                    var targetInput = GetInputParameter(tgtObj, tgtParam);
+                    var sourceOutput = GetOutputParameter(srcObj, srcParam, "sourceParam", out var srcParamError);
+                    var targetInput = GetInputParameter(tgtObj, tgtParam, "targetParam", out var tgtParamError);
 
                     if (sourceOutput == null)
                     {
                         var available = srcObj is IGH_Component c ? c.Params.Output.Select(p => p.Name).ToList() : new List<string>();
-                        results.Add(new { success = false, error = $"Source output '{srcParam}' not found", availableOutputs = available });
+                        results.Add(new { success = false, error = $"Source: {srcParamError}", availableOutputs = available });
                         failCount++;
                         continue;
                     }
@@ -212,7 +212,7 @@ namespace Cordyceps.Tools.Unified
                     if (targetInput == null)
                     {
                         var available = tgtObj is IGH_Component c ? c.Params.Input.Select(p => p.Name).ToList() : new List<string>();
-                        results.Add(new { success = false, error = $"Target input '{tgtParam}' not found", availableInputs = available });
+                        results.Add(new { success = false, error = $"Target: {tgtParamError}", availableInputs = available });
                         failCount++;
                         continue;
                     }
@@ -251,13 +251,13 @@ namespace Cordyceps.Tools.Unified
                 if (!ToolHelpers.TryGetUnprotectedComponent(_context, targetId, out var tgtObj, out error))
                     return ToolHelpers.ErrorResponse($"Target: {error}");
 
-                var sourceOutput = GetOutputParameter(srcObj, sourceParam);
+                var sourceOutput = GetOutputParameter(srcObj, sourceParam, "sourceParam", out var sourceParamError);
                 if (sourceOutput == null)
-                    return ToolHelpers.ErrorResponse($"Source output not found: {sourceParam}");
+                    return ToolHelpers.ErrorResponse($"Source: {sourceParamError}");
 
-                var targetInput = GetInputParameter(tgtObj, targetParam);
+                var targetInput = GetInputParameter(tgtObj, targetParam, "targetParam", out var targetParamError);
                 if (targetInput == null)
-                    return ToolHelpers.ErrorResponse($"Target input not found: {targetParam}");
+                    return ToolHelpers.ErrorResponse($"Target: {targetParamError}");
 
                 // Verify the wire actually exists before RemoveSource — otherwise report the
                 // input's current sources so the caller can correct itself instead of getting
@@ -442,13 +442,13 @@ namespace Cordyceps.Tools.Unified
                 if (!ToolHelpers.TryGetUnprotectedComponent(_context, targetId, out var tgtObj, out error))
                     return ToolHelpers.ErrorResponse($"Target: {error}");
 
-                var sourceOutput = GetOutputParameter(srcObj, sourceParam ?? "0");
-                var targetInput = GetInputParameter(tgtObj, targetParam ?? "0");
+                var sourceOutput = GetOutputParameter(srcObj, sourceParam ?? "0", "sourceParam", out var sourceParamError);
+                var targetInput = GetInputParameter(tgtObj, targetParam ?? "0", "targetParam", out var targetParamError);
 
                 if (sourceOutput == null)
-                    return ToolHelpers.ErrorResponse($"Source output not found: {sourceParam ?? "0"}");
+                    return ToolHelpers.ErrorResponse($"Source: {sourceParamError}");
                 if (targetInput == null)
-                    return ToolHelpers.ErrorResponse($"Target input not found: {targetParam ?? "0"}");
+                    return ToolHelpers.ErrorResponse($"Target: {targetParamError}");
 
                 // Basic type compatibility check
                 var sourceType = sourceOutput.TypeName?.ToLowerInvariant() ?? "";
@@ -497,28 +497,49 @@ namespace Cordyceps.Tools.Unified
             return ("unknown", "Compatibility unknown, Grasshopper will attempt conversion");
         }
 
-        private IGH_Param GetOutputParameter(IGH_DocumentObject obj, string paramSpec)
-            => GetParameter(obj, paramSpec, isInput: false);
+        private IGH_Param GetOutputParameter(IGH_DocumentObject obj, string paramSpec,
+            string specArgName, out string error)
+            => GetParameter(obj, paramSpec, isInput: false, specArgName, out error);
 
-        private IGH_Param GetInputParameter(IGH_DocumentObject obj, string paramSpec)
-            => GetParameter(obj, paramSpec, isInput: true);
+        private IGH_Param GetInputParameter(IGH_DocumentObject obj, string paramSpec,
+            string specArgName, out string error)
+            => GetParameter(obj, paramSpec, isInput: true, specArgName, out error);
 
-        private IGH_Param GetParameter(IGH_DocumentObject obj, string paramSpec, bool isInput)
+        /// <summary>
+        /// Resolve the port a wiring call names on one side of an object, reporting why when it
+        /// cannot. The spec is read by <see cref="ParamSpecLookup"/>, shared with
+        /// <c>gh_canvas(action='modifier')</c>: a numeric spec is an index and nothing else, so an
+        /// index past the end of the list is refused with the valid range rather than falling
+        /// through to a name search that can land on an unrelated digit-bearing port.
+        /// </summary>
+        private IGH_Param GetParameter(IGH_DocumentObject obj, string paramSpec, bool isInput,
+            string specArgName, out string error)
         {
+            error = null;
+
             if (obj is IGH_Param param) return param;
-            if (!(obj is IGH_Component comp)) return null;
+
+            if (!(obj is IGH_Component comp))
+            {
+                error = $"Object '{obj.NickName}' has no parameters to wire";
+                return null;
+            }
 
             var list = isInput ? comp.Params.Input : comp.Params.Output;
-            if (list.Count == 0) return null;
+            var lookup = ParamSpecLookup.Resolve(
+                paramSpec,
+                list.Select(p => new ParamIdentity(p.Name, p.NickName)).ToList(),
+                isInput,
+                comp.NickName,
+                specArgName);
 
-            if (int.TryParse(paramSpec, out int index) && index >= 0 && index < list.Count)
-                return list[index];
+            if (!lookup.IsResolved)
+            {
+                error = lookup.Error;
+                return null;
+            }
 
-            return list.FirstOrDefault(p =>
-                    p.Name.Equals(paramSpec, StringComparison.OrdinalIgnoreCase) ||
-                    p.NickName.Equals(paramSpec, StringComparison.OrdinalIgnoreCase))
-                ?? list.FirstOrDefault(p =>
-                    p.Name.IndexOf(paramSpec, StringComparison.OrdinalIgnoreCase) >= 0);
+            return list[lookup.Index];
         }
     }
 }

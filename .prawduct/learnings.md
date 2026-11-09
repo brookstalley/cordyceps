@@ -2,6 +2,28 @@
 
 Accumulated wisdom from building this product.
 
+## Freeze the tree when you dispatch the Critic — hold in-flight discoveries, don't apply them
+
+Deep-scrubbing your own change while the Critic runs is worth doing and does find things. Applying
+what you find is not: the review certifies the commit it was dispatched against, and
+`infer-critic-mode` records the tree as clean at dispatch. A fix landed at minute six means the
+report describes a tree that no longer exists — the defect it certifies as absent is present in
+the reviewed commit, the docs shipped in that commit are false of it, and the fix itself arrives
+uncovered. Note the discovery, keep building the case for it, and let it ride the ONE disposition
+commit that answers the findings. Cost of getting this wrong is a warning per drifted file, not a
+round — but the report's other findings are all reasoning about the wrong tree.
+
+## `int.TryParse` answers "does this fit in an Int32", not "is this written as a number"
+
+The BRO-3 defect class: a spec that fails a numeric parse falls into a *different* resolution
+strategy (name matching, glob, lookup), so anything the parser rejects for a reason unrelated to
+intent gets silently reinterpreted. Out-of-range folded into the parse condition was the reported
+half; `'99999999999999999999'` overflowing `Int32` is the same bug at the far end. **When a failed
+parse changes strategy rather than erroring, ask what else that parser rejects** — and decide the
+strategy from the spec's *shape* (`Core/ParamSpecLookup.IsAsciiInteger`), not from whether one
+particular parse succeeded. Pin invariant culture while you are there; a machine-facing contract
+must not read differently under a `tr-TR` Rhino.
+
 ## Code linked into `Cordyceps.Tests` must stay host-free — can't call `DebugLog`
 
 The test project links specific `Core/*.cs` files individually (`RequestValidator`,
