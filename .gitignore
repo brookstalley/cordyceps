@@ -79,3 +79,10 @@ memory/
 # local build; it is a build artifact, not a tracked file. The published download is the
 # GitHub Release asset, which scripts/release.sh builds and attaches at publish time.
 releases/
+
+# Prawduct session files
+.prawduct/.delegate-brief.md
+.prawduct/.test-report.xml
+.prawduct/.test-report.xml.scope.json
+.prawduct/.critic-review-dispatch.json
+.prawduct/.pr-review-dispatch.json
