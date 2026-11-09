@@ -15,7 +15,7 @@ still holding entries with no `release=` tag, the learnings were still in `.praw
   but only four hold unreleased work: `param-spec`, `testament-onboard`, `pr-merge-preference` and
   `backlog-service-migration`. The other 13 shipped in v1.4.10 through v1.5.0 (the first release
   tag containing each entry's commit) and never got the tag in the old log. Leave those out of the next cut, or cut
-  them with their real versions, which is the owner's call. The log keeps its header comment and archive pointer. Three
+  them with their real versions, which is the owner's call. The log keeps its archive pointer. Three
   entries that sat under another entry's header in the old log (`gh-script-configure-wires`,
   `gh-document-save`, `solidity-hardening`) are now fragments of their own, titled from their own
   bodies. The two `gh-script-language` entries share one fragment. Each migrated fragment carries a
