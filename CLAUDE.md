@@ -17,6 +17,14 @@ dotnet build src/Cordyceps/Cordyceps.csproj -c Release
 
 The project targets .NET 8.0 and outputs a Grasshopper plugin (`.gha` file). Debug builds are blocked—always use `-c Release`.
 
+## Running tests
+
+Run tests with `testament run --json` (the whole xUnit suite, on the testament pool; it falls back
+to running here when no coordinator answers). Before ending work, record evidence with
+`prawduct-hook test-evidence record`, which is what the governance gates read. Without testament:
+`dotnet test src/Cordyceps.Tests/Cordyceps.Tests.csproj -c Release`. How to read testament's
+output, and what differs from its pytest-shaped instructions: read `docs/testing.md` when you need them.
+
 ## Architecture
 
 ### Core Components

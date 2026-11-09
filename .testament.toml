@@ -1,0 +1,24 @@
+# How testament (https://github.com/brookstalley/testament) runs this repo's tests on the pool.
+# The suite is the same one CI's build-test job runs (.github/workflows/dotnet-ci.yml):
+# `dotnet test` on the unit-test project, Release configuration.
+manifest_version = 3
+name = "cordyceps"
+executor = "container"
+env_inputs = [".devcontainer/Dockerfile", "src/Cordyceps.Tests/Cordyceps.Tests.csproj"]
+env = { NUGET_PACKAGES = "/tr/cache/nuget", DOTNET_CLI_HOME = "/tr/cache/dotnet-home" }
+
+[image]
+dockerfile = ".devcontainer/Dockerfile"
+inputs = [".devcontainer/Dockerfile"]
+
+[setup]
+steps = [["dotnet", "restore", "src/Cordyceps.Tests/Cordyceps.Tests.csproj"]]
+
+# xUnit through `dotnet test`: the test "file" is the test project, and the JUnit logger
+# (JunitXml.TestLogger, referenced by the test project) writes the report testament reads.
+[suites.dotnet]
+adapter = "files"
+files = ["src/Cordyceps.Tests/Cordyceps.Tests.csproj"]
+one_file_per_process = true
+command = ["dotnet", "test", "{files}", "-c", "Release", "--no-restore",
+           "--logger", "junit;LogFilePath={junit}"]
