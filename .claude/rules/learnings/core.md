@@ -4,29 +4,6 @@
 
 Each rule is one line of at most 250 characters. This file is capped, so a new rule is paid for by merging or retiring one.
 
-## The built `.gha` is a build output, not a tracked file — don't reintroduce it
-
-`Cordyceps.csproj`'s post-build `CopyToReleases` target writes the built `.gha` into `releases/`
-so Grasshopper can load a local build. `releases/` is **gitignored**: the binary embeds a build
-timestamp via `SourceRevisionId`, so every `dotnet build`/`dotnet test` produces a different one,
-and while it was tracked each of those restamped it into `git status` — every session needed a
-`git checkout -- releases/Cordyceps.gha` ritual to keep a rebuilt binary out of an unrelated diff.
-
-Two failures came from tracking it, and both are what the untracking prevents:
-
-- The tracked copy only refreshed at release time, so on `develop` it was always the last
-  *released* build. A tester who swapped it in would run code with none of the branch's fixes and
-  report a false negative (this nearly happened on issues #27/#29/#30).
-- `release.sh publish` shipped `releases/Cordyceps.gha` straight from the working tree into both
-  the Yak package and the GitHub Release asset without building it. That was safe only because
-  `require_clean_tree` would flag the tracked file if a local build had touched it.
-
-`publish` now runs `build_gha` before `prepare_dist`, so the released binary is provably compiled
-from the release commit and a fresh clone can publish. Users download the GitHub Release asset via
-`/releases/latest/download/Cordyceps.gha`; CI also uploads a per-commit artifact for testers
-without a toolchain. **If you find yourself wanting to commit a `.gha`, don't** — cut a
-pre-release with the binary attached instead.
-
 ## Unsorted
 
 ### Freeze the tree when you dispatch the Critic — hold in-flight discoveries, don't apply them
@@ -51,17 +28,6 @@ strategy from the spec's *shape* (`Core/ParamSpecLookup.IsAsciiInteger`), not fr
 particular parse succeeded. Pin invariant culture while you are there; a machine-facing contract
 must not read differently under a `tr-TR` Rhino.
 
-### Code linked into `Cordyceps.Tests` must stay host-free — can't call `DebugLog`
-
-The test project links specific `Core/*.cs` files individually (`RequestValidator`,
-`UnifiedToolHelpers`, `ScriptDirective`, `McpResultFormatter`, `JsonTypeConverter`) to avoid
-pulling in the Grasshopper/Rhino runtime. `Core/DebugLog.cs` uses `RhinoApp.WriteLine`, so it is
-**host-coupled and not linkable**. Therefore: when de-silencing a `catch` (or adding any logging)
-in one of those linked files, you can't add a `DebugLog` call — it won't compile in the test
-project. **Narrow the catch to the expected exception type instead** (e.g. `GetParam` →
-`FormatException`/`InvalidCastException`/`OverflowException`/`JsonException`). Narrowing is usually
-the better fix anyway: unexpected errors surface instead of being swallowed.
-
 ### Build-plan `## Status` checkboxes are hand-ticked — nothing derives them
 
 **This reverses the earlier rule in this file, and the reversal is the point.** Boxes were once a
@@ -74,19 +40,6 @@ Critic and reflection gates, so on a `cumulative-final` plan hold it until that 
 The durable lesson under both rules: **a checkbox is only as true as whoever last touched it.**
 When the owning mechanism changed, every plan whose prose cited the old one became a plan nobody
 was ticking — `build-plan-reliability.md` still sits six-unticked for work merged in PR #26.
-
-### Test parallelization is disabled on purpose — don't re-enable it naively
-
-`src/Cordyceps.Tests/AssemblyInfo.cs` sets `[assembly: CollectionBehavior(DisableTestParallelization
-= true)]`. Several tests assert timing/concurrency contracts (`InFlightRequests` drain + count,
-`DocumentLock`, `CommandStats`) by waiting on thread-pool continuations within a bounded budget. Under
-xUnit's default parallel collections, those tests contend for the **2-core CI runner's** thread pool —
-a sibling test's `Thread.Sleep`/blocking `Wait` can starve a `ContinueWith(..., TaskScheduler.Default)`
-continuation past its budget, so `build-test` flakes (passed locally + on #21, failed twice on #22 with
-no relevant change). Since `build-test` is the **required check for strict `main` protection**, a flaky
-gate is unacceptable. The suite is sub-second, so serial execution costs ~nothing. If you re-enable
-parallelization (or add a new timing test), make those tests deterministic first — don't trade the
-gate's reliability for parallel speed.
 
 ### Refresh stale `.test-evidence.json` via the hook, not by hand
 
@@ -101,19 +54,6 @@ declares `test_command:` in `project-state.yaml`, so `record --from-junit <repor
 will list every C# file under `changes_unjudged` — the floor verifier is Python-only symbol-grep, so
 that's structurally expected here, not a coverage failure.
 
-### A test naming a race/snapshot/ordering contract must actually exercise concurrency
-
-When a host-free concurrency primitive is extracted and unit-tested (e.g. `DocumentLock`,
-`InFlightRequests`), a test whose name claims a *timing* contract — "ignores tasks tracked after
-it starts", "snapshot taken up front", "drains within budget" — must drive it with real
-concurrency: a background task running the method under test plus a `TaskCompletionSource` that
-deliberately never completes during the assertion window, so the test fails if the contract
-breaks. Standing in an *already-completed* task makes the test pass vacuously — it would still
-pass if the implementation re-read live state — which is false confidence, worse than no test.
-The Chunk-02 `DrainWithin_TakesSnapshot...` test shipped vacuous and the Critic (chunk mode,
-Goal 1 test-quality) caught it; the fix was a background-drain + mid-wait-tracked-TCS rewrite.
-Write the concurrent form from the start for any timing-contract test.
-
 ### Tracing consumers of a shared helper misses paths that bypass it
 
 When fixing a defect that lives in a shared helper (e.g. `ToolHelpers.WithProxyComponent`'s
@@ -125,14 +65,6 @@ CQ-7T4P, two surfaces went through `WithProxyComponent`, but a third — `Resour
 (grep for the symptom: `CreateInstance`, `CreateComponent`, "Params.Input", silent omission of
 params), not only by the helper's call sites.** The Critic caught this one; the cheaper move is to
 widen the grep up front.
-
-### Version lives in three places; keep them in lockstep
-
-A release version must match across `src/Cordyceps/Cordyceps.csproj` `<Version>`, the tracked
-root `manifest.yml`, and `CHANGELOG.md`. The root `manifest.yml` is the yak source-of-truth that
-`scripts/release.sh` → `prepare_dist` copies into the (gitignored) `dist/`. It silently drifted to
-1.4.0 while shipping 1.4.9 because `release.sh` only bumped the csproj — fixed by adding
-`update_manifest_version` to the script (2026-06-20 janitor).
 
 ### Build-plan chunk headings must be `### Chunk NN: title`, refs repo-root-relative
 

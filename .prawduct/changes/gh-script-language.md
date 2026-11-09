@@ -3,7 +3,7 @@ schema: 1
 type: fix
 scope: gh-script-language
 date: 2026-06-24
-title: "gh_script(set) flags a silently-broken Script component (issue #15)"
+title: "gh_script keeps the language directive (GHS-7K2P) and flags a Script component with none (issue #15)"
 ---
 ### 2026-06-24: gh_script(set) flags a silently-broken Script component (issue #15)
 
