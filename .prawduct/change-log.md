@@ -54,9 +54,9 @@ on the pool's runners rather than only on this machine.
 src/Cordyceps.Tests/Cordyceps.Tests.csproj -c Release`) and reports through the JUnit logger the
 test project already references. `.devcontainer/Dockerfile` is the .NET 8 SDK image, pinned by
 manifest-list digest, running as the image's non-root `app` user (testament refuses root). In
-`CLAUDE.md`, the "Running tests" agent block from `testament guide agent-block` is copied
-verbatim, with a repo note under it because the block assumes pytest. The project is allowed on
-the pool for container work, and `testament onboard` reports ready: a full pool run passed 579,
+`docs/testing.md`, the agent block from `testament guide agent-block` is copied
+verbatim under a repo note (the block assumes pytest), and `CLAUDE.md` points to it from a short "Running tests" section, which also names the evidence recorder the gates read. The project is allowed on
+the pool for container work, and `testament onboard` reports ready: a full pool run passed every test (579 before the develop sync brought in #82; 599 after),
 matching a local `dotnet test`. No plugin code changed, and nothing changes for plugin users, so
 CHANGELOG.md is untouched. Frictions filed upstream: brookstalley/testament#568–#571.
 
