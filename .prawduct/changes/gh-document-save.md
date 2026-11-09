@@ -3,7 +3,7 @@ schema: 1
 type: fix
 scope: gh-document-save
 date: 2026-06-24
-title: "gh_script(set) flags a silently-broken Script component (issue #15)"
+title: "gh_document(save) overwrites an existing .gh file (issue #14)"
 ---
 **Why:** `gh_document(action='save')` could not overwrite an existing `.gh` (binary) file —
 every repeated save returned a bare `"Failed to write file"`, breaking incremental

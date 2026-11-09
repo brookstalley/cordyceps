@@ -3,7 +3,7 @@ schema: 1
 type: fix
 scope: gh-script-configure-wires
 date: 2026-06-24
-title: slider add-params + configure wire-preservation (v1.4.12)
+title: "gh_script(configure) keeps wires on name-matched params (GHS-3W9N)"
 ---
 **Why:** `gh_script(action='configure')` unregistered every input/output param and re-registered
 them from scratch (`ConfigureViaVariableParams`), silently destroying ALL wires — even on

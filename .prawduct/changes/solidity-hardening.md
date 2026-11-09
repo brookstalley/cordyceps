@@ -3,7 +3,7 @@ schema: 1
 type: fix
 scope: solidity-hardening
 date: 2026-06-24
-title: "gh_script(set) flags a silently-broken Script component (issue #15)"
+title: "Solidity hardening stage 1: bounded UI-thread waits, server lifecycle, data races"
 ---
 **Why:** Stage 1 of the firsthand solidity-hardening analysis (2026-06-21) closes the
 highest-severity operational hazards in the HTTP/SSE server and UI-thread marshaling.
