@@ -511,9 +511,13 @@ match the installed built-ins, and that nothing lands on the canvas after a refu
     resolves. Option B: `Series` (`Start`, `Step`, `Count`), `Cross Reference` (`A`, `B`) and
     `Construct Point` (`X`, `Y`, `Z`) resolve and those ports connect.
 
+13. `gh_canvas(action='search')` and `add` agree on deprecation: pick a name with a deprecated twin
+    (`Merge`, `Addition`, `Mirror`), search for it, and confirm every result `add` passes over is
+    marked `deprecated: true` in the search results.
+
 **Evidence gathered 2026-11-09 against the installed v1.5.0** (read-only `gh_canvas(action='search')`,
 `gh_inspect(action='docs')` and `gh://component/{name}`; this proves the names exist and how many
-current types carry each in this install, not that the new code resolves them — items 1-12 still
+current types carry each in this install, not that the new code resolves them — items 1-13 still
 need running on a build of this branch). Search's `deprecated` flag in v1.5.0 omits the
 `OBSOLETE`-class-name test that `add` uses, so these counts are upper bounds for "current".
 - Exactly one current type: C# Script (b6ba1144-…, the pinned GUID), Python 3 Script
@@ -531,6 +535,3 @@ need running on a build of this branch). Search's `deprecated` flag in v1.5.0 om
   (`Origin`), Plane Normal (`Origin`, `Z-Axis`), Move (`Geometry`, `Motion`), Transform/Rotate
   (`Geometry`, `Angle`, `Plane`), Scale (`Geometry`, `Center`, `Factor`), Mirror (`Geometry`,
   `Plane`).
-13. `gh_canvas(action='search')` and `add` agree on deprecation: pick a name with a deprecated twin
-    (`Merge`, `Addition`, `Mirror`), search for it, and confirm every result `add` passes over is
-    marked `deprecated: true` in the search results.

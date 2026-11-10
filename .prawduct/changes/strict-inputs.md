@@ -23,7 +23,8 @@ the closest parameter and listing the valid ones. `Core/Naming/TypeNameRule` is 
 component-type rule (GUID, exact alias, pinned built-in, exact name optionally qualified by
 category); `ComponentRegistry` is now only its adapter. `Core/ParamSpecLookup` takes an index, an
 exact name or nickname, or a unique case-insensitive match, and never a partial one.
-`Core/InfrastructureIds` decides which objects are infrastructure for every bridge component. The
+`Core/InfrastructureIds` decides which objects are infrastructure for every bridge component. `gh_canvas(action='search')` now uses the same deprecation test as `add`, so it no longer
+reports `deprecated: false` for a type `add` treats as deprecated. The
 type and port rules are adapted from Hyperceps; `LICENSE` carries Yibin Yang's copyright line and
 the README credits him. `ParamSpecLookupTests` had two tests pinning substring matching; they were
 rewritten to the strict contract with the owner's approval, not deleted.
@@ -53,4 +54,4 @@ port names.
 adapters need a running Rhino and are enqueued as VRF-016, VRF-017 and VRF-018.
 
 ## Consumer note
-breaking: a tool call with an argument name the tool does not have is now an error, and component-type and port names must be exact (a partial name is refused with suggestions). Write `Curve/Circle`, not `Circle`. Each error says how to write the call.
+breaking: a tool call with an argument name the tool does not have is now an error, and component-type and port names must be exact (a partial name is refused with suggestions). Write `Curve/Circle`, not `Circle`. Each error says how to write the call. In ambiguous- and unknown-name errors the machine code moves from `error` to `code` and `error` is now the explanation, so a client that read `error` as the code must read `code`. Also: every Cordyceps component on a canvas is now protected, not only the first, and `gh_canvas(action='search')` flags deprecated types the same way `add` does.
