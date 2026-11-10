@@ -18,15 +18,20 @@ resources/read: gh://patterns/grid-array
 ```
 If the goal matches one of these patterns (repeated geometry along a line, or a 2D grid), follow the pattern's guidance for component choice and layout.
 
+The component columns below are written as `gh_canvas(action='add', type=...)` takes them. Type
+names are exact (case ignored) and never matched partially; where a component and a parameter share
+a name, the category is included (`Curve/Circle`). If an add is refused, the error lists the
+candidates or near names with a `use` spelling for each.
+
 ## Step 3: Identify Inputs
 What parameters should be adjustable?
 
 | Input Type | Component | Typical Position |
 |------------|-----------|------------------|
 | Numeric value | Number Slider | x=50, y=50/120/190... |
-| Point | Point parameter | x=50 |
+| Point | Params/Point | x=50 |
 | Text | Panel | x=50 |
-| Boolean | Toggle | x=50 |
+| Boolean | Boolean Toggle | x=50 |
 | Selection | Value List | x=50 |
 
 **Layout Rule:** Stack sliders vertically with 70px gaps. Sliders need ~200px width.
@@ -36,10 +41,10 @@ What operations are needed?
 
 | Operation Type | Components | Position |
 |----------------|------------|----------|
-| Mathematical | Add, Multiply, Division, Pi | x=250 |
-| Sequences | Series, Range, Repeat | x=400 |
-| Geometric | Move, Rotate, Scale, Mirror | x=550 |
-| Data | Merge, Graft, Flatten, Cross Reference | x=550 |
+| Mathematical | Addition, Multiplication, Division, Pi | x=250 |
+| Sequences | Series, Range, Repeat Data | x=400 |
+| Geometric | Move, Transform/Rotate, Scale, Mirror | x=550 |
+| Data | Merge, Graft Tree, Flatten Tree, Cross Reference | x=550 |
 
 **Layout Rule:** 150px horizontal gaps between columns.
 
@@ -48,9 +53,9 @@ What geometry is created?
 
 | Output Type | Components |
 |-------------|------------|
-| Curves | Circle, Arc, Line, Polyline, Interpolate |
-| Surfaces | Extrude, Loft, Revolve, Pipe |
-| Solids | Box, Cylinder, Sphere, Boolean |
+| Curves | Curve/Circle, Curve/Arc, Curve/Line, Curve/Polyline, Curve/Interpolate |
+| Surfaces | Extrude, Loft, Revolution, Pipe |
+| Solids | Center Box, Cylinder, Sphere, Solid Union |
 | Points | Construct Point, Divide Curve |
 
 **Layout Rule:** Output components at rightmost position (x=700+).

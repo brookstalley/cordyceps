@@ -70,8 +70,8 @@ gh_canvas(action='modifier', id='<component>', side='input', param='B')   # read
 ```
 
 `mapping` is `none` | `flatten` | `graft`; `simplify` and `reverse` are true/false. Omitted
-modifiers are left unchanged, and a call with none of them reads instead of writing. `param` is a
-name or 0-based index. `gh_canvas(action='info', id='...')` reports `modifiers` for every param —
+modifiers are left unchanged, and a call with none of them reads instead of writing. `param` is the
+port's exact name or nickname, or its 0-based index (partial names are refused with a suggestion). `gh_canvas(action='info', id='...')` reports `modifiers` for every param —
 that's how you detect an existing Graft you didn't set.
 
 ## Example

@@ -13,11 +13,14 @@
 
 ```
 XY Plane → Rectangular Grid (Plane)
-X Count → Rectangular Grid (X)
-Y Count → Rectangular Grid (Y)
-Cell Size → Rectangular Grid (Size)
-→ Points, Cells output
+X Count → Rectangular Grid (Extent X)
+Y Count → Rectangular Grid (Extent Y)
+Cell Size → Rectangular Grid (Size X) and (Size Y)
+→ Cells, Points output
 ```
+
+Port names in parentheses are the exact input names to pass as `targetParam` (nicknames `P`, `Ex`,
+`Ey`, `Sx`, `Sy` work too); partial names such as `X` are refused rather than guessed.
 
 ## Option B: Cross Reference (More Control)
 
