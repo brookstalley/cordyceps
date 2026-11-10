@@ -66,6 +66,8 @@
     <Compile Include="..\Cordyceps\Core\StatusEnvelope.cs" Link="StatusEnvelope.cs" />
     <Compile Include="..\Cordyceps\Core\ToolArgumentBinder.cs" Link="ToolArgumentBinder.cs" />
     <!-- canvas-read 04: link this chunk's new host-free files directly below -->
+    <Compile Include="..\Cordyceps\Core\Canvas\OutlineView.cs" Link="Canvas\OutlineView.cs" />
+    <Compile Include="..\Cordyceps\Core\Canvas\OutlineRequest.cs" Link="Canvas\OutlineRequest.cs" />
   </ItemGroup>
 
 </Project>
