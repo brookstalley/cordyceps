@@ -21,6 +21,9 @@ namespace Cordyceps.Tools.Unified
     {
         private readonly GrasshopperContext _context;
 
+        private const string GroupIdTip = "'id' names the group: its exact name (case-sensitive), its GUID, or an 8+ hex GUID prefix. A name two groups share acts on nothing and lists both ids";
+        private const string MembersTip = "Every entry of 'ids' is an object (GUID, 8+ hex GUID prefix, or unique nickname; a group by its id). If any entry does not resolve, the call fails naming it and nothing is changed; a repeated object is acted on once, with a note";
+
         private static readonly UnifiedToolInfo ToolInfo = new UnifiedToolInfo
         {
             ToolName = "gh_canvas",
@@ -55,7 +58,13 @@ namespace Cordyceps.Tools.Unified
                     Required = new string[0],
                     Optional = new[] { "id", "ids" },
                     Example = "action='delete', id='abc-123' OR action='delete', ids='[\"a\",\"b\"]'",
-                    Tips = new[] { "Use 'id' for single, 'ids' (JSON array) for bulk" }
+                    Tips = new[] {
+                        "Use 'id' for single, 'ids' (JSON array) for bulk",
+                        "Each id may be a GUID, an 8+ hex GUID prefix, or a unique nickname you set. Every id is resolved before anything is deleted",
+                        "A default nickname (the one every new object of the type gets, like 'Circle') never selects what delete removes, even when only one object has it: the error prints the id to pass, or rename the object first (action='rename') and pass the new name",
+                        "A name that fits two objects, a default nickname, or an id that fits nothing, deletes nothing for that entry (an ambiguous name's error lists the candidates by id); the other entries are still deleted (per-id results)",
+                        "A repeated object is deleted once; the later entry carries note 'same object as entry i'"
+                    }
                 },
                 ["move"] = new ActionInfo
                 {
@@ -64,7 +73,10 @@ namespace Cordyceps.Tools.Unified
                     Required = new string[0],
                     Optional = new[] { "id", "x", "y", "moves" },
                     Example = "action='move', id='abc', x=100, y=200",
-                    Tips = new[] { "Use id/x/y for single, 'moves' JSON array for bulk" }
+                    Tips = new[] {
+                        "Use id/x/y for single, 'moves' JSON array for bulk",
+                        "Each id may be a GUID, an 8+ hex GUID prefix, or a unique nickname; every entry is resolved before anything moves, and failures are per-entry"
+                    }
                 },
                 ["rename"] = new ActionInfo
                 {
@@ -100,8 +112,12 @@ namespace Cordyceps.Tools.Unified
                     Name = "list",
                     Description = "List components currently on the canvas",
                     Optional = new[] { "category", "typeFilter", "group" },
-                    Example = "action='list' OR action='list', category='Curve' OR action='list', typeFilter='Number Slider'"
+                    Example = "action='list' OR action='list', category='Curve' OR action='list', typeFilter='Number Slider'",
+                    Tips = new[] { "group= takes the group's exact name (case-sensitive, never a substring), its GUID, or an 8+ hex GUID prefix; a name two groups share is an error listing both ids" }
                 },
+                // A method call, not a static field: static initialisers in different partial
+                // files have no defined order, so a field there could still be null here.
+                ["outline"] = OutlineActionInfo(),
                 ["info"] = new ActionInfo
                 {
                     Name = "info",
@@ -220,14 +236,15 @@ namespace Cordyceps.Tools.Unified
                     Required = new[] { "name" },
                     Optional = new[] { "ids", "color" },
                     Example = "action='group_create', name='Inputs', ids='[\"a\",\"b\"]', color='#FF6B6B'",
-                    Tips = new[] { "Malformed 'ids' JSON is rejected with an error — no group is created" }
+                    Tips = new[] { "Malformed 'ids' JSON is rejected with an error — no group is created", MembersTip }
                 },
                 ["group_delete"] = new ActionInfo
                 {
                     Name = "group_delete",
                     Description = "Delete a visual group (components remain)",
                     Required = new[] { "id" },
-                    Example = "action='group_delete', id='abc-123'"
+                    Example = "action='group_delete', id='abc-123'",
+                    Tips = new[] { GroupIdTip, "The default group name 'Group' never selects what group_delete removes, even when only one group has it: the error prints the id to pass, or rename the group first (action='group_rename') and pass the new name" }
                 },
                 ["group_add"] = new ActionInfo
                 {
@@ -236,14 +253,15 @@ namespace Cordyceps.Tools.Unified
                     Required = new[] { "ids" },
                     Optional = new[] { "id", "name", "color" },
                     Example = "action='group_add', ids='[\"a\",\"b\"]', name='MyGroup'",
-                    Tips = new[] { "If 'id' is provided it must resolve to an existing group (error otherwise); omit 'id' to create a new group" }
+                    Tips = new[] { "If 'id' is provided it must resolve to an existing group (error otherwise); omit 'id' to create a new group", GroupIdTip, MembersTip }
                 },
                 ["group_remove"] = new ActionInfo
                 {
                     Name = "group_remove",
                     Description = "Remove components from a group",
                     Required = new[] { "id", "ids" },
-                    Example = "action='group_remove', id='group-id', ids='[\"comp-a\"]'"
+                    Example = "action='group_remove', id='group-id', ids='[\"comp-a\"]'",
+                    Tips = new[] { GroupIdTip, MembersTip, "An entry that resolves but is not in the group is listed in 'notMembers'" }
                 },
                 ["group_list"] = new ActionInfo
                 {
@@ -256,21 +274,24 @@ namespace Cordyceps.Tools.Unified
                     Name = "group_rename",
                     Description = "Rename a group",
                     Required = new[] { "id", "name" },
-                    Example = "action='group_rename', id='abc-123', name='NewName'"
+                    Example = "action='group_rename', id='abc-123', name='NewName'",
+                    Tips = new[] { GroupIdTip }
                 },
                 ["group_color"] = new ActionInfo
                 {
                     Name = "group_color",
                     Description = "Set group color",
                     Required = new[] { "id", "color" },
-                    Example = "action='group_color', id='abc', color='#4ECDC4'"
+                    Example = "action='group_color', id='abc', color='#4ECDC4'",
+                    Tips = new[] { GroupIdTip }
                 },
                 ["group_move"] = new ActionInfo
                 {
                     Name = "group_move",
                     Description = "Move all components in a group by offset",
                     Required = new[] { "id", "dx", "dy" },
-                    Example = "action='group_move', id='abc', dx=100, dy=50"
+                    Example = "action='group_move', id='abc', dx=100, dy=50",
+                    Tips = new[] { GroupIdTip }
                 },
                 ["zoomable"] = new ActionInfo
                 {
@@ -309,7 +330,8 @@ namespace Cordyceps.Tools.Unified
                 "Disable solver before bulk operations: gh_document(action='solver', enabled=false)",
                 "Recommended spacing: 150px horizontal, 70px vertical between components",
                 "Use action='zoom' before capturing to ensure all components are visible",
-                "Groups are visual containers - deleting a group doesn't delete its components"
+                "Groups are visual containers - deleting a group doesn't delete its components",
+                "Ids: an object is named by its GUID, an 8+ hex GUID prefix, or its unique nickname (exact, case-sensitive); a group action's 'id' takes the group's name or id. Nothing is guessed: a name that fits two things acts on nothing and lists their ids, and a near miss gets a 'Did you mean'"
             }
         };
 
@@ -318,20 +340,20 @@ namespace Cordyceps.Tools.Unified
             _context = context;
         }
 
-        [McpServerTool, Description("Component operations. Actions: add|delete|move|rename|find|search|list|info|bounds|validate|constant|bake|zoom|view|get|set|config|preview|enable|group_create|group_delete|group_add|group_remove|group_list|group_rename|group_color|group_move|zoomable|modifier|help")]
+        [McpServerTool, Description("Component operations. Actions: add|delete|move|rename|find|search|list|outline|info|bounds|validate|constant|bake|zoom|view|get|set|config|preview|enable|group_create|group_delete|group_add|group_remove|group_list|group_rename|group_color|group_move|zoomable|modifier|help")]
         public string GhCanvas(
             [Description("Action to perform")] string action,
             [Description("Component type for 'add' (exact name, 'Category/Name', 'Category/Subcategory/Name', or GUID; never matched partially), search query for 'search', or type filter for 'list'")] string type = null,
             [Description("X position")] double x = double.NaN,
             [Description("Y position")] double y = double.NaN,
-            [Description("Component GUID")] string id = null,
-            [Description("JSON array of IDs")] string ids = null,
-            [Description("JSON array of moves: [{id,x,y},...]")] string moves = null,
+            [Description("Object: GUID, 8+ hex GUID prefix, or unique nickname; on group_* actions: a group name or id. delete and group_delete never take a default nickname or the default group name 'Group'")] string id = null,
+            [Description("JSON array of objects, each a GUID, 8+ hex GUID prefix, or unique nickname (for delete, not a default nickname)")] string ids = null,
+            [Description("JSON array of moves: [{id,x,y},...]; each id is an object: GUID, 8+ hex GUID prefix, or unique nickname")] string moves = null,
             [Description("Nickname for rename/find/add")] string nickname = null,
             [Description("Search query")] string query = null,
             [Description("Category filter")] string category = null,
             [Description("Type filter for list")] string typeFilter = null,
-            [Description("Group filter for list")] string group = null,
+            [Description("Group for list/outline: the group's exact name, GUID, or 8+ hex GUID prefix (outline also takes a JSON array of them)")] string group = null,
             [Description("Result limit for search")] int limit = 50,
             [Description("Exact match for find")] bool exact = false,
             [Description("Value to set")] string value = null,
@@ -360,7 +382,9 @@ namespace Cordyceps.Tools.Unified
             [Description("Port for 'modifier': exact name or nickname, or 0-based index (never matched partially)")] string param = null,
             [Description("Data mapping for 'modifier': 'none', 'flatten', or 'graft'")] string mapping = null,
             [Description("Simplify state for 'modifier': true or false")] string simplify = null,
-            [Description("Reverse state for 'modifier': true or false")] string reverse = null)
+            [Description("Reverse state for 'modifier': true or false")] string reverse = null,
+            // Outline params
+            [Description("Wires each way for outline id= (1-10, default 2)")] int depth = 0)
         {
             // Handle help action
             if (string.Equals(action, "help", StringComparison.OrdinalIgnoreCase))
@@ -409,7 +433,9 @@ namespace Cordyceps.Tools.Unified
                 ("param", param),
                 ("mapping", mapping),
                 ("simplify", simplify),
-                ("reverse", reverse)
+                ("reverse", reverse),
+                // Outline params (0 = not given)
+                ("depth", depth != 0 ? (object)depth : null)
             );
 
             // 'type' doubles as the search query (documented on the param), so let a provided
@@ -446,6 +472,7 @@ namespace Cordyceps.Tools.Unified
                 "find" => ActionFind(nickname, exact),
                 "search" => ActionSearch(query ?? type, category, limit),
                 "list" => ActionList(category, typeFilter ?? type, group),
+                "outline" => ActionOutline(id, group, depth),
                 "info" => ActionInfo(id),
                 "bounds" => ActionBounds(id),
                 "validate" => ActionValidate(),
@@ -598,6 +625,7 @@ namespace Cordyceps.Tools.Unified
                 {
                     try { idList = JsonConvert.DeserializeObject<List<string>>(ids); }
                     catch (Exception ex) { return ToolHelpers.ErrorResponse($"Invalid ids format: {ex.Message}"); }
+                    if (idList == null) return ToolHelpers.ErrorResponse("Invalid ids format: expected a JSON array");
                 }
                 else if (!string.IsNullOrEmpty(id))
                 {
@@ -608,6 +636,12 @@ namespace Cordyceps.Tools.Unified
                     return ToolHelpers.ErrorResponse("Either 'id' or 'ids' is required");
                 }
 
+                // Every id resolves against one lookup before the first RemoveObject, so a bad or
+                // ambiguous id deletes nothing of its own and cannot leave the call half-applied
+                // by failing midway. Ids that resolve are deleted; each failure is reported.
+                var lookup = new ObjectLookup(doc);
+                var outcomes = ToolHelpers.ResolveIds(lookup, idList, acceptGroups: true, Core.Canvas.ResolveIntent.Destructive, out var resolved);
+
                 var results = new List<object>();
                 var deletedIds = new List<string>();
                 int succeeded = 0, failed = 0;
@@ -617,15 +651,33 @@ namespace Cordyceps.Tools.Unified
                 // recipients (top-level owners) and expire the survivors once all deletions are done.
                 var deletedGuids = new HashSet<Guid>();
                 var formerRecipients = new Dictionary<Guid, IGH_DocumentObject>();
-                foreach (var compId in idList)
+                foreach (var outcome in outcomes)
                 {
-                    if (!ToolHelpers.TryGetUnprotectedComponent(_context, compId, out var component, out var compError))
+                    if (!outcome.IsResolved)
                     {
-                        results.Add(new { id = compId, success = false, error = compError });
+                        results.Add(new { id = outcome.Text, success = false, error = outcome.Error });
                         failed++;
                         continue;
                     }
 
+                    var resolvedId = outcome.Id.Value.ToString();
+                    if (!outcome.ActOn)
+                    {
+                        // A repeat of an earlier entry, which already acted on the object; report its result.
+                        if (deletedGuids.Contains(outcome.Id.Value))
+                        {
+                            results.Add(new { id = resolvedId, success = true, note = outcome.Note });
+                            succeeded++;
+                        }
+                        else
+                        {
+                            results.Add(new { id = outcome.Text, success = false, error = $"{outcome.Note}, which was not deleted", note = outcome.Note });
+                            failed++;
+                        }
+                        continue;
+                    }
+
+                    var component = resolved[outcome.Id.Value];
                     try
                     {
                         IEnumerable<IGH_Param> outputs = component is IGH_Component comp
@@ -644,13 +696,13 @@ namespace Cordyceps.Tools.Unified
                         var ownerDoc = ToolHelpers.GetOwnerDocument(component, doc);
                         ownerDoc.RemoveObject(component, true);
                         deletedGuids.Add(component.InstanceGuid);
-                        deletedIds.Add(compId);
-                        results.Add(new { id = compId, success = true });
+                        deletedIds.Add(resolvedId);
+                        results.Add(new { id = resolvedId, success = true });
                         succeeded++;
                     }
                     catch (Exception ex)
                     {
-                        results.Add(new { id = compId, success = false, error = ex.Message });
+                        results.Add(new { id = outcome.Text, success = false, error = ex.Message });
                         failed++;
                     }
                 }
@@ -683,76 +735,69 @@ namespace Cordyceps.Tools.Unified
                 if (!ToolHelpers.TryGetActiveDocument(_context, out var doc, out var error))
                     return ToolHelpers.ErrorResponse(error);
 
-                List<dynamic> moveList;
+                List<MoveEntry> entries;
                 if (!string.IsNullOrEmpty(moves))
                 {
-                    if (!ToolHelpers.TryDeserializeList<dynamic>(moves, out moveList, out error))
+                    // Names stay text (a nickname can look like a date); see Core/BulkEntries.
+                    if (!BulkEntries.TryParseMoves(moves, out entries, out error))
                         return ToolHelpers.ErrorResponse(error);
                 }
                 else if (!string.IsNullOrEmpty(id) && !double.IsNaN(x) && !double.IsNaN(y))
                 {
-                    moveList = new List<dynamic> { new { id, x, y } };
+                    entries = new List<MoveEntry> { new MoveEntry(id, x, y, null) };
                 }
                 else
                 {
                     return ToolHelpers.ErrorResponse("Provide 'id'+'x'+'y' for single move, or 'moves' array for bulk");
                 }
 
-                var infraIds = ToolHelpers.GetCordycepsInfrastructureIds(doc);
+                // Pass 1: resolve every entry's id against one lookup, before anything moves. Each
+                // entry carries its own position, so a second entry for one object is a failed
+                // entry, never a dropped position (IdBatch.RefuseRepeats). Pass 2 moves only the
+                // entries that passed.
+                var lookup = new ObjectLookup(doc);
+                var outcomes = IdBatch.RefuseRepeats(
+                    ToolHelpers.ResolveIds(lookup, entries.Select(e => e.Id).ToList(), acceptGroups: true, Core.Canvas.ResolveIntent.Ordinary, out var resolved),
+                    "give one position per object");
+
                 var results = new List<object>();
                 int successCount = 0, failCount = 0;
-
-                foreach (var move in moveList)
+                foreach (var outcome in outcomes)
                 {
+                    var entry = entries[outcome.Index];
+                    if (!outcome.ActOn || entry.Error != null)
+                    {
+                        results.Add(new { success = false, id = outcome.Text, error = outcome.Error ?? entry.Error });
+                        failCount++;
+                        continue;
+                    }
+
+                    var guid = outcome.Id.Value;
                     try
                     {
-                        string compId = move.id?.ToString();
-                        if (string.IsNullOrEmpty(compId) || !Guid.TryParse(compId, out Guid guid))
-                        {
-                            results.Add(new { success = false, id = compId, error = "Invalid or missing id" });
-                            failCount++;
-                            continue;
-                        }
-
-                        if (infraIds.Contains(guid))
-                        {
-                            results.Add(new { success = false, id = compId, error = "Protected: required for MCP server" });
-                            failCount++;
-                            continue;
-                        }
-
-                        var component = doc.FindObject(guid, true);
-                        if (component == null)
-                        {
-                            results.Add(new { success = false, id = compId, error = "Component not found" });
-                            failCount++;
-                            continue;
-                        }
-
-                        double moveX = (double)move.x;
-                        double moveY = (double)move.y;
-                        component.Attributes.Pivot = new PointF((float)moveX, (float)moveY);
+                        var component = resolved[guid];
+                        component.Attributes.Pivot = new PointF((float)entry.X, (float)entry.Y);
                         component.Attributes.ExpireLayout();
 
-                        results.Add(new { success = true, id = compId, x = moveX, y = moveY });
+                        results.Add(new { success = true, id = guid.ToString(), x = entry.X, y = entry.Y });
                         successCount++;
                     }
                     catch (Exception ex)
                     {
-                        results.Add(new { success = false, id = move.id?.ToString(), error = ex.Message });
+                        results.Add(new { success = false, id = outcome.Text, error = ex.Message });
                         failCount++;
                     }
                 }
 
                 Instances.ActiveCanvas?.Invalidate();
 
-                if (moveList.Count == 1 && successCount == 1)
+                if (entries.Count == 1 && successCount == 1)
                 {
                     var r = (dynamic)results[0];
                     return JsonConvert.SerializeObject(new { success = true, id = r.id, x = r.x, y = r.y });
                 }
 
-                return JsonConvert.SerializeObject(new { success = failCount == 0, total = moveList.Count, succeeded = successCount, failed = failCount, results });
+                return JsonConvert.SerializeObject(new { success = failCount == 0, total = entries.Count, succeeded = successCount, failed = failCount, results });
             });
         }
 
@@ -760,14 +805,14 @@ namespace Cordyceps.Tools.Unified
         {
             return _context.ExecuteOnUiThread(() =>
             {
-                if (!ToolHelpers.TryGetUnprotectedComponent(_context, id, out var component, out var error))
+                if (!ToolHelpers.TryGetUnprotectedObject(_context, id, out var component, out var error))
                     return ToolHelpers.ErrorResponse(error);
 
                 component.NickName = nickname;
                 component.Attributes?.ExpireLayout();
                 Instances.ActiveCanvas?.Invalidate();
 
-                return JsonConvert.SerializeObject(new { success = true, id, nickname });
+                return JsonConvert.SerializeObject(new { success = true, id = component.InstanceGuid.ToString(), nickname });
             });
         }
 
@@ -851,9 +896,9 @@ namespace Cordyceps.Tools.Unified
                 HashSet<Guid> groupMemberIds = null;
                 if (!string.IsNullOrEmpty(group))
                 {
-                    var targetGroup = FindGroup(doc, group, infraIds);
-                    if (targetGroup == null)
-                        return ToolHelpers.ErrorResponse($"Group not found: {group}");
+                    // The group's exact name (ordinal), full GUID or 8+ hex GUID prefix; never a substring.
+                    if (!ToolHelpers.TryGetUnprotectedGroup(new ObjectLookup(doc), group, out var targetGroup, out var groupError))
+                        return ToolHelpers.ErrorResponse(groupError);
                     groupMemberIds = new HashSet<Guid>(targetGroup.ObjectIDs ?? new List<Guid>());
                 }
 
@@ -898,7 +943,7 @@ namespace Cordyceps.Tools.Unified
         {
             return _context.ExecuteOnUiThread(() =>
             {
-                if (!ToolHelpers.TryGetUnprotectedComponent(_context, id, out var obj, out var error))
+                if (!ToolHelpers.TryGetUnprotectedObject(_context, id, out var obj, out var error))
                     return ToolHelpers.ErrorResponse(error);
 
                 var info = ToolHelpers.BuildFullComponentInfo(obj, includeSuccess: true);
@@ -910,7 +955,7 @@ namespace Cordyceps.Tools.Unified
         {
             return _context.ExecuteOnUiThread(() =>
             {
-                if (!ToolHelpers.TryGetUnprotectedComponent(_context, id, out var component, out var error))
+                if (!ToolHelpers.TryGetUnprotectedObject(_context, id, out var component, out var error))
                     return ToolHelpers.ErrorResponse(error);
 
                 var bounds = component.Attributes.Bounds;
@@ -919,7 +964,7 @@ namespace Cordyceps.Tools.Unified
                 return JsonConvert.SerializeObject(new
                 {
                     success = true,
-                    id,
+                    id = component.InstanceGuid.ToString(),
                     name = component.Name,
                     nickname = component.NickName,
                     bounds = new { x = bounds.X, y = bounds.Y, width = bounds.Width, height = bounds.Height },
@@ -1106,7 +1151,7 @@ namespace Cordyceps.Tools.Unified
                 if (!string.IsNullOrEmpty(id))
                 {
                     // Zoom to specific component
-                    if (!ToolHelpers.TryGetUnprotectedComponent(_context, id, out var component, out var error))
+                    if (!ToolHelpers.TryGetUnprotectedObject(_context, id, out var component, out var error))
                         return ToolHelpers.ErrorResponse(error);
 
                     bounds = component.Attributes.Bounds;
@@ -1212,27 +1257,6 @@ namespace Cordyceps.Tools.Unified
                     zoom = canvas.Viewport.Zoom
                 });
             });
-        }
-
-        private static GH_Group FindGroup(GH_Document doc, string group, HashSet<Guid> infraIds)
-        {
-            if (Guid.TryParse(group, out Guid groupGuid))
-            {
-                if (infraIds.Contains(groupGuid)) return null;
-                return doc.FindObject(groupGuid, true) as GH_Group;
-            }
-
-            var searchLower = group.ToLowerInvariant();
-            foreach (var obj in doc.Objects)
-            {
-                if (obj is GH_Group g && !infraIds.Contains(g.InstanceGuid))
-                {
-                    var groupName = g.NickName?.ToLowerInvariant() ?? g.Name?.ToLowerInvariant() ?? "";
-                    if (groupName == searchLower || groupName.Contains(searchLower))
-                        return g;
-                }
-            }
-            return null;
         }
 
         // Value Adjustment Actions - see GhCanvasTool.Values.cs

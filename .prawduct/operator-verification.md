@@ -535,3 +535,242 @@ need running on a build of this branch). Search's `deprecated` flag in v1.5.0 om
   (`Origin`), Plane Normal (`Origin`, `Z-Axis`), Move (`Geometry`, `Motion`), Transform/Rotate
   (`Geometry`, `Angle`, `Plane`), Scale (`Geometry`, `Center`, `Factor`), Mirror (`Geometry`,
   `Plane`).
+
+## VRF-019 — canvas-read Chunks 01, 02 and 06 — canvas objects resolve by GUID, prefix or nickname; removal actions refuse default nicknames
+
+**Status:** pending
+**Added:** 2026-11-09 (canvas-read)
+**Where to verify:** Rhino 8 + Grasshopper with the Cordyceps component placed and an MCP client connected.
+
+**Why this needs a human:** `Core/Canvas/ObjectResolver` and `Core/IdBatch` are unit-tested against
+host-free snapshots, but `Core/Canvas/CanvasReader` (the only code that reads a `GH_Document` into
+a snapshot) and the wiring of every id site through `ToolHelpers` need live objects. Which
+nicknames count as defaults (and whether a new group's name really is `Group`), how nested groups
+appear in `GH_Group.ObjectIDs`, and what a locked object reports are facts of the running host.
+
+**Canvas for the checks:** a Circle renamed `C1`, two Point parameters left at their default
+nickname `Pt`, a Number Slider renamed `R`, a group `POSTS` around `C1`, a Value List, and a C#
+Script component. A fresh Circle is nicknamed `Circle` or `Cir` depending on Grasshopper's Draw Full Names
+display setting; both count as default, so use whichever the canvas shows wherever these steps
+say `Circle`. Steps 26-32 add a Circle left at its default nickname `Circle` (the only object
+carrying it) and a group made with Ctrl+G; nothing before them depends on either.
+
+**Verify:**
+
+1. `gh_canvas(action='info', id='R')` returns the slider; `id='<first 8 hex of its GUID>'` returns
+   the same object.
+2. `gh_canvas(action='info', id='Pt')` fails with
+   `'Pt' is the nickname of 2 objects: … Point, … Point; name one by its id` with both ids.
+   `gh_canvas(action='delete', id='Pt')` deletes nothing; its error reads
+   `'Pt' is the default nickname of 2 objects: … Point, … Point. A default nickname never selects
+   what this action removes; pass one of these ids`.
+3. `gh_canvas(action='delete', ids='["R","nope"]')`: R is deleted, the `nope` entry carries
+   `No object named 'nope'.`, overall `success` is false. (Re-create R for the later steps.)
+4. `delete ids='["R","<R full GUID>"]'` deletes once; the second entry has
+   `note: "same object as entry 0"` and `success: true`. (Re-create R.)
+5. `gh_canvas(action='move', moves='[{"id":"R","x":0,"y":0},{"id":"bad","x":1,"y":1}]')`: R moves,
+   the `bad` entry fails with `No object named 'bad'.`
+6. `move` with the Cordyceps component's GUID returns `Component not found: {guid}`; no response
+   in these checks contains the word `Protected`.
+7. `gh_canvas(action='preview', ids='["C1"]', enabled='false')` hides C1's preview;
+   `gh_canvas(action='enable', ids='["C1"]', enabled='false')` locks C1 (re-enable it after).
+8. `gh_wire(action='connect', connections='[{"sourceId":"R","targetId":"C1","targetParam":"R"},{"sourceId":"x","targetId":"C1"}]')`:
+   the first wire is added, the second entry reads `Source: No object named 'x'. Did you mean 'R'?` (on this canvas the
+   one-letter id 'x' is within two edits of the slider `R`; `NameSuggestions.Closest` allows two
+   edits for short text), `success` is false. For the no-suggestion text, use a long unlike id
+   such as `no_such_object_here`: the entry then reads `Source: No object named 'no_such_object_here'.`
+9. `gh_wire(action='list', componentId='nope')` is an error (it used to return an empty list).
+10. `gh_wire(action='disconnect', sourceId='R', sourceParam='0', targetId='C1', targetParam='R')`
+    removes the wire, resolving both ends by nickname.
+11. `gh_canvas(action='group_create', name='G', ids='["R","nope"]')` creates no group; the error
+    starts `Nothing was changed: 1 of 2 ids did not resolve. ids[1] 'nope': …`.
+12. `gh_canvas(action='group_add', id='POSTS', ids='["R"]')` adds R to POSTS;
+    `group_add id='POSTS', ids='["<POSTS full GUID>"]'` is refused with
+    `… is the group itself; a group cannot contain itself`.
+13. `gh_canvas(action='group_remove', id='POSTS', ids='["<a Pt GUID>"]')` returns that GUID in
+    `notMembers`.
+14. `gh_canvas(action='group_move', id='posts', dx=10, dy=0)` fails with
+    `No group named 'posts'. Did you mean 'POSTS'?`; `id='POSTS'` moves it.
+15. `gh_canvas(action='list', group='POS')` fails; `group='POSTS'` lists its members; a
+    component's GUID reads `Object is not a group: …`.
+16. `gh_canvas(action='info', id='POSTS')` fails with `… 'POSTS' is a group; group actions take its
+    name, and delete, move, rename, info, bounds and zoom take its id (…).`
+17. `group_rename`, `group_color` and `group_delete` work with `id='POSTS'` (in that order, renaming
+    back before deleting). This deletes POSTS, so it comes after every other step that needs it.
+18. `gh_script(action='get', id='<script nickname>')` resolves the script by nickname.
+19. `gh_canvas(action='info', id='MCP')` (the bridge component is named "Cordyceps" but its
+    nickname is `MCP`, and the resolver matches nicknames only) returns `No object named 'MCP'.`,
+    possibly followed by `Did you mean 'C1'?` (two edits away). A leak would be any response that
+    returns an object, suggests `MCP`, or says the object is protected or exists.
+20. `get`, `set`, `config`, `gh_inspect(action='outputs')` and `gh_inspect(action='geometry')`
+    called with a nickname return the full GUID in `id`.
+21. `gh_canvas(action='config', id='<the value list>', items='null')` is an error and the list keeps
+    its items.
+22. (Run before step 17, while POSTS still exists.) A group's GUID on `gh_wire(action='list')`, `gh_inspect(action='outputs')` and
+    `gh_canvas(action='get')` is refused (`… is a group; this action works on components and
+    parameters, not groups`), while `gh_canvas(action='move')` still acts on POSTS by its GUID.
+    For `delete`, make a throwaway group around one Pt (`group_create name='TMP'`) and delete it by
+    its GUID: the group goes. (Deleting POSTS here would leave step 17 nothing to act on.)
+23. `gh_canvas(action='move', moves='[{"id":"R","x":0,"y":0},{"id":"<R short id>","x":50,"y":50}]')`:
+    R moves to 0,0, the second entry fails with `same object as entry 0: give one position per
+    object`, and `success` is false.
+24. Give an object a date-shaped nickname (`2026-01-01T00:00:00`) and pass it in `moves`, in
+    `connections` and in `outline group='["…"]'` (for a group so named): each resolves it.
+25. `gh_inspect(action='disconnected')` on a component that has both a missing input and a warning
+    lists the missing input, as it did before this branch.
+
+Removal actions and default nicknames (Chunk 06). Add a Circle and leave its nickname `Circle`; it
+must be the only object carrying that nickname (C1 is renamed). `<id>` below is the id the error
+prints.
+
+26. Ordinary actions still take a unique default nickname: `gh_canvas(action='info', id='Circle')`,
+    `gh_canvas(action='move', moves='[{"id":"Circle","x":600,"y":0}]')` and
+    `gh_wire(action='connect', sourceId='R', targetId='Circle', targetParam='R')` each act on the
+    new Circle.
+27. `gh_wire(action='disconnect', sourceId='R', sourceParam='0', targetId='Circle', targetParam='R')`
+    removes nothing; the error reads `Target: 'Circle' is the default nickname of <id> Circle, which
+    every new Circle gets, so it never selects what this action removes. Pass id '<id>', or name it
+    first with gh_canvas(action='rename', id='<id>', nickname='NEW') and pass that name`. The same
+    call with `targetId='<id>'` removes the wire.
+28. Reconnect R to the Circle. `gh_wire(action='clear', id='Circle')` is refused with the same text
+    (no `Target:` prefix) and the wire stays; `clear id='<id>'` (the 8+ hex prefix) clears it.
+    Reconnect, and `clear id='<the Circle's full GUID>'` clears it too.
+29. `gh_canvas(action='delete', id='Circl')` reads `No object named 'Circl'.` with no
+    `Did you mean 'Circle'?`, while `info id='Circl'` does suggest `'Circle'`.
+    `delete id='Circle'` deletes nothing and gives the refusal text above; `delete id='<id>'`
+    deletes the Circle.
+30. Add a Circle and `gh_canvas(action='rename', id='Circle', nickname='C2')` (rename is not a
+    removal, so the default nickname resolves); `delete id='C2'` deletes it.
+31. Add a Circle renamed `C3` and another left at `Circle`. `delete ids='["C3","Circle"]'`
+    deletes C3; the `Circle` entry fails with the refusal text and overall `success` is false. (C3
+    rather than C1, which VRF-020 step 11 still needs.)
+32. Select the remaining Circle and the Value List and press Ctrl+G.
+    `gh_canvas(action='group_list')` reports the new group's name: record it, and it should read
+    `Group` (the resolver assumes exactly that). `gh_canvas(action='outline')` prints this group by
+    its id, not by `Group`. `group_delete id='Group'` is refused with `'Group' is the default name of
+    group <id>, which every new group gets, so it never selects what this action removes. Pass id
+    '<id>', or name the group first with gh_canvas(action='group_rename', id='<id>', name='NEW') and
+    pass that name`; `group_delete id='<id>'` deletes the group.
+
+Reader facts only a live session confirms (check them while doing the outline checks in VRF-021):
+- Default-nickname flags are right across installed types (judged against the proxy's
+  `Desc.NickName` and the object's `Name`): a default-nicknamed object prints as its short id in
+  outline, a renamed one as its nickname, and `delete` refuses the default nickname and accepts
+  the renamed one.
+- A group nested in a group appears as a group id inside `GH_Group.ObjectIDs`, and a group with two
+  parents reads correctly.
+- `Phase` and `Locked` of a locked object; which objects implement `IGH_PreviewObject.Hidden`.
+- `SolutionState == GH_ProcessStep.Aborted` after an aborted solve; which of `doc.Enabled` and
+  `GH_Document.EnableSolutions` each solver-off route sets (the canvas solver-lock button, and
+  `gh_document(action='solver', enabled=false)`).
+- `Attributes.GetTopLevel.DocObject` on a source gives the owning component, and
+  `Params.Output.IndexOf(source)` the right output index (never -1 for a component-owned source).
+- `GH_Group.Attributes.Bounds` gives a usable position before the canvas has painted.
+- A slider's value, minimum and maximum come out as invariant text under a comma-decimal locale.
+- A free-floating parameter rests at Computed after a solve.
+- No parameter has `HasInputGrip` false while holding sources.
+- `GH_BooleanToggle.Value` (not in the SDK XML) reads the toggle state.
+
+## VRF-020 — canvas-read Chunk 03 — gh_inspect tree reads a data tree's shape
+
+**Status:** pending
+**Added:** 2026-11-09 (canvas-read)
+**Where to verify:** Rhino 8 + Grasshopper with the Cordyceps component placed and an MCP client connected.
+
+**Why this needs a human:** `Core/DataTrees/TreeSummary`, `TreeAlignment`, `TreeRequest` and
+`TreeStatusText` are unit-tested on hand-built branches. Reading `IGH_Structure` through
+`Core/DataTrees/DataTreeReader`, and whether an input's `VolatileData` holds the tree after its
+modifiers, need a running solve.
+
+**Verify:**
+
+1. Feed a Series of 10 into a Number parameter and graft it:
+   `gh_inspect(action='tree', id='<param>')` shows `paths: ["{0;0}..{0;9}: 1 each"]` and the note
+   `one item per branch (grafted shape)`. Flatten instead: one branch, `{0}: 10`. A Partition List
+   of size 3 on the 10 items shows `perBranch: {min: 1, max: 3}`.
+2. Graft input B of a component and read `tree id='<component>', side='input'`: does B's tree show
+   the grafted paths (is an input param's `VolatileData` the post-modifier tree)? Record which.
+3. Turn the solver off via `gh_document(action='solver', enabled=false)`, then via the canvas
+   solver-lock button, then both: `solver` reads `off: this document's solver is disabled`,
+   `off: Grasshopper's solver is disabled`, or the combined text, matching the route used.
+4. `limit=100` returns exactly 100 path groups on a tree with more (the rest counted in
+   `morePathGroups`); `limit=0` gives the default 20; `limit=-1` is an error for `tree` and for
+   `log`, and `gh_inspect(action='log', limit=-1, clear='true')` does not clear the log.
+5. Null items are counted in `nulls` and in `items`; an invalid curve is counted in `invalid`.
+6. `IGH_Structure.get_Branch(int)` and `get_Path(int)` (not in the SDK XML) behave as indexers:
+   paths and counts match a Panel on the same output.
+7. A locked owner gives `solved: false` with the locked note; a failed owner the failed note; an
+   owner expired but not yet solved the "not computed" note.
+8. With several warnings on the owner, `message` shows the first as Grasshopper lists it, with
+   `(+K more)`.
+9. `tree id='<a group's id>'` is an error ending `is a group; tree reads components and
+   parameters`; a slider's tree reads `side: "parameter"`.
+10. Two inputs of one component with 3 and 12 branches: `side='input'` without `param` gives
+    `inputs don't line up: A has 3 branches, B has 12 branches` once, on the first multi-branch tree.
+11. `tree ids='["R","C1"]'` (the VRF-019 canvas) returns two trees; `object` is each nickname and
+    `id` the full GUID.
+
+## VRF-021 — canvas-read Chunks 04 and 07 — gh_canvas outline, and status over the same objects
+
+**Status:** pending
+**Added:** 2026-11-09 (canvas-read)
+**Where to verify:** Rhino 8 + Grasshopper with the Cordyceps component placed and an MCP client connected.
+
+**Why this needs a human:** `Core/Canvas/OutlineView` is pinned by golden tests over host-free
+snapshots. Whether real definitions read well, whether every printed name resolves against the
+live document, and whether `status` reads parameter objects (sliders, panels, free parameters) as
+outline does need real files and real runtime messages.
+
+**Verify:**
+
+1. `gh_canvas(action='outline')` on a real grouped definition, on a messy ungrouped one (it shows
+   `networks` and `unconnected` instead of `groups`), and on a document with a cluster: each reads
+   as a fair summary, and `summary` has its eight counts in order.
+2. Compare the response size with `gh_canvas(action='list')` + `gh_wire(action='list')` +
+   `gh_canvas(action='group_list')` on the same file, and record both numbers.
+3. Every object, control and problem line starts `NAME · Type` (`COUNT · Number Slider = …`,
+   `SUM · Addition [MATHS] · error: …`), and a child group's line in group detail reads
+   `NAME · group · …`. Paste every printed name (the text before a line's first ` · `, `[tags]`, `→`
+   destinations, the group detail `id`) into `gh_canvas(action='info', id=…)` or a `group_*`
+   action, and every port token before `←` into `gh_wire(action='validate')` as `targetParam`: each
+   resolves to the object or port it labels. On a scratch copy of the file, a printed name passed
+   to `delete` or `group_delete` is never refused as a default name.
+4. Turn the solver off both ways: counts read `N stale`, `solver` names the route, and `note` reads
+   `counts are from the last solution and may be out of date`.
+5. Lock a component: its counts read `disabled`, it is listed under `disabled`, and its `Phase` is
+   not Computed.
+6. Expire an object without solving (solver off, then change a slider), then, with the solver ON
+   (while an expired object is still waiting, for example during a slow solve): does its `Phase`
+   leave Computed? If it does, the summary's `not solved` count includes it and
+   `gh_inspect(action='tree', id=…)` on it reads `solved: false`. (With the solver off outline
+   prints `N stale` for every object, so that count cannot answer this.)
+7. Hide an object's preview: `preview off` appears on its group-detail line and in `summary`.
+8. Nest a group in a group: the parent's line says `contains: CHILD (n objects)` and
+   `outline group='CHILD'` has a summary ending `inside PARENT`.
+9. Draw a highlight group over objects already in module groups: both tags appear and each group
+   line carries `shares K objects with …`.
+10. Default-nickname detection across installed types (see VRF-019's reader facts).
+11. Under a comma-decimal OS locale, slider values and ranges print with `.` (`0.5 (0..1)`).
+12. An unwired panel shows its text (`NOTE = "read me"`); a wired panel shows none.
+13. An input wired only to the Cordyceps bridge is neither listed as wired nor DISCONNECTED.
+14. `gh_inspect(action='status')` lists parameter objects: give a parameter object a runtime error
+    or warning (for example a free Number parameter fed a panel holding text it cannot convert) and
+    it appears under `components` as `ERROR` or `WARNING`, matching outline's `problems`; a healthy
+    slider and panel are listed as `OK`, never `DISCONNECTED`. Components read as they did before this
+    branch, in the same `{id, name, type, status, message}` shape.
+15. Hold the UI thread with a long solve and call `outline`: it returns the busy result at once
+    instead of waiting.
+16. `outline id='<a group's id>', depth=3` is an error; `outline depth=3` without `id` is an error;
+    `outline id='<a group's id>'` shows that group's detail.
+17. `gh_inspect(action='status', category='Params')` returns the sliders, panels and free
+    parameters (and no components from other tabs).
+18. On the same canvas, `status`'s `summary` error, warning and disconnected counts equal the
+    error, warning and disconnected counts in outline's `summary`.
+19. Phantom objects: delete a component and undo, or otherwise leave an object that
+    `gh_canvas(action='list')` does not show; `status` does not list it either.
+20. Rename a slider `Width (m)`: outline prints it by its short id (`<id> · Number Slider = …`),
+    and `gh_canvas(action='info', id='Width (m)')` still resolves it. A slider renamed `A · B`
+    prints as its id too.
+21. Clear a slider's and a panel's nickname in Grasshopper (rename to nothing), then run
+    `gh_inspect(action='status')`: each entry's `name` is its type name (`Number Slider`, `Panel`),
+    never an empty string. Note what nickname a freshly placed slider and panel actually carry.

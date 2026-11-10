@@ -6,27 +6,34 @@ Data tree mismatches are the most common source of Grasshopper errors. Follow th
 ```
 gh_inspect(action='status')
 ```
-Look for components with ERROR or WARNING status.
+Look for objects with ERROR or WARNING status (components and parameter objects such as sliders and panels are both listed).
 
-## Step 2: Check Component Outputs
-For each problem component, examine its output structure:
+## Step 2: Check What the Component Receives
+For each problem component, read the shape of every input, without pulling the data:
 ```
-gh_inspect(action='outputs', id=[component_id])
+gh_inspect(action='tree', id=[component_id], side='input')
 ```
-Note the `branches` (branch count) and `count` (item count) for each output.
+Each tree lists `branches`, `items`, `depth`, `perBranch` and its `paths`. When two inputs with
+several branches each disagree, a note names them: `inputs don't line up: A has 3 branches, B has
+12 branches`. A tree with `solved: false` carries a `note` saying why; its counts may be out of date.
 
 ## Step 3: Trace Upstream
 Find what's feeding the problem component:
+```
+gh_canvas(action='outline', id=[component_id])
+```
+or, for the full chain:
 ```
 gh_inspect(action='trace', id=[component_id], direction='upstream')
 ```
 
 ## Step 4: Compare Tree Structures
-For each upstream component:
+Read the upstream outputs in one call:
 ```
-gh_inspect(action='outputs', id=[upstream_id])
+gh_inspect(action='tree', ids='["<upstream_id_1>", "<upstream_id_2>"]')
 ```
-Compare branch counts. Mismatched branch counts cause cross-reference behavior.
+Compare branch counts and paths. Mismatched branch counts cause cross-reference behavior. Use
+`gh_inspect(action='outputs', id=...)` when you need the values themselves.
 
 ## Step 5: Common Fixes
 
@@ -59,5 +66,5 @@ the restructuring needs to be visible as a step in the definition.
 After making changes:
 ```
 gh_inspect(action='status')
-gh_inspect(action='outputs', id=[component_id])
+gh_inspect(action='tree', id=[component_id])
 ```

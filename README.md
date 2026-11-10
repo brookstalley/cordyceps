@@ -145,11 +145,11 @@ Cordyceps provides **7 tools with over 100 actions** — consolidated to minimiz
 
 | Tool | Description |
 |------|-------------|
-| `gh_canvas` | Components, values, groups, baking, variable parameters, data modifiers (flatten/graft/simplify/reverse) |
+| `gh_canvas` | Components, values, groups, a compact outline of the whole definition, baking, variable parameters, data modifiers (flatten/graft/simplify/reverse) |
 | `gh_wire` | Connection management |
 | `gh_document` | Save, clear, snapshots (max 20 kept, oldest evicted), solver control, canvas capture (undo/redo are disabled — use snapshots) |
 | `gh_script` | Script component configuration |
-| `gh_inspect` | Connection/liveness probe, status, outputs, data tracing, debugging |
+| `gh_inspect` | Connection/liveness probe, status, outputs, data-tree shape (paths and counts without the data), data tracing, debugging |
 
 ### Rhino
 
@@ -171,7 +171,9 @@ Browse the documentation directly: [`src/Cordyceps/Knowledge/`](src/Cordyceps/Kn
 | Plugin won't load | Verify Rhino 8.21+. If you installed manually, unblock the .gha file (Windows) or clear its quarantine flag (macOS) — the Package Manager does this for you. |
 | Can't connect | Ensure Cordyceps component is on canvas. Check the port. |
 | Claude Desktop can't connect | Ensure Node.js is installed. Check Rhino is running with Cordyceps. Restart Claude Desktop after config changes. |
-| Component not found | Use `gh_canvas(action='search', query='...')` to find exact names. |
+| "No component type is named …" when adding | The type name is not exact. Use `gh_canvas(action='search', query='...')` to find exact names. |
+| "Component not found" / "No object named …" for an id | The id names nothing on the canvas. Pass a GUID, an 8+ hex-digit GUID prefix, or a unique nickname; `gh_canvas(action='list')` or `outline` shows what exists. |
+| "… is the default nickname of …, so it never selects what this action removes" | `delete`, `group_delete` and `gh_wire` `disconnect`/`clear` refuse a default nickname such as `Circle` (or the group name `Group`), even when only one object has it. Pass the id the error prints, or rename the object first. |
 | No command output | Set DebugLevel input to 1 to see traffic in Rhino command history. |
 
 ## Building
@@ -185,8 +187,8 @@ Only Release builds are supported — a Debug build (the `dotnet build` default)
 ## Acknowledgements
 
 - [grasshopper-mcp](https://github.com/alfredatnycu/grasshopper-mcp) by Alfred Chen — the project that inspired Cordyceps.
-- [Hyperceps](https://github.com/yang-yibinn/hyperceps) by Yibin Yang — a fork of Cordyceps that pushed it somewhere genuinely new. The strict naming rules Cordyceps now uses for component types and ports (exact names, nothing ever guessed, and errors that list the candidates and say how to write the call) are adapted from Hyperceps, with thanks. Yibin's work on making a whole block of edits in one validated call, compact canvas reads, data-tree inspection and slider sweeps is shaping where Cordyceps goes next.
+- [Hyperceps](https://github.com/yang-yibinn/hyperceps) by Yibin Yang — a fork of Cordyceps that pushed it somewhere genuinely new. The strict naming rules Cordyceps now uses for component types, ports and canvas objects (exact names, nothing ever guessed, and errors that list the candidates and say how to write the call), the canvas outline (`gh_canvas(action='outline')`) and the data-tree summary (`gh_inspect(action='tree')`) are adapted from Hyperceps, with thanks. Yibin's work on making a whole block of edits in one validated call and on slider sweeps is shaping where Cordyceps goes next.
 
 ---
 
-[Changelog](CHANGELOG.md) · Inspired by [grasshopper-mcp](https://github.com/alfredatnycu/grasshopper-mcp) by Alfred Chen · Naming rules adapted from [Hyperceps](https://github.com/yang-yibinn/hyperceps) by Yibin Yang · MIT License
+[Changelog](CHANGELOG.md) · Inspired by [grasshopper-mcp](https://github.com/alfredatnycu/grasshopper-mcp) by Alfred Chen · Naming rules, canvas outline and data-tree summary adapted from [Hyperceps](https://github.com/yang-yibinn/hyperceps) by Yibin Yang · MIT License

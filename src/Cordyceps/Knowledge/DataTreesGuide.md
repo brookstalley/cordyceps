@@ -89,10 +89,71 @@ Move → 6 outputs (3×2 cross product)
 1. Don't flatten randomly — destroys relationships
 2. Use Shift Path over Simplify — preserves info
 3. Match structures before connecting
-4. Check with Panel or `gh_inspect(action='outputs')`
+4. Check the shape with `gh_inspect(action='tree')` before pulling data with `gh_inspect(action='outputs')` or a Panel
+
+## Seeing a Tree's Shape
+
+`gh_inspect(action='tree')` returns the structure of a data tree without its data: branch paths,
+items per branch, depth, nulls and invalid items. It reads what is already on the canvas and
+triggers no solve.
+
+```
+gh_inspect(action='tree', id='abc12345')                          # every output of one object
+gh_inspect(action='tree', id='abc12345', param='Result')          # one output
+gh_inspect(action='tree', id='abc12345', side='input')            # every input, as the component receives it
+gh_inspect(action='tree', ids='["abc12345", {"id": "def67890", "param": "Result"}]')
+```
+
+- Give exactly one of `id` or `ids` (a JSON array of 1-50 entries, each an id string or
+  `{"id": "...", "param": "..."}`). Ids take a GUID, an 8+ hex GUID prefix, or a unique nickname.
+- `param` (only with `id`; per entry with `ids`, where it may also be an integer index): a port by
+  name, nickname or 0-based index. Without it, every port on the side is read.
+- `side`: `output` (default) or `input`. A parameter object (slider, panel, free parameter) has one
+  tree, so `param` and `side` do not apply; its tree reads `side: "parameter"`.
+- `limit`: path groups per tree, 1-500, default 20. Out of range is an error.
+
+Each tree is `{target, object, id, port, side, type, branches, items, …}`, and a tree with at least one branch also has `depth`, `perBranch` and `paths`.
+`object` is the nickname as the canvas shows it (a label: two objects can share it); `id` is the
+full GUID to pass to a follow-up call. Optional fields appear only when they apply: `nulls`,
+`invalid` (non-null items whose `IsValid` is false), `emptyBranches`, `morePathGroups`, `notes`,
+`solved: false` with a `note` saying why (locked, failed, still computing, or not computed),
+and `message` (the owner's first warning or error, clipped at 160 characters, with `(+K more)`).
+`depth` and `perBranch` are a number, or `{min, max}` when they vary. A `solver` field at the top
+appears only when the solver is off.
+
+**An empty tree** (no branches, which is what an unfilled or failed output holds) has no `depth`,
+`perBranch`, `paths` or `notes` at all, only `branches: 0` and `items: 0`:
+
+```json
+{"target": "abc12345", "object": "Pt", "id": "<full GUID>", "port": "P (Point)", "side": "output", "type": "Point", "branches": 0, "items": 0}
+```
+
+When the owner has not computed, is locked, or has failed, it also carries `solved: false` and a
+`note`; a warning or error on it adds `message`. Read those to see why the tree is empty.
+
+`paths` are runs: `{0;0}..{0;9}: 1 each` is ten consecutive branches of one item each; `{0;3}: 4` is
+one branch of four. `items` counts nulls.
+
+Notes it can add:
+
+| Note | Meaning |
+|------|---------|
+| `one item per branch (grafted shape)` | Every branch holds one item |
+| `paths have different depths (1 to 2); branches from different sources won't line up` | Mixed path depths |
+| `the first 2 path indices are the same in every branch, so they add depth without separating anything; Shift Paths is the usual way to remove leading indices (see the data trees guide)` | Redundant leading levels (needs 2+ branches and depth 3+) |
+| `inputs don't line up: A has 3 branches, B has 12 branches` | With `side='input'` and no `param`: two inputs with several branches each disagree in branch count |
+| `inputs have the same number of branches (2) but different paths: at branch 1, A has {1} and B has {5}` | Same count, different paths |
+| `1 empty branch`, `1 null item`, `3 invalid items (not null, but IsValid is false)` | Counts of each |
+
+An input with a single branch is broadcast against anything, so it never triggers the alignment note.
+
+A target that fails (an unknown or ambiguous name, a group, a bad `param`) is listed in `errors` as
+`ids[i]: …` (or `id: …`) and `success` is false, but the trees that did resolve are still returned.
 
 ## Debugging
 
-1. `gh_inspect(action='outputs', id='...')` — branch/item counts
-2. `gh_inspect(action='trace', id='...', direction='upstream')` — find where structure diverges
-3. Add Panel components to visualize
+1. `gh_inspect(action='tree', id='...', side='input')` — the shape each input receives, and whether the inputs line up
+2. `gh_inspect(action='tree', id='...')` — the shape each output produces
+3. `gh_inspect(action='trace', id='...', direction='upstream')` — find where structure diverges
+4. `gh_inspect(action='outputs', id='...')` — the values themselves, once the shape is right
+5. Add Panel components to visualize

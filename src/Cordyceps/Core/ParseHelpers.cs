@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Drawing;
 using System.Globalization;
 using Newtonsoft.Json;
+using Newtonsoft.Json.Linq;
 
 namespace Cordyceps.Core
 {
@@ -45,6 +46,43 @@ namespace Cordyceps.Core
         #endregion
 
         #region JSON Deserialization Helpers
+
+        /// <summary>
+        /// Parse one JSON value from an argument that can carry names (object nicknames, group
+        /// names, parameter names), keeping every string a string. By default Json.NET turns
+        /// date-shaped text such as <c>"2026-01-01T00:00:00"</c> into a Date token, which a caller
+        /// then reads back as a current-culture date rendering: a nickname of that shape would
+        /// resolve to nothing. Text after the first value is an error, not something to ignore.
+        /// Throws <see cref="JsonReaderException"/> on malformed JSON (and on a repeated key when
+        /// <paramref name="rejectDuplicateKeys"/> is set); each caller words its own error.
+        /// </summary>
+        public static JToken ParseJsonKeepingText(string json, bool rejectDuplicateKeys = false)
+        {
+            if (json == null) throw new ArgumentNullException(nameof(json));
+            using (var reader = new JsonTextReader(new System.IO.StringReader(json)) { DateParseHandling = DateParseHandling.None })
+            {
+                var settings = rejectDuplicateKeys
+                    ? new JsonLoadSettings { DuplicatePropertyNameHandling = DuplicatePropertyNameHandling.Error }
+                    : null;
+                var token = JToken.Load(reader, settings);
+                if (reader.Read())
+                    throw new JsonReaderException("unexpected text after the JSON value");
+                return token;
+            }
+        }
+
+        /// <summary>
+        /// The text of one field read from <see cref="ParseJsonKeepingText"/>: a string as it is; a
+        /// missing field or JSON null as null; a number or boolean in the invariant culture; an
+        /// object or array as compact JSON.
+        /// </summary>
+        public static string TextOf(JToken token)
+        {
+            if (token == null || token.Type == JTokenType.Null || token.Type == JTokenType.Undefined) return null;
+            if (token.Type == JTokenType.String) return (string)token;
+            if (token is JValue v) return Convert.ToString(v.Value, CultureInfo.InvariantCulture);
+            return token.ToString(Formatting.None);
+        }
 
         /// <summary>
         /// Try to deserialize a JSON string to a list with null checking.

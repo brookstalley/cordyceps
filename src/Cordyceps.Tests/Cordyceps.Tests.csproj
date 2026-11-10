@@ -36,6 +36,10 @@
     <Compile Include="..\Cordyceps\Core\DataModifiers.cs" Link="DataModifiers.cs" />
     <Compile Include="..\Cordyceps\Core\ParamSyncPlan.cs" Link="ParamSyncPlan.cs" />
     <Compile Include="..\Cordyceps\Core\InfrastructureIds.cs" Link="InfrastructureIds.cs" />
+    <Compile Include="..\Cordyceps\Core\Canvas\CanvasSnapshot.cs" Link="Canvas\CanvasSnapshot.cs" />
+    <Compile Include="..\Cordyceps\Core\Canvas\GuidPrefixIndex.cs" Link="Canvas\GuidPrefixIndex.cs" />
+    <Compile Include="..\Cordyceps\Core\Canvas\ObjectResolver.cs" Link="Canvas\ObjectResolver.cs" />
+    <Compile Include="..\Cordyceps\Core\Canvas\ObjectHealth.cs" Link="Canvas\ObjectHealth.cs" />
     <Compile Include="..\Cordyceps\Core\ParamSpecLookup.cs" Link="ParamSpecLookup.cs" />
     <Compile Include="..\Cordyceps\Core\Naming\NameSuggestions.cs" Link="Naming\NameSuggestions.cs" />
     <Compile Include="..\Cordyceps\Core\Naming\TypeNameRule.cs" Link="Naming\TypeNameRule.cs" />
@@ -44,6 +48,8 @@
     <Compile Include="..\Cordyceps\Core\UnifiedToolHelpers.cs" Link="UnifiedToolHelpers.cs" />
     <Compile Include="..\Cordyceps\Core\PlaceImageValidation.cs" Link="PlaceImageValidation.cs" />
     <Compile Include="..\Cordyceps\Core\ParseHelpers.cs" Link="ParseHelpers.cs" />
+    <Compile Include="..\Cordyceps\Core\IdBatch.cs" Link="IdBatch.cs" />
+    <Compile Include="..\Cordyceps\Core\BulkEntries.cs" Link="BulkEntries.cs" />
     <Compile Include="..\Cordyceps\Core\ResponseHelpers.cs" Link="ResponseHelpers.cs" />
     <Compile Include="..\Cordyceps\Core\McpNaming.cs" Link="McpNaming.cs" />
     <Compile Include="..\Cordyceps\Core\PromptTemplate.cs" Link="PromptTemplate.cs" />
@@ -51,9 +57,16 @@
     <Compile Include="..\Cordyceps\Core\JsonRpcEnvelope.cs" Link="JsonRpcEnvelope.cs" />
     <Compile Include="..\Cordyceps\Core\ServerState.cs" Link="ServerState.cs" />
     <Compile Include="..\Cordyceps\Core\SnapshotStore.cs" Link="SnapshotStore.cs" />
+    <Compile Include="..\Cordyceps\Core\DataTrees\TreeSummary.cs" Link="DataTrees\TreeSummary.cs" />
+    <Compile Include="..\Cordyceps\Core\DataTrees\TreeAlignment.cs" Link="DataTrees\TreeAlignment.cs" />
+    <Compile Include="..\Cordyceps\Core\DataTrees\TreeStatusText.cs" Link="DataTrees\TreeStatusText.cs" />
+    <Compile Include="..\Cordyceps\Core\DataTrees\TreeRequest.cs" Link="DataTrees\TreeRequest.cs" />
     <Compile Include="..\Cordyceps\Core\SolverState.cs" Link="SolverState.cs" />
     <Compile Include="..\Cordyceps\Core\StatusEnvelope.cs" Link="StatusEnvelope.cs" />
     <Compile Include="..\Cordyceps\Core\ToolArgumentBinder.cs" Link="ToolArgumentBinder.cs" />
+    <Compile Include="..\Cordyceps\Core\Canvas\OutlineView.cs" Link="Canvas\OutlineView.cs" />
+    <Compile Include="..\Cordyceps\Core\Canvas\OutlineGrammar.cs" Link="Canvas\OutlineGrammar.cs" />
+    <Compile Include="..\Cordyceps\Core\Canvas\OutlineRequest.cs" Link="Canvas\OutlineRequest.cs" />
   </ItemGroup>
 
 </Project>

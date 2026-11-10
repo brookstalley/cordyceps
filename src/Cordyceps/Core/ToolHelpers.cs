@@ -2,8 +2,10 @@ using System;
 using System.Collections.Generic;
 using System.Drawing;
 using System.Linq;
+using Cordyceps.Core.Canvas;
 using Grasshopper;
 using Grasshopper.Kernel;
+using Grasshopper.Kernel.Special;
 using Newtonsoft.Json;
 using Rhino;
 using Rhino.Display;
@@ -154,53 +156,6 @@ namespace Cordyceps.Core
                 return false;
             }
             error = null;
-            return true;
-        }
-
-        /// <summary>
-        /// Combined helper: get active document + parse GUID + find component.
-        /// Most common pattern used in tool methods.
-        /// </summary>
-        /// <param name="context">The GrasshopperContext to use</param>
-        /// <param name="id">The component ID string to parse</param>
-        /// <param name="obj">Output: the found object if successful</param>
-        /// <param name="error">Output: error message if failed</param>
-        /// <returns>True if all steps succeeded, false otherwise</returns>
-        public static bool TryGetComponent(GrasshopperContext context, string id, out IGH_DocumentObject obj, out string error)
-        {
-            obj = null;
-
-            if (!TryGetActiveDocument(context, out var doc, out error))
-                return false;
-
-            if (!TryParseGuid(id, out var guid, out error))
-                return false;
-
-            if (!TryFindComponent(doc, guid, out obj, out error))
-                return false;
-
-            return true;
-        }
-
-        /// <summary>
-        /// Combined helper with document output: get active document + parse GUID + find component.
-        /// Use when you also need the document reference.
-        /// </summary>
-        public static bool TryGetComponentWithDoc(GrasshopperContext context, string id,
-            out GH_Document doc, out IGH_DocumentObject obj, out string error)
-        {
-            doc = null;
-            obj = null;
-
-            if (!TryGetActiveDocument(context, out doc, out error))
-                return false;
-
-            if (!TryParseGuid(id, out var guid, out error))
-                return false;
-
-            if (!TryFindComponent(doc, guid, out obj, out error))
-                return false;
-
             return true;
         }
 
@@ -357,60 +312,247 @@ namespace Cordyceps.Core
             return infraIds.Contains(guid);
         }
 
+        /// <summary>What an action that takes no groups says when it is handed one, unless it words its own.</summary>
+        public const string DefaultGroupRefusal = "this action works on components and parameters, not groups";
+
         /// <summary>
-        /// Try to get a component, but fail silently (as "not found") if it's protected infrastructure.
-        /// This makes infrastructure completely invisible - the LLM gets the same error whether the
-        /// component doesn't exist or is protected.
+        /// Resolve the text a caller passes as an object id, for an action that works on components
+        /// and parameters: a group's id is refused with an error that names the group and says
+        /// <paramref name="worksOn"/> (default <see cref="DefaultGroupRefusal"/>), never answered
+        /// with an empty success. Protected infrastructure fails as "not found", so the caller gets
+        /// the same error whether the object does not exist or is Cordyceps' own. A full GUID builds
+        /// no snapshot; any other text (a GUID prefix of 8+ hex digits, or a nickname) is resolved
+        /// by <see cref="ObjectResolver"/> in the Objects scope against a names-only snapshot.
+        /// Actions that act on groups too use <see cref="TryGetUnprotectedObject(GrasshopperContext, string, out IGH_DocumentObject, out string)"/>.
+        /// Must be called on the UI thread.
         /// </summary>
         public static bool TryGetUnprotectedComponent(GrasshopperContext context, string id,
-            out IGH_DocumentObject obj, out string error)
+            out IGH_DocumentObject obj, out string error, string worksOn = null)
+        {
+            return TryGetUnprotectedComponentWithDoc(context, id, out _, out obj, out error, worksOn);
+        }
+
+        /// <summary>
+        /// <see cref="TryGetUnprotectedComponent(GrasshopperContext, string, out IGH_DocumentObject, out string, string)"/>,
+        /// also returning the active document.
+        /// </summary>
+        public static bool TryGetUnprotectedComponentWithDoc(GrasshopperContext context, string id,
+            out GH_Document doc, out IGH_DocumentObject obj, out string error, string worksOn = null) =>
+            TryGetUnprotectedComponentWithDoc(context, id, ResolveIntent.Ordinary, out doc, out obj, out error, worksOn);
+
+        /// <summary>
+        /// <see cref="TryGetUnprotectedComponentWithDoc(GrasshopperContext, string, out GH_Document, out IGH_DocumentObject, out string, string)"/>
+        /// with the caller's <paramref name="intent"/>. An action that removes something calls this
+        /// form with <see cref="ResolveIntent.Destructive"/>; the overloads without an intent are ordinary.
+        /// </summary>
+        public static bool TryGetUnprotectedComponentWithDoc(GrasshopperContext context, string id, ResolveIntent intent,
+            out GH_Document doc, out IGH_DocumentObject obj, out string error, string worksOn = null)
         {
             obj = null;
-
-            if (!TryGetActiveDocument(context, out var doc, out error))
+            if (!TryGetActiveDocument(context, out doc, out error))
                 return false;
+            return TryGetUnprotectedComponent(new ObjectLookup(doc), id, intent, out obj, out error, worksOn);
+        }
 
-            if (!TryParseGuid(id, out var guid, out error))
+        /// <summary>
+        /// The per-call-lookup form of <see cref="TryGetUnprotectedComponent(GrasshopperContext, string, out IGH_DocumentObject, out string, string)"/>,
+        /// so a loop over many ids computes infrastructure once and builds at most one snapshot.
+        /// </summary>
+        public static bool TryGetUnprotectedComponent(ObjectLookup lookup, string id,
+            out IGH_DocumentObject obj, out string error, string worksOn = null) =>
+            TryGetUnprotectedComponent(lookup, id, ResolveIntent.Ordinary, out obj, out error, worksOn);
+
+        /// <summary>The per-call-lookup component form with the caller's <paramref name="intent"/> (see <see cref="ResolveIntent"/>).</summary>
+        public static bool TryGetUnprotectedComponent(ObjectLookup lookup, string id, ResolveIntent intent,
+            out IGH_DocumentObject obj, out string error, string worksOn = null)
+        {
+            if (!TryGetUnprotectedObject(lookup, id, intent, out obj, out error))
                 return false;
-
-            // Check if protected BEFORE checking if it exists
-            if (IsProtectedId(doc, guid))
+            if (obj is GH_Group group)
             {
-                error = $"Component not found: {guid}";
+                error = GroupRefusal(group, worksOn);
+                obj = null;
                 return false;
             }
-
-            if (!TryFindComponent(doc, guid, out obj, out error))
-                return false;
-
             return true;
         }
 
         /// <summary>
-        /// Try to get a component with document reference, but fail silently if protected.
+        /// Resolve an object id for an action that acts on groups as well as components and
+        /// parameters (delete, move, rename, info, bounds, zoom, group member arrays): a group's
+        /// GUID or GUID prefix resolves to the group. A nickname never matches a group: names are scoped, ids are not.
+        /// Must be called on the UI thread.
         /// </summary>
-        public static bool TryGetUnprotectedComponentWithDoc(GrasshopperContext context, string id,
-            out GH_Document doc, out IGH_DocumentObject obj, out string error)
+        public static bool TryGetUnprotectedObject(GrasshopperContext context, string id,
+            out IGH_DocumentObject obj, out string error)
         {
-            doc = null;
             obj = null;
-
-            if (!TryGetActiveDocument(context, out doc, out error))
+            if (!TryGetActiveDocument(context, out var doc, out error))
                 return false;
+            return TryGetUnprotectedObject(new ObjectLookup(doc), id, out obj, out error);
+        }
 
-            if (!TryParseGuid(id, out var guid, out error))
+        /// <summary>The per-call-lookup form of <see cref="TryGetUnprotectedObject(GrasshopperContext, string, out IGH_DocumentObject, out string)"/>, ordinary intent.</summary>
+        public static bool TryGetUnprotectedObject(ObjectLookup lookup, string id,
+            out IGH_DocumentObject obj, out string error) =>
+            TryGetUnprotectedObject(lookup, id, ResolveIntent.Ordinary, out obj, out error);
+
+        /// <summary>The per-call-lookup object form with the caller's <paramref name="intent"/> (see <see cref="ResolveIntent"/>).</summary>
+        public static bool TryGetUnprotectedObject(ObjectLookup lookup, string id, ResolveIntent intent,
+            out IGH_DocumentObject obj, out string error)
+        {
+            obj = null;
+            if (!TryResolveTarget(lookup, id, ResolveScope.Objects, intent, out var target, out error))
                 return false;
+            return TryFindComponent(lookup.Document, target, out obj, out error);
+        }
 
-            // Check if protected BEFORE checking if it exists
-            if (IsProtectedId(doc, guid))
+        /// <summary><c>'NAME' (GUID) is a group; WORKS ON</c>, or <c>GUID is a group; …</c> for an unnamed group.</summary>
+        private static string GroupRefusal(GH_Group group, string worksOn)
+        {
+            var who = string.IsNullOrEmpty(group.NickName)
+                ? group.InstanceGuid.ToString()
+                : $"'{group.NickName}' ({group.InstanceGuid})";
+            return $"{who} is a group; {worksOn ?? DefaultGroupRefusal}";
+        }
+
+        /// <summary>
+        /// The one owner of "which document object does this text name" for every lookup in this
+        /// class. Text that parses as a full GUID is read only as a GUID and builds no snapshot:
+        /// infrastructure is refused here (<c>Component not found: {guid}</c>, or
+        /// <c>Group not found: {text}</c> in the Groups scope) and existence is left to the caller,
+        /// which reads the document. Any other text goes to <see cref="ObjectResolver"/> in
+        /// <paramref name="scope"/> and <paramref name="intent"/> over the lookup's names-only
+        /// snapshot. Intent never changes the GUID path: a full GUID is precise whatever the action.
+        /// </summary>
+        private static bool TryResolveTarget(ObjectLookup lookup, string id, ResolveScope scope, ResolveIntent intent,
+            out Guid target, out string error)
+        {
+            if (lookup == null) throw new ArgumentNullException(nameof(lookup));
+            target = Guid.Empty;
+            error = null;
+
+            if (TryParseGuid(id, out var guid, out _))
             {
-                error = $"Component not found: {guid}";
-                return false;
+                // Check if protected BEFORE checking if it exists
+                if (lookup.Infrastructure.Contains(guid))
+                {
+                    error = scope == ResolveScope.Groups ? $"Group not found: {id}" : $"Component not found: {guid}";
+                    return false;
+                }
+                target = guid;
+                return true;
             }
 
-            if (!TryFindComponent(doc, guid, out obj, out error))
+            var r = ObjectResolver.Resolve(lookup.Index, id, scope, intent);
+            if (!r.IsResolved)
+            {
+                error = r.Error;
+                return false;
+            }
+            target = r.Entry.Id;
+            return true;
+        }
+
+        /// <summary>
+        /// Resolve the text a caller passes as a group id: the group's exact name (ordinal, as
+        /// <see cref="ObjectResolver"/> reads it in the Groups scope), its full GUID, or a GUID prefix
+        /// of 8+ hex digits. An infrastructure group is "Group not found", like a missing one. A
+        /// full GUID takes the direct path (no snapshot). Must be called on the UI thread.
+        /// </summary>
+        public static bool TryGetUnprotectedGroup(GrasshopperContext context, string id,
+            out GH_Document doc, out GH_Group group, out string error) =>
+            TryGetUnprotectedGroup(context, id, ResolveIntent.Ordinary, out doc, out group, out error);
+
+        /// <summary>
+        /// The group lookup with the caller's <paramref name="intent"/>: <c>group_delete</c> passes
+        /// <see cref="ResolveIntent.Destructive"/>, so the default group name never selects the group it removes.
+        /// </summary>
+        public static bool TryGetUnprotectedGroup(GrasshopperContext context, string id, ResolveIntent intent,
+            out GH_Document doc, out GH_Group group, out string error)
+        {
+            group = null;
+            if (!TryGetActiveDocument(context, out doc, out error))
+                return false;
+            return TryGetUnprotectedGroup(new ObjectLookup(doc), id, intent, out group, out error);
+        }
+
+        /// <summary>The group overload for a per-call <see cref="ObjectLookup"/>, ordinary intent.</summary>
+        public static bool TryGetUnprotectedGroup(ObjectLookup lookup, string id, out GH_Group group, out string error) =>
+            TryGetUnprotectedGroup(lookup, id, ResolveIntent.Ordinary, out group, out error);
+
+        /// <summary>The group overload for a per-call <see cref="ObjectLookup"/> with the caller's <paramref name="intent"/>.</summary>
+        public static bool TryGetUnprotectedGroup(ObjectLookup lookup, string id, ResolveIntent intent, out GH_Group group, out string error)
+        {
+            group = null;
+            if (!TryResolveTarget(lookup, id, ResolveScope.Groups, intent, out var target, out error))
                 return false;
 
+            var obj = lookup.Document.FindObject(target, true);
+            if (obj == null)
+            {
+                error = $"Group not found: {id}";
+                return false;
+            }
+            group = obj as GH_Group;
+            if (group == null)
+            {
+                error = $"Object is not a group: {id}";
+                return false;
+            }
+            return true;
+        }
+
+        /// <summary>
+        /// Resolve every text in <paramref name="texts"/> (Objects scope) through one lookup, before
+        /// the caller changes anything. Returns the per-entry outcomes (repeats marked, see
+        /// <see cref="IdBatch"/>) and the live object for each resolved id. With
+        /// <paramref name="acceptGroups"/> false, an entry naming a group fails with the
+        /// <see cref="DefaultGroupRefusal"/> text (or <paramref name="worksOn"/>).
+        /// <paramref name="intent"/> has no default, like <paramref name="acceptGroups"/>: an action
+        /// that removes what it names passes <see cref="ResolveIntent.Destructive"/>, and then an
+        /// entry naming an object by its default nickname fails (the others still resolve).
+        /// </summary>
+        public static IReadOnlyList<IdOutcome> ResolveIds(ObjectLookup lookup, IReadOnlyList<string> texts,
+            bool acceptGroups, ResolveIntent intent, out Dictionary<Guid, IGH_DocumentObject> objects, string worksOn = null)
+        {
+            var found = new Dictionary<Guid, IGH_DocumentObject>();
+            var outcomes = IdBatch.Collect(texts, text =>
+            {
+                IGH_DocumentObject obj;
+                string err;
+                var ok = acceptGroups
+                    ? TryGetUnprotectedObject(lookup, text, intent, out obj, out err)
+                    : TryGetUnprotectedComponent(lookup, text, intent, out obj, out err, worksOn);
+                if (!ok)
+                    return (null, err);
+                found[obj.InstanceGuid] = obj;
+                return (obj.InstanceGuid, null);
+            });
+            objects = found;
+            return outcomes;
+        }
+
+        /// <summary>
+        /// All-or-nothing resolution of a JSON array of object ids (member arrays): parse it, resolve
+        /// every entry through one lookup, and fail naming every entry that did not resolve, so the
+        /// caller changes nothing. On success <paramref name="objects"/> holds each object once, in
+        /// the caller's order, and <paramref name="outcomes"/> the per-entry results (for notes).
+        /// </summary>
+        public static bool TryResolveIdArray(ObjectLookup lookup, string json, string field,
+            out List<IGH_DocumentObject> objects, out IReadOnlyList<IdOutcome> outcomes, out string error)
+        {
+            objects = null;
+            outcomes = null;
+            if (!ParseHelpers.TryDeserializeArray<string>(json, out var texts, out error))
+                return false;
+
+            outcomes = ResolveIds(lookup, texts, acceptGroups: true, ResolveIntent.Ordinary, out var found);
+            error = IdBatch.AllOrNothingError(outcomes, field);
+            if (error != null)
+                return false;
+
+            objects = IdBatch.DistinctIds(outcomes).Select(g => found[g]).ToList();
             return true;
         }
 
@@ -931,5 +1073,28 @@ namespace Cordyceps.Core
         }
 
         #endregion
+    }
+
+    /// <summary>
+    /// One call's view of the document for resolving ids. Infrastructure is computed once, at its
+    /// first use; the names-only snapshot is read only when a non-GUID id needs it, so a call that
+    /// passes full GUIDs builds no snapshot at all. Build one per tool call, on the UI thread, and
+    /// resolve every id through it before the first mutation: the snapshot is never refreshed.
+    /// </summary>
+    public sealed class ObjectLookup
+    {
+        private HashSet<Guid> _infrastructure;
+        private CanvasSnapshot _snapshot;
+
+        public ObjectLookup(GH_Document doc)
+        {
+            Document = doc ?? throw new ArgumentNullException(nameof(doc));
+        }
+
+        public GH_Document Document { get; }
+
+        public HashSet<Guid> Infrastructure => _infrastructure ??= ToolHelpers.GetCordycepsInfrastructureIds(Document);
+
+        public IObjectIndex Index => _snapshot ??= CanvasReader.Read(Document, CanvasDetail.Names);
     }
 }

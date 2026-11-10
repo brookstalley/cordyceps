@@ -37,6 +37,8 @@ output, and what differs from its pytest-shaped instructions: read `docs/testing
 
 **Core/Naming/TypeNameRule.cs** + **Core/ComponentRegistry.cs** - The rule that turns a component-type name into one type (GUID, exact aliases such as "python", pinned built-ins, exact name or `Category/Name`; never a partial match) lives host-free in `Core/Naming/TypeNameRule.cs`, with "did you mean" helpers in `Core/Naming/NameSuggestions.cs`. `ComponentRegistry` is only the Grasshopper adapter: it builds the installed-type catalog the rule reads, creates the resolved type, and runs `search`. Change resolution or aliases in the rule, not the adapter.
 
+**Core/Canvas/** - The host-free canvas model. `CanvasReader.cs` is the only Grasshopper adapter: it reads the document once into a `CanvasSnapshot` that outline and the id lookups read. `ObjectResolver.cs` is the one resolver for object and group ids (GUID, 8+ hex prefix, unique case-sensitive nickname; group names in the Groups scope). Change name resolution in the resolver, not at a call site. `Core/DataTrees/` holds the `gh_inspect(action='tree')` summaries.
+
 **Core/UnifiedToolHelpers.cs** - Shared utilities for the unified tool architecture including action dispatch, help generation, and standardized response formatting.
 
 **Core/ToolHelpers.cs** - Shared document/component utilities used across every tool: active-document and component resolution (by GUID or name), protected/infrastructure-id checks, cluster-safe recompute, component-info builders, JSON (de)serialization helpers, and `SuccessResponse`/`ErrorResponse` formatting.
@@ -62,11 +64,11 @@ AI agents discover Cordyceps through a layered documentation system. All of thes
 Each tool class is marked with `[McpServerToolType]` and contains a single method marked with `[McpServerTool]`. The method name is converted to snake_case for the MCP tool name (e.g., `GhCanvas` -> `gh_canvas`). Each tool uses an `action` parameter to dispatch to different operations.
 
 **Grasshopper Tools (5):**
-- **GhCanvasTool** (`gh_canvas`) - Components, values, groups: add, delete, move, find, search, list, bake, get/set values, group management, zoomable parameter management, per-parameter data modifiers (flatten/graft/simplify/reverse)
+- **GhCanvasTool** (`gh_canvas`) - Components, values, groups: add, delete, move, find, search, list, outline (compact read of the whole definition), bake, get/set values, group management, zoomable parameter management, per-parameter data modifiers (flatten/graft/simplify/reverse)
 - **GhWireTool** (`gh_wire`) - Connect/disconnect components, bulk wiring, validate connections
 - **GhDocumentTool** (`gh_document`) - Save, clear documents; snapshots; solver control; capture canvas/viewport
 - **GhScriptTool** (`gh_script`) - Configure C#/Python script components
-- **GhInspectTool** (`gh_inspect`) - Non-blocking connection/liveness probe, component status, trace data flow, retrieve debug output
+- **GhInspectTool** (`gh_inspect`) - Non-blocking connection/liveness probe, component status, data-tree shape (`tree`), trace data flow, retrieve debug output
 
 **Rhino Tools (2):**
 - **RhinoSceneTool** (`rhino_scene`) - Object management, selection, layers (full CRUD), visibility
@@ -126,39 +128,24 @@ After any code change, check each of these and update as needed:
 
 ## Branch model & Publishing
 
-This repo uses **gitflow**: **`develop`** is the default/integration branch (features branch off it
-and merge back via `/prawduct:pr`); **`main`** is the release surface and is **strict-protected**
-(no direct pushes; a `develop → main` PR with the `build-test` check is required; no bypass).
-
-Releases publish to **both** GitHub (`Release vX.Y.Z` commit + tag on `main`, and a published
-**GitHub Release** with the `.gha` attached — that asset is the download the README links to) and
-the **Yak** package manager. The `.gha` is a build output and is **not** tracked in git; `publish`
-compiles it from the release commit and attaches it. Because `main` rejects direct pushes,
-`scripts/release.sh` is a **two-step** flow around the release PR (branch protection guards
-branches, not tags, so the publish step pushes only the `vX.Y.Z` tag). Don't run the yak/gh
-commands by hand.
+**gitflow**: `develop` is the default/integration branch (features merge back via `/prawduct:pr`);
+`main` is the release surface and is strict-protected (no direct pushes; a `develop → main` PR with
+the `build-test` check; no bypass). Releases go to GitHub (tag + Release with the `.gha`) and Yak
+through `scripts/release.sh` in two steps around the release PR. Don't run the yak/gh commands by hand.
 
 ```bash
-# Keep notes under a top `## [Unreleased]` in CHANGELOG.md; prep renames it. Then:
-
-# 1) prep — on develop: bump version + CHANGELOG, build .gha, commit, push, open develop->main PR
+# Notes go under a top `## [Unreleased]` in CHANGELOG.md; prep renames it.
 git checkout develop && git pull
-./scripts/release.sh prep            # auto-increment patch (e.g. 1.4.12 -> 1.4.13)
-./scripts/release.sh prep 1.4.13     # or an explicit version
-
-# 2) merge the develop->main release PR (merge commit, after build-test passes)
-
-# 3) publish — on main: build/push yak, push the vX.Y.Z tag, create the GitHub Release
+./scripts/release.sh prep [X.Y.Z]    # bump, build, commit, push, open develop->main PR
+# merge the release PR (merge commit, after build-test passes), then:
 git checkout main && git pull
-./scripts/release.sh publish 1.4.13
-
-# --dry-run previews either step without changing anything.
+./scripts/release.sh publish X.Y.Z    # yak push, vX.Y.Z tag, GitHub Release
+# --dry-run previews either step.
 ```
 
-Prerequisites (dotnet, Rhino 8 for the yak CLI, yak login, `gh` authenticated), the post-release
-Prawduct bookkeeping (cut the shipped `.prawduct/changes/` fragments with
-`prawduct-hook cut-change-log --release vX.Y.Z`, then `prawduct-hook plan-backfill --apply`), and the full step-by-step flow are in
-[`docs/release-process.md`](docs/release-process.md).
+Prerequisites, the post-release Prawduct bookkeeping (`prawduct-hook cut-change-log --release vX.Y.Z`,
+then `prawduct-hook plan-backfill --apply`) and the full flow are in [`docs/release-process.md`](docs/release-process.md).
+
 
 <!-- PRAWDUCT:ANCHOR — static governance pointer managed by the prawduct plugin. Keep it small and version-free: principles, methodology, and the active version live in the plugin and are injected at session start. -->
 

@@ -48,7 +48,7 @@ namespace Cordyceps.Tools.Unified
                 return JsonConvert.SerializeObject(new
                 {
                     success = true,
-                    id,
+                    id = component.InstanceGuid.ToString(),
                     name = component.Name,
                     nickname = component.NickName,
                     valueType,
@@ -108,7 +108,7 @@ namespace Cordyceps.Tools.Unified
                 return JsonConvert.SerializeObject(new
                 {
                     success = true,
-                    id,
+                    id = component.InstanceGuid.ToString(),
                     type = component.Name,
                     value
                 });
@@ -145,7 +145,7 @@ namespace Cordyceps.Tools.Unified
                     return JsonConvert.SerializeObject(new
                     {
                         success = true,
-                        id,
+                        id = component.InstanceGuid.ToString(),
                         type = "slider",
                         min = (double)slider.Slider.Minimum,
                         max = (double)slider.Slider.Maximum,
@@ -158,6 +158,10 @@ namespace Cordyceps.Tools.Unified
                     try
                     {
                         var itemList = JsonConvert.DeserializeObject<List<Dictionary<string, string>>>(items);
+                        // Check the whole list before clearing: a JSON null list or entry would
+                        // otherwise empty the value list and then fail.
+                        if (itemList == null || itemList.Any(i => i == null))
+                            return ToolHelpers.ErrorResponse("'items' must be a JSON array of {name, value} objects, e.g. [{\"name\":\"A\",\"value\":\"1\"}]");
                         valueList.ListItems.Clear();
 
                         foreach (var item in itemList)
@@ -176,7 +180,7 @@ namespace Cordyceps.Tools.Unified
                         return JsonConvert.SerializeObject(new
                         {
                             success = true,
-                            id,
+                            id = component.InstanceGuid.ToString(),
                             type = "value_list",
                             itemCount = valueList.ListItems.Count,
                             items = valueList.ListItems.Select(i => new { name = i.Name, value = i.Expression }).ToList()
@@ -206,26 +210,36 @@ namespace Cordyceps.Tools.Unified
 
                 // Per-id results (mirrors ActionDelete): unresolvable ids and components that
                 // don't support preview are reported as failures, not silently skipped.
+                // Every id resolves against one lookup before the first change.
+                var outcomes = ToolHelpers.ResolveIds(new ObjectLookup(doc), idList, acceptGroups: false, Core.Canvas.ResolveIntent.Ordinary, out var resolved);
                 var results = new List<object>();
+                var applied = new HashSet<Guid>();
                 int changed = 0, failed = 0;
-                foreach (var compId in idList)
+                foreach (var outcome in outcomes)
                 {
-                    if (!ToolHelpers.TryGetUnprotectedComponent(_context, compId, out var comp, out var compError))
+                    if (!outcome.IsResolved)
                     {
-                        results.Add(new { id = compId, success = false, error = compError });
+                        results.Add(new { id = outcome.Text, success = false, error = outcome.Error });
                         failed++;
                         continue;
                     }
+                    if (!outcome.ActOn)
+                    {
+                        AddRepeatResult(results, outcome, applied, ref failed);
+                        continue;
+                    }
 
+                    var comp = resolved[outcome.Id.Value];
                     if (comp is IGH_PreviewObject preview)
                     {
                         preview.Hidden = !enabled;
                         changed++;
-                        results.Add(new { id = compId, success = true });
+                        applied.Add(comp.InstanceGuid);
+                        results.Add(new { id = comp.InstanceGuid.ToString(), success = true });
                     }
                     else
                     {
-                        results.Add(new { id = compId, success = false, error = $"Component '{comp.NickName}' ({comp.GetType().Name}) does not support preview" });
+                        results.Add(new { id = outcome.Text, success = false, error = $"Component '{comp.NickName}' ({comp.GetType().Name}) does not support preview" });
                         failed++;
                     }
                 }
@@ -256,28 +270,38 @@ namespace Cordyceps.Tools.Unified
 
                 // Per-id results (mirrors ActionDelete): unresolvable ids and components that
                 // can't be enabled/disabled are reported as failures, not silently skipped.
+                // Every id resolves against one lookup before the first change.
+                var outcomes = ToolHelpers.ResolveIds(new ObjectLookup(doc), idList, acceptGroups: false, Core.Canvas.ResolveIntent.Ordinary, out var resolved);
                 var results = new List<object>();
+                var applied = new HashSet<Guid>();
                 int changed = 0, failed = 0;
                 var toggled = new List<IGH_ActiveObject>();
-                foreach (var compId in idList)
+                foreach (var outcome in outcomes)
                 {
-                    if (!ToolHelpers.TryGetUnprotectedComponent(_context, compId, out var comp, out var compError))
+                    if (!outcome.IsResolved)
                     {
-                        results.Add(new { id = compId, success = false, error = compError });
+                        results.Add(new { id = outcome.Text, success = false, error = outcome.Error });
                         failed++;
                         continue;
                     }
+                    if (!outcome.ActOn)
+                    {
+                        AddRepeatResult(results, outcome, applied, ref failed);
+                        continue;
+                    }
 
+                    var comp = resolved[outcome.Id.Value];
                     if (comp is IGH_ActiveObject active)
                     {
                         active.Locked = !enabled;
                         changed++;
                         toggled.Add(active);
-                        results.Add(new { id = compId, success = true });
+                        applied.Add(comp.InstanceGuid);
+                        results.Add(new { id = comp.InstanceGuid.ToString(), success = true });
                     }
                     else
                     {
-                        results.Add(new { id = compId, success = false, error = $"Component '{comp.NickName}' ({comp.GetType().Name}) does not support enable/disable" });
+                        results.Add(new { id = outcome.Text, success = false, error = $"Component '{comp.NickName}' ({comp.GetType().Name}) does not support enable/disable" });
                         failed++;
                     }
                 }
@@ -299,13 +323,33 @@ namespace Cordyceps.Tools.Unified
             });
         }
 
+        /// <summary>
+        /// The result for an entry that names the same object as an earlier one: the object was
+        /// acted on once, by that entry, so this one reports that entry's outcome with a note.
+        /// </summary>
+        private static void AddRepeatResult(List<object> results, IdOutcome outcome, HashSet<Guid> applied, ref int failed)
+        {
+            if (applied.Contains(outcome.Id.Value))
+            {
+                results.Add(new { id = outcome.Id.Value.ToString(), success = true, note = outcome.Note });
+            }
+            else
+            {
+                results.Add(new { id = outcome.Text, success = false, error = $"{outcome.Note}, which failed", note = outcome.Note });
+                failed++;
+            }
+        }
+
         private List<string> BuildIdList(string id, string ids, out string error)
         {
             error = null;
             if (!string.IsNullOrEmpty(ids))
             {
-                try { return JsonConvert.DeserializeObject<List<string>>(ids); }
+                List<string> list;
+                try { list = JsonConvert.DeserializeObject<List<string>>(ids); }
                 catch (Exception) { error = "Invalid ids JSON array"; return null; }
+                if (list == null) error = "Invalid ids JSON array";
+                return list;
             }
             if (!string.IsNullOrEmpty(id))
                 return new List<string> { id };
