@@ -569,7 +569,10 @@ Script component.
 7. `gh_canvas(action='preview', ids='["C1"]', enabled='false')` hides C1's preview;
    `gh_canvas(action='enable', ids='["C1"]', enabled='false')` locks C1 (re-enable it after).
 8. `gh_wire(action='connect', connections='[{"sourceId":"R","targetId":"C1","targetParam":"R"},{"sourceId":"x","targetId":"C1"}]')`:
-   the first wire is added, the second entry reads `Source: No object named 'x'.`, `success` is false.
+   the first wire is added, the second entry reads `Source: No object named 'x'. Did you mean 'R'?` (on this canvas the
+   one-letter id 'x' is within two edits of the slider `R`; `NameSuggestions.Closest` allows two
+   edits for short text), `success` is false. For the no-suggestion text, use a long unlike id
+   such as `no_such_object_here`: the entry then reads `Source: No object named 'no_such_object_here'.`
 9. `gh_wire(action='list', componentId='nope')` is an error (it used to return an empty list).
 10. `gh_wire(action='disconnect', sourceId='R', sourceParam='0', targetId='C1', targetParam='R')`
     removes the wire, resolving both ends by nickname.
@@ -582,15 +585,17 @@ Script component.
     `notMembers`.
 14. `gh_canvas(action='group_move', id='posts', dx=10, dy=0)` fails with
     `No group named 'posts'. Did you mean 'POSTS'?`; `id='POSTS'` moves it.
-15. `group_rename`, `group_color` and `group_delete` work with `id='POSTS'` (in that order, renaming
-    back before deleting).
-16. `gh_canvas(action='list', group='POS')` fails; `group='POSTS'` lists its members; a
+15. `gh_canvas(action='list', group='POS')` fails; `group='POSTS'` lists its members; a
     component's GUID reads `Object is not a group: …`.
-17. `gh_canvas(action='info', id='POSTS')` fails with `… 'POSTS' is a group; group actions take its
+16. `gh_canvas(action='info', id='POSTS')` fails with `… 'POSTS' is a group; group actions take its
     name, other actions its id (…).`
+17. `group_rename`, `group_color` and `group_delete` work with `id='POSTS'` (in that order, renaming
+    back before deleting). This deletes POSTS, so it comes after every other step that needs it.
 18. `gh_script(action='get', id='<script nickname>')` resolves the script by nickname.
-19. `gh_canvas(action='info', id='Cordyceps')` (the bridge's nickname) returns
-    `No object named 'Cordyceps'.` with no hint that it exists.
+19. `gh_canvas(action='info', id='MCP')` (the bridge component is named "Cordyceps" but its
+    nickname is `MCP`, and the resolver matches nicknames only) returns `No object named 'MCP'.`,
+    possibly followed by `Did you mean 'C1'?` (two edits away). A leak would be any response that
+    returns an object, suggests `MCP`, or says the object is protected or exists.
 20. `get`, `set`, `config`, `gh_inspect(action='outputs')` and `gh_inspect(action='geometry')`
     called with a nickname return the full GUID in `id`.
 21. `gh_canvas(action='config', id='<the value list>', items='null')` is an error and the list keeps
@@ -678,8 +683,11 @@ live document, and whether `status` is unchanged now that its classification goe
    `counts are from the last solution and may be out of date`.
 5. Lock a component: its counts read `disabled`, it is listed under `disabled`, and its `Phase` is
    not Computed.
-6. Expire an object without solving (solver off, then change a slider): does its `Phase` leave
-   Computed, so its counts read `stale`?
+6. Expire an object without solving (solver off, then change a slider), then, with the solver ON
+   (while an expired object is still waiting, for example during a slow solve): does its `Phase`
+   leave Computed? If it does, the summary's `not solved` count includes it and
+   `gh_inspect(action='tree', id=…)` on it reads `solved: false`. (With the solver off outline
+   prints `N stale` for every object, so that count cannot answer this.)
 7. Hide an object's preview: `preview off` appears on its group-detail line and in `summary`.
 8. Nest a group in a group: the parent's line says `contains: CHILD (n objects)` and
    `outline group='CHILD'` has a summary ending `inside PARENT`.

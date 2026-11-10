@@ -37,7 +37,7 @@ output, and what differs from its pytest-shaped instructions: read `docs/testing
 
 **Core/Naming/TypeNameRule.cs** + **Core/ComponentRegistry.cs** - The rule that turns a component-type name into one type (GUID, exact aliases such as "python", pinned built-ins, exact name or `Category/Name`; never a partial match) lives host-free in `Core/Naming/TypeNameRule.cs`, with "did you mean" helpers in `Core/Naming/NameSuggestions.cs`. `ComponentRegistry` is only the Grasshopper adapter: it builds the installed-type catalog the rule reads, creates the resolved type, and runs `search`. Change resolution or aliases in the rule, not the adapter.
 
-**Core/Canvas/** - The host-free canvas model and the one object-name rule. `CanvasReader.cs` is the only Grasshopper adapter: called on the UI thread, it reads the document once into a `CanvasSnapshot` (`Names` detail for id lookups, `Full` for outline). `ObjectResolver.cs` turns the text a caller passes as an object or group id into one object (full GUID, 8+ hex GUID prefix, unique case-sensitive nickname, group name in the Groups scope; an ambiguous name is an error listing candidates) and chooses the display names outline prints, each checked to resolve back. `ObjectHealth.cs` is the OK/ERROR/WARNING/DISCONNECTED rule `gh_inspect(action='status')` and outline share; `OutlineRequest.cs` and `OutlineView.cs` are outline's argument rules and views. `ToolHelpers.TryGetUnprotectedComponent`/`TryGetUnprotectedGroup`/`TryResolveIdArray` are the choke points every tool goes through. Change name resolution in the resolver, not at a call site. Data-tree summaries for `gh_inspect(action='tree')` live in `Core/DataTrees/`.
+**Core/Canvas/** - The host-free canvas model. `CanvasReader.cs` is the only Grasshopper adapter: it reads the document once into a `CanvasSnapshot` that outline and the id lookups read. `ObjectResolver.cs` is the one resolver for object and group ids (GUID, 8+ hex prefix, unique case-sensitive nickname; group names in the Groups scope). Change name resolution in the resolver, not at a call site. `Core/DataTrees/` holds the `gh_inspect(action='tree')` summaries.
 
 **Core/UnifiedToolHelpers.cs** - Shared utilities for the unified tool architecture including action dispatch, help generation, and standardized response formatting.
 
@@ -128,39 +128,24 @@ After any code change, check each of these and update as needed:
 
 ## Branch model & Publishing
 
-This repo uses **gitflow**: **`develop`** is the default/integration branch (features branch off it
-and merge back via `/prawduct:pr`); **`main`** is the release surface and is **strict-protected**
-(no direct pushes; a `develop → main` PR with the `build-test` check is required; no bypass).
-
-Releases publish to **both** GitHub (`Release vX.Y.Z` commit + tag on `main`, and a published
-**GitHub Release** with the `.gha` attached — that asset is the download the README links to) and
-the **Yak** package manager. The `.gha` is a build output and is **not** tracked in git; `publish`
-compiles it from the release commit and attaches it. Because `main` rejects direct pushes,
-`scripts/release.sh` is a **two-step** flow around the release PR (branch protection guards
-branches, not tags, so the publish step pushes only the `vX.Y.Z` tag). Don't run the yak/gh
-commands by hand.
+**gitflow**: `develop` is the default/integration branch (features merge back via `/prawduct:pr`);
+`main` is the release surface and is strict-protected (no direct pushes; a `develop → main` PR with
+the `build-test` check; no bypass). Releases go to GitHub (tag + Release with the `.gha`) and Yak
+through `scripts/release.sh` in two steps around the release PR. Don't run the yak/gh commands by hand.
 
 ```bash
-# Keep notes under a top `## [Unreleased]` in CHANGELOG.md; prep renames it. Then:
-
-# 1) prep — on develop: bump version + CHANGELOG, build .gha, commit, push, open develop->main PR
+# Notes go under a top `## [Unreleased]` in CHANGELOG.md; prep renames it.
 git checkout develop && git pull
-./scripts/release.sh prep            # auto-increment patch (e.g. 1.4.12 -> 1.4.13)
-./scripts/release.sh prep 1.4.13     # or an explicit version
-
-# 2) merge the develop->main release PR (merge commit, after build-test passes)
-
-# 3) publish — on main: build/push yak, push the vX.Y.Z tag, create the GitHub Release
+./scripts/release.sh prep [X.Y.Z]    # bump, build, commit, push, open develop->main PR
+# merge the release PR (merge commit, after build-test passes), then:
 git checkout main && git pull
-./scripts/release.sh publish 1.4.13
-
-# --dry-run previews either step without changing anything.
+./scripts/release.sh publish X.Y.Z    # yak push, vX.Y.Z tag, GitHub Release
+# --dry-run previews either step.
 ```
 
-Prerequisites (dotnet, Rhino 8 for the yak CLI, yak login, `gh` authenticated), the post-release
-Prawduct bookkeeping (cut the shipped `.prawduct/changes/` fragments with
-`prawduct-hook cut-change-log --release vX.Y.Z`, then `prawduct-hook plan-backfill --apply`), and the full step-by-step flow are in
-[`docs/release-process.md`](docs/release-process.md).
+Prerequisites, the post-release Prawduct bookkeeping (`prawduct-hook cut-change-log --release vX.Y.Z`,
+then `prawduct-hook plan-backfill --apply`) and the full flow are in [`docs/release-process.md`](docs/release-process.md).
+
 
 <!-- PRAWDUCT:ANCHOR — static governance pointer managed by the prawduct plugin. Keep it small and version-free: principles, methodology, and the active version live in the plugin and are injected at session start. -->
 

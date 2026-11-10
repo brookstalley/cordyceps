@@ -6,7 +6,7 @@ gh_canvas(action='outline')
 gh_inspect(action='status')
 ```
 The outline's `summary` counts the objects; its group lines show item counts on the wires
-between groups, which point at the areas carrying large data. `status` gives the full problem list.
+between groups, which point at the areas carrying large data. `status` lists every component's errors, warnings and disconnected inputs (parameter objects such as sliders appear only in outline's problems).
 
 ## Step 2: Identify Expensive Operations
 

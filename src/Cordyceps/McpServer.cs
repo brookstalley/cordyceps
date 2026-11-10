@@ -696,7 +696,7 @@ Key points:
 
 VERIFY PERIODICALLY: After completing a section of work, run gh_inspect(action='status')
 to catch errors in components you didn't directly modify. Changes can break downstream components.
-outline's problem list is capped at 10; status lists every one.
+outline's problem list is capped at 10; status lists every component's errors, warnings and disconnected inputs, but not errors or warnings on parameter objects (sliders, panels, free parameters), which only outline shows.
 
 Resources: gh://docs/getting-started, gh://docs/canvas-outline, gh://docs/data-trees, gh://docs/common-errors, gh://component/{name}, gh://patterns/*
 ";

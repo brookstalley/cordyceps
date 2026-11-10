@@ -28,8 +28,8 @@ gh_canvas(action='outline')
 It returns the groups and how data flows between them, the controls and their values, item
 counts, and problems (by the `status` rule, capped at 10). Every line starts with a name you can
 pass back as an id. Then `outline` with `group='NAME'` or `id='NAME'` for detail. See
-`gh://docs/canvas-outline`. Outline is for orientation; `gh_inspect(action='status')` gives the
-full problem list.
+`gh://docs/canvas-outline`. Outline is for orientation; `gh_inspect(action='status')` lists every component's errors,
+warnings and disconnected inputs (errors on parameter objects such as sliders appear only in outline).
 
 ## Workflow
 
