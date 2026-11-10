@@ -6,7 +6,7 @@ Data tree mismatches are the most common source of Grasshopper errors. Follow th
 ```
 gh_inspect(action='status')
 ```
-Look for components with ERROR or WARNING status.
+Look for objects with ERROR or WARNING status (components and parameter objects such as sliders and panels are both listed).
 
 ## Step 2: Check What the Component Receives
 For each problem component, read the shape of every input, without pulling the data:

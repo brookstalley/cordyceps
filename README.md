@@ -173,6 +173,7 @@ Browse the documentation directly: [`src/Cordyceps/Knowledge/`](src/Cordyceps/Kn
 | Claude Desktop can't connect | Ensure Node.js is installed. Check Rhino is running with Cordyceps. Restart Claude Desktop after config changes. |
 | "No component type is named …" when adding | The type name is not exact. Use `gh_canvas(action='search', query='...')` to find exact names. |
 | "Component not found" / "No object named …" for an id | The id names nothing on the canvas. Pass a GUID, an 8+ hex-digit GUID prefix, or a unique nickname; `gh_canvas(action='list')` or `outline` shows what exists. |
+| "… is the default nickname of …, so it never selects what this action removes" | `delete`, `group_delete` and `gh_wire` `disconnect`/`clear` refuse a default nickname such as `Circle` (or the group name `Group`), even when only one object has it. Pass the id the error prints, or rename the object first. |
 | No command output | Set DebugLevel input to 1 to see traffic in Rhino command history. |
 
 ## Building
