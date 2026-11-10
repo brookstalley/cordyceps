@@ -344,7 +344,7 @@ namespace Cordyceps.Core.Canvas
             {
                 var groups = visible.Where(e => e.IsGroup && string.Equals(e.NickName, text, StringComparison.Ordinal)).ToList();
                 if (groups.Count > 0)
-                    msg += $" '{text}' is a group; group actions take its name, other actions its id ({string.Join(", ", groups.Select(g => display.DisplayId(g.Id)))}).";
+                    msg += $" '{text}' is a group; group actions take its name, and delete, move, rename, info, bounds and zoom take its id ({string.Join(", ", groups.Select(g => display.DisplayId(g.Id)))}).";
             }
             else if (visible.Any(e => !e.IsGroup && string.Equals(e.NickName, text, StringComparison.Ordinal)))
             {

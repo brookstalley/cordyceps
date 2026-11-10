@@ -145,6 +145,16 @@ Critic mode: per-chunk reviews (inferred for a five-chunk plan), with Chunk 01 o
     `delete`); group detail caps `in` and `out` at 16, inline name lists at 8, `out:` entries per
     group line at 6 with 4 destinations each; tree reports an aborted last solution only when the
     solver is off (each tree's owner state says whether it computed).
+  - The cumulative review's warnings were answered in one pass (two fix-up branches): `move`
+    refuses a second entry for the same object instead of dropping its position; every JSON
+    argument that can carry a name reads strings as strings (date-shaped names); outline states
+    wires the reader could not place (`unread`); an action for which a group has no meaning
+    refuses a group's id, and the resolver's group hint now names the actions that do take one
+    (this narrows the "ids are not scoped" inference: a group's id reaches only the actions that
+    act on groups); `disconnected` and `status` share one missing-input predicate; the full-GUID
+    path has one owner in the id helpers; documents say `status` lists components only. Settled
+    by the Product goal. Not changed, and put to the owner: whether `status` should also read
+    parameter objects, and how an outline line separates a multi-word name from its type.
   - After 03 merged, the target-resolution loop in the tree action file passes to Chunk 02 (it
     must use the per-call lookup once names resolve through a snapshot), and
     `TreeStatusText.SolverOff` becomes the one source of solver-off wording for Chunk 04.
@@ -269,7 +279,7 @@ the enum is open so batch can add `Ref`. Rules, in order:
      Then, in this order and only when it applies:
      - ` Did you mean '{closest}'?` (`Core/Naming/NameSuggestions.Closest` over the scope's names);
      - Objects scope, the text is a group's name: ` '{text}' is a group; group actions take its
-       name, other actions its id ({id}).`;
+       name, and delete, move, rename, info, bounds and zoom take its id ({id}).`;
      - Groups scope, the text is an object's nickname: ` '{text}' is an object's nickname, not a
        group.`;
      - hex-only text of 1-7 characters that includes a decimal digit: ` A GUID prefix needs at
@@ -479,7 +489,7 @@ Notes, fixed from Hyperceps:
 Type: code (feature). Critic mode: final (keystone: 02 and 04 build on it).
 
 Deliverables:
-- [ ] new `src/Cordyceps/Core/Canvas/CanvasSnapshot.cs`: immutable, host-free records.
+- [x] new `src/Cordyceps/Core/Canvas/CanvasSnapshot.cs`: immutable, host-free records.
   - **Snapshot:** document display name; solver flags (document enabled; global solutions enabled;
     last solution aborted).
   - **Nodes:** every active non-group object, excluding infrastructure: `Guid` id; kind (Component,
@@ -496,16 +506,16 @@ Deliverables:
   - **Infrastructure:** the set of infrastructure ids.
   - **Derived:** wires; upstream and downstream; group membership multimap; parent multimap;
     effective members (recursive, cycle-safe); top-level groups.
-- [ ] new `src/Cordyceps/Core/Canvas/ObjectResolver.cs`: C1 rules 1-8, the index interface, display
+- [x] new `src/Cordyceps/Core/Canvas/ObjectResolver.cs`: C1 rules 1-8, the index interface, display
   names, and error texts. Header attribution (design adapted from Hyperceps `BatchCanvas.Resolve`).
-- [ ] new `src/Cordyceps/Core/Canvas/GuidPrefixIndex.cs`: adapted from Hyperceps BatchNames.cs,
+- [x] new `src/Cordyceps/Core/Canvas/GuidPrefixIndex.cs`: adapted from Hyperceps BatchNames.cs,
   with a header attribution.
-- [ ] new `src/Cordyceps/Core/Canvas/ObjectHealth.cs`: host-free classification equal to the rule
+- [x] new `src/Cordyceps/Core/Canvas/ObjectHealth.cs`: host-free classification equal to the rule
   in `src/Cordyceps/Tools/Unified/GhInspectTool.cs` lines 212-239: Error level → ERROR; Warning
   level → WARNING; otherwise any input with optional false, no source and no volatile data →
   DISCONNECTED (listing their names); else OK. Remarks are ignored. For a parameter object only the
   ERROR and WARNING levels apply.
-- [ ] new `src/Cordyceps/Core/Canvas/CanvasReader.cs`: the one Grasshopper adapter.
+- [x] new `src/Cordyceps/Core/Canvas/CanvasReader.cs`: the one Grasshopper adapter.
   - `Read(doc, CanvasDetail.Names | Full)`. Names fills ids, kinds, nicknames, default flags,
     groups and infrastructure only, for 02's per-call lookups. Full fills everything, for outline.
   - Uses `ToolHelpers.GetActiveObjects` and `GetCordycepsInfrastructureIds`.
@@ -513,10 +523,10 @@ Deliverables:
   - Default-nickname detection compares against the proxy's `Desc.NickName` and the object's
     `Name` (report 1.2).
   - Not linked into tests.
-- [ ] new `src/Cordyceps.Tests/CanvasSnapshotTests.cs`: membership multimap with sibling overlap;
+- [x] new `src/Cordyceps.Tests/CanvasSnapshotTests.cs`: membership multimap with sibling overlap;
   nesting with two parents; a group cycle that terminates; effective members; upstream and
   downstream with wires recorded on one end only; top-level groups.
-- [ ] new `src/Cordyceps.Tests/ObjectResolverTests.cs`, the ambiguity matrix:
+- [x] new `src/Cordyceps.Tests/ObjectResolverTests.cs`, the ambiguity matrix:
   - **Full GUID:** present; braces; uppercase; absent, which gives exactly
     `Component not found: {guid}`; infrastructure, which gives the same text; a nickname that equals
     another object's GUID text is ignored.
@@ -538,11 +548,11 @@ Deliverables:
   - **Display:** a property test over a generated canvas with shared nicknames, hex nicknames,
     shared prefixes and unnamed groups: every DisplayName and DisplayId round-trips.
   - **Many ids:** duplicates noted; every entry resolved against one index.
-- [ ] new `src/Cordyceps.Tests/GuidPrefixIndexTests.cs`: shortest unique, the minimum of 8, neighbours
+- [x] new `src/Cordyceps.Tests/GuidPrefixIndexTests.cs`: shortest unique, the minimum of 8, neighbours
   on both sides, `StartingWith` case-insensitive.
-- [ ] new `src/Cordyceps.Tests/ObjectHealthTests.cs`: each status, warning outranking disconnected,
+- [x] new `src/Cordyceps.Tests/ObjectHealthTests.cs`: each status, warning outranking disconnected,
   optional inputs ignored, an input wired with no data is not disconnected (it has a source).
-- [ ] `src/Cordyceps.Tests/Cordyceps.Tests.csproj`: link lines after the `canvas-read 01` anchor
+- [x] `src/Cordyceps.Tests/Cordyceps.Tests.csproj`: link lines after the `canvas-read 01` anchor
   for every file in the new `src/Cordyceps/Core/Canvas/` folder except the reader, with `Link` values under
   `Canvas`.
 
@@ -563,7 +573,7 @@ contract silently.
 Type: code (contract). Breaking.
 
 Deliverables:
-- [ ] `src/Cordyceps/Core/ToolHelpers.cs`:
+- [x] `src/Cordyceps/Core/ToolHelpers.cs`:
   - `TryGetUnprotectedComponent` and `TryGetUnprotectedComponentWithDoc` keep their signatures and
     their exact behaviour for full-GUID text (the same `IsProtectedId` + `FindObject` path, the same
     texts). Any other text builds a Names-level snapshot and resolves under Objects scope.
@@ -572,18 +582,18 @@ Deliverables:
   - New `TryGetUnprotectedGroup` (Groups scope, returns a `GH_Group`).
   - New `TryResolveIdArray` (Objects scope, all-or-nothing, C1.7).
   - The dead `TryGetComponent` and `TryGetComponentWithDoc` are deleted.
-- [ ] Group actions use `TryGetUnprotectedGroup`:
+- [x] Group actions use `TryGetUnprotectedGroup`:
   - `src/Cordyceps/Tools/Unified/GhCanvasTool.Groups.cs` `group_delete` (line 82),
     `group_remove` id (176), `group_rename` (257), `group_color` (282).
   - The `group_add` id (131-138; today `Invalid group id format`).
   - `group_move` (316-333). The case-insensitive, first-match name lookup is removed, and the
     infrastructure "Protected" text becomes `Group not found`.
-- [ ] Member arrays of `group_create`, `group_add` and `group_remove` (`src/Cordyceps/Tools/Unified/GhCanvasTool.Groups.cs` lines 29, 105, 182) use
+- [x] Member arrays of `group_create`, `group_add` and `group_remove` (`src/Cordyceps/Tools/Unified/GhCanvasTool.Groups.cs` lines 29, 105, 182) use
   `TryResolveIdArray`. Any unresolved entry is an error naming it, and nothing is created or changed;
   today unknown and infrastructure ids are silently skipped and `group_create` creates the group
   first. In `group_remove`, an entry that resolves but is not a member is listed in a new
   `notMembers` field.
-- [ ] `src/Cordyceps/Tools/Unified/GhCanvasTool.cs`:
+- [x] `src/Cordyceps/Tools/Unified/GhCanvasTool.cs`:
   - `move` entries (710-726): every entry resolved before any move. Infrastructure becomes
     not-found (no "Protected" text).
   - `delete` `ids` (622), and `preview` and `enable` `ids` (`src/Cordyceps/Tools/Unified/GhCanvasTool.Values.cs`
@@ -591,14 +601,14 @@ Deliverables:
     this means before `RemoveObject`; the per-id result shape is kept).
   - `list group=` (`FindGroup`, 1217-1235) uses the Groups scope. The substring, first-match rule is
     removed (the site Hyperceps missed, cross-cutting report 1).
-- [ ] `src/Cordyceps/Tools/Unified/GhWireTool.cs`: bulk connect source and target (166-197) resolve
+- [x] `src/Cordyceps/Tools/Unified/GhWireTool.cs`: bulk connect source and target (166-197) resolve
   through one lookup; infrastructure is not found, and failures read `Source: …` or `Target: …` with
   the resolver text. `gh_wire list` (310) resolves its filter, so an unknown id is now an error, not
   an empty list.
-- [ ] Response echoes: where a success response echoes the caller's id (`rename`, `bounds`,
+- [x] Response echoes: where a success response echoes the caller's id (`rename`, `bounds`,
   `group_delete` `deleted`, `group_color` `id`, `delete` `deleted`, `deletedIds` and per-entry `id`),
   it echoes the resolved full GUID. Failure entries keep the caller's text.
-- [ ] Help: `[Description]` texts for `id`, `ids`, `group`, `moves` (gh_canvas); `sourceId`,
+- [x] Help: `[Description]` texts for `id`, `ids`, `group`, `moves` (gh_canvas); `sourceId`,
   `targetId`, `id`, `componentId`, `connections` (gh_wire); `id` (gh_script). The wording: "Object:
   GUID, 8+ hex GUID prefix, or unique nickname". gh_canvas `id` also serves the group_* actions, so
   its text adds "on group_* actions: a group name or id". Kept: delete takes its partial per-id
@@ -607,7 +617,7 @@ Deliverables:
   `ActionInfo` tips on `delete` (names allowed; an ambiguous name deletes nothing and lists the
   candidates), on every `group_*` action and on `list` (`group=` exact), plus one Notes line per
   tool stating the rule.
-- [ ] Host-free logic introduced here goes in the new `src/Cordyceps/Core/Canvas/` folder only through a request to
+- [x] Host-free logic introduced here goes in the new `src/Cordyceps/Core/Canvas/` folder only through a request to
   the coordinator (see "Must not touch"). If a new pure helper is needed (for example the
   per-entry duplicate note), put it in new `src/Cordyceps/Core/IdBatch.cs` with
   new `src/Cordyceps.Tests/IdBatchTests.cs`, linked after the `canvas-read 02` anchor.
@@ -637,15 +647,15 @@ Visual change: yes (error text agents read). The live check is queued.
 Type: code (feature). Independent of 01.
 
 Deliverables:
-- [ ] new `src/Cordyceps/Core/DataTrees/TreeSummary.cs`: lifted from Hyperceps Core/TreeSummary.cs
+- [x] new `src/Cordyceps/Core/DataTrees/TreeSummary.cs`: lifted from Hyperceps Core/TreeSummary.cs
   with a header attribution, the C3 note fixes, `invalid` counting, the input-alignment comparison,
   and no silent clamp (the range check moves to the action).
-- [ ] new `src/Cordyceps/Core/DataTrees/DataTreeReader.cs`: host adapter from `IGH_Structure` to
+- [x] new `src/Cordyceps/Core/DataTrees/DataTreeReader.cs`: host adapter from `IGH_Structure` to
   branches (path, count, nulls, invalid), so `outputs`, sweep and outline can use it in later waves.
   Not linked into tests.
-- [ ] new `src/Cordyceps/Tools/Unified/GhInspectTool.Tree.cs`: the action per C3. Liveness check
+- [x] new `src/Cordyceps/Tools/Unified/GhInspectTool.Tree.cs`: the action per C3. Liveness check
   before marshalling. Every target parsed and resolved before any read.
-- [ ] `src/Cordyceps/Tools/Unified/GhInspectTool.cs`:
+- [x] `src/Cordyceps/Tools/Unified/GhInspectTool.cs`:
   - Make the class `partial`; add `ActionInfo["tree"]`, the pipe-list entry and dispatch.
   - New parameters `ids`, `param`, `side`.
   - `id` description in names form (C1 wording; true once 02 lands, in the same PR).
@@ -653,7 +663,7 @@ Deliverables:
     default", in the signature (line 132) and in `BuildParams` (line 144). `log` maps 0 to 100. A
     negative `limit` is an error for `log` (today it reaches `GetRange` with a negative count,
     line 398) and for `tree`.
-- [ ] new `src/Cordyceps.Tests/TreeSummaryTests.cs`: the 9 Hyperceps tests, plus:
+- [x] new `src/Cordyceps.Tests/TreeSummaryTests.cs`: the 9 Hyperceps tests, plus:
   - a single `{0;0;0}` branch gives no shared-index note;
   - two branches sharing leading indices give the note, worded per C3;
   - mixed depth without "Simplify";
@@ -661,7 +671,7 @@ Deliverables:
   - input alignment with differing counts, with equal counts but different paths, and with one
     input of a single branch (no note);
   - the run cap at exactly 100 is honoured.
-- [ ] `src/Cordyceps.Tests/Cordyceps.Tests.csproj`: the link for the new `src/Cordyceps/Core/DataTrees/TreeSummary.cs` after the 03 anchor.
+- [x] `src/Cordyceps.Tests/Cordyceps.Tests.csproj`: the link for the new `src/Cordyceps/Core/DataTrees/TreeSummary.cs` after the 03 anchor.
 
 What proves it: `dotnet test … --filter "FullyQualifiedName~TreeSummaryTests"` plus a Release build.
 Owns: the files above and the 03 anchor block. The body of `ActionStatus` in `src/Cordyceps/Tools/Unified/GhInspectTool.cs`
@@ -679,20 +689,20 @@ Visual change: yes. Queued live checks:
 Type: code (feature).
 
 Deliverables:
-- [ ] new `src/Cordyceps/Core/Canvas/OutlineView.cs`: host-free renderer of C2 over the snapshot,
+- [x] new `src/Cordyceps/Core/Canvas/OutlineView.cs`: host-free renderer of C2 over the snapshot,
   adapted from Hyperceps Core/Outline/CanvasOutline.cs, with a header attribution. It fixes report
   1.6 defects 1-6 and 8 as C2 states them, and has no Lichen or THALLUS code (owner ruling 5).
   `OutlineModel` is not lifted; the snapshot replaces it.
-- [ ] `src/Cordyceps/Tools/Unified/GhCanvasTool.Outline.cs` (from the prep stub):
+- [x] `src/Cordyceps/Tools/Unified/GhCanvasTool.Outline.cs` (from the prep stub):
   - Liveness check before marshalling.
   - Validates the parameters per C2 before reading.
   - `CanvasReader.Read(doc, Full)`, then `ObjectResolver` for `id` and `group`, then `OutlineView`.
   - `OutlineActionInfo()`: description, optional `id`, `group` and `depth`, an example, and tips that
     state the C2 caps, the stale marker and the relation to `status`.
-- [ ] `src/Cordyceps/Tools/Unified/GhInspectTool.cs`: the body of `ActionStatus` only. Its
+- [x] `src/Cordyceps/Tools/Unified/GhInspectTool.cs`: the body of `ActionStatus` only. Its
   classification calls `ObjectHealth`, and its output is byte-identical for the same canvas (the
   same fields, statuses and message joins).
-- [ ] new `src/Cordyceps.Tests/CanvasOutlineTests.cs`: the 12 Hyperceps cases ported to the snapshot,
+- [x] new `src/Cordyceps.Tests/CanvasOutlineTests.cs`: the 12 Hyperceps cases ported to the snapshot,
   plus:
   - overlapping sibling groups (both tags, the `shares` field, a summary that counts once, edges
     from both groups);
@@ -708,7 +718,7 @@ Deliverables:
   - a group detail of 2,000 members ordered without timing out (asserted by a bound on comparisons
     or an elapsed bound loose enough not to flake on the 2-core CI runner; no wall-clock test that
     can flake, per project-preferences "Parallelization").
-- [ ] `src/Cordyceps.Tests/Cordyceps.Tests.csproj`: the link for the new `src/Cordyceps/Core/Canvas/OutlineView.cs` after the 04 anchor.
+- [x] `src/Cordyceps.Tests/Cordyceps.Tests.csproj`: the link for the new `src/Cordyceps/Core/Canvas/OutlineView.cs` after the 04 anchor.
 
 What proves it: `dotnet test … --filter "FullyQualifiedName~CanvasOutlineTests|FullyQualifiedName~ObjectHealthTests"`
 plus a Release build.
@@ -730,9 +740,9 @@ transcribe.
 ### Chunk 05: documentation, verification queue, integration
 Type: cumulative-final. Coordinator.
 
-- [ ] Merge 01 and 03, then 02 and 04. Combined suite green with evidence recorded via
+- [x] Merge 01 and 03, then 02 and 04. Combined suite green with evidence recorded via
   `prawduct-hook test-evidence record`; plugin Release build clean.
-- [ ] `CHANGELOG.md` under `## [Unreleased]`.
+- [x] `CHANGELOG.md` under `## [Unreleased]`.
   - Added: `outline`; `tree`; names accepted wherever an object or group is taken.
   - Changed, marked breaking:
     - `group_move` and `list group=` match group names exactly (case and whole name);
@@ -749,7 +759,7 @@ Type: cumulative-final. Coordinator.
       `limit=0` returns the default 100 entries where it returned none.
   - Fixed: infrastructure existence leaked by `move`, bulk connect and `group_move`; a negative
     `log` limit threw.
-- [ ] `src/Cordyceps/McpServer.cs` `GetServerInstructions()`:
+- [x] `src/Cordyceps/McpServer.cs` `GetServerInstructions()`:
   - `outline` and `tree` in the tool lines;
   - a "Names" key point (C1 in four lines: GUID, 8+ hex prefix, unique case-sensitive nickname,
     group names on group actions only; ambiguous names act on nothing and list candidates);
@@ -758,7 +768,7 @@ Type: cumulative-final. Coordinator.
   - the gh://docs/canvas-outline resource listed.
   - The "do NOT rename components" guidance stays: agent conventions are a later wave (owner
     ruling 5).
-- [ ] Knowledge:
+- [x] Knowledge:
   - new `src/Cordyceps/Knowledge/CanvasOutlineGuide.md`: the C2 grammar transcribed from 04's
     golden strings, the caps, the stale marker, overlapping groups, what it does not show;
   - `src/Cordyceps/Knowledge/DataTreesGuide.md`: `tree` in "Rules" and "Debugging";
@@ -768,23 +778,23 @@ Type: cumulative-final. Coordinator.
   - `src/Cordyceps/Knowledge/BestPracticesGuide.md` (line 65);
   - the prompt markdown `src/Cordyceps/Knowledge/Prompts/DebugDataMismatch.md` and
     `src/Cordyceps/Knowledge/Prompts/OptimizeCanvas.md`.
-- [ ] `src/Cordyceps/Resources/ResourceRegistry.cs` and `src/Cordyceps/Cordyceps.csproj`: register and
+- [x] `src/Cordyceps/Resources/ResourceRegistry.cs` and `src/Cordyceps/Cordyceps.csproj`: register and
   embed the new guide.
-- [ ] `README.md`:
+- [x] `README.md`:
   - tool table rows for gh_canvas and gh_inspect;
   - the credits paragraph (line 188): the canvas outline, the data-tree summary and the object-name
     rule are adapted from Hyperceps, while the batch edits and sweeps still "shape where Cordyceps
     goes next";
   - the footer (line 192): "Naming rules, canvas outline and data-tree summary adapted from
     Hyperceps". `LICENSE` is unchanged; it already carries the copyright line.
-- [ ] `CLAUDE.md`: GhCanvasTool and GhInspectTool lines name `outline` and `tree`; one Core paragraph
+- [x] `CLAUDE.md`: GhCanvasTool and GhInspectTool lines name `outline` and `tree`; one Core paragraph
   for the new `src/Cordyceps/Core/Canvas/` folder (snapshot, reader, resolver; "change name resolution in the resolver, not at a
   call site").
-- [ ] `.prawduct/operator-verification.md`: VRF-019 (02's numbered site checks plus 01's reads),
+- [x] `.prawduct/operator-verification.md`: VRF-019 (02's numbered site checks plus 01's reads),
   VRF-020 (03), VRF-021 (04), each with the unverified runtime facts listed under Requirements
   Confidence.
-- [ ] new `.prawduct/changes/canvas-read.md`: the fragment, with `closes:` for issues filed for the
+- [x] new `.prawduct/changes/canvas-read.md`: the fragment, with `closes:` for issues filed for the
   three defects found in source (silent member skips; infrastructure leaks in move, bulk connect
   and group_move; the negative log limit) if the coordinator files them.
-- [ ] Backlog items for the deliberately deferred work (see the report).
+- [x] Backlog items for the deliberately deferred work (see the report).
 - [ ] Cumulative Critic dispositioned; reflection.

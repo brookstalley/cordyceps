@@ -588,7 +588,7 @@ Script component.
 15. `gh_canvas(action='list', group='POS')` fails; `group='POSTS'` lists its members; a
     component's GUID reads `Object is not a group: …`.
 16. `gh_canvas(action='info', id='POSTS')` fails with `… 'POSTS' is a group; group actions take its
-    name, other actions its id (…).`
+    name, and delete, move, rename, info, bounds and zoom take its id (…).`
 17. `group_rename`, `group_color` and `group_delete` work with `id='POSTS'` (in that order, renaming
     back before deleting). This deletes POSTS, so it comes after every other step that needs it.
 18. `gh_script(action='get', id='<script nickname>')` resolves the script by nickname.
@@ -600,6 +600,16 @@ Script component.
     called with a nickname return the full GUID in `id`.
 21. `gh_canvas(action='config', id='<the value list>', items='null')` is an error and the list keeps
     its items.
+22. A group's GUID on `gh_wire(action='list')`, `gh_inspect(action='outputs')` and
+    `gh_canvas(action='get')` is refused (`… is a group; this action works on components and
+    parameters, not groups`), while `gh_canvas(action='move')` and `delete` still act on the group.
+23. `gh_canvas(action='move', moves='[{"id":"R","x":0,"y":0},{"id":"<R short id>","x":50,"y":50}]')`:
+    R moves to 0,0, the second entry fails with `same object as entry 0: give one position per
+    object`, and `success` is false.
+24. Give an object a date-shaped nickname (`2026-01-01T00:00:00`) and pass it in `moves`, in
+    `connections` and in `outline group='["…"]'` (for a group so named): each resolves it.
+25. `gh_inspect(action='disconnected')` on a component that has both a missing input and a warning
+    lists the missing input, as it did before this branch.
 
 Reader facts only a live session confirms (check them while doing the outline checks in VRF-021):
 - Default-nickname flags are right across installed types (judged against the proxy's

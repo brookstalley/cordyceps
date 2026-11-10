@@ -320,7 +320,7 @@ namespace Cordyceps.Tests
         public void ObjectsScope_GroupName_IsNotFound_WithTheGroupHint_AndNoFallback()
         {
             AssertFailed(Obj(Canvas(), "POSTS"),
-                "No object named 'POSTS'. 'POSTS' is a group; group actions take its name, other actions its id (00000010).");
+                "No object named 'POSTS'. 'POSTS' is a group; group actions take its name, and delete, move, rename, info, bounds and zoom take its id (00000010).");
         }
 
         [Fact]
@@ -415,7 +415,7 @@ namespace Cordyceps.Tests
             AssertFailed(Obj(snap, "POSTZ"), "No object named 'POSTZ'. Did you mean 'POSTS'?");
             // "beef" is a group and all hex letters, but has no decimal digit: the group hint only.
             AssertFailed(Obj(snap, "beef"),
-                "No object named 'beef'. 'beef' is a group; group actions take its name, other actions its id (00000010).");
+                "No object named 'beef'. 'beef' is a group; group actions take its name, and delete, move, rename, info, bounds and zoom take its id (00000010).");
             // "bee4" is short hex with a digit. Suggestions come from object nicknames only, so the
             // group "beef" is not offered; the prefix hint stands alone.
             AssertFailed(Obj(snap, "bee4"),

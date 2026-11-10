@@ -110,10 +110,11 @@ From a canvas with four groups (two of them overlapping), an error, a warning an
 | `networks`, `unconnected` | Instead of `groups`/`ungrouped` on a canvas with no groups: one line per set of wired-together objects, largest first, `network k · N objects · inputs: NAME = VALUE, … · named: … · ends: NAME (PORT: COUNT, …)` (just `network ·` when there is one; every output of an end is counted); then `unconnected`, `N objects: NAME, …`, for objects with no wire |
 | `problems` | Errors, then warnings, then disconnected, each left to right: `NAME Type[ [GROUPS]] error: MSG[ (+K more)]`, `… warning: …`, `… disconnected: missing PORT, …` |
 | `disabled` | Locked objects |
+| `more` | How many entries each capped field left out; absent when nothing was capped |
+| `unread` | Only when Cordyceps could not read some wires (in all three views): `N wire(s) could not be read, so some inputs may show as unfed; gh_inspect(action='log') names them`. Treat an unfed input as unknown, not as unwired, when this is present |
+| `next` | What to call next. When `problems` is capped it also says to run `gh_inspect(action='status')`, which lists every component's problems (not those on parameter objects) |
 
 `controls`, `groups`, `ungrouped`, `problems` and `disabled` are left out when they would be empty (`networks` and `unconnected` likewise on a canvas with no groups). `summary`, `solver` and `next` are always present.
-| `more` | How many entries each capped field left out; absent when nothing was capped |
-| `next` | What to call next. When `problems` is capped it also says to run `gh_inspect(action='status')`, which lists every component's problems (not those on parameter objects) |
 
 `problems` classifies with the rule `status` uses: an error or warning on an object; DISCONNECTED for a
 component with a required input that has no wire and no data. A parameter object has no inputs to
