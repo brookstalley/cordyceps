@@ -322,7 +322,7 @@ namespace Cordyceps.Resources
             {
                 uri = "gh://component/{name}",
                 name = "Component Documentation",
-                description = "Dynamic documentation for any Grasshopper component. Replace {name} with the component name (e.g., gh://component/Circle)",
+                description = "Dynamic documentation for any Grasshopper component. Replace {name} with the component name, written as gh_canvas(action='add') takes it: exact name, Category/Name, Category/Subcategory/Name or GUID (e.g., gh://component/Curve/Circle — plain 'Circle' is ambiguous)",
                 mimeType = "text/markdown"
             };
         }
@@ -336,7 +336,8 @@ namespace Cordyceps.Resources
         {
             if (!CanHandle(uri)) return null;
 
-            var componentName = uri.Substring(UriPrefix.Length);
+            // Unescaped so a name with spaces can be sent percent-encoded (Number%20Slider).
+            var componentName = Uri.UnescapeDataString(uri.Substring(UriPrefix.Length));
             if (string.IsNullOrWhiteSpace(componentName)) return null;
 
             // Generate documentation for the component
@@ -359,15 +360,10 @@ namespace Cordyceps.Resources
 
             try
             {
-                // Try to find component info via ComponentRegistry
-                var results = Core.ComponentRegistry.SearchComponents(componentName);
-                var match = results.FirstOrDefault(r =>
-                    r.Name.Equals(componentName, StringComparison.OrdinalIgnoreCase));
-
-                if (match == null && results.Count > 0)
-                {
-                    match = results[0];
-                }
+                // The same strict rule gh_canvas(action='add') uses, so the page documents exactly
+                // the type an add with the same name would create.
+                var resolution = Core.ComponentRegistry.ResolveType(componentName);
+                var match = resolution.IsResolved ? resolution.Match : null;
 
                 if (match != null)
                 {
@@ -379,7 +375,7 @@ namespace Cordyceps.Resources
                     sb.AppendLine();
 
                     // Try to get parameter info by creating a temporary instance
-                    var component = Core.ComponentRegistry.CreateComponent(match.Guid);
+                    var component = Core.ComponentRegistry.CreateByGuid(match.Guid);
                     if (component is Grasshopper.Kernel.IGH_Component ghComp)
                     {
                         sb.AppendLine("## Inputs");
@@ -434,7 +430,8 @@ namespace Cordyceps.Resources
                 }
                 else
                 {
-                    sb.AppendLine($"Component '{componentName}' not found.");
+                    sb.AppendLine(Core.Naming.TypeNameRule.Explain(resolution, argName: "name",
+                        consequence: "No documentation was generated."));
                     sb.AppendLine();
                     sb.AppendLine("Try searching with `gh_canvas(action='search', query='...')` to find available components.");
                 }
