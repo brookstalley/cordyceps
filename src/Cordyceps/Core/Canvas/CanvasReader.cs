@@ -32,6 +32,8 @@ namespace Cordyceps.Core.Canvas
             var nodeIds = new HashSet<Guid>(objects.Where(o => !(o is GH_Group)).Select(o => o.InstanceGuid));
             var groupIds = new HashSet<Guid>(objects.OfType<GH_Group>().Select(g => g.InstanceGuid));
 
+            var infraSet = new HashSet<Guid>(infra);
+            var dropped = new List<string>();
             var nodes = new List<CanvasNode>();
             var groups = new List<CanvasGroup>();
             foreach (var obj in objects)
@@ -40,9 +42,13 @@ namespace Cordyceps.Core.Canvas
                     groups.Add(ReadGroup(g, nodeIds, groupIds));
                 else
                     nodes.Add(detail == CanvasDetail.Full
-                        ? ReadFullNode(obj, defaults, nodeIds)
+                        ? ReadFullNodeNamed(obj, defaults, nodeIds, infraSet, dropped)
                         : ReadNameNode(obj, defaults));
             }
+
+            // One line per read, not per wire, so a bad document cannot flood the log.
+            if (dropped.Count > 0)
+                DebugLog.Debug($"CanvasReader: skipped {dropped.Count} wire source(s) it could not place: {string.Join("; ", dropped.Take(10))}{(dropped.Count > 10 ? "; ..." : "")}");
 
             var solver = detail == CanvasDetail.Full
                 ? new SolverFlags
@@ -125,10 +131,27 @@ namespace Cordyceps.Core.Canvas
                 NickName = obj.NickName ?? string.Empty,
                 IsDefaultNickName = IsDefaultNickName(obj, defaults),
                 X = obj.Attributes?.Pivot.X ?? 0,
-                Y = obj.Attributes?.Pivot.Y ?? 0
+                Y = obj.Attributes?.Pivot.Y ?? 0,
+                Detail = CanvasDetail.Names
             };
 
-        private static CanvasNode ReadFullNode(IGH_DocumentObject obj, Dictionary<Guid, string> defaults, HashSet<Guid> nodeIds)
+        // A failure while reading one object is rethrown naming that object; nothing is swallowed.
+        private static CanvasNode ReadFullNodeNamed(IGH_DocumentObject obj, Dictionary<Guid, string> defaults,
+            HashSet<Guid> nodeIds, HashSet<Guid> infra, List<string> dropped)
+        {
+            try
+            {
+                return ReadFullNode(obj, defaults, nodeIds, infra, dropped);
+            }
+            catch (Exception ex)
+            {
+                throw new InvalidOperationException(
+                    $"Could not read canvas object '{obj.NickName}' ({obj.InstanceGuid}): {ex.Message}", ex);
+            }
+        }
+
+        private static CanvasNode ReadFullNode(IGH_DocumentObject obj, Dictionary<Guid, string> defaults,
+            HashSet<Guid> nodeIds, HashSet<Guid> infra, List<string> dropped)
         {
             var kind = KindOf(obj);
             var active = obj as IGH_ActiveObject;
@@ -159,15 +182,15 @@ namespace Cordyceps.Core.Canvas
             var outputs = new List<CanvasPort>();
             if (obj is IGH_Component comp)
             {
-                foreach (var p in comp.Params.Input) inputs.Add(ReadPort(p, nodeIds));
-                foreach (var p in comp.Params.Output) outputs.Add(ReadPort(p, nodeIds));
+                foreach (var p in comp.Params.Input) inputs.Add(ReadPort(p, nodeIds, infra, dropped));
+                foreach (var p in comp.Params.Output) outputs.Add(ReadPort(p, nodeIds, infra, dropped));
             }
             else if (obj is IGH_Param param)
             {
                 // A parameter object is its own port. Controls draw no input grip and take no wires.
                 if (param.Attributes == null || param.Attributes.HasInputGrip)
-                    inputs.Add(ReadPort(param, nodeIds));
-                outputs.Add(ReadPort(param, nodeIds));
+                    inputs.Add(ReadPort(param, nodeIds, infra, dropped));
+                outputs.Add(ReadPort(param, nodeIds, infra, dropped));
             }
 
             return new CanvasNode
@@ -181,6 +204,7 @@ namespace Cordyceps.Core.Canvas
                 Y = obj.Attributes?.Pivot.Y ?? 0,
                 Locked = active?.Locked ?? false,
                 PreviewHidden = obj is IGH_PreviewObject preview ? preview.Hidden : (bool?)null,
+                HasSolveState = active != null,
                 Phase = active != null ? ToPhase(active.Phase) : NodePhase.NotComputed,
                 MessageLevel = level,
                 Warnings = active?.RuntimeMessages(GH_RuntimeMessageLevel.Warning).ToList() ?? new List<string>(),
@@ -195,15 +219,30 @@ namespace Cordyceps.Core.Canvas
             };
         }
 
-        private static CanvasPort ReadPort(IGH_Param p, HashSet<Guid> nodeIds)
+        private static CanvasPort ReadPort(IGH_Param p, HashSet<Guid> nodeIds, HashSet<Guid> infra, List<string> dropped)
         {
             var sources = new List<PortSource>();
             foreach (var s in p.Sources)
             {
                 var owner = s.Attributes?.GetTopLevel?.DocObject;
-                // Infrastructure (and anything not on the active canvas) is not a node, so it drops out here.
-                if (owner == null || !nodeIds.Contains(owner.InstanceGuid)) continue;
+                if (owner == null)
+                {
+                    dropped.Add($"'{p.NickName}' source {s.InstanceGuid} has no attributes or owner");
+                    continue;
+                }
+                // Infrastructure is not a node and drops out silently, by design.
+                if (infra.Contains(owner.InstanceGuid)) continue;
+                if (!nodeIds.Contains(owner.InstanceGuid))
+                {
+                    dropped.Add($"'{p.NickName}' source owner {owner.InstanceGuid} is not a canvas node");
+                    continue;
+                }
                 int index = owner is IGH_Component sc ? sc.Params.Output.IndexOf(s) : -1;
+                if (owner is IGH_Component && index < 0)
+                {
+                    dropped.Add($"'{p.NickName}' source {s.InstanceGuid} is not an output of its owner {owner.InstanceGuid}");
+                    continue;
+                }
                 sources.Add(new PortSource(owner.InstanceGuid, index));
             }
 
@@ -244,23 +283,17 @@ namespace Cordyceps.Core.Canvas
         }
 
         // Default nicknames by component id, so a renamed object can be told from an untouched one.
-        // Rebuilt when the installed proxy count changes; UI-thread only, like the reader.
-        private static Dictionary<Guid, string> _defaults;
-        private static int _defaultsCount = -1;
-
+        // Built per read, never cached: a count-keyed cache goes stale when a plugin loads or swaps
+        // proxies without changing the count (ComponentRegistry.BuildCatalog refuses it for that reason).
         private static Dictionary<Guid, string> DefaultNicknames()
         {
-            var proxies = Instances.ComponentServer.ObjectProxies;
-            if (_defaults != null && _defaultsCount == proxies.Count)
-                return _defaults;
-
             var d = new Dictionary<Guid, string>();
-            foreach (var p in proxies)
+            foreach (var p in Instances.ComponentServer.ObjectProxies)
             {
+                // One bad proxy must not fail every read.
+                if (p?.Desc == null) continue;
                 if (!d.ContainsKey(p.Guid)) d[p.Guid] = p.Desc.NickName;
             }
-            _defaults = d;
-            _defaultsCount = proxies.Count;
             return d;
         }
     }

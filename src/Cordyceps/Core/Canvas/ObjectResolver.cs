@@ -396,6 +396,7 @@ namespace Cordyceps.Core.Canvas
     public sealed class DisplayNames
     {
         private readonly IObjectIndex _index;
+        private GuidPrefixIndex _prefixes;
         private readonly Dictionary<Guid, string> _shortIds = new Dictionary<Guid, string>();
         private readonly Dictionary<Guid, string> _displayIds = new Dictionary<Guid, string>();
         private readonly Dictionary<Guid, string> _displayNames = new Dictionary<Guid, string>();
@@ -408,17 +409,9 @@ namespace Cordyceps.Core.Canvas
         public string ShortId(Guid id)
         {
             if (_shortIds.TryGetValue(id, out var cached)) return cached;
-            var d = id.ToString("D");
-            string result = d;
-            for (int len = GuidPrefixIndex.MinimumLength; len < d.Length; len++)
-            {
-                var hits = _index.WithPrefix(d.Substring(0, len)).Where(e => !_index.IsInfrastructure(e.Id)).ToList();
-                if (hits.Count == 0 || (hits.Count == 1 && hits[0].Id == id))
-                {
-                    result = d.Substring(0, len);
-                    break;
-                }
-            }
+            // Built lazily, once, over the same ids WithPrefix searches (infrastructure left out).
+            _prefixes ??= new GuidPrefixIndex(_index.Entries.Where(e => !_index.IsInfrastructure(e.Id)).Select(e => e.Id));
+            string result = _prefixes.Shortest(id);
             return _shortIds[id] = result;
         }
 

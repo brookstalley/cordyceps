@@ -149,6 +149,19 @@ namespace Cordyceps.Core.Canvas
         /// <summary>Preview turned off; null when the object has no preview at all.</summary>
         public bool? PreviewHidden { get; init; }
 
+        /// <summary>
+        /// False for an object that is not an active object (a scribble, a sketch): it never takes
+        /// part in a solution, so <see cref="Phase"/> (left at <see cref="NodePhase.NotComputed"/>) says
+        /// nothing about it and it is never "not solved". Health reports such an object as OK.
+        /// </summary>
+        public bool HasSolveState { get; init; } = true;
+
+        /// <summary>
+        /// How much of the object was read. A <see cref="CanvasDetail.Names"/> node carries no ports,
+        /// messages or phase, so health must not be asked of it.
+        /// </summary>
+        public CanvasDetail Detail { get; init; } = CanvasDetail.Full;
+
         public NodePhase Phase { get; init; } = NodePhase.NotComputed;
         public MessageLevel MessageLevel { get; init; }
         public IReadOnlyList<string> Warnings { get; init; } = Array.Empty<string>();
@@ -246,6 +259,8 @@ namespace Cordyceps.Core.Canvas
         private readonly Dictionary<string, List<ObjectEntry>> _byGroupName = new Dictionary<string, List<ObjectEntry>>(StringComparer.Ordinal);
         private readonly HashSet<Guid> _infrastructure;
         private readonly GuidPrefixIndex _prefixes;
+        private readonly SolverFlags _solver;
+        private readonly IReadOnlyList<CanvasWire> _wires;
 
         private readonly Dictionary<Guid, List<Guid>> _upstream = new Dictionary<Guid, List<Guid>>();
         private readonly Dictionary<Guid, List<Guid>> _downstream = new Dictionary<Guid, List<Guid>>();
@@ -263,7 +278,7 @@ namespace Cordyceps.Core.Canvas
             IEnumerable<Guid> infrastructure)
         {
             DocumentName = documentName ?? string.Empty;
-            Solver = solver ?? new SolverFlags();
+            _solver = solver ?? new SolverFlags();
             Detail = detail;
             _infrastructure = new HashSet<Guid>(infrastructure ?? Enumerable.Empty<Guid>());
 
@@ -299,7 +314,7 @@ namespace Cordyceps.Core.Canvas
             }
             _prefixes = new GuidPrefixIndex(_entries.Select(e => e.Id));
 
-            Wires = BuildWires(nodeList);
+            _wires = BuildWires(nodeList);
             BuildGroupMaps(groupList);
             TopLevelGroups = FindTopLevelGroups(groupList);
             foreach (var top in TopLevelGroups)
@@ -308,7 +323,13 @@ namespace Cordyceps.Core.Canvas
         }
 
         public string DocumentName { get; }
-        public SolverFlags Solver { get; }
+
+        /// <summary>The solver switches. Full detail only: a Names snapshot never read them.</summary>
+        public SolverFlags Solver
+        {
+            get { RequireFull(nameof(Solver)); return _solver; }
+        }
+
         public CanvasDetail Detail { get; }
 
         /// <summary>Every node, in document order.</summary>
@@ -318,7 +339,11 @@ namespace Cordyceps.Core.Canvas
         public IReadOnlyList<CanvasGroup> Groups { get; }
 
         /// <summary>Every wire between two nodes, in node order then input order.</summary>
-        public IReadOnlyList<CanvasWire> Wires { get; }
+        /// <remarks>Full detail only: a Names snapshot never read ports.</remarks>
+        public IReadOnlyList<CanvasWire> Wires
+        {
+            get { RequireFull(nameof(Wires)); return _wires; }
+        }
 
         /// <summary>
         /// Groups that sit inside no other group, in document order. A group reachable only through a
@@ -330,10 +355,18 @@ namespace Cordyceps.Core.Canvas
         public CanvasGroup Group(Guid id) => _groupById.TryGetValue(id, out var g) ? g : null;
 
         /// <summary>Nodes wired into this one, each once, in wire order.</summary>
-        public IReadOnlyList<Guid> Upstream(Guid nodeId) => _upstream.TryGetValue(nodeId, out var l) ? l : NoIds;
+        public IReadOnlyList<Guid> Upstream(Guid nodeId)
+        {
+            RequireFull(nameof(Upstream));
+            return _upstream.TryGetValue(nodeId, out var l) ? l : NoIds;
+        }
 
         /// <summary>Nodes this one feeds, each once, in wire order.</summary>
-        public IReadOnlyList<Guid> Downstream(Guid nodeId) => _downstream.TryGetValue(nodeId, out var l) ? l : NoIds;
+        public IReadOnlyList<Guid> Downstream(Guid nodeId)
+        {
+            RequireFull(nameof(Downstream));
+            return _downstream.TryGetValue(nodeId, out var l) ? l : NoIds;
+        }
 
         /// <summary>Groups that directly contain this node, in document order.</summary>
         public IReadOnlyList<Guid> GroupsOf(Guid nodeId) => _groupsOfNode.TryGetValue(nodeId, out var l) ? l : NoIds;
@@ -384,6 +417,13 @@ namespace Cordyceps.Core.Canvas
         public IEnumerable<ObjectEntry> Entries => _entries;
 
         // ---- construction ----
+
+        private void RequireFull(string member)
+        {
+            if (Detail != CanvasDetail.Full)
+                throw new InvalidOperationException(
+                    $"CanvasSnapshot.{member} needs Full detail, but this snapshot was read at Names detail.");
+        }
 
         private void AddEntry(ObjectEntry e)
         {

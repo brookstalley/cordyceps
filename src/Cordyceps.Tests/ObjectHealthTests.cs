@@ -109,6 +109,30 @@ namespace Cordyceps.Tests
         }
 
         [Fact]
+        public void ObjectWithNoSolveState_IsAlwaysOk_EvenWithRequiredInputsUnset()
+        {
+            var scribble = new CanvasNode
+            {
+                Kind = NodeKind.Component,
+                HasSolveState = false,
+                Inputs = new[] { new CanvasPort { Name = "A" } },
+                MessageLevel = MessageLevel.Error,
+                Errors = new[] { "x" }
+            };
+
+            Assert.Equal(HealthStatus.Ok, ObjectHealth.Classify(scribble).Status);
+        }
+
+        [Fact]
+        public void NamesDetailNode_CannotBeClassified()
+        {
+            var ex = Assert.Throws<InvalidOperationException>(
+                () => ObjectHealth.Classify(new CanvasNode { Detail = CanvasDetail.Names }));
+            Assert.Contains("Classify", ex.Message);
+            Assert.Contains("Names detail", ex.Message);
+        }
+
+        [Fact]
         public void NullMessageLists_AreTreatedAsEmpty()
         {
             var r = ObjectHealth.Classify(MessageLevel.Error, null, null, null, true);
