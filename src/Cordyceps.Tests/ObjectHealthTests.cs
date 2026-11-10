@@ -1,4 +1,6 @@
 using System;
+using System.Linq;
+using Newtonsoft.Json.Linq;
 using Cordyceps.Core.Canvas;
 using Xunit;
 
@@ -154,6 +156,77 @@ namespace Cordyceps.Tests
 
             var r = ObjectHealth.Classify(MessageLevel.None, null, null, new[] { input }, isComponent: true);
             Assert.Equal(missing ? HealthStatus.Disconnected : HealthStatus.Ok, r.Status);
+        }
+
+        // ---- the population status lists and outline counts (issue #106) ----
+
+        [Theory]
+        [InlineData(false, true, true)]    // a component or a parameter object
+        [InlineData(false, false, false)]  // a scribble or sketch: no solve state
+        [InlineData(true, false, false)]   // a group
+        [InlineData(true, true, false)]    // a group is never listed, whatever else it is
+        public void IsSubject_IsEveryNonGroupObjectWithSolveState(bool isGroup, bool hasSolveState, bool subject)
+        {
+            Assert.Equal(subject, ObjectHealth.IsSubject(isGroup, hasSolveState));
+        }
+
+        [Theory]
+        [InlineData(NodeKind.Component)]
+        [InlineData(NodeKind.Parameter)]
+        [InlineData(NodeKind.Slider)]
+        [InlineData(NodeKind.Toggle)]
+        [InlineData(NodeKind.ValueList)]
+        [InlineData(NodeKind.Panel)]
+        [InlineData(NodeKind.Other)]
+        public void IsSubject_OfANode_DependsOnSolveStateOnly_NotOnKind(NodeKind kind)
+        {
+            Assert.True(ObjectHealth.IsSubject(new CanvasNode { Kind = kind }));
+            Assert.False(ObjectHealth.IsSubject(new CanvasNode { Kind = kind, HasSolveState = false }));
+            Assert.Throws<ArgumentNullException>(() => ObjectHealth.IsSubject((CanvasNode)null));
+        }
+
+        [Fact]
+        public void StatusPopulation_MatchesOutline_WarningOnASliderCountsInBoth()
+        {
+            var id = 0;
+            CanvasNode Node(NodeKind kind, string nick, MessageLevel level = MessageLevel.None, bool solves = true, params CanvasPort[] inputs) =>
+                new CanvasNode
+                {
+                    Id = TestCanvas.Id(++id), Kind = kind, NickName = nick, TypeName = kind.ToString(), X = id,
+                    HasSolveState = solves, Phase = NodePhase.Computed, MessageLevel = level,
+                    Warnings = level == MessageLevel.Warning ? new[] { "w" } : Array.Empty<string>(),
+                    Errors = level == MessageLevel.Error ? new[] { "e" } : Array.Empty<string>(),
+                    Inputs = inputs, Outputs = new[] { new CanvasPort { Name = "R" } }
+                };
+            var nodes = new[]
+            {
+                Node(NodeKind.Slider, "WALL", MessageLevel.Warning),
+                Node(NodeKind.Panel, "NOTE", MessageLevel.Error),
+                Node(NodeKind.Parameter, "PTS", MessageLevel.Warning, true, new CanvasPort { Name = "Point" }),
+                Node(NodeKind.Component, "CIRCLE", MessageLevel.None, true, new CanvasPort { Name = "Radius" }),
+                Node(NodeKind.Component, "OK"),
+                Node(NodeKind.Other, "SCRIBBLE", MessageLevel.Error, solves: false)
+            };
+            var snap = new CanvasSnapshot("t.gh", new SolverFlags(), CanvasDetail.Full, nodes, Array.Empty<CanvasGroup>(), Array.Empty<Guid>());
+
+            // What status lists: the subjects, each classified by the one rule.
+            var listed = snap.Nodes.Where(ObjectHealth.IsSubject).ToDictionary(n => n.NickName, n => ObjectHealth.Classify(n).StatusText);
+            Assert.Equal(new[] { "WALL", "NOTE", "PTS", "CIRCLE", "OK" }, listed.Keys);
+            Assert.Equal("WARNING", listed["WALL"]);
+            Assert.Equal("ERROR", listed["NOTE"]);
+            Assert.Equal("WARNING", listed["PTS"]);      // a parameter object with an unwired input is never DISCONNECTED
+            Assert.Equal("DISCONNECTED", listed["CIRCLE"]);
+            Assert.Equal("OK", listed["OK"]);
+
+            // Outline's counts and problems agree with that list, object for object.
+            var o = OutlineView.Overview(snap);
+            int errors = listed.Values.Count(s => s == "ERROR"), warnings = listed.Values.Count(s => s == "WARNING");
+            int disconnected = listed.Values.Count(s => s == "DISCONNECTED");
+            Assert.StartsWith($"6 objects · 0 groups · {errors} error · {warnings} warnings · {disconnected} disconnected", (string)o["summary"]);
+            var problems = o["problems"].Values<string>().ToList();
+            Assert.Equal(listed.Count(kv => kv.Value != "OK"), problems.Count);
+            Assert.Contains("WALL · Slider · warning: w", problems);
+            Assert.DoesNotContain(problems, p => p.StartsWith("SCRIBBLE", StringComparison.Ordinal));
         }
     }
 }

@@ -65,6 +65,7 @@
     <Compile Include="..\Cordyceps\Core\StatusEnvelope.cs" Link="StatusEnvelope.cs" />
     <Compile Include="..\Cordyceps\Core\ToolArgumentBinder.cs" Link="ToolArgumentBinder.cs" />
     <Compile Include="..\Cordyceps\Core\Canvas\OutlineView.cs" Link="Canvas\OutlineView.cs" />
+    <Compile Include="..\Cordyceps\Core\Canvas\OutlineGrammar.cs" Link="Canvas\OutlineGrammar.cs" />
     <Compile Include="..\Cordyceps\Core\Canvas\OutlineRequest.cs" Link="Canvas\OutlineRequest.cs" />
   </ItemGroup>
 

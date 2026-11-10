@@ -40,10 +40,16 @@ namespace Cordyceps.Tools.Unified
                 ["status"] = new ActionInfo
                 {
                     Name = "status",
-                    Description = "Get status of all components (OK, ERROR, WARNING, DISCONNECTED)",
+                    Description = "Get the status of every component and parameter object (OK, ERROR, WARNING, DISCONNECTED)",
                     Optional = new[] { "category" },
-                    Example = "action='status' OR action='status', category='Curve'",
-                    Tips = new[] { "Returns success=false with a busy/blocked status instead of hanging when the Rhino UI thread is not responding — use action='connection' to see why." }
+                    Example = "action='status' OR action='status', category='Curve' OR action='status', category='Params'",
+                    Tips = new[]
+                    {
+                        "Lists every object outline counts in its problems: components and parameter objects (sliders, toggles, value lists, panels, free parameters), each under 'components' in the same {id, name, type, status, message} shape; summary counts them all. Groups, scribbles and Cordyceps' own infrastructure are left out.",
+                        "A parameter object is ERROR or WARNING by its messages, otherwise OK. It has no inputs to be missing, so it is never DISCONNECTED.",
+                        "category matches the ribbon tab the object comes from, case-insensitive: ('Curve', 'Maths', a plugin's tab). Parameter objects are matched the same way: Grasshopper's own sliders, toggles, value lists, panels and parameters are under 'Params'.",
+                        "Returns success=false with a busy/blocked status instead of hanging when the Rhino UI thread is not responding — use action='connection' to see why."
+                    }
                 },
                 ["outputs"] = new ActionInfo
                 {
@@ -220,23 +226,30 @@ namespace Cordyceps.Tools.Unified
                     return ToolHelpers.ErrorResponse(error);
 
                 var infraIds = ToolHelpers.GetCordycepsInfrastructureIds(doc);
+                // Entries stay under "components" (the key callers read), but they cover every
+                // object outline reads: components and parameter objects (sliders, toggles, value
+                // lists, panels, free parameters). The same enumeration as CanvasReader (infrastructure
+                // and phantoms left out), filtered by the one population rule outline uses.
                 var components = new List<object>();
                 int ok = 0, errors = 0, warnings = 0, disconnected = 0;
 
-                foreach (var obj in doc.Objects)
+                foreach (var obj in ToolHelpers.GetActiveObjects(doc, infraIds))
                 {
-                    if (!(obj is IGH_Component comp)) continue;
-                    if (ToolHelpers.IsCordycepsInfrastructure(comp, infraIds)) continue;
+                    if (!Core.Canvas.ObjectHealth.IsSubject(obj is Grasshopper.Kernel.Special.GH_Group, obj is IGH_ActiveObject)) continue;
+                    var active = (IGH_ActiveObject)obj;
 
                     if (!string.IsNullOrEmpty(category))
                     {
-                        var proxy = Instances.ComponentServer.ObjectProxies.FirstOrDefault(p => p.Guid == comp.ComponentGuid);
-                        var compCat = proxy?.Desc.Category ?? comp.Category;
-                        if (!string.Equals(compCat, category, StringComparison.OrdinalIgnoreCase)) continue;
+                        // The ribbon tab the object comes from; parameter objects are "Params".
+                        var proxy = Instances.ComponentServer.ObjectProxies.FirstOrDefault(p => p.Guid == obj.ComponentGuid);
+                        var objCat = proxy?.Desc.Category ?? obj.Category;
+                        if (!string.Equals(objCat, category, StringComparison.OrdinalIgnoreCase)) continue;
                     }
 
                     // The one health rule outline shares (ObjectHealth); the strings and joins are status's own.
-                    var health = Core.Canvas.CanvasReader.Health(comp);
+                    // A parameter object is ERROR or WARNING by its message level, else OK: it has no
+                    // inputs to be DISCONNECTED.
+                    var health = Core.Canvas.CanvasReader.Health(active);
                     string status = health.StatusText;
                     string message = health.Message;
                     switch (health.Status)
@@ -249,9 +262,9 @@ namespace Cordyceps.Tools.Unified
 
                     components.Add(new
                     {
-                        id = comp.InstanceGuid.ToString(),
-                        name = comp.NickName != comp.Name ? comp.NickName : comp.Name,
-                        type = comp.Name,
+                        id = obj.InstanceGuid.ToString(),
+                        name = obj.NickName != obj.Name ? obj.NickName : obj.Name,
+                        type = obj.Name,
                         status,
                         message
                     });

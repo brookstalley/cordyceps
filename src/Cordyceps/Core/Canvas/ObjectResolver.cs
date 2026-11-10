@@ -465,7 +465,8 @@ namespace Cordyceps.Core.Canvas
     /// the full GUID.</item>
     /// <item><b>DisplayName</b>: an object's nickname when it is not the type default and resolves
     /// back in the Objects scope; a group's name when it resolves back in the Groups scope; else
-    /// the DisplayId.</item>
+    /// the DisplayId. Either is used only when <see cref="OutlineGrammar.IsPrintable"/> says it can
+    /// be cut back out of an outline line (no edge whitespace, no control character, no separator).</item>
     /// </list>
     /// Instances cache, so build one per index and reuse it for a whole view.
     /// </summary>
@@ -509,10 +510,11 @@ namespace Cordyceps.Core.Canvas
             if (entry == null)
                 result = DisplayId(id);
             else if (entry.IsGroup)
-                result = entry.NickName.Length > 0 && ObjectResolver.ResolvesTo(_index, entry.NickName, ResolveScope.Groups, id)
+                result = OutlineGrammar.IsPrintable(entry.NickName, isGroup: true)
+                         && ObjectResolver.ResolvesTo(_index, entry.NickName, ResolveScope.Groups, id)
                     ? entry.NickName : DisplayId(id);
             else
-                result = !entry.IsDefaultNickName && entry.NickName.Length > 0
+                result = !entry.IsDefaultNickName && OutlineGrammar.IsPrintable(entry.NickName, isGroup: false)
                          && ObjectResolver.ResolvesTo(_index, entry.NickName, ResolveScope.Objects, id)
                     ? entry.NickName : DisplayId(id);
             return _displayNames[id] = result;

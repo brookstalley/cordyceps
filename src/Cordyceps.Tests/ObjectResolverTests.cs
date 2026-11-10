@@ -674,6 +674,105 @@ namespace Cordyceps.Tests
             return TestCanvas.Snap(nodes, groups, infra);
         }
 
+        // ---- display names: printable names (outline cuts a name out at the first separator) ----
+
+        [Theory]
+        [InlineData("Wall Height")]          // inner spaces are fine: the separators all carry more than a space
+        [InlineData("f(x)")]                 // a parenthesis with no space before it
+        [InlineData("a,b")]
+        [InlineData("a;b")]
+        [InlineData("a·b")]
+        [InlineData("a←b")]
+        [InlineData("x=y")]
+        [InlineData("pts[0]")]               // an object name may hold ']' (only group names sit inside tags)
+        [InlineData("a,")]                   // ',' then ', ' still cuts at the end of the name
+        [InlineData("N+1")]
+        [InlineData("COUNT")]
+        public void Printable_AcceptsNamesThatCutCleanly(string name)
+        {
+            Assert.True(OutlineGrammar.IsPrintable(name, isGroup: false), name);
+        }
+
+        [Theory]
+        [InlineData("")]
+        [InlineData(" lead")]
+        [InlineData("trail ")]
+        [InlineData("\u00a0nbsp")]
+        [InlineData("two\nlines")]
+        [InlineData("two\r\nlines")]
+        [InlineData("tab\there")]
+        [InlineData("line\u2028sep")]
+        [InlineData("bell\u0007")]
+        [InlineData("a · b")]
+        [InlineData("a, b")]
+        [InlineData("a; b")]
+        [InlineData("a ← b")]
+        [InlineData("a → b")]
+        [InlineData("Width (m)")]
+        [InlineData("a [b]")]
+        [InlineData("a = b")]
+        [InlineData("[A")]
+        [InlineData("+3 more")]
+        [InlineData("a ·")]                  // ' ·' then ' · ' would show the separator one character early
+        [InlineData("a ←")]
+        [InlineData("a →")]
+        [InlineData("a =")]
+        [InlineData("· a")]                  // ' · ' then '· a' reads the separator one character late
+        [InlineData("← a")]
+        public void Printable_RefusesNamesThatCannotBeCutOut(string name)
+        {
+            Assert.False(OutlineGrammar.IsPrintable(name, isGroup: false), name);
+            Assert.False(OutlineGrammar.IsPrintable(name, isGroup: true), name);
+        }
+
+        [Fact]
+        public void Printable_EverySeparatorAndLeadingMarkIsRefused()
+        {
+            foreach (var sep in OutlineGrammar.Separators)
+                Assert.False(OutlineGrammar.IsPrintable("a" + sep + "b", isGroup: false), $"'{sep}'");
+            foreach (var mark in OutlineGrammar.LeadingMarks)
+                Assert.False(OutlineGrammar.IsPrintable(mark + "a", isGroup: false), $"'{mark}'");
+        }
+
+        [Fact]
+        public void Printable_GroupNamesAlsoRefuseTheTagClose()
+        {
+            Assert.True(OutlineGrammar.IsPrintable("pts[0]", isGroup: false));
+            Assert.False(OutlineGrammar.IsPrintable("pts[0]", isGroup: true));
+            Assert.False(OutlineGrammar.IsPrintable("A]", isGroup: true));
+        }
+
+        [Fact]
+        public void Display_AnUnprintableNickname_PrintsTheDisplayId_AndBothStillRoundTrip()
+        {
+            var g1 = TestCanvas.Id(0x20);
+            var g2 = TestCanvas.Id(0x21);
+            var g3 = TestCanvas.Id(0x22);
+            var snap = TestCanvas.Snap(
+                new[]
+                {
+                    TestCanvas.Node(A, "Wall Height", "Number Slider"),
+                    TestCanvas.Node(B, "a, b"),
+                    TestCanvas.Node(C, " COUNT"),
+                    TestCanvas.Node(Posts, "two\nlines"),
+                    TestCanvas.Node(Unnamed, "+1 more")
+                },
+                new[] { TestCanvas.Group(g1, "IN · OUT"), TestCanvas.Group(g2, "[x]"), TestCanvas.Group(g3, "tag]") });
+            var names = new DisplayNames(snap);
+
+            Assert.Equal("Wall Height", names.DisplayName(A));
+            Assert.Equal("00000002", names.DisplayName(B));
+            Assert.Equal("00000003", names.DisplayName(C));
+            Assert.Equal("00000010", names.DisplayName(Posts));
+            Assert.Equal("00000011", names.DisplayName(Unnamed));
+            Assert.Equal("00000020", names.DisplayName(g1));
+            Assert.Equal("00000021", names.DisplayName(g2));
+            Assert.Equal("00000022", names.DisplayName(g3));
+            // The nickname still resolves when passed in; it is only not printed.
+            Assert.True(ObjectResolver.ResolvesTo(snap, "a, b", ResolveScope.Objects, B));
+            AssertRoundTrips(snap, names);
+        }
+
         // ---- many ids ----
 
         [Fact]
