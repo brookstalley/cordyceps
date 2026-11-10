@@ -28,8 +28,8 @@ gh_canvas(action='outline')
 It returns the groups and how data flows between them, the controls and their values, item
 counts, and problems (by the `status` rule, capped at 10). Every line starts with a name you can
 pass back as an id. Then `outline` with `group='NAME'` or `id='NAME'` for detail. See
-`gh://docs/canvas-outline`. Outline is for orientation; `gh_inspect(action='status')` lists every component's errors,
-warnings and disconnected inputs (errors on parameter objects such as sliders appear only in outline).
+`gh://docs/canvas-outline`. Outline is for orientation; `gh_inspect(action='status')` reads the same objects (components and
+parameter objects such as sliders and panels) and lists every error, warning and disconnected input.
 
 ## Workflow
 
@@ -108,7 +108,10 @@ the call, and nothing is created or wired.
 - The full GUID, as returned by `add`
 - An 8+ hex-digit GUID prefix: `id='3f2a91c0'` (the short ids `outline` prints)
 - The object's nickname, exact and case-sensitive, when exactly one object carries it. Default
-  nicknames such as `Circle` count too, so they work while only one Circle is on the canvas
+  nicknames such as `Circle` count too, so they work while only one Circle is on the canvas,
+  except on the actions that remove something: `delete`, `group_delete`, `gh_wire disconnect` and
+  `gh_wire clear` refuse a default nickname (and the default group name `Group`) even when it is
+  unique. The error prints the id to pass, or rename the object first and pass the new name
 
 A nickname two objects share acts on nothing: the error lists both ids
 (`'Pt' is the nickname of 2 objects: 1a2b3c4d Point, 5e6f7a8b Point; name one by its id`). A near miss gets `Did you mean`.

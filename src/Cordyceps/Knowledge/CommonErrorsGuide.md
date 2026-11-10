@@ -16,11 +16,16 @@
 Every parameter that takes a canvas object accepts its full GUID, an 8+ hex GUID prefix, or its
 unique nickname (exact, case-sensitive, never trimmed). Group actions (`group_*`, `list group=`,
 `outline group=`) take a group's exact name, GUID or prefix. Nothing is guessed: each error below
-acted on nothing.
+acted on nothing. The actions that remove something (`delete`, `group_delete`,
+`gh_wire disconnect` and `gh_wire clear`) also refuse a default nickname and the default group
+name `Group`, even when only one object carries it; every other action accepts them.
 
 | Error | Cause | Fix |
 |-------|-------|-----|
-| "'X' is the nickname of N objects: 1a2b3c4d Point, 5e6f7a8b Point; name one by its id" | Several objects carry that nickname (default nicknames like `Pt` or `Circle` included) | Pass one of the listed ids. `gh_canvas(action='outline')` prints each object by a name that resolves |
+| "'X' is the nickname of N objects: 1a2b3c4d Point, 5e6f7a8b Point; name one by its id" | Several objects carry that nickname (default nicknames like `Pt` or `Circle` included, except on the removal actions, which give the refusal below) | Pass one of the listed ids. `gh_canvas(action='outline')` prints each object by a name that resolves |
+| "'Circle' is the default nickname of abcdef01 Circle, which every new Circle gets, so it never selects what this action removes. Pass id 'abcdef01', or name it first with gh_canvas(action='rename', id='abcdef01', nickname='NEW') and pass that name" | `delete`, `gh_wire disconnect` or `gh_wire clear` was given the nickname every new object of that type gets. It would remove whichever such object happens to be alone, so it is refused even when unique (on `gh_wire` the text starts `Source:`, `Target:` or nothing for `clear`) | Pass the id the error prints, or rename the object as shown and pass the new name. In `delete ids=[…]` only that entry fails; the others are deleted |
+| "'Pt' is the default nickname of 2 objects: 1a2b3c4d Point, 5e6f7a8b Point. A default nickname never selects what this action removes; pass one of these ids" | The same refusal when several objects carry the default nickname | Pass the id of the one you mean |
+| "'Group' is the default name of group 1a2b3c4d, which every new group gets, so it never selects what this action removes. Pass id '1a2b3c4d', or name the group first with gh_canvas(action='group_rename', id='1a2b3c4d', name='NEW') and pass that name" | `group_delete` was given the default group name (with several such groups: `'Group' is the default name of N groups: …. A default group name never selects what this action removes; pass one of these ids`) | Pass the id the error prints, or rename the group as shown |
 | "'X' is the name of N groups: …; name one by its id" | Several groups share the name | Pass one of the listed group ids |
 | "GUID prefix 'X' matches N objects: …; give more characters" | The prefix is shared | Add characters, or use one of the listed ids |
 | "'X' names two objects: nickname → …; GUID prefix → …. Use a longer GUID prefix" | The text is one object's nickname and the start of another object's GUID | Use a longer prefix or the full GUID of the one you mean |

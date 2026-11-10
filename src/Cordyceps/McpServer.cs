@@ -679,10 +679,11 @@ Key points:
   ambiguous or unknown name creates nothing; the error lists matches or suggestions, each with a
   'use' spelling to pass back. Partial matching exists only in gh_canvas(action='search')
 - Names for canvas objects (id, ids, sourceId, targetId, moves, connections): a GUID, an 8+ hex GUID
-  prefix, or a unique nickname (exact, case-sensitive; default nicknames like Circle count). Group
-  actions (group_*, group=) take a group's exact name or id; a group name is not an object id.
-  A name that fits two things acts on nothing and the error lists their ids; outline prints a
-  usable name for every object
+  prefix, or a unique nickname (exact, case-sensitive; default nicknames like Circle count, except
+  that delete, group_delete and gh_wire disconnect/clear refuse a default nickname or the group name
+  'Group': pass the id the error prints). Group actions (group_*, group=) take a group's exact name
+  or id; a group name is not an object id. A name that fits two things acts on nothing and the
+  error lists their ids; outline prints a usable name for every object
 - Param specs (param/sourceParam/targetParam) on a COMPONENT: a 0-based index, or the port's exact
   name or nickname (case is ignored only when that leaves one match). A partial or ambiguous name
   is refused with suggestions and the side's port list. sourceParam is always an output,
@@ -696,7 +697,7 @@ Key points:
 
 VERIFY PERIODICALLY: After completing a section of work, run gh_inspect(action='status')
 to catch errors in components you didn't directly modify. Changes can break downstream components.
-outline's problem list is capped at 10; status lists every component's errors, warnings and disconnected inputs, but not errors or warnings on parameter objects (sliders, panels, free parameters), which only outline shows.
+status and outline's problems read the same objects (components and parameter objects such as sliders and panels) with the same rule; outline caps its list at 10, status lists them all.
 
 Resources: gh://docs/getting-started, gh://docs/canvas-outline, gh://docs/data-trees, gh://docs/common-errors, gh://component/{name}, gh://patterns/*
 ";

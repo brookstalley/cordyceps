@@ -5,10 +5,10 @@ data flows between them, the controls and their values, item counts, and problem
 when you open a definition you did not build, instead of `list` + `gh_wire(action='list')` +
 `group_list`.
 
-Outline is for orientation. It classifies problems with the same rule as `gh_inspect(action='status')`,
-but it caps the list at 10, and it also covers parameter objects (sliders, panels, free parameters)
-that carry an error or warning, which `status` does not read: `status` looks at components only.
-It does not replace `status`, and the two counts can differ.
+Outline is for orientation. Its `problems` read the same objects as `gh_inspect(action='status')`
+(components and parameter objects such as sliders, panels and free parameters) and classify them
+with the same rule, but outline caps the list at 10 and `status` lists every one. Outline does not
+replace `status`.
 
 ## Three views
 
@@ -30,11 +30,23 @@ Giving both `id` and `group` is an error. So is `depth` without `id`, `depth` ou
 
 ## Reading a line
 
-Every object line and group line starts with a **name you can pass back as an id**, to any tool
-that takes that kind of thing: an object's nickname when it is unique and not the type default,
-otherwise its short id (the shortest GUID prefix of 8+ characters that no other object shares). A
-group line starts with the group's name when it is unique, otherwise its short id. A name is never
-clipped or decorated.
+Every object line, control line and problem line starts **`NAME · Type`**: the name is everything
+before the first ` · `, and the type follows it, so a multi-word name is never confused with a
+multi-word type. A group line starts with the group's name. The name is one **you can pass back as
+an id**, to any tool that takes that kind of thing:
+
+- an object's nickname when it is unique, not the type default, and printable (below); otherwise
+  its short id (the shortest GUID prefix of 8+ characters that no other object shares);
+- a group's name when it is unique, not the default name `Group`, and printable; otherwise its
+  short id.
+
+A name is never clipped or decorated. A nickname is **printable** only when it can be cut cleanly
+out of any line: it is not empty, has no whitespace at either end, no line break or other control
+character, does not start with `[` or `+`, and contains none of the sequences outline prints next
+to a name: ` · `, `, `, `; `, ` ← `, ` → `, ` (`, ` [`, ` = `. A group name also contains no `]`.
+So an object nicknamed `Width (m)` is printed by its id. The nickname still works as an id where it
+is unique; outline just does not print it. (A group name that starts with `[` is passed inside a
+JSON array, as in the table above.)
 
 | Mark | Meaning |
 |------|---------|
@@ -46,7 +58,7 @@ clipped or decorated.
 | `SOURCE (PORT)` | Which output of the source, shown only when the source has more than one output |
 | `PORT (graft)` | The input's modifiers: `graft`, `flatten`, `simplify`, `reverse` |
 | `NAME (COUNT)` / `NAME (PORT: COUNT)` | Items on an output; `PORT:` appears only when the object has several outputs |
-| `00000007 Circle` | Inside a list, a name that is only an id is followed by the object's type |
+| `00000007 Circle` | Inside a list, a name is printed alone; a name that is only an id is followed by the object's type after a space (an id has no spaces) |
 | `+N more` | A list was capped. On a top-level field (`controls`, `groups`, `problems`, `disabled`, `networks`, `in`, `out`, `fedFrom`, `feeds`) it is the last entry and `more` repeats the number. Inside one line (`in ←`, `inputs:`, `ends:`, `contains:`, `out:` and similar) it ends the text and is not counted in `more`. The `objects` lists of group detail and around never carry it: see Caps |
 | `…` | A value, message or panel text was clipped (values at 30 characters, messages at 100, panel text at 30) |
 
@@ -78,7 +90,7 @@ From a canvas with four groups (two of them overlapping), an error, a warning an
   "summary": "9 objects · 4 groups · 1 error · 1 warning · 1 disconnected · 1 disabled · 0 not solved · 1 preview off",
   "solver": "on",
   "controls": [
-    "COUNT Number Slider = 4 (0..10) [INPUTS]"
+    "COUNT · Number Slider = 4 (0..10) [INPUTS]"
   ],
   "groups": [
     "INPUTS · 2 objects · out: COUNT (1) → MATHS, OUTPUT; NUMS (1) → MATHS",
@@ -87,9 +99,9 @@ From a canvas with four groups (two of them overlapping), an error, a warning an
   ],
   "ungrouped": "3 objects · inputs: NOTE = \"read me\" · ends: 00000007 Circle (0), OLD (disabled)",
   "problems": [
-    "SUM Addition [MATHS] error: Data conversion failed from Text to Number (+1 more)",
-    "00000006 Split List [OUTPUT] warning: Index out of range",
-    "00000007 Circle disconnected: missing R"
+    "SUM · Addition [MATHS] · error: Data conversion failed from Text to Number (+1 more)",
+    "00000006 · Split List [OUTPUT] · warning: Index out of range",
+    "00000007 · Circle · disconnected: missing R"
   ],
   "disabled": [
     "OLD"
@@ -104,27 +116,27 @@ From a canvas with four groups (two of them overlapping), an error, a warning an
 |-------|---------|
 | `summary` | Always present, always the same eight counts in this order: `objects · groups · errors · warnings · disconnected · disabled · not solved · preview off`. An object in several groups is counted once |
 | `solver`, `note` | See above |
-| `controls` | Sliders, toggles and value lists: `NAME Type = VALUE[ (min..max)][ [GROUPS]]`, left to right. Values are written in invariant culture (`0.5`, never `0,5`) |
+| `controls` | Sliders, toggles and value lists: `NAME · Type = VALUE[ (min..max)][ [GROUPS]]`, left to right. Values are written in invariant culture (`0.5`, never `0,5`) |
 | `groups` | One line per top-level group, upstream groups first: `GROUP · N objects[ · E errors][ · W warnings][ · D disconnected][ · contains: CHILD (n objects), …][ · shares K objects with OTHER, …][ · in ← NAME, …][ · out: NAME (COUNT) → GROUP, …]`. `out:` entries are separated by `; `; a recipient in no group is named directly |
 | `ungrouped` | Objects in no group: `N objects · inputs: … · ends: … · feeds: GROUP, …`. An input is a control, or an unwired panel with text, that nothing feeds; an end is an object whose outputs feed nothing |
 | `networks`, `unconnected` | Instead of `groups`/`ungrouped` on a canvas with no groups: one line per set of wired-together objects, largest first, `network k · N objects · inputs: NAME = VALUE, … · named: … · ends: NAME (PORT: COUNT, …)` (just `network ·` when there is one; every output of an end is counted); then `unconnected`, `N objects: NAME, …`, for objects with no wire |
-| `problems` | Errors, then warnings, then disconnected, each left to right: `NAME Type[ [GROUPS]] error: MSG[ (+K more)]`, `… warning: …`, `… disconnected: missing PORT, …` |
+| `problems` | Errors, then warnings, then disconnected, each left to right: `NAME · Type[ [GROUPS]] · error: MSG[ (+K more)]`, `… · warning: …`, `… · disconnected: missing PORT, …` |
 | `disabled` | Locked objects |
 | `more` | How many entries each capped field left out; absent when nothing was capped |
 | `unread` | Only when Cordyceps could not read some wires (in all three views): `N wire(s) could not be read, so some inputs may show as unfed; gh_inspect(action='log') names them`. Treat an unfed input as unknown, not as unwired, when this is present |
-| `next` | What to call next. When `problems` is capped it also says to run `gh_inspect(action='status')`, which lists every component's problems (not those on parameter objects) |
+| `next` | What to call next. When `problems` is capped it also says to run `gh_inspect(action='status')`, which lists every object's status, parameter objects included |
 
 `controls`, `groups`, `ungrouped`, `problems` and `disabled` are left out when they would be empty (`networks` and `unconnected` likewise on a canvas with no groups). `summary`, `solver` and `next` are always present.
 
-`problems` classifies with the rule `status` uses: an error or warning on an object; DISCONNECTED for a
-component with a required input that has no wire and no data. A parameter object has no inputs to
-miss, so it is listed only for an error or warning. `status` reads components only, so an error or
-warning on a parameter object appears in outline (`problems` and the summary's error and warning
-counts) and nowhere in `status`.
+`problems` classifies with the rule `status` uses, over the same objects: an error or warning on an
+object; DISCONNECTED for a component with a required input that has no wire and no data. A
+parameter object has no inputs to miss, so it is listed only for an error or warning (in `status`
+it reads ERROR, WARNING or OK). The summary's error, warning and disconnected counts therefore
+match `status`'s `summary`.
 
 ## Overlapping and nested groups
 
-An object can sit in several groups. It is tagged with all of them (`RESULT Number [INNER, OUTPUT]`),
+An object can sit in several groups. It is tagged with all of them (`RESULT · Number [INNER, OUTPUT]`),
 every group it sits in counts it, and `shares K objects with OTHER` on a group line explains group
 counts that add up to more than the summary. A group inside another group appears in its parent's
 `contains:` and has no line of its own in the overview; `group='CHILD'` shows it, and its summary
@@ -146,9 +158,9 @@ reads `N objects · inside PARENT`. Group order follows the wires between groups
         "COUNT [INPUTS]"
       ],
       "objects": [
-        "00000003 Series · S ← NUMS [INPUTS] · C ← COUNT [INPUTS]",
-        "SUM Addition · A ← 00000003 Series · error: Data conversion failed from Text to Number (+1 more)",
-        "INNER (group) · 1 object · in ← 00000003 Series · out: RESULT (4) → OUTPUT"
+        "00000003 · Series · S ← NUMS [INPUTS] · C ← COUNT [INPUTS]",
+        "SUM · Addition · A ← 00000003 Series · error: Data conversion failed from Text to Number (+1 more)",
+        "INNER · group · 1 object · in ← 00000003 Series · out: RESULT (4) → OUTPUT"
       ],
       "out": [
         "RESULT (4) → OUTPUT"
@@ -160,10 +172,11 @@ reads `N objects · inside PARENT`. Group order follows the wires between groups
 
 - `in`: what feeds the group from outside, with the sources' groups. `out`: what leaves it, and where to.
 - `objects`, upstream first. An object line is
-  `NAME Type[ = VALUE][ [GROUPS]][ · disabled][ · preview off][ · PORT[ (mods)] ← SOURCE[ (PORT)][ [GROUPS]], …][ · error: MSG | warning: MSG | disconnected: missing PORT, …]`.
+  `NAME · Type[ = VALUE][ [GROUPS]][ · disabled][ · preview off][ · PORT[ (mods)] ← SOURCE[ (PORT)][ [GROUPS]], …][ · error: MSG | warning: MSG | disconnected: missing PORT, …]`.
   Unwired inputs without modifiers are left out. A parameter object's input has no port label
   (`← SOURCE`). The tags leave out the group being shown.
-- A child group is one line: `GROUP (group) · N objects · in ← … · out: …`. A direct member that is
+- A child group is one line: `GROUP · group · N objects · in ← … · out: …` (the name first, then
+  what it is, as on an object line). A direct member that is
   also in a child group keeps its own line and is counted in the child's.
 - Several groups in one call share one budget of 150 object lines; `more.objects` says how many were left out.
 
@@ -175,9 +188,9 @@ reads `N objects · inside PARENT`. Group order follows the wires between groups
   "around": "RESULT",
   "depth": 1,
   "objects": [
-    "00000003 Series [MATHS] · S ← NUMS [INPUTS] · C ← COUNT [INPUTS]",
-    "RESULT Number [INNER, OUTPUT] · ← 00000003 Series",
-    "00000006 Split List [OUTPUT] · L ← RESULT · i (graft) ← COUNT [INPUTS] · warning: Index out of range"
+    "00000003 · Series [MATHS] · S ← NUMS [INPUTS] · C ← COUNT [INPUTS]",
+    "RESULT · Number [INNER, OUTPUT] · ← 00000003 Series",
+    "00000006 · Split List [OUTPUT] · L ← RESULT · i (graft) ← COUNT [INPUTS] · warning: Index out of range"
   ],
   "fedFrom": [
     "NUMS [INPUTS]",
@@ -222,14 +235,21 @@ text inside one line (the name caps) is not counted in `more` at all.
 - Plugin "wireless" connections (send/receive components that pass data without a Grasshopper
   wire). Outline follows wires only, so such objects look unconnected.
 - Cordyceps' own bridge component and the objects wired to it.
-- Every problem: `problems` stops at 10. When `more.problems` is set, run `gh_inspect(action='status')` for every component's problems; problems on parameter objects are listed only here, so they stay capped.
+- Every problem: `problems` stops at 10. When `more.problems` is set, run `gh_inspect(action='status')`, which lists every object's status, parameter objects included.
 
 ## Using the names
 
-Paste any line head, any `[GROUP]` tag, any `→ GROUP` destination, or a group detail's `id` back
-into a call: object names into object actions (`info`, `delete`, `gh_wire`, `gh_inspect`), group
-names into `group=` and the `group_*` actions. Port tokens before `←` work as `param` and
-`targetParam`. A name that becomes ambiguous later (someone adds a second `COUNT`) stops resolving:
-the error lists both ids, and nothing is acted on.
+Paste any line's name (the text before its first ` · `), any `[GROUP]` tag, any `→ GROUP`
+destination, or a group detail's `id` back into a call: object names into object actions (`info`,
+`delete`, `gh_wire`, `gh_inspect`), group names into `group=` and the `group_*` actions. Port
+tokens before `←` work as `param` and `targetParam`. A name that becomes ambiguous later (someone
+adds a second `COUNT`) stops resolving: the error lists both ids, and nothing is acted on.
+
+Outline never prints a default nickname or the default group name, because the actions that remove
+things refuse them: `delete`, `group_delete`, `gh_wire(action='disconnect')` and
+`gh_wire(action='clear')` do not resolve a default nickname (`Circle`, `Pt`) or the group name
+`Group`, even when only one object carries it. The error prints the id to pass, or rename the object
+first (`gh_canvas(action='rename')`, or `group_rename` for a group) and pass the new name. Every
+other action still accepts a unique default nickname.
 
 To see one data tree's shape, follow up with `gh_inspect(action='tree', id='NAME')`.
