@@ -234,33 +234,16 @@ namespace Cordyceps.Tools.Unified
                         if (!string.Equals(compCat, category, StringComparison.OrdinalIgnoreCase)) continue;
                     }
 
-                    string status = "OK";
-                    string message = "";
-
-                    if (comp.RuntimeMessageLevel == GH_RuntimeMessageLevel.Error)
+                    // The one health rule outline shares (ObjectHealth); the strings and joins are status's own.
+                    var health = Core.Canvas.CanvasReader.Health(comp);
+                    string status = health.StatusText;
+                    string message = health.Message;
+                    switch (health.Status)
                     {
-                        status = "ERROR";
-                        message = string.Join("; ", comp.RuntimeMessages(GH_RuntimeMessageLevel.Error));
-                        errors++;
-                    }
-                    else if (comp.RuntimeMessageLevel == GH_RuntimeMessageLevel.Warning)
-                    {
-                        status = "WARNING";
-                        message = string.Join("; ", comp.RuntimeMessages(GH_RuntimeMessageLevel.Warning));
-                        warnings++;
-                    }
-                    else
-                    {
-                        var missing = comp.Params.Input
-                            .Where(i => !i.Optional && i.SourceCount == 0 && i.VolatileDataCount == 0)
-                            .Select(i => i.Name).ToList();
-                        if (missing.Count > 0)
-                        {
-                            status = "DISCONNECTED";
-                            message = $"Missing: {string.Join(", ", missing)}";
-                            disconnected++;
-                        }
-                        else ok++;
+                        case Core.Canvas.HealthStatus.Error: errors++; break;
+                        case Core.Canvas.HealthStatus.Warning: warnings++; break;
+                        case Core.Canvas.HealthStatus.Disconnected: disconnected++; break;
+                        default: ok++; break;
                     }
 
                     components.Add(new
