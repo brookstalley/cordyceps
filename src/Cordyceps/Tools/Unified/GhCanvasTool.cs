@@ -4,6 +4,7 @@ using System.ComponentModel;
 using System.Drawing;
 using System.Linq;
 using Cordyceps.Core;
+using Cordyceps.Core.Naming;
 using Grasshopper;
 using Grasshopper.Kernel;
 using Grasshopper.Kernel.Special;
@@ -32,10 +33,15 @@ namespace Cordyceps.Tools.Unified
                     Description = "Add a component to the canvas",
                     Required = new[] { "type", "x", "y" },
                     Optional = new[] { "nickname", "min", "max", "value", "decimals" },
-                    Example = "action='add', type='Circle', x=200, y=100",
+                    Example = "action='add', type='Curve/Circle', x=200, y=100",
                     Tips = new[] {
-                        "Use 'Category/Name' format for ambiguous names (e.g., 'Curve/Circle')",
-                        "Use GUID for guaranteed accuracy",
+                        "type must name exactly one installed type: its exact name (case ignored), 'Category/Name', 'Category/Subcategory/Name', 'Name (Category)', or a GUID. Partial names are never matched.",
+                        "Many names exist as both a component and a parameter (e.g. 'Circle', 'Line'): plain 'Circle' is ambiguous, so write 'Curve/Circle' (component) or 'Params/Circle' (parameter).",
+                        "A deprecated type is used only when it is the only one with that name; the response then carries deprecated=true and a warning naming any replacement.",
+                        "Shorthands are exact whole-name aliases: python, c#, slider, plane (XY Plane), filter (Stream Filter), and pt, crv, ln, circ, rect, cube, num, int, bool, str, which create the parameter (ln = 'Params/Line', circ = 'Params/Circle', rect = 'Params/Rectangle'). 'Panel', 'Number Slider', 'C# Script' and 'Stream Filter' always mean the built-in Grasshopper type.",
+                        "'Python 3 Script' (and python, 'python script', ghpython) creates Rhino's unified 'Script' component (Maths/Script, GUID c9b2d725-6f87-4b07-af90-bd9aefef68eb), which has no language until its code starts with '#! python 3'. The dedicated Python 3 Script component is 'Maths/Python 3 Script'.",
+                        "Nothing is created unless the name resolves. An ambiguous name returns code='ambiguous_name' with every match and a 'use' spelling for each; an unknown name returns code='unknown_type' with 'suggestions' (each with a 'use' spelling). Retry with one of those, or browse with action='search'.",
+                        "A GUID is always exact.",
                         "Adding a slider: pass min/max/value/decimals to configure it in one call (e.g. type='slider', min=0, max=100, value=50, decimals=2). Non-slider components ignore these.",
                         "Set min/max before value: value is clamped to the range. Same slider config as action='config'.",
                         "A slider value that doesn't parse as a number is an error — the component is NOT added (parity with action='config').",
@@ -291,7 +297,7 @@ namespace Cordyceps.Tools.Unified
                         "Omit mapping/simplify/reverse to READ the current state; each one you pass is applied, the rest are left unchanged",
                         "mapping: 'none', 'flatten', or 'graft' (Grasshopper's DataMapping)",
                         "simplify/reverse: true or false",
-                        "param: name or 0-based index of the port; not needed for a free-floating parameter",
+                        "param: the port's exact name or nickname (case ignored only when that leaves one match), or its 0-based index; not needed for a free-floating parameter. Partial names are refused with suggestions.",
                         "side: 'input' or 'output' (default: 'input')",
                         "Clear everything with mapping='none', simplify=false, reverse=false",
                         "action='info' reports the same modifiers for every param of a component"
@@ -315,7 +321,7 @@ namespace Cordyceps.Tools.Unified
         [McpServerTool, Description("Component operations. Actions: add|delete|move|rename|find|search|list|info|bounds|validate|constant|bake|zoom|view|get|set|config|preview|enable|group_create|group_delete|group_add|group_remove|group_list|group_rename|group_color|group_move|zoomable|modifier|help")]
         public string GhCanvas(
             [Description("Action to perform")] string action,
-            [Description("Component type for 'add', search query for 'search', or type filter for 'list'")] string type = null,
+            [Description("Component type for 'add' (exact name, 'Category/Name', 'Category/Subcategory/Name', or GUID; never matched partially), search query for 'search', or type filter for 'list'")] string type = null,
             [Description("X position")] double x = double.NaN,
             [Description("Y position")] double y = double.NaN,
             [Description("Component GUID")] string id = null,
@@ -351,7 +357,7 @@ namespace Cordyceps.Tools.Unified
             [Description("Target count for set_count")] int count = -1,
             [Description("Index for add/remove")] int index = -1,
             // Data modifier params
-            [Description("Parameter name or 0-based index for 'modifier'")] string param = null,
+            [Description("Port for 'modifier': exact name or nickname, or 0-based index (never matched partially)")] string param = null,
             [Description("Data mapping for 'modifier': 'none', 'flatten', or 'graft'")] string mapping = null,
             [Description("Simplify state for 'modifier': true or false")] string simplify = null,
             [Description("Reverse state for 'modifier': true or false")] string reverse = null)
@@ -480,33 +486,10 @@ namespace Cordyceps.Tools.Unified
                     if (!ToolHelpers.TryGetActiveDocument(_context, out var doc, out var error))
                         return ToolHelpers.ErrorResponse(error);
 
-                    var (component, matches) = ComponentRegistry.TryCreateComponent(type);
-
-                    // Handle disambiguation
-                    if (matches != null && matches.Count > 1)
-                    {
-                        return JsonConvert.SerializeObject(new
-                        {
-                            success = false,
-                            error = "ambiguous_name",
-                            message = $"Multiple components match '{type}'. Use GUID or 'Category/Name' format. Prefer non-deprecated components.",
-                            matchCount = matches.Count,
-                            matches = matches.Select(m => new
-                            {
-                                name = m.Name,
-                                guid = m.Guid,
-                                category = m.Category,
-                                subcategory = m.SubCategory,
-                                role = m.Role,
-                                deprecated = m.Deprecated,
-                                upgradeTo = m.UpgradeTo,
-                                upgradeToGuid = m.UpgradeToGuid
-                            })
-                        });
-                    }
+                    var (component, resolution, typeError) = ComponentRegistry.TryCreate(type);
 
                     if (component == null)
-                        return ToolHelpers.ErrorResponse($"Unknown component type: {type}");
+                        return JsonConvert.SerializeObject(TypeNameRule.ErrorPayload(resolution, typeError));
 
                     if (component.Attributes == null)
                         component.CreateAttributes();
@@ -547,18 +530,10 @@ namespace Cordyceps.Tools.Unified
 
                     var bounds = component.Attributes.Bounds;
                     int inputCount = 0, outputCount = 0;
-                    string categoryStr = null, subcategory = null;
-
-                    IGH_ObjectProxy proxy = null;
-                    if (component is IGH_ActiveObject activeObj)
-                        proxy = Instances.ComponentServer.ObjectProxies.FirstOrDefault(p => p.Guid == activeObj.ComponentGuid);
-                    proxy ??= Instances.ComponentServer.ObjectProxies.FirstOrDefault(p => p.Desc.Name == component.Name);
-
-                    if (proxy != null)
-                    {
-                        categoryStr = proxy.Desc.Category;
-                        subcategory = proxy.Desc.SubCategory;
-                    }
+                    // A created component always comes with a resolved match describing the type
+                    // created (TryCreate's contract), so its category is authoritative.
+                    string categoryStr = resolution.Match.Category;
+                    string subcategory = resolution.Match.SubCategory;
 
                     if (component is IGH_Component ghComp)
                     {
@@ -570,22 +545,38 @@ namespace Cordyceps.Tools.Unified
                         outputCount = 1;
                     }
 
-                    return JsonConvert.SerializeObject(new
+                    var added = new Dictionary<string, object>
                     {
-                        success = true,
-                        id = component.InstanceGuid.ToString(),
-                        type = component.Name,
-                        nickname = component.NickName,
-                        category = categoryStr,
-                        subcategory,
-                        role = ComponentRegistry.GetRole(categoryStr, subcategory),
-                        x = component.Attributes.Pivot.X,
-                        y = component.Attributes.Pivot.Y,
-                        width = bounds.Width,
-                        height = bounds.Height,
-                        inputCount,
-                        outputCount
-                    });
+                        ["success"] = true,
+                        ["id"] = component.InstanceGuid.ToString(),
+                        ["type"] = component.Name,
+                        ["nickname"] = component.NickName,
+                        ["category"] = categoryStr,
+                        ["subcategory"] = subcategory,
+                        ["role"] = ComponentRegistry.GetRole(categoryStr, subcategory),
+                        ["x"] = component.Attributes.Pivot.X,
+                        ["y"] = component.Attributes.Pivot.Y,
+                        ["width"] = bounds.Width,
+                        ["height"] = bounds.Height,
+                        ["inputCount"] = inputCount,
+                        ["outputCount"] = outputCount
+                    };
+
+                    // A deprecated type is only ever chosen when it is the sole match; say so, so
+                    // the caller can move to the replacement deliberately.
+                    if (resolution.UsedDeprecated)
+                    {
+                        added["deprecated"] = true;
+                        added["warning"] = $"'{resolution.Match.PathText}' is deprecated; it was used because it is the only type with that name." +
+                                           (resolution.Match.UpgradeTo != null ? $" Its replacement is '{resolution.Match.UpgradeTo}'." : "");
+                        if (resolution.Match.UpgradeTo != null)
+                        {
+                            added["upgradeTo"] = resolution.Match.UpgradeTo;
+                            added["upgradeToGuid"] = resolution.Match.UpgradeToGuid?.ToString();
+                        }
+                    }
+
+                    return JsonConvert.SerializeObject(added);
                 }
                 catch (Exception ex)
                 {

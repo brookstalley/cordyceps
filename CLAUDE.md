@@ -35,7 +35,7 @@ output, and what differs from its pytest-shaped instructions: read `docs/testing
 
 **Core/GrasshopperContext.cs** - Thread-safe wrapper for Grasshopper document access. All Grasshopper operations must run on the UI thread; this class provides `ExecuteOnUiThread()` methods that marshal calls correctly.
 
-**Core/ComponentRegistry.cs** - Resolves component type names to actual Grasshopper components. Handles aliases (e.g., "python" -> "Python 3 Script") and supports creation by name or GUID.
+**Core/Naming/TypeNameRule.cs** + **Core/ComponentRegistry.cs** - The rule that turns a component-type name into one type (GUID, exact aliases such as "python", pinned built-ins, exact name or `Category/Name`; never a partial match) lives host-free in `Core/Naming/TypeNameRule.cs`, with "did you mean" helpers in `Core/Naming/NameSuggestions.cs`. `ComponentRegistry` is only the Grasshopper adapter: it builds the installed-type catalog the rule reads, creates the resolved type, and runs `search`. Change resolution or aliases in the rule, not the adapter.
 
 **Core/UnifiedToolHelpers.cs** - Shared utilities for the unified tool architecture including action dispatch, help generation, and standardized response formatting.
 

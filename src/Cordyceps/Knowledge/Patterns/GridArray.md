@@ -12,12 +12,16 @@
 ## Option A: Built-in (Simplest)
 
 ```
-XY Plane → Rectangular Grid (Plane)
-X Count → Rectangular Grid (X)
-Y Count → Rectangular Grid (Y)
-Cell Size → Rectangular Grid (Size)
-→ Points, Cells output
+XY Plane → Rectangular (Plane)
+X Count → Rectangular (Extent X)
+Y Count → Rectangular (Extent Y)
+Cell Size → Rectangular (Size X) and (Size Y)
+→ Cells, Points output
 ```
+
+The rectangular grid component is named `Rectangular` (Vector/Grid): `type='Rectangular'`.
+Port names in parentheses are the exact input names to pass as `targetParam` (nicknames `P`, `Ex`,
+`Ey`, `Sx`, `Sy` work too); partial names such as `X` are refused rather than guessed.
 
 ## Option B: Cross Reference (More Control)
 
@@ -41,7 +45,7 @@ Series Y → Cross Reference (B) → Construct Point (Y)
 | Variation | Change |
 |-----------|--------|
 | 3D grid | Add Series Z + second Cross Reference |
-| Hexagonal | Hexagonal Grid component, or offset alternate rows |
+| Hexagonal | `Hexagonal` component (Vector/Grid), or offset alternate rows |
 | Centered | Range: -Width/2 to Width/2 |
 
 ## Common Mistakes

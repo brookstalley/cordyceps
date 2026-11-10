@@ -667,12 +667,22 @@ cached state and never touches the document, so it replies even when everything 
 
 Key points:
 - Disable solver: gh_document(action='solver', enabled=false)
-- Ambiguous names: use GUID or Category/Name format
-- Param specs (param/sourceParam/targetParam) on a COMPONENT: a name, a nickname, or a 0-based
-  index. An index that does not exist is refused and the error names the valid range — it is never
-  rescued as a name match, so add the port first (gh_canvas action='zoomable') rather than
-  re-asking. A free-floating parameter object has no ports of its own, so it IS the target and the
-  spec is ignored
+- Argument names are exact (case-sensitive). An argument that is not a parameter of the tool is an error that names it, suggests the closest parameter, and lists the valid ones - the call is not run
+- Names are exact, never guessed. Component types (gh_canvas add type=, gh_inspect docs,
+  gh://component/{name}): exact name (case ignored), Category/Name, Category/Subcategory/Name,
+  Name (Category), or GUID; a few exact shorthands (python, c#, slider, plane, filter, pt, crv, ln...;
+  pt/crv/ln/circ/rect create the parameter). type='Python 3 Script' (and python) creates the unified
+  Script component; start its code with '#! python 3'.
+  A name shared by a component and a parameter (Circle, Line) is ambiguous: write Curve/Circle. An
+  ambiguous or unknown name creates nothing; the error lists matches or suggestions, each with a
+  'use' spelling to pass back. Partial matching exists only in gh_canvas(action='search')
+- Param specs (param/sourceParam/targetParam) on a COMPONENT: a 0-based index, or the port's exact
+  name or nickname (case is ignored only when that leaves one match). A partial or ambiguous name
+  is refused with suggestions and the side's port list. sourceParam is always an output,
+  targetParam always an input. An index that does not exist is refused and the error names the
+  valid range — it is never rescued as a name match, so add the port first (gh_canvas
+  action='zoomable') rather than re-asking. A free-floating parameter object has no ports of its
+  own, so it IS the target and the spec is ignored
 - Spacing: 150px horizontal, 70px vertical
 - Annotate with labeled groups (group_create with name/color), panels, or scribbles — do NOT rename components while building; renamed components are hard to find on the canvas and it is not the Grasshopper convention. Track components by the returned id
 - CRITICAL: Inside a cluster editor, NEVER advise the user to press F5 or use Grasshopper's native recompute. It will destroy cluster inputs. Use gh_document(action='recompute') instead — it is cluster-safe.
@@ -740,28 +750,9 @@ Resources: gh://docs/getting-started, gh://docs/data-trees, gh://docs/common-err
                 // Create tool instance (all tool classes take GrasshopperContext)
                 var instance = Activator.CreateInstance(tool.DeclaringType, ctx);
 
-                // Build method arguments
-                var methodParams = tool.Method.GetParameters();
-                var args = new object[methodParams.Length];
-
-                for (int i = 0; i < methodParams.Length; i++)
-                {
-                    var param = methodParams[i];
-                    if (arguments.ValueKind == JsonValueKind.Object &&
-                        arguments.TryGetProperty(param.Name, out var argVal))
-                    {
-                        args[i] = ConvertJsonValue(argVal, param.ParameterType);
-                    }
-                    else if (param.HasDefaultValue)
-                    {
-                        args[i] = param.DefaultValue;
-                    }
-                    else
-                    {
-                        // Required parameter is missing - throw a clear error
-                        throw new InvalidOperationException($"Missing required parameter: {param.Name}");
-                    }
-                }
+                // Validate and bind arguments: rejects unknown names / non-object arguments
+                // before the tool method runs (see Core.ToolArgumentBinder).
+                var args = Core.ToolArgumentBinder.Bind(tool.Method, arguments);
 
                 // Invoke the tool method
                 result = tool.Method.Invoke(instance, args);
@@ -939,8 +930,6 @@ Resources: gh://docs/getting-started, gh://docs/data-trees, gh://docs/common-err
                 }
             };
         }
-
-        private static object ConvertJsonValue(JsonElement element, Type targetType) => Core.JsonTypeConverter.ConvertJsonValue(element, targetType);
 
         /// <summary>
         /// Record that a command was executed

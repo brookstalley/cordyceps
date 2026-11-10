@@ -61,8 +61,8 @@ The per-port right-click options, on any component parameter or free-floating pa
 - `gh_canvas(action='modifier', id='...', side='input', param='B', mapping='none', simplify=false, reverse=false)` — clear
 
 `mapping`: `none` | `flatten` | `graft`. `simplify`/`reverse`: true/false. Partial update — whatever you
-omit stays as it is, and passing none of the three reads instead of writing. `param` takes a name or a
-0-based index and is unnecessary for a free-floating param. `gh_canvas(action='info')` reports
+omit stays as it is, and passing none of the three reads instead of writing. `param` takes an exact name
+or nickname, or a 0-based index, and is unnecessary for a free-floating param. `gh_canvas(action='info')` reports
 `modifiers` for every param, so state round-trips.
 
 ## Capture
@@ -84,7 +84,31 @@ omit stays as it is, and passing none of the three reads instead of writing. `pa
 | parameter | Data container (Params category) |
 | input | Interactive control (Params/Input) |
 
-**Ambiguous names**: "Circle" matches both component and parameter. Use `Category/Name` or GUID.
+## Names Are Exact
+
+Names that select one thing are never guessed. A near miss is an error that tells you how to fix
+the call, and nothing is created or wired.
+
+**Component types** (`gh_canvas(action='add', type=...)`, `gh_inspect(action='docs')`,
+`gh://component/{name}`):
+
+- The exact name, case ignored: `type='Number Slider'`, `type='merge'`
+- Narrowed by category: `type='Curve/Circle'`, `type='Curve/Primitive/Circle'`, or `type='Circle (Curve)'`
+- A GUID, always exact
+- A few exact whole-name shorthands: `python`, `c#`, `slider`, `plane` (XY Plane), `filter` (Stream Filter), plus the parameter shorthands `pt`, `crv`, `ln`, `circ`, `rect`, `num`, `int`, `bool`, `str`, … (`ln` is `Params/Line`)
+
+Many names are both a component and a parameter: plain `Circle` or `Line` is **ambiguous**. The
+error (`code: "ambiguous_name"`) lists every match with its category, role, plugin and GUID, plus a
+`use` spelling for each — pass that back. An unknown or partial name (`code: "unknown_type"`)
+returns `suggestions`, each with a `use` spelling; `Cull` does not create Cull Pattern. A deprecated
+type is used only when it is the only one with that name, and the response says so. To browse,
+use `gh_canvas(action='search', query='...')`, which does match partially.
+
+**Ports** (`sourceParam`, `targetParam`, `param`): a 0-based index, or the port's exact name or
+nickname (`targetParam='R'` or `'Radius'`). Case is ignored only when that leaves one match.
+On a Circle, `'Rad'` is refused with "Did you mean 'R' (1 R (Radius))?" and the full port list for
+that side.
+`sourceParam` is always an output and `targetParam` always an input.
 
 ## Layout
 
@@ -111,5 +135,5 @@ When the cluster editor is open, `gh_document(action='recompute')` and `gh_docum
 - `gh://docs/data-trees` — essential for list/tree ops
 - `gh://docs/common-errors` — error→fix reference
 - `gh://docs/rendering` — bake→materials→viewport→capture
-- `gh://component/{name}` — component I/O docs
+- `gh://component/{name}` — component I/O docs (`{name}` is written as for `add`, e.g. `gh://component/Curve/Circle`)
 - `gh://patterns/*` — linear-array, grid-array

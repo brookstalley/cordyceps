@@ -36,6 +36,7 @@ Developer preferences for how code is written in this project. Captured during d
 - **Error handling**: catch at the tool boundary and return `{ success: false, error }` JSON rather than throwing across the MCP boundary; runtime issues surface via `gh_inspect`
 - **Async**: synchronous tool methods; all document work is marshaled onto the Rhino UI thread via `GrasshopperContext.ExecuteOnUiThread()`
 - **File organization**: layer/area folders — `Core/`, `Tools/Unified/`, `Resources/`, `Prompts/`, `Knowledge/`
+- **Tool surface — few tools, many actions** (norm; owner, 2026-11-09): a new capability is a new `action` on one of the existing tools, not a new top-level tool. Every tool's schema is sent to the model on every request, so each added tool is a standing cost, while an action costs nothing until it is used. Adding a top-level tool is an owner decision recorded here. Applies to all new work; the existing seven tools already conform.
 
 ## Tooling
 
@@ -76,6 +77,7 @@ Each preference above should be enforced by one of three mechanisms — assign t
 | Tool methods return `{ success, ... }` JSON and catch at the boundary (no throwing across the MCP boundary) | Critic | `/critic` — semantic; verifies the response contract |
 | Release configuration required for builds (Debug blocked) | Build target | `src/Cordyceps/Cordyceps.csproj` (Debug build fails) |
 | C# naming conventions (PascalCase types/methods, `_camelCase` private fields) | Critic | `/critic` — no analyzer configured, so semantic check |
+| New capabilities are actions on the existing tools; a new top-level tool is an owner decision | Critic | `/critic` — judgment-required; a diff that adds a `[McpServerToolType]` class needs a recorded owner decision |
 
 **Rule for adding a new preference:** assign a mechanism. If the preference can be expressed as "every file/function/config matches pattern X with named exceptions" → write a test. If a linter rule already exists for it → configure the linter. If it requires understanding intent → assign to Critic. Never leave a preference unassigned.
 

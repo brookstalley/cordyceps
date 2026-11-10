@@ -5,14 +5,18 @@
 | Error | Cause | Fix |
 |-------|-------|-----|
 | "Component not found" | ID doesn't exist | `gh_canvas(action='list')` (optionally with `typeFilter`/`group`), or `gh_canvas(action='find', nickname='...')` — find matches default nicknames like 'Circle'; no need to rename components |
-| "Unknown component type" | Name doesn't match | `gh_canvas(action='search', query='...')` or use GUID |
-| "Ambiguous component name" | Multiple matches | Use `Category/Name` format or GUID |
+| "No component type is named 'X'…" (`code: "unknown_type"`) | Names are matched exactly (case ignored), never partially — `Cull` no longer creates Cull Pattern. Nothing was created | Pick from `suggestions` and pass its `use` value as `type`, or `gh_canvas(action='search', query='...')` |
+| "'X' matches N component types…" (`code: "ambiguous_name"`) | Several installed types share the name — often a component and a parameter (`Circle`, `Line`), or two plugins. Nothing was created | Pass the `use` value of the one you mean from `matches` (e.g. `Curve/Circle`, `Params/Circle`), or its GUID |
+| "No installed category is named 'X'…" (`code: "unknown_category"`) | The `Category/...` part names a ribbon tab that isn't installed | Check the spelling against `gh_inspect(action='categories')`; the plugin may not be loaded |
+| "No installed component type has the GUID …" (`code: "guid_not_installed"`) | The plugin providing it isn't loaded | Install/load the plugin, or find an installed equivalent with `search` |
+| Response has `deprecated: true` and a `warning` | The only type with that name is deprecated, so it was used | Usually fine; to use the replacement, add `upgradeTo` / `upgradeToGuid` instead |
 
 ## Connection Errors
 
 | Error | Cause | Fix |
 |-------|-------|-----|
-| "Source/Target: Parameter 'X' not found" | Bad param name | The error lists the available names; `gh_canvas(action='info', id='...')` to see params |
+| "Source/Target: Parameter 'X' not found on the input/output side of 'C'…" (`gh_canvas modifier` returns it without the prefix) | The name isn't a port's exact name or nickname. Partial names are never matched (`Pattern` does not reach Cull Pattern's `Cull Pattern` input) | Use the port the error suggests ("Did you mean 'P' (1 P (Cull Pattern))?") or any name/nickname from "Available", or a 0-based index. `gh_canvas(action='info', id='...')` lists every port |
+| "Source/Target: Parameter 'X' is ambiguous on the … side of 'C'…" | Two ports share that name or nickname (or match it when case is ignored) | Pass the 0-based index the error lists, or the exact case |
 | "Source/Target: Parameter index N is out of range" | The port does not exist — commonly a variable-parameter component whose input count has not been raised yet | The error names the valid range. Add the port first (`gh_canvas(action='zoomable', id='...', side='input', operation='add')`), then wire. An index is never rescued as a name match, so re-sending the same number will not connect. (A free-floating param object has no ports of its own — it is the target and the spec is ignored) |
 | "Type mismatch" | Incompatible types | `gh_wire(action='validate', ...)` first; add conversion component |
 
@@ -100,6 +104,7 @@ Numeric parameters (e.g., `x`, `y`, `lens`, `wait`, `timeout`, `azimuth`) accept
 
 | Error | Cause | Fix |
 |-------|-------|-----|
+| "Unknown argument: 'x' (did you mean 'y'?). Valid parameters: …" (one wrong name) or "Unknown arguments: 'x' (did you mean 'y'?), 'z'. Valid parameters: …" (several) | An argument name is not a parameter of that tool. Names are exact and case-sensitive (`sourceid` is not `sourceId`). Nothing was run | Every unknown name is listed in one response with the closest valid parameter where one is near; fix the names and resend. When `arguments` is not a JSON object the error is "Invalid arguments: 'arguments' must be a JSON object…" instead |
 | "Protected: required for MCP" | Modifying Cordyceps component | Cannot modify; work with other components |
 | "No active document" | GH/Rhino not ready | Ensure document open, `gh_document(action='info')` |
 | "No bakeable outputs" | Non-geometry component | Only geometry types can bake |

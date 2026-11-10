@@ -1,11 +1,18 @@
 # Component Patterns
 
+**Writing these names.** Component names below are Grasshopper's own; pass them to
+`gh_canvas(action='add', type=...)` exactly (case is ignored, partial names are not matched). Where a
+component shares its name with a parameter — Circle, Line, Rectangle — add the category:
+`type='Curve/Circle'`. A name in parentheses after a component, as in "Circle (Radius)", is the input
+port to wire; pass that name or its nickname as `targetParam`. When a name is refused, the error lists
+the candidates or near names, each with a `use` spelling that works.
+
 ## Input Patterns
 
 | Input Type | Components | Notes |
 |------------|------------|-------|
 | Number | Number Slider | `gh_canvas(action='config', id='...', min=0, max=1, value=0.5)` |
-| Integer | Number Slider (integers=true) | Or use Integer Slider |
+| Integer | Number Slider | Configure with `decimals=0` (`action='config'`) |
 | Boolean | Boolean Toggle | Or Panel with "True"/"False" |
 | Point | Construct Point | Or Panel with "x,y,z" |
 | Multiple Points | Panel | One "x,y,z" per line |
@@ -41,13 +48,13 @@
 
 | Transform | Inputs |
 |-----------|--------|
-| Move | Geometry, Vector |
-| Rotate | Geometry, Angle (radians), Plane |
+| Move | Geometry, Motion |
+| Rotate (`Transform/Rotate`; Vector has its own Rotate) | Geometry, Angle (radians), Plane |
 | Scale | Geometry, Factor, Center |
 | Mirror | Geometry, Plane |
 
 **Linear array**: Geometry + Series → Unit Vector → Move
-**Radial array**: Geometry + Series (0 to 2π) → Rotate
+**Radial array**: Geometry + Series (0 to 2π) → Rotate (`Transform/Rotate`)
 
 ## Analysis
 
@@ -89,14 +96,14 @@ a = circles  # Output
 
 ## Common Components
 
-**Primitives**: Point (Construct Point), Vector (Unit X/Y/Z), Plane (XY Plane), Line, Circle, Rectangle
+**Primitives**: Construct Point, Unit X / Unit Y / Unit Z, XY Plane, Curve/Line, Curve/Circle, Curve/Rectangle
 
-**Curves**: Polyline, Interpolate, Arc, Nurbs Curve
+**Curves**: Polyline, Interpolate, Curve/Arc, Nurbs Curve
 
 **Surfaces**: Loft, Extrude, Sweep1, Revolution
 
-**Solids**: Cap Holes, Solid Union/Difference/Intersection, Box
+**Solids**: Cap Holes, Solid Union / Solid Difference / Solid Intersection, Center Box
 
-**Data**: Merge, Graft, Flatten, Path Mapper, Sort List, Cull Pattern
+**Data**: Merge, Graft Tree, Flatten Tree, Path Mapper, Sort List, Cull Pattern
 
-**Math**: +, -, *, /, %, Series, Range, Random
+**Math**: Addition, Subtraction, Multiplication, Division, Modulus, Series, Range, Random

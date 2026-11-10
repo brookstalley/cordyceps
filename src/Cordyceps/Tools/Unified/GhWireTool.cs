@@ -30,7 +30,7 @@ namespace Cordyceps.Tools.Unified
                     Required = new string[0],
                     Optional = new[] { "sourceId", "sourceParam", "targetId", "targetParam", "connections" },
                     Example = "action='connect', sourceId='a', sourceParam='0', targetId='b', targetParam='R'",
-                    Tips = new[] { "Use param name, nickname, or index (0-based)", "On a component, an index that does not exist is refused with the valid range — it never falls back to a name match; a free-floating param object is itself the target and ignores the spec", "For bulk: connections='[{sourceId,sourceParam,targetId,targetParam},...]'" }
+                    Tips = new[] { "Name a port by its exact name or nickname, or by 0-based index. Case is ignored only when that leaves one match; partial names are never matched, and the error suggests the port you probably meant and lists every port on that side", "On a component, an index that does not exist is refused with the valid range — it never falls back to a name match; a free-floating param object is itself the target and ignores the spec", "For bulk: connections='[{sourceId,sourceParam,targetId,targetParam},...]'" }
                 },
                 ["disconnect"] = new ActionInfo
                 {
@@ -70,7 +70,7 @@ namespace Cordyceps.Tools.Unified
             },
             Notes = new[]
             {
-                "On a component, parameters are specified by name, nickname, or 0-based index; an index outside the port list is refused with the valid range rather than matched as a name. A free-floating param object is itself the target",
+                "On a component, parameters are specified by exact name or nickname, or by 0-based index; an index outside the port list is refused with the valid range rather than matched as a name. Case is ignored only when that leaves one match; a partial or ambiguous name is refused with the candidates, never guessed. sourceParam is always an output and targetParam always an input. A free-floating param object is itself the target",
                 "Disable solver before bulk wiring: gh_document(action='solver', enabled=false)"
             }
         };
@@ -84,9 +84,9 @@ namespace Cordyceps.Tools.Unified
         public string GhWire(
             [Description("Action to perform")] string action,
             [Description("Source component GUID")] string sourceId = null,
-            [Description("Source output param name or index")] string sourceParam = null,
+            [Description("Source output port: exact name or nickname, or 0-based index")] string sourceParam = null,
             [Description("Target component GUID")] string targetId = null,
-            [Description("Target input param name or index")] string targetParam = null,
+            [Description("Target input port: exact name or nickname, or 0-based index")] string targetParam = null,
             [Description("JSON array of connections for bulk connect")] string connections = null,
             [Description("Component GUID for list filter or clear")] string id = null,
             [Description("Alias for id (for list filter)")] string componentId = null)

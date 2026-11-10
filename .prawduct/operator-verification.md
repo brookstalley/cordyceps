@@ -419,3 +419,119 @@ only exists in a running document.
    `Source: 'sourceParam' is required for a component — …` instead of silently disconnecting port 0.
 5. `gh_canvas(action='modifier', id='...', side='input', param='2')` still reports the same
    out-of-range message it did before this change (unchanged behaviour, now from the shared rule).
+
+## VRF-016 — strict-inputs Chunk 01 — every Cordyceps component is protected infrastructure
+
+**Status:** pending
+**Added:** 2026-11-09 (strict-inputs, #88)
+**Where to verify:** Rhino 8 + Grasshopper with an MCP client connected.
+
+**Why this needs a human:** `Core/InfrastructureIds` is unit-tested, but the adapter that gathers
+each bridge's wired neighbours through `Attributes.GetTopLevel.DocObject` needs live objects.
+
+**Verify:**
+
+1. Place two Cordyceps components on one canvas (the second on a different port). Wire a slider or
+   panel into each, and put a group around one of them.
+2. `gh_canvas(action='list')` shows neither component, neither wired neighbour, nor the group.
+3. `gh_canvas(action='delete', id=<second component's id>)` is refused as protected.
+4. `gh_document(action='clear')` leaves both components, their neighbours and the group in place.
+
+## VRF-017 — strict-inputs Chunk 02 — unknown tool arguments are an error
+
+**Status:** pending
+**Added:** 2026-11-09 (strict-inputs, #89)
+**Where to verify:** any MCP client connected to a running Cordyceps.
+
+**Why this needs a human:** `Core/ToolArgumentBinder` is unit-tested, but that a real client
+receives the error as a tool result (`isError: true`) rather than a protocol failure, and still
+sends its ordinary calls unchanged, only shows over a live connection.
+
+**Verify:**
+
+1. `gh_wire(action='list', sourceid='x')` returns `Unknown argument: 'sourceid' (did you mean
+   'sourceId'?). Valid parameters: …` (singular: one unknown name) and nothing runs. With two
+   unknown names, e.g. `sourceid='x', targetid='y'`, it returns `Unknown arguments: 'sourceid'
+   (did you mean 'sourceId'?), 'targetid' (did you mean 'targetId'?). Valid parameters: …`.
+2. An ordinary call from the client in use (Claude Code, Claude Desktop through `mcp-remote`)
+   still works — the client is not adding arguments of its own that are now refused.
+3. A call with no arguments object at all (`gh_inspect` with only `action`) still works.
+
+## VRF-018 — strict-inputs Chunk 03 — component types and ports resolve strictly
+
+**Status:** pending
+**Added:** 2026-11-09 (strict-inputs, #90)
+**Where to verify:** Rhino 8 + Grasshopper with the Cordyceps component placed and an MCP client connected.
+
+**Why this needs a human:** `Core/Naming/TypeNameRule` and `Core/ParamSpecLookup` are unit-tested
+against a test catalog. Which names are unique in a real install, whether the five pinned GUIDs
+match the installed built-ins, and that nothing lands on the canvas after a refusal need a live host.
+
+**Verify:**
+
+1. `gh_canvas(action='add', type=…)` succeeds for each of: `Number Slider` (range 0..1, value 0.5),
+   `slider` with `min=0, max=100, value=50`, `Panel`, `python`, `c#`, `csharp Script`, `filter`,
+   `Merge` (created, not ambiguous), `Curve/Circle`, `Circle (Curve)`, `Curve/Primitive/Circle`,
+   `Center Box`, `Curve/Interpolate`, `Transform/Rotate`.
+2. `type='Circle'` returns `code: ambiguous_name` listing a Curve component and a Params parameter,
+   each with a `use` spelling, and **nothing is added to the canvas**.
+3. `type='Cull'` returns `code: unknown_type` with Cull Pattern among the suggestions; nothing added.
+4. `type='Kangaroo2/Goals-Pt/Anchor'` without Kangaroo returns `code: unknown_category`. A random
+   GUID returns `guid_not_installed`; a real component GUID creates it.
+5. The pinned names create the pinned GUIDs: `Panel` (59e0b89a-…), `Number Slider` (57da07bd-…),
+   `C# Script` (b6ba1144-…), and `Python 3 Script`, which creates the unified **Script** component
+   (c9b2d725-…, named "Script"), not the dedicated Python 3 Script (719467e6-… in this install) —
+   unchanged from before this branch; `Maths/Python 3 Script` creates the dedicated one. A pin whose
+   GUID is not installed falls back to the ordinary rule silently, and a pin whose GUID is installed
+   as a differently named type creates that type silently, so check the created object's type and
+   GUID, not only that something was created. `Stream Filter`'s pinned GUID (fb97f83d-…) is not
+   installed in this install, so it resolves by the ordinary rule to eeafc956-… (Sets/Tree).
+6. `gh_wire(action='connect')` from a slider to a Circle: `targetParam='R'`, `'radius'` and `'1'`
+   connect; `'Rad'` is refused with `Did you mean 'R' …` and **no wire is created**.
+7. On Cull Pattern, `targetParam='Pattern'` is refused with the suggestion `'P'`.
+   `gh_canvas(action='modifier')` with a partial `param` is refused the same way.
+8. `gh_inspect(action='docs', component='Curve/Circle')` works; `component='Circle'` returns the
+   ambiguity payload. `gh://component/Curve/Circle` and `gh://component/Number%20Slider` render.
+9. The names the corrected guide tables rely on resolve with `add`: Revolution, Cylinder, Sphere,
+   Solid Union, Mirror, Scale, Range, Length, Area, Distance, Repeat Data, Boolean Toggle, Center
+   Box, Cull Pattern, Merge, Addition, `Curve/Circle`, `Curve/Interpolate`, `Transform/Rotate`.
+   Plain `Rotate` is ambiguous (Vector/Vector and Transform/Euclidean).
+10. Adding a type whose only match is deprecated returns `deprecated: true` and a `warning`.
+11. Every shorthand alias creates the type listed (check the created object's type and category,
+    not only success): `c#`, `csharp`, `csharp script` → C# Script; `python`, `python script`,
+    `ghpython` → unified Script (see item 5); `plane`, `xyplane`, `xy` → XY Plane; `xzplane`, `xz`
+    → XZ Plane; `yzplane`, `yz` → YZ Plane (all Vector/Plane); `cube` → Box (Params/Geometry);
+    `rect` → Params/Rectangle; `circ` → Params/Circle; `ln` → Params/Line; `cyl` → Cylinder
+    (Surface/Primitive); `pt` → Point, `crv` → Curve (Params/Geometry); `num` → Number, `int` →
+    Integer, `bool` → Boolean, `str` and `string` → Text (Params/Primitive); `slider`,
+    `numberslider` → Number Slider; `filter`, `streamfilter` → Stream Filter.
+12. `Knowledge/Patterns/GridArray.md`: `type='Rectangular'` creates the Vector/Grid component, and
+    from an XY Plane, sliders and the grid, `targetParam` values `Plane`, `Extent X`, `Extent Y`,
+    `Size X`, `Size Y` (and nicknames `P`, `Ex`, `Ey`, `Sx`, `Sy`) connect; `type='Hexagonal'`
+    resolves. Option B: `Series` (`Start`, `Step`, `Count`), `Cross Reference` (`A`, `B`) and
+    `Construct Point` (`X`, `Y`, `Z`) resolve and those ports connect.
+
+13. `gh_canvas(action='search')` and `add` agree on deprecation: pick a name with a deprecated twin
+    (`Merge`, `Addition`, `Mirror`), search for it, and confirm every result `add` passes over is
+    marked `deprecated: true` in the search results.
+
+**Evidence gathered 2026-11-09 against the installed v1.5.0** (read-only `gh_canvas(action='search')`,
+`gh_inspect(action='docs')` and `gh://component/{name}`; this proves the names exist and how many
+current types carry each in this install, not that the new code resolves them — items 1-13 still
+need running on a build of this branch). Search's `deprecated` flag in v1.5.0 omits the
+`OBSOLETE`-class-name test that `add` uses, so these counts are upper bounds for "current".
+- Exactly one current type: C# Script (b6ba1144-…, the pinned GUID), Python 3 Script
+  (719467e6-…), Script (c9b2d725-…), Stream Filter (eeafc956-…), Panel, Number Slider (both the
+  pinned GUIDs), XY/XZ/YZ Plane, Box, Cylinder, Point, Curve, Number, Integer, Boolean, Text,
+  Revolution, Sphere, Solid Union, Mirror, Scale, Range, Length, Area, Distance, Repeat Data,
+  Boolean Toggle, Center Box, Cull Pattern, Merge, Addition, Interpolate, Arc, Rectangular,
+  Hexagonal, Series, Cross Reference, Construct Point, Plane Normal.
+- Two current types, a component and a parameter: Rectangle, Circle, Line (hence the qualified
+  `rect`/`circ`/`ln` targets). `Rotate`: two components (Vector/Vector, Transform/Euclidean).
+- Not a type: `Rectangular Grid` (the component is `Rectangular`), `Hexagonal Grid`.
+- Ports confirmed by name and nickname: Rectangular and Hexagonal (`Plane`, `Size X`/`Size`,
+  `Extent X`, `Extent Y`), Circle (`Plane` P, `Radius` R), Cull Pattern (`Cull Pattern` P), Series,
+  Cross Reference (`List (A)` A, `List (B)` B), Construct Point (`X coordinate` X …), XY Plane
+  (`Origin`), Plane Normal (`Origin`, `Z-Axis`), Move (`Geometry`, `Motion`), Transform/Rotate
+  (`Geometry`, `Angle`, `Plane`), Scale (`Geometry`, `Center`, `Factor`), Mirror (`Geometry`,
+  `Plane`).
