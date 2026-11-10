@@ -2,6 +2,10 @@ using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
+using Cordyceps.Core.Naming;
+
+// The strict name steps and their suggestions are adapted from Hyperceps
+// (https://github.com/yang-yibinn/hyperceps) by Yibin Yang, MIT License.
 
 namespace Cordyceps.Core
 {
@@ -53,20 +57,18 @@ namespace Cordyceps.Core
     /// <summary>
     /// Pure, host-free rule for reading the parameter spec every tool accepts — the <c>param</c>,
     /// <c>sourceParam</c> and <c>targetParam</c> arguments — against one side (inputs or outputs)
-    /// of a component.
-    ///
-    /// <para>The rule that matters: <b>a numeric spec means an index and nothing else.</b> An index
-    /// past the end of the list is refused with the valid range, never retried as a name. The wire
-    /// tool used to fold the range check into the same condition as the numeric parse, so
-    /// <c>targetParam='2'</c> against a two-input component fell through to the substring matcher
-    /// and connected to a parameter merely called something like <c>Plane 2</c> — reporting success
-    /// on a port the caller never asked for. Grasshopper auto-numbers duplicated nicknames on
-    /// exactly the variable-parameter components these tools target, so digit-bearing names are
-    /// ordinary there rather than exotic.</para>
-    ///
-    /// <para>A spec that is genuinely a name is matched exactly (against name or nickname) first,
-    /// and only then by substring against the name — unchanged, and deliberately so: an agent that
-    /// asks for <c>Pl</c> is guessing at a name, whereas one that asks for <c>2</c> is not.</para>
+    /// of a component. Strict, so a call never "succeeds" on a port nobody asked for:
+    /// <list type="number">
+    /// <item><b>A numeric spec means a 0-based index and nothing else.</b> An index past the end of
+    /// the list is refused with the valid range, never retried as a name. Grasshopper auto-numbers
+    /// duplicated nicknames on exactly the variable-parameter components these tools target, so
+    /// digit-bearing names (<c>Plane 2</c>) are ordinary and must not catch a stray index.</item>
+    /// <item>Otherwise a port whose name or nickname equals the spec exactly is used.</item>
+    /// <item>Failing that, a match that ignores case is used only when it is the only one.</item>
+    /// <item>More than one match at either step is an error listing them. A partial name is never
+    /// used: it is an error that suggests the near ports and lists every port on the side.</item>
+    /// </list>
+    /// The side is the caller's: a name that exists only on the other side is still not found.
     /// </summary>
     public static class ParamSpecLookup
     {
@@ -95,7 +97,7 @@ namespace Cordyceps.Core
             if (parameters.Count == 0)
                 return ParamLookupResult.Failed($"Component '{ownerName}' has no {sideName} parameters");
 
-            var available = string.Join(", ", parameters.Select(p => p.Name));
+            var available = Available(parameters);
 
             if (string.IsNullOrWhiteSpace(paramSpec))
                 return ParamLookupResult.Failed(
@@ -117,29 +119,121 @@ namespace Cordyceps.Core
             }
 
             // A spec written as a number but too large to fit in an int is still a number. Letting
-            // it fall through to the name matchers would reopen this very defect at the far end of
-            // the range, so it is refused the same way an in-range parse that misses is.
+            // it fall through to the name matchers would let it land on a digit-bearing name, so it
+            // is refused the same way an in-range parse that misses is.
             if (IsAsciiInteger(spec))
                 return ParamLookupResult.Failed(
                     $"Parameter index '{spec}' is out of range for the {sideName} side " +
                     $"(0-{parameters.Count - 1}). Available: {available}");
 
-            for (int i = 0; i < parameters.Count; i++)
-            {
-                if (parameters[i].Name.Equals(spec, StringComparison.OrdinalIgnoreCase) ||
-                    parameters[i].NickName.Equals(spec, StringComparison.OrdinalIgnoreCase))
-                    return ParamLookupResult.Resolved(i);
-            }
+            var byName = MatchName(spec, parameters);
+            if (byName.Index >= 0)
+                return ParamLookupResult.Resolved(byName.Index);
 
-            for (int i = 0; i < parameters.Count; i++)
+            if (byName.Matches != null)
             {
-                if (parameters[i].Name.IndexOf(spec, StringComparison.OrdinalIgnoreCase) >= 0)
-                    return ParamLookupResult.Resolved(i);
+                var listed = string.Join(", ", byName.Matches.Select(i => Describe(parameters, i)));
+                var fix = byName.CaseOnly
+                    ? "write the exact case, or pass the 0-based index"
+                    : "pass the 0-based index instead";
+                return ParamLookupResult.Failed(
+                    $"Parameter '{spec}' is ambiguous on the {sideName} side of '{ownerName}': it matches " +
+                    $"{byName.Matches.Count} parameters{(byName.CaseOnly ? " when case is ignored" : "")} " +
+                    $"({listed}) — {fix}. Available: {available}");
             }
 
             return ParamLookupResult.Failed(
                 $"Parameter '{spec}' not found on the {sideName} side of '{ownerName}'. " +
-                $"Available: {available}");
+                "A name must equal a parameter's name or nickname (case is ignored only when that " +
+                "leaves one match); partial names are not matched." +
+                DidYouMean(spec, parameters) +
+                $" Available: {available}");
+        }
+
+        /// <summary>
+        /// The name steps of the rule: an exact match, else a unique case-insensitive one. Returns
+        /// the index, or the competing indices when a step matched more than one, or neither.
+        /// </summary>
+        private static (int Index, List<int> Matches, bool CaseOnly) MatchName(
+            string spec, IReadOnlyList<ParamIdentity> parameters)
+        {
+            var exact = Indices(parameters, p =>
+                string.Equals(p.Name, spec, StringComparison.Ordinal) ||
+                string.Equals(p.NickName, spec, StringComparison.Ordinal));
+            if (exact.Count == 1) return (exact[0], null, false);
+            if (exact.Count > 1) return (-1, exact, false);
+
+            var caseless = Indices(parameters, p =>
+                p.Name.Equals(spec, StringComparison.OrdinalIgnoreCase) ||
+                p.NickName.Equals(spec, StringComparison.OrdinalIgnoreCase));
+            if (caseless.Count == 1) return (caseless[0], null, true);
+            if (caseless.Count > 1) return (-1, caseless, true);
+
+            return (-1, null, false);
+        }
+
+        /// <summary>
+        /// Up to three ports whose name or nickname overlaps the spec, else the one nearest by edit
+        /// distance, each offered in a spelling that resolves to it (nickname, name, else index).
+        /// </summary>
+        private static string DidYouMean(string spec, IReadOnlyList<ParamIdentity> parameters)
+        {
+            var near = Indices(parameters, p =>
+                NameSuggestions.Overlaps(p.Name, spec) || NameSuggestions.Overlaps(p.NickName, spec));
+
+            if (near.Count == 0)
+            {
+                var closest = NameSuggestions.Closest(spec, parameters.SelectMany(p => new[] { p.NickName, p.Name }));
+                if (closest != null)
+                    near = Indices(parameters, p => p.NickName == closest || p.Name == closest);
+            }
+
+            if (near.Count == 0) return string.Empty;
+
+            return " Did you mean " +
+                   string.Join(" or ", near.Take(3).Select(i => $"'{SpellingFor(parameters, i)}' ({Describe(parameters, i)})")) +
+                   "?";
+        }
+
+        /// <summary>
+        /// A spelling that resolves to port <paramref name="index"/> alone: its nickname, else its
+        /// name, else the index. Checked by running the rule, so what is offered works.
+        /// </summary>
+        private static string SpellingFor(IReadOnlyList<ParamIdentity> parameters, int index)
+        {
+            var p = parameters[index];
+            foreach (var spelling in new[] { p.NickName, p.Name })
+            {
+                if (string.IsNullOrWhiteSpace(spelling) || spelling != spelling.Trim() || IsAsciiInteger(spelling)) continue;
+                if (MatchName(spelling, parameters).Index == index) return spelling;
+            }
+            return index.ToString(CultureInfo.InvariantCulture);
+        }
+
+        /// <summary><c>1 P (Cull Pattern)</c>: the index, the nickname, and the name when it differs.</summary>
+        private static string Describe(IReadOnlyList<ParamIdentity> parameters, int index)
+        {
+            var p = parameters[index];
+            return p.NickName == p.Name ? $"{index} {p.Name}" : $"{index} {p.NickName} ({p.Name})";
+        }
+
+        /// <summary>
+        /// The side's names in port order, then their nicknames when any differs, so the caller can
+        /// pick either spelling.
+        /// </summary>
+        private static string Available(IReadOnlyList<ParamIdentity> parameters)
+        {
+            var names = string.Join(", ", parameters.Select(p => p.Name));
+            if (parameters.All(p => p.NickName == p.Name)) return names;
+            return $"{names} (nicknames: {string.Join(", ", parameters.Select(p => p.NickName))})";
+        }
+
+        private static List<int> Indices(IReadOnlyList<ParamIdentity> parameters, Func<ParamIdentity, bool> test)
+        {
+            var result = new List<int>();
+            for (int i = 0; i < parameters.Count; i++)
+                if (test(parameters[i])) result.Add(i);
+            return result;
         }
 
         /// <summary>

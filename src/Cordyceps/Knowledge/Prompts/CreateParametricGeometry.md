@@ -20,16 +20,22 @@ gh_canvas(action='group_create', name='Parameters', ids='[slider_ids]')
 ```
 
 ## Step 3: Create Geometry Component
-Based on your geometry type, add the appropriate component:
-- Circle: `gh_canvas(action='add', type='Circle', x=300, y=50)`
-- Box: `gh_canvas(action='add', type='Box', x=300, y=50)`
-- Curve: `gh_canvas(action='add', type='Interpolate', x=300, y=50)`
+Based on your geometry type, add the appropriate component. Type names are exact — `Circle` alone
+is ambiguous (a component and a parameter share it), so the category is part of the name:
+- Circle: `gh_canvas(action='add', type='Curve/Circle', x=300, y=50)`
+- Box: `gh_canvas(action='add', type='Center Box', x=300, y=50)`
+- Curve: `gh_canvas(action='add', type='Curve/Interpolate', x=300, y=50)`
+
+If an add fails, the error lists the matching types (or near names) with a `use` spelling for each —
+retry with one of those, or find the exact name with `gh_canvas(action='search', query='...')`.
 
 ## Step 4: Create Connections
-Connect sliders to geometry inputs:
+Connect sliders to geometry inputs. Name a port by its exact name or nickname, or by index;
+`gh_canvas(action='info', id=...)` lists them. For the Circle:
 ```
 gh_wire(action='connect', sourceId=[slider_id], sourceParam='0', targetId=[geometry_id], targetParam='Radius')
 ```
+(Center Box takes `X`, `Y`, `Z`; Interpolate takes `Vertices`.)
 
 ## Step 5: Enable Solver and Verify
 ```

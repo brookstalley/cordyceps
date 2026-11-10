@@ -182,6 +182,11 @@ dotnet build src/Cordyceps/Cordyceps.csproj -c Release
 
 Only Release builds are supported — a Debug build (the `dotnet build` default) fails with an error.
 
+## Acknowledgements
+
+- [grasshopper-mcp](https://github.com/alfredatnycu/grasshopper-mcp) by Alfred Chen — the project that inspired Cordyceps.
+- [Hyperceps](https://github.com/yang-yibinn/hyperceps) by Yibin Yang — a fork of Cordyceps that pushed it somewhere genuinely new. The strict naming rules Cordyceps now uses for component types and ports (exact names, nothing ever guessed, and errors that list the candidates and say how to write the call) are adapted from Hyperceps, with thanks. Yibin's work on making a whole block of edits in one validated call, compact canvas reads, data-tree inspection and slider sweeps is shaping where Cordyceps goes next.
+
 ---
 
-[Changelog](CHANGELOG.md) · Inspired by [grasshopper-mcp](https://github.com/alfredatnycu/grasshopper-mcp) by Alfred Chen · MIT License
+[Changelog](CHANGELOG.md) · Inspired by [grasshopper-mcp](https://github.com/alfredatnycu/grasshopper-mcp) by Alfred Chen · Naming rules adapted from [Hyperceps](https://github.com/yang-yibinn/hyperceps) by Yibin Yang · MIT License

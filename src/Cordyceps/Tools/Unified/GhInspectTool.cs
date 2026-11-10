@@ -99,8 +99,8 @@ namespace Cordyceps.Tools.Unified
                     Name = "docs",
                     Description = "Get documentation for a component type (name/category/inputs/outputs)",
                     Required = new[] { "component" },
-                    Example = "action='docs', component='Circle'",
-                    Tips = new[] { "If the component proxy can't be introspected, the response sets paramsUnavailable=true with a note — empty inputs/outputs then mean 'introspection failed', not 'no parameters'." }
+                    Example = "action='docs', component='Curve/Circle'",
+                    Tips = new[] { "component is resolved exactly as gh_canvas(action='add') resolves type: exact name (case ignored), 'Category/Name', 'Category/Subcategory/Name', or GUID. An ambiguous or unknown name is an error listing the matches or suggestions, each with a 'use' spelling.", "If the component proxy can't be introspected, the response sets paramsUnavailable=true with a note — empty inputs/outputs then mean 'introspection failed', not 'no parameters'." }
                 },
                 ["help"] = new ActionInfo
                 {
@@ -128,7 +128,7 @@ namespace Cordyceps.Tools.Unified
             [Description("Category filter")] string category = null,
             [Description("Component type filter")] string type = null,
             [Description("Trace direction (upstream/downstream)")] string direction = "upstream",
-            [Description("Component name or GUID for docs")] string component = null,
+            [Description("Component type for docs: exact name, 'Category/Name', or GUID (never matched partially)")] string component = null,
             [Description("Log entry limit")] int limit = 100,
             [Description("Clear log after retrieval (true/false)")] string clear = null)
         {
@@ -472,13 +472,14 @@ namespace Cordyceps.Tools.Unified
         {
             return _context.ExecuteOnUiThread(() =>
             {
-                IGH_ObjectProxy proxy = null;
-                if (Guid.TryParse(component, out Guid guid))
-                    proxy = Instances.ComponentServer.ObjectProxies.FirstOrDefault(p => p.Guid == guid);
-                else
-                    proxy = Instances.ComponentServer.ObjectProxies.FirstOrDefault(p =>
-                        p.Desc.Name.Equals(component, StringComparison.OrdinalIgnoreCase));
+                // The same strict rule gh_canvas(action='add') uses, so docs describe exactly the
+                // type an add with the same text would create.
+                var resolution = ComponentRegistry.ResolveType(component);
+                if (!resolution.IsResolved)
+                    return JsonConvert.SerializeObject(Core.Naming.TypeNameRule.ErrorPayload(resolution,
+                        argName: "component", consequence: "No documentation was returned."));
 
+                var proxy = Instances.ComponentServer.ObjectProxies.FirstOrDefault(p => p.Guid == resolution.Match.Guid);
                 if (proxy == null)
                     return ToolHelpers.ErrorResponse($"Component not found: {component}");
 
