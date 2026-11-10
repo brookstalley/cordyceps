@@ -50,6 +50,7 @@
     <Compile Include="..\Cordyceps\Core\PlaceImageValidation.cs" Link="PlaceImageValidation.cs" />
     <Compile Include="..\Cordyceps\Core\ParseHelpers.cs" Link="ParseHelpers.cs" />
     <!-- canvas-read 02: link this chunk's new host-free files directly below -->
+    <Compile Include="..\Cordyceps\Core\IdBatch.cs" Link="IdBatch.cs" />
     <Compile Include="..\Cordyceps\Core\ResponseHelpers.cs" Link="ResponseHelpers.cs" />
     <Compile Include="..\Cordyceps\Core\McpNaming.cs" Link="McpNaming.cs" />
     <Compile Include="..\Cordyceps\Core\PromptTemplate.cs" Link="PromptTemplate.cs" />

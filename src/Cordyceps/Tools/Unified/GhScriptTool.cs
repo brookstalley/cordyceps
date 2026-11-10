@@ -95,7 +95,8 @@ namespace Cordyceps.Tools.Unified
                 "Works with C# Script and Python 3 Script components",
                 "Source is written through the component's SetSource method when it has one, otherwise its writable Code property; a component with neither fails with an error naming the type and what was probed — never a silent no-op",
                 "Writing source does not recompile on its own — set/configure ask the component to rebuild and then read the running program back, so 'success' means the new code is the one that will run",
-                "access values: 'item' (default), 'list', 'tree'"
+                "access values: 'item' (default), 'list', 'tree'",
+                "Ids: 'id' names the script component by its GUID, an 8+ hex GUID prefix, or its unique nickname (exact, case-sensitive); a name two objects share is refused with both ids"
             }
         };
 
@@ -107,7 +108,7 @@ namespace Cordyceps.Tools.Unified
         [McpServerTool, Description("Script operations. Actions: get|set|configure|info|help")]
         public string GhScript(
             [Description("Action to perform")] string action,
-            [Description("Script component GUID")] string id = null,
+            [Description("Script component. Object: GUID, 8+ hex GUID prefix, or unique nickname")] string id = null,
             [Description("Source code")] string code = null,
             [Description("JSON array of input definitions")] string inputs = null,
             [Description("JSON array of output definitions")] string outputs = null)
