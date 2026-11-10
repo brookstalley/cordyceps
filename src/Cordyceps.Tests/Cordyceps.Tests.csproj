@@ -36,6 +36,7 @@
     <Compile Include="..\Cordyceps\Core\DataModifiers.cs" Link="DataModifiers.cs" />
     <Compile Include="..\Cordyceps\Core\ParamSyncPlan.cs" Link="ParamSyncPlan.cs" />
     <Compile Include="..\Cordyceps\Core\InfrastructureIds.cs" Link="InfrastructureIds.cs" />
+    <!-- canvas-read 01: link this chunk's new host-free files directly below -->
     <Compile Include="..\Cordyceps\Core\ParamSpecLookup.cs" Link="ParamSpecLookup.cs" />
     <Compile Include="..\Cordyceps\Core\Naming\NameSuggestions.cs" Link="Naming\NameSuggestions.cs" />
     <Compile Include="..\Cordyceps\Core\Naming\TypeNameRule.cs" Link="Naming\TypeNameRule.cs" />
@@ -44,6 +45,7 @@
     <Compile Include="..\Cordyceps\Core\UnifiedToolHelpers.cs" Link="UnifiedToolHelpers.cs" />
     <Compile Include="..\Cordyceps\Core\PlaceImageValidation.cs" Link="PlaceImageValidation.cs" />
     <Compile Include="..\Cordyceps\Core\ParseHelpers.cs" Link="ParseHelpers.cs" />
+    <!-- canvas-read 02: link this chunk's new host-free files directly below -->
     <Compile Include="..\Cordyceps\Core\ResponseHelpers.cs" Link="ResponseHelpers.cs" />
     <Compile Include="..\Cordyceps\Core\McpNaming.cs" Link="McpNaming.cs" />
     <Compile Include="..\Cordyceps\Core\PromptTemplate.cs" Link="PromptTemplate.cs" />
@@ -51,9 +53,11 @@
     <Compile Include="..\Cordyceps\Core\JsonRpcEnvelope.cs" Link="JsonRpcEnvelope.cs" />
     <Compile Include="..\Cordyceps\Core\ServerState.cs" Link="ServerState.cs" />
     <Compile Include="..\Cordyceps\Core\SnapshotStore.cs" Link="SnapshotStore.cs" />
+    <!-- canvas-read 03: link this chunk's new host-free files directly below -->
     <Compile Include="..\Cordyceps\Core\SolverState.cs" Link="SolverState.cs" />
     <Compile Include="..\Cordyceps\Core\StatusEnvelope.cs" Link="StatusEnvelope.cs" />
     <Compile Include="..\Cordyceps\Core\ToolArgumentBinder.cs" Link="ToolArgumentBinder.cs" />
+    <!-- canvas-read 04: link this chunk's new host-free files directly below -->
   </ItemGroup>
 
 </Project>

@@ -102,6 +102,9 @@ namespace Cordyceps.Tools.Unified
                     Optional = new[] { "category", "typeFilter", "group" },
                     Example = "action='list' OR action='list', category='Curve' OR action='list', typeFilter='Number Slider'"
                 },
+                // A method call, not a static field: static initialisers in different partial
+                // files have no defined order, so a field there could still be null here.
+                ["outline"] = OutlineActionInfo(),
                 ["info"] = new ActionInfo
                 {
                     Name = "info",
@@ -318,7 +321,7 @@ namespace Cordyceps.Tools.Unified
             _context = context;
         }
 
-        [McpServerTool, Description("Component operations. Actions: add|delete|move|rename|find|search|list|info|bounds|validate|constant|bake|zoom|view|get|set|config|preview|enable|group_create|group_delete|group_add|group_remove|group_list|group_rename|group_color|group_move|zoomable|modifier|help")]
+        [McpServerTool, Description("Component operations. Actions: add|delete|move|rename|find|search|list|outline|info|bounds|validate|constant|bake|zoom|view|get|set|config|preview|enable|group_create|group_delete|group_add|group_remove|group_list|group_rename|group_color|group_move|zoomable|modifier|help")]
         public string GhCanvas(
             [Description("Action to perform")] string action,
             [Description("Component type for 'add' (exact name, 'Category/Name', 'Category/Subcategory/Name', or GUID; never matched partially), search query for 'search', or type filter for 'list'")] string type = null,
@@ -360,7 +363,9 @@ namespace Cordyceps.Tools.Unified
             [Description("Port for 'modifier': exact name or nickname, or 0-based index (never matched partially)")] string param = null,
             [Description("Data mapping for 'modifier': 'none', 'flatten', or 'graft'")] string mapping = null,
             [Description("Simplify state for 'modifier': true or false")] string simplify = null,
-            [Description("Reverse state for 'modifier': true or false")] string reverse = null)
+            [Description("Reverse state for 'modifier': true or false")] string reverse = null,
+            // Outline params
+            [Description("Wires each way for outline id= (1-10, default 2)")] int depth = 0)
         {
             // Handle help action
             if (string.Equals(action, "help", StringComparison.OrdinalIgnoreCase))
@@ -409,7 +414,9 @@ namespace Cordyceps.Tools.Unified
                 ("param", param),
                 ("mapping", mapping),
                 ("simplify", simplify),
-                ("reverse", reverse)
+                ("reverse", reverse),
+                // Outline params (0 = not given)
+                ("depth", depth != 0 ? (object)depth : null)
             );
 
             // 'type' doubles as the search query (documented on the param), so let a provided
@@ -446,6 +453,7 @@ namespace Cordyceps.Tools.Unified
                 "find" => ActionFind(nickname, exact),
                 "search" => ActionSearch(query ?? type, category, limit),
                 "list" => ActionList(category, typeFilter ?? type, group),
+                "outline" => ActionOutline(id, group, depth),
                 "info" => ActionInfo(id),
                 "bounds" => ActionBounds(id),
                 "validate" => ActionValidate(),
