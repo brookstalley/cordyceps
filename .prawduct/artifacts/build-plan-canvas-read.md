@@ -5,7 +5,7 @@ scope: canvas-read
 branch: feat/canvas-read
 depends_on: []
 governed_by: [.prawduct/artifacts/project-preferences.md, .prawduct/artifacts/boundary-patterns.md]
-partition: coordinator prep commit first; then 01 and 03 delegated in parallel; then 02 and 04 delegated in parallel (04 also waits for 03); isolated worktrees with disjoint files per the ownership lists; the coordinator owns 05 (CHANGELOG, server instructions, guides, README, CLAUDE.md, verification queue, fragment) and the combined run
+partition: (06-08, added after the owner's second rulings) 06 and 07 delegated in parallel in isolated worktrees, 06 owning the resolve rule and the removal actions, 07 owning display names, the outline view and status; 08 documentation delegated after both merge; the coordinator owns merges, the combined run and one cumulative review naming 06, 07 and 08. (01-05) coordinator prep commit first; then 01 and 03 delegated in parallel; then 02 and 04 delegated in parallel (04 also waits for 03); isolated worktrees with disjoint files per the ownership lists; the coordinator owns 05 (CHANGELOG, server instructions, guides, README, CLAUDE.md, verification queue, fragment) and the combined run
 last_validated: 2026-11-09
 ---
 
@@ -50,6 +50,21 @@ Critic mode: per-chunk reviews (inferred for a five-chunk plan), with Chunk 01 o
   choke points. Batch refs are not part of this wave. (4) Hyperceps credit stays accurate.
   (5) Out of scope: edit transaction and undo (#91), solve policy and bounded solve, batch, sweep,
   the control-value helper, agent guidance and benchmark, and Lichen/decorators.
+- **Owner rulings, second set (2026-11-09, after seeing the built wave):** (6) A default nickname
+  never selects the target of a destructive action: "Refuse defaults, too dangerous. Destructive
+  actions should be clear. If not, teaching errors should help the caller figure out how to do it
+  properly and precisely." This replaces the inference below that default nicknames resolve
+  everywhere. (7) `gh_inspect status` is expanded to read parameter objects as well as components
+  (issue #106). (8) An outline line distinguishes the object's name from its type, "even if it's a
+  major breaking change" (issue #104). (9) Open the PR and merge when ready.
+  *Inferred from ruling 6:* "destructive" means an action that removes something from the canvas:
+  `delete`, `group_delete`, `gh_wire clear` and `gh_wire disconnect`. Actions that change a value
+  or a position are not in the list.
+  *Inferred from ruling 7:* status reads the same population outline reads, in the same entry
+  shape, under the existing `components` key, so its counts and outline's agree.
+  *Inferred from ruling 8:* the separator is the field separator the grammar already has
+  (`NAME · Type`), and a nickname is printed as a name only when it can be cut out of its line
+  without ambiguity; otherwise the id is printed.
 - **Product:** an agent can orient on a definition in one call, at about a tenth of today's tokens.
   Today orienting takes `list` + `gh_wire list` + `group_list` (about 50 KB for a 100-object
   canvas), and that still lacks values and counts (read-probe report 1.1). The agent can also see a
@@ -92,9 +107,8 @@ Critic mode: per-chunk reviews (inferred for a five-chunk plan), with Chunk 01 o
     is not trimmed. A near miss gets a "Did you mean" suggestion, never a match. `find`, `search`
     and `list typeFilter=` keep their loose matching because they return candidates and select
     nothing (same reasoning as strict-inputs).
-  - *Inferred:* default nicknames ("Circle", "Pt") are nicknames and resolve when unique, on
-    destructive actions too. Owner ruling 1 covers strict names everywhere, and the ambiguity error
-    is safe. This is the one item flagged for the owner below.
+  - *Superseded by owner ruling 6:* the first build let a unique default nickname ("Circle", "Pt")
+    resolve on destructive actions too. It still resolves on every other action.
   - *Inferred:* moving `status`, `trace`, `list`, `group_list` and `gh_wire list` onto the snapshot
     is not in this wave. The exception is `status`'s per-object classification (see above), because
     outline cannot be honest about DISCONNECTED without sharing it.
@@ -744,6 +758,92 @@ Visual change: yes. Queued live checks:
 
 The delegate's report gives the final grammar as implemented (the golden strings), for 05 to
 transcribe.
+
+### Chunk 06: a default nickname never selects what a destructive action removes
+Type: code (contract). Breaking against Chunks 01-02 as first built (unreleased).
+
+Contract (C1, rule 9, new):
+- The resolver takes the caller's intent: ordinary or destructive. Destructive is passed by
+  `gh_canvas` `delete` and `group_delete`, and by `gh_wire` `clear` and `disconnect` (every id
+  they take, single or in a list).
+- Under destructive intent, a nickname reading that lands on an entry whose nickname is the type's
+  default (for a group, Grasshopper's default group name) does not resolve, even when it is the
+  only match. A GUID, a GUID prefix, and a nickname someone set resolve as before.
+- The error teaches the precise call: it names the object by type and display id, says why the
+  name was refused (a default nickname is shared by every new object of that type, so it cannot
+  safely pick what to remove), and gives the two ways forward: pass the id it prints, or rename
+  the object first. When several objects carry the default nickname, the existing ambiguity error
+  applies and already lists each id.
+- Per-entry actions keep their result shape: in `delete ids=[…]` the refused entry fails and the
+  others proceed, as with any unresolved entry.
+- Non-destructive actions are unchanged.
+
+Deliverables:
+- [ ] `src/Cordyceps/Core/Canvas/ObjectResolver.cs`: the intent parameter, the refusal and its text.
+- [ ] `src/Cordyceps/Core/ToolHelpers.cs` and `src/Cordyceps/Core/IdBatch.cs`: the intent carried
+  through the lookups, required at the call site so a new removal action cannot forget to decide
+  (the shape the group refusal already uses).
+- [ ] `src/Cordyceps/Tools/Unified/GhCanvasTool.cs`, `src/Cordyceps/Tools/Unified/GhCanvasTool.Groups.cs`
+  and `src/Cordyceps/Tools/Unified/GhWireTool.cs`: the four actions pass destructive intent; their
+  `ActionInfo` tips and parameter descriptions say so.
+- [ ] `src/Cordyceps.Tests/ObjectResolverTests.cs` and `src/Cordyceps.Tests/IdBatchTests.cs`: a
+  unique default nickname refused under destructive intent and resolved under ordinary intent; a
+  set nickname, a GUID and a prefix resolved under both; the default group name; the exact error
+  text; a mixed `ids` list.
+
+What proves it: Release build plus the resolver, id-batch and parse test classes.
+Owns: the files above. Must not touch: `DisplayNames` (it lives in the resolver's file but is 07's),
+the outline files, `src/Cordyceps/Tools/Unified/GhInspectTool.cs`, every markdown file, `.prawduct/`.
+
+### Chunk 07: status reads every object; outline separates name from type
+Type: code (contract). Breaking for `status` consumers and for the outline grammar (unreleased).
+
+Contract:
+- **Status (issue #106).** `gh_inspect(action='status')` reads the population outline reads:
+  components and parameter objects that have solve state, infrastructure excluded. Entries keep
+  their shape and stay under `components`. A parameter object is ERROR or WARNING by its message
+  level and otherwise OK; it has no inputs to be DISCONNECTED. `summary` counts them. The
+  `category` filter keeps its meaning. Outline's `problems`, `next` text and help stop saying that
+  problems on parameter objects appear only in outline.
+- **Outline line heads (issue #104).** An object line, a control line and a problem line start
+  `NAME · Type` (the grammar's field separator), where today they start `NAME Type`. Inline
+  references inside lists keep `NAME`, or `ID Type` for an object printed by id (an id has no
+  spaces, so the type cannot be mistaken for part of it).
+- **Printable names (C1.6, amended).** A nickname is used as a DisplayName only when it can be cut
+  out of any line it appears in: no leading or trailing whitespace, no line break or control
+  character, and none of the grammar's separator sequences inside it. Otherwise the DisplayId is
+  printed. The round-trip invariant is unchanged and gains these cases.
+- The outline help's `Caps:` tip states the `+N more` rule as built (the `objects` arrays report
+  omissions in `more.objects` only).
+
+Deliverables:
+- [ ] `src/Cordyceps/Tools/Unified/GhInspectTool.cs`: `ActionStatus` reads the wider population.
+- [ ] `src/Cordyceps/Core/Canvas/ObjectResolver.cs`: the `DisplayNames` rule only.
+- [ ] `src/Cordyceps/Core/Canvas/OutlineView.cs` and `src/Cordyceps/Tools/Unified/GhCanvasTool.Outline.cs`:
+  the line heads, the status wording, the tips.
+- [ ] `src/Cordyceps.Tests/CanvasOutlineTests.cs`, `src/Cordyceps.Tests/ObjectResolverTests.cs`
+  (display-name cases only) and `src/Cordyceps.Tests/ObjectHealthTests.cs`: goldens updated to the
+  new heads; a multi-word nickname on a multi-word type; nicknames that are not printable; the
+  status population rule where it can be expressed host-free.
+
+What proves it: Release build plus the outline, resolver, health and snapshot test classes.
+Owns: the files above. Must not touch: the resolve rule in the resolver's file (06's),
+`src/Cordyceps/Core/ToolHelpers.cs`, the GhCanvasTool partials other than the outline one,
+`src/Cordyceps/Tools/Unified/GhWireTool.cs`, every markdown file, `.prawduct/`.
+
+### Chunk 08: documentation and records for the second rulings; cumulative review; PR
+Type: cumulative-final. Delegated documentation, coordinator integration.
+
+- [ ] `CHANGELOG.md`, `src/Cordyceps/McpServer.cs` instruction text, the Knowledge guides and
+  prompts, `README.md`: destructive actions and default nicknames; status covers every object
+  (every "components only" sentence written for the first boundary review is reversed); the
+  outline grammar with `NAME · Type` and the printable-name rule, from the new goldens.
+- [ ] `.prawduct/operator-verification.md`: VRF-019 and VRF-021 steps updated to the new
+  behaviour; `.prawduct/changes/canvas-read.md`: decisions and `closes: [104, 106]`.
+- [ ] Combined suite green with evidence recorded; one cumulative review naming 06, 07 and 08;
+  findings dispositioned; reflection.
+- [ ] `/prawduct:pr create`, and merge once CI is green and the PR review has no blocker
+  (owner ruling 9; project preference "PR merge: automatic").
 
 ### Chunk 05: documentation, verification queue, integration
 Type: cumulative-final. Coordinator.
