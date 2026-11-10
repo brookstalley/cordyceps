@@ -242,7 +242,9 @@ namespace Cordyceps.Core.Canvas
 
     /// <summary>
     /// An immutable, host-free picture of one Grasshopper document, read once per call on the UI
-    /// thread by <c>CanvasReader</c> and used afterwards from any thread. Wires are recorded once, on
+    /// thread by <c>CanvasReader</c> and consumed within that call. Its records never change, but
+    /// derived lookups such as effective group members are computed on first use and cached without
+    /// locking, so a snapshot is not for sharing across threads. Wires are recorded once, on
     /// the receiving input; upstream and downstream are both derived from them. Groups may overlap
     /// and nest under several parents, so membership and nesting are multimaps, and every walk over
     /// them carries a seen-set.

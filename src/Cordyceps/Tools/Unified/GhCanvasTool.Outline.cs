@@ -20,7 +20,7 @@ namespace Cordyceps.Tools.Unified
             return new ActionInfo
             {
                 Name = "outline",
-                Description = "Orient on a definition in one call: compact lines for the groups and how data flows between them, controls and their values, item counts and problems. About a tenth of the tokens of list + gh_wire list + group_list",
+                Description = "Orient on a definition in one call: compact lines for the groups and how data flows between them, controls and their values, item counts and problems. A compact alternative to list + gh_wire list + group_list",
                 Optional = new[] { "id", "group", "depth" },
                 Example = "action='outline' OR action='outline', group='INPUTS' OR action='outline', group='[\"INPUTS\", \"MATHS\"]' OR action='outline', id='COUNT', depth=3",
                 Tips = new[]
@@ -28,7 +28,7 @@ namespace Cordyceps.Tools.Unified
                     "No arguments: the overview (summary, solver, controls, one line per top-level group in data-flow order, ungrouped objects, problems, disabled objects). A canvas without groups shows its separate networks instead.",
                     "group: one group name or id, or a JSON array of them, shows each group's objects upstream first with what feeds each input. Group names match exactly (case-sensitive).",
                     "id: an object's name or id shows what feeds it and what it feeds, depth wires each way (depth 1-10, default 2; only with id). A group's id shows that group. id and group together is an error.",
-                    "Every line starts with a name you can pass back as an id to any tool. Port names before ← work as param specs. A name that is only an id is followed by its type in lists.",
+                    "Every object line starts with a name you can pass back as an id to any tool that takes an object; a group line starts with the group's name, which group actions and outline group= take (a group name starting with '[' goes inside a JSON array). Port names before ← work as param specs. A name that is only an id is followed by its type in lists.",
                     "Counts read 'N stale' when the solver is off or the object has not computed in the current solution, and 'disabled' when the object is locked: don't trust a stale 0. The solver field says why.",
                     "problems uses the same rule as gh_inspect(action='status') (ERROR, WARNING, DISCONNECTED), capped at 10. When more.problems is set, run status for the full list. Outline is for orientation; it does not replace status.",
                     "Caps: 20 controls, 60 group lines, 10 problems, 20 disabled, 10 networks, 150 object lines per group call, 60 objects around an id; a capped list ends '+N more' and more gives the counts left out.",

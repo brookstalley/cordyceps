@@ -178,6 +178,10 @@ unexpired object stays Computed across later solutions.
   owner ruling 1 (2026-11-09) chose strict names as a breaking change with no lenient mode; the
   norm's why (agents' workflows break) is met by announcing each change and by errors that say how
   to correct the call | owner can veto]`.
+- project-preferences "no property-based testing": **conforms**. The resolver's round-trip test
+  walks one fixed, generated canvas (shared nicknames, hex nicknames, shared prefixes, unnamed
+  groups) and asserts the invariant for every entry; it is a deterministic test with no PBT library
+  and no random input.
 - boundary-patterns "Grasshopper host API — verify before relying": **conforms** (SDK settled list
   above; the rest queued live).
 
@@ -385,6 +389,10 @@ line carries no marker, because a marker would break the identifier rule.
   is named directly.
 - A parameter object's input prints no port label (`← SRC`). Output modifiers are not shown.
 - `depth` passed with a group's id is an error (a group is shown whole), like `depth` without `id`.
+- The `objects` arrays of group detail and around report what was left out in `more.objects` only;
+  they carry no trailing `+N more` line, so every entry in them is an object line.
+- A group whose name starts with `[` is passed inside a JSON array; bare, it reads as malformed
+  JSON and the error says so.
 
 **What outline does not claim:** its help and guides say it is for orientation and that it lists
 problems with the same rule as `status`, capped at 10. When `more.problems` is set, run `status`

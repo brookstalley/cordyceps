@@ -1028,6 +1028,18 @@ namespace Cordyceps.Tests
         }
 
         [Fact]
+        public void GroupNameStartingWithABracket_IsPassedInsideAJsonArray()
+        {
+            // The overview prints a group named "[WIP] facade" by that name; passing it bare reads
+            // as malformed JSON, and the error must say how to pass it.
+            Assert.False(OutlineRequest.TryParse(null, "[WIP] facade", 0, out _, out var error));
+            Assert.Contains("put it in a JSON array", error);
+
+            Assert.True(OutlineRequest.TryParse(null, "[\"[WIP] facade\"]", 0, out var wrapped, out _));
+            Assert.Equal(new[] { "[WIP] facade" }, wrapped.GroupTexts);
+        }
+
+        [Fact]
         public void Id_OfAGroup_ShowsThatGroup_AndAnObjectNameShowsAround()
         {
             var snap = Golden(out _, out var groups);

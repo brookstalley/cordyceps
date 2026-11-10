@@ -108,7 +108,10 @@ namespace Cordyceps.Core.Canvas
             }
             catch (JsonReaderException ex)
             {
-                error = $"group looks like a JSON array but does not parse: {ex.Message}";
+                // A group can be named "[WIP] facade". The overview prints that name, so say how
+                // to pass it: inside a JSON array, where the brackets are just text.
+                error = $"group looks like a JSON array but does not parse: {ex.Message} "
+                        + "To name one group whose name starts with '[', put it in a JSON array: [\"[NAME] ...\"]";
                 return false;
             }
 
