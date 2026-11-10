@@ -351,7 +351,10 @@ namespace Cordyceps.Core.Canvas
                 msg += $" '{text}' is an object's nickname, not a group.";
             }
 
-            if (text.Length >= 1 && text.Length < GuidPrefixIndex.MinimumLength && text.All(IsHex))
+            // Needs a decimal digit as well: "Add" and "beef" are all hex letters, and telling
+            // someone who mistyped a nickname about GUID prefixes sends them the wrong way.
+            if (text.Length >= 1 && text.Length < GuidPrefixIndex.MinimumLength && text.All(IsHex)
+                && text.Any(c => c >= '0' && c <= '9'))
                 msg += $" A GUID prefix needs at least {GuidPrefixIndex.MinimumLength} hex digits.";
 
             return msg;

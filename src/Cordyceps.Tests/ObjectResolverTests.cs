@@ -188,6 +188,16 @@ namespace Cordyceps.Tests
             AssertFailed(Obj(Canvas(), "abcdef0-12345"), "No object named 'abcdef0-12345'.");
         }
 
+        [Theory]
+        [InlineData("Add")]
+        [InlineData("beef")]
+        [InlineData("DEADBEE")]
+        public void ShortHexLettersWithNoDigit_GetNoPrefixHint(string text)
+        {
+            // A mistyped nickname made only of the letters a-f is far likelier than a short prefix.
+            AssertFailed(Obj(Canvas(), text), $"No object named '{text}'.");
+        }
+
         [Fact]
         public void Prefix_SevenHex_GetsTheEightDigitHint()
         {
@@ -343,9 +353,13 @@ namespace Cordyceps.Tests
             var snap = TestCanvas.Snap(new[] { TestCanvas.Node(A, "POSTS") }, new[] { TestCanvas.Group(Posts, "beef") });
 
             AssertFailed(Obj(snap, "POSTZ"), "No object named 'POSTZ'. Did you mean 'POSTS'?");
-            // "beef" is a group and 4 hex digits: the group hint, then the prefix hint.
+            // "beef" is a group and all hex letters, but has no decimal digit: the group hint only.
             AssertFailed(Obj(snap, "beef"),
-                "No object named 'beef'. 'beef' is a group; group actions take its name, other actions its id (00000010). A GUID prefix needs at least 8 hex digits.");
+                "No object named 'beef'. 'beef' is a group; group actions take its name, other actions its id (00000010).");
+            // "bee4" is short hex with a digit. Suggestions come from object nicknames only, so the
+            // group "beef" is not offered; the prefix hint stands alone.
+            AssertFailed(Obj(snap, "bee4"),
+                "No object named 'bee4'. A GUID prefix needs at least 8 hex digits.");
         }
 
         // ---- display names ----

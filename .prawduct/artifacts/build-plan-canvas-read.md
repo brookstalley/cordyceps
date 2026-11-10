@@ -109,14 +109,22 @@ Critic mode: per-chunk reviews (inferred for a five-chunk plan), with Chunk 01 o
   versioning. The owner sets the number at release.
 - **Decisions made mid-build:**
   - Tree's `object` field is the nickname and `id` the full GUID; tree prints no DisplayName.
-    Settled by the Architecture goal (03 stays independent of the snapshot, and one snapshot read
-    per `tree` call buys nothing when `id` is already printed). Recorded after the Chunk 03 review
+    The reason that lasts: `object` is a label for the reader and `id` is the handle. A call
+    that passes GUIDs builds no snapshot at all, and tree should not build one only to print a
+    name when `id` is already there. Tree and outline therefore label a default-nicknamed object
+    differently (nickname against short id); shown to the owner in the PR. Recorded after the Chunk 03 review
     flagged the code as departing from the first draft of C3.
   - Chunk 03's refinements to C3 are accepted (both-solvers-off wording, `side: parameter`, one
     alignment note, `solved: false` with owner-state notes, integer `param` in `ids`, blank text is
     an error). Settled by the Product goal: a result never says less than is true.
   - `gh_inspect log` with an explicit `limit=0` now means the default 100 (it returned nothing
     before). A consequence of the sentinel fix; announced in the CHANGELOG.
+  - Chunk 01's refinements to C1 are accepted and written into C1: group short ids must resolve in
+    both scopes; the two-readings error in the Groups scope; entries counted from 0; the prefix
+    hint needs a decimal digit (the coordinator's change, on the delegate's suggestion). The
+    snapshot also gives a group its bounds' top-left as its position, exposes the top-level groups
+    of a node, and promotes a group reachable only through a nesting cycle to top level so it
+    cannot vanish from an overview. Settled by the Product goal (every printed name round-trips).
   - After 03 merged, the target-resolution loop in the tree action file passes to Chunk 02 (it
     must use the per-call lookup once names resolve through a snapshot), and
     `TreeStatusText.SolverOff` becomes the one source of solver-off wording for Chunk 04.
@@ -229,7 +237,8 @@ the enum is open so batch can add `Ref`. Rules, in order:
      are listed, then `and K more`. Each candidate id is its display id (C1.6).
    - A prefix matched by 2+ objects → `GUID prefix '{text}' matches N objects: …; give more characters`.
    - Nickname and prefix name different objects → `'{text}' names two objects: nickname → {id}
-     {Type}; GUID prefix → {id} {Type}. Use a longer GUID prefix`.
+     {Type}; GUID prefix → {id} {Type}. Use a longer GUID prefix`. In the Groups scope the same
+     error reads `group name → …`, and it applies even when the prefix lands on a non-group.
    - Both name the same object, or only one reading exists → resolved.
    - Groups scope, a prefix lands on a non-group → `Object is not a group: {text}`.
    - Nothing → Objects scope: `No object named '{text}'.`; Groups scope: `No group named '{text}'.`.
@@ -239,7 +248,9 @@ the enum is open so batch can add `Ref`. Rules, in order:
        name, other actions its id ({id}).`;
      - Groups scope, the text is an object's nickname: ` '{text}' is an object's nickname, not a
        group.`;
-     - hex-only text of 1-7 digits: ` A GUID prefix needs at least 8 hex digits.`
+     - hex-only text of 1-7 characters that includes a decimal digit: ` A GUID prefix needs at
+       least 8 hex digits.` (Text made only of the letters a-f, such as "Add" or "beef", is far
+       likelier a mistyped nickname and gets no prefix hint.)
 5. Infrastructure (`InfrastructureIds`, the bridge and its neighbours) is absent from every reading,
    so a nickname or prefix of the bridge is "No object named". Nothing leaks.
 6. **Display names** (host-free, beside the resolver; used by outline and by error candidate lists):
@@ -250,11 +261,13 @@ the enum is open so batch can add `Ref`. Rules, in order:
    - An object's **DisplayName** is its nickname when the nickname is not the type default and
      `Resolve(nickname, Objects)` returns it, else DisplayId.
    - A group's **DisplayName** is its nickname when `Resolve(nickname, Groups)` returns it, else its
-     DisplayId.
+     DisplayId. A group's DisplayId is its short id only when that resolves to the group in both
+     scopes (a short id can equal another group's name), else the full GUID.
    - Invariant, tested: every DisplayName and DisplayId resolves back to its own entry in its scope.
 7. **Many ids in one call** (`ids`, `moves`, connections, member arrays) resolve against one index
    built once, before the first mutation. Two entries that resolve to the same object are reported:
-   the later entry carries `note: 'same object as entry i'` and the object is acted on once.
+   the later entry carries `note: 'same object as entry i'` (i counts from 0) and the object is
+   acted on once.
 8. The index is read through a narrow interface: lookup by GUID, entries by nickname, entries by
    group name, entries by prefix, infrastructure set. The snapshot implements it; batch's overlay
    later decorates it. The resolver never sees Grasshopper types.
@@ -374,8 +387,8 @@ target failed; the trees that resolved are still returned.
   invalid?, emptyBranches?, depth, perBranch, paths[], morePathGroups?, notes?[], solved?: false,
   message?, note?}`.
 - `object` is a label for the reader, not a handle: two objects can carry the same nickname, and
-  `id` is what a follow-up call passes. (Amended mid-build; the first draft printed a DisplayName,
-  which needs a canvas snapshot per call and would have tied tree to the resolver. See Decisions.)
+  `id` is what a follow-up call passes. (Amended mid-build; the first draft printed a DisplayName.
+  See Decisions.)
 - `side` reads `parameter` for a parameter object, where `side` and `param` do not apply.
 - `solved: false` marks a tree whose owner is not Computed; `note` then says which state the owner
   is in (locked, failed, computing, or not computed and why).
