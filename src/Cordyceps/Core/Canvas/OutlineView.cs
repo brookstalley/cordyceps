@@ -16,19 +16,23 @@ namespace Cordyceps.Core.Canvas
     /// wiring around one object. Host-free, so the grammar is pinned by unit tests.
     /// <para>The rules every line keeps:</para>
     /// <list type="bullet">
-    /// <item>The first token of an object line or group line is the object's or group's
-    /// <see cref="DisplayNames.DisplayName"/>, printed whole: an agent pastes it back into other
-    /// tools, so it must resolve to the same thing. Wherever a name that is only an id appears
-    /// inside a list, its type follows it, so the reader learns what it is.</item>
+    /// <item>The first field of an object line, control line, problem line or group line is the
+    /// object's or group's <see cref="DisplayNames.DisplayName"/>, printed whole: an agent pastes it
+    /// back into other tools, so it must resolve to the same thing. An object line's head is
+    /// <c>NAME · Type</c>, with <see cref="OutlineGrammar.Field"/> between them, so a multi-word name
+    /// is never confused with a multi-word type; a name is printed only when
+    /// <see cref="OutlineGrammar.IsPrintable"/> says it can be cut back out. Wherever a name that is
+    /// only an id appears inside a list, its type follows it after a space (an id has no spaces), so
+    /// the reader learns what it is.</item>
     /// <item>Port tokens are the port's nickname when <see cref="ParamSpecLookup"/> resolves it to
     /// the same port, else its name, else its 0-based index.</item>
     /// <item>A count prints bare only when the solver is on and its owner computed; otherwise it says
     /// <c>stale</c>, or <c>disabled</c> for a locked owner. Agents act on these numbers.</item>
     /// <item>Group membership is a multimap: an object in two groups is tagged with both, and every
     /// group it sits in counts it.</item>
-    /// <item>Problems use <see cref="ObjectHealth"/>, the rule <c>status</c> uses, and are capped;
-    /// outline orients. <c>status</c> lists every component's problems; errors and warnings on
-    /// parameter objects appear only in outline.</item>
+    /// <item>Problems use <see cref="ObjectHealth"/>, the rule <c>status</c> uses, over the same
+    /// objects (<see cref="ObjectHealth.IsSubject(CanvasNode)"/>), and are capped; outline orients.
+    /// <c>status</c> lists every one of them.</item>
     /// <item>Wires the reader could not place are counted in <c>unread</c>, never left silent.</item>
     /// <item>Absent things print nothing.</item>
     /// </list>
@@ -101,7 +105,7 @@ namespace Cordyceps.Core.Canvas
                 ? "group='NAME' shows how one group is wired inside (a JSON list for several); id='NAME' shows what feeds one object and what it feeds (depth=N wires each way, default 2)"
                 : "id='NAME' shows what feeds one object and what it feeds (depth=N wires each way, default 2)";
             if (more["problems"] != null)
-                next += "; problems are capped: gh_inspect(action='status') lists every component's problems (errors and warnings on parameter objects appear only in outline)";
+                next += "; problems are capped: gh_inspect(action='status') lists every object's status, parameter objects included";
             o["next"] = next;
             return o;
         }
@@ -361,7 +365,7 @@ namespace Cordyceps.Core.Canvas
         }
 
         /// <summary>Items joined by <paramref name="separator"/>, ending <c>+N more</c> when there are more than <paramref name="max"/>.</summary>
-        internal static string Join(IEnumerable<string> items, int max, string separator = ", ")
+        internal static string Join(IEnumerable<string> items, int max, string separator = OutlineGrammar.Item)
         {
             var list = items.ToList();
             var text = string.Join(separator, list.Take(max));
@@ -463,7 +467,7 @@ namespace Cordyceps.Core.Canvas
             public string GroupTag(Guid nodeId, Guid except)
             {
                 var groups = _s.GroupsOf(nodeId).Where(g => g != except).Select(Name).ToList();
-                return groups.Count == 0 ? "" : $" [{string.Join(", ", groups)}]";
+                return groups.Count == 0 ? "" : OutlineGrammar.Tags + string.Join(OutlineGrammar.Item, groups) + OutlineGrammar.TagsClose;
             }
 
             // ---- counts ----
@@ -498,9 +502,10 @@ namespace Cordyceps.Core.Canvas
             public string Summary()
             {
                 var nodes = _s.Nodes;
-                int errors = nodes.Count(n => Health(n).Status == HealthStatus.Error);
-                int warnings = nodes.Count(n => Health(n).Status == HealthStatus.Warning);
-                int disconnected = nodes.Count(n => Health(n).Status == HealthStatus.Disconnected);
+                var subjects = nodes.Where(ObjectHealth.IsSubject).ToList();
+                int errors = subjects.Count(n => Health(n).Status == HealthStatus.Error);
+                int warnings = subjects.Count(n => Health(n).Status == HealthStatus.Warning);
+                int disconnected = subjects.Count(n => Health(n).Status == HealthStatus.Disconnected);
                 int disabled = nodes.Count(n => n.Locked);
                 int notSolved = nodes.Count(n => IsSolvable(n) && !n.Locked && n.Phase != NodePhase.Computed);
                 int previewOff = nodes.Count(n => n.PreviewHidden == true);
@@ -544,12 +549,12 @@ namespace Cordyceps.Core.Canvas
 
             // ---- lines ----
 
-            /// <summary><c>NAME Type[ = VALUE][ [GROUPS]]</c>.</summary>
+            /// <summary><c>NAME · Type[ = VALUE][ [GROUPS]]</c>: the name is the first field.</summary>
             public string Head(CanvasNode n, Guid exceptGroup)
             {
-                var head = $"{Name(n.Id)} {n.TypeName}";
+                var head = Name(n.Id) + OutlineGrammar.Field + n.TypeName;
                 var value = Value(n);
-                if (value != null) head += " = " + value;
+                if (value != null) head += OutlineGrammar.Value + value;
                 return head + GroupTag(n.Id, exceptGroup);
             }
 
@@ -572,7 +577,7 @@ namespace Cordyceps.Core.Canvas
             }
 
             /// <summary>
-            /// <c>NAME Type[ = VALUE][ [GROUPS]][ · disabled][ · preview off][ · PORT[ (mods)] ← SOURCE[ (PORT)][ [GROUPS]], …][ · health]</c>.
+            /// <c>NAME · Type[ = VALUE][ [GROUPS]][ · disabled][ · preview off][ · PORT[ (mods)] ← SOURCE[ (PORT)][ [GROUPS]], …][ · health]</c>.
             /// Sources outside <paramref name="shown"/> carry their groups.
             /// </summary>
             public string ObjectLine(CanvasNode n, IReadOnlyCollection<Guid> shown, Guid exceptGroup)
@@ -602,7 +607,7 @@ namespace Cordyceps.Core.Canvas
 
                 var health = HealthText(n);
                 if (health != null) parts.Add(health);
-                return string.Join(" · ", parts);
+                return string.Join(OutlineGrammar.Field, parts);
             }
 
             /// <summary><c>SOURCE[ (PORT)][ [GROUPS]]</c>: the port only when the source has several outputs.</summary>
@@ -651,15 +656,20 @@ namespace Cordyceps.Core.Canvas
                 }
             }
 
-            /// <summary>Every object with a problem, errors then warnings then disconnected, each left to right.</summary>
+            /// <summary>
+            /// <c>NAME · Type[ [GROUPS]] · HEALTH</c> for every object with a problem, errors then
+            /// warnings then disconnected, each left to right.
+            /// </summary>
             public List<string> Problems()
             {
                 return _s.Nodes
+                    .Where(ObjectHealth.IsSubject)
                     .Select(n => (Node: n, Health: Health(n)))
                     .Where(x => x.Health.Status != HealthStatus.Ok)
                     .OrderBy(x => Rank(x.Health.Status))
                     .ThenBy(x => x.Node.X).ThenBy(x => x.Node.Y).ThenBy(x => DocIndex(x.Node.Id))
-                    .Select(x => $"{Name(x.Node.Id)} {x.Node.TypeName}{GroupTag(x.Node.Id, Guid.Empty)} {HealthText(x.Node)}")
+                    .Select(x => Name(x.Node.Id) + OutlineGrammar.Field + x.Node.TypeName + GroupTag(x.Node.Id, Guid.Empty)
+                                 + OutlineGrammar.Field + HealthText(x.Node))
                     .ToList();
             }
 
@@ -698,12 +708,15 @@ namespace Cordyceps.Core.Canvas
 
             /// <summary>
             /// <c>GROUP · N objects[ · problems][ · contains: …][ · shares K objects with …][ · in ← …][ · out: …]</c>
-            /// (overview), or <c>GROUP (group) · N objects[ · in ← …][ · out: …]</c> for a child line.
+            /// (overview), or <c>GROUP · group · N objects[ · in ← …][ · out: …]</c> for a child line
+            /// (the name first, then what it is, as on an object line).
             /// </summary>
             public string GroupLine(CanvasGroup g, bool top)
             {
                 var members = _s.EffectiveMembers(g.Id);
-                var parts = new List<string> { top ? Name(g.Id) : $"{Name(g.Id)} (group)", Count(members.Count, "object") };
+                var parts = new List<string> { Name(g.Id) };
+                if (!top) parts.Add("group");
+                parts.Add(Count(members.Count, "object"));
                 if (top)
                 {
                     AddProblemCounts(members, parts, withState: false);

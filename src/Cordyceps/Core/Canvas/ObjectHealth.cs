@@ -109,6 +109,23 @@ namespace Cordyceps.Core.Canvas
         public static bool IsMissing(HealthInput input) =>
             !input.Optional && input.SourceCount == 0 && input.VolatileCount == 0;
 
+        /// <summary>
+        /// Whether an object is one that <c>status</c> lists and outline counts in its problems: a
+        /// canvas object that is not a group and has solve state (components and parameter objects:
+        /// sliders, toggles, value lists, panels, free parameters). Scribbles, sketches and groups
+        /// have no health. Infrastructure is not a canvas object and is left out before this is asked.
+        /// <c>status</c> asks it of live objects and outline of snapshot nodes, so the two read the
+        /// same population.
+        /// </summary>
+        public static bool IsSubject(bool isGroup, bool hasSolveState) => !isGroup && hasSolveState;
+
+        /// <summary><see cref="IsSubject(bool, bool)"/> for a snapshot node (a node is never a group).</summary>
+        public static bool IsSubject(CanvasNode node)
+        {
+            if (node == null) throw new ArgumentNullException(nameof(node));
+            return IsSubject(isGroup: false, node.HasSolveState);
+        }
+
         /// <summary>The health of a snapshot node (components get the DISCONNECTED check; everything else does not).</summary>
         public static HealthResult Classify(CanvasNode node)
         {

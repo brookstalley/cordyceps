@@ -251,13 +251,13 @@ namespace Cordyceps.Tests
 
             Assert.True((bool)o["success"]);
             Assert.StartsWith("5 objects · 2 groups · 1 error · 0 warnings", (string)o["summary"]);
-            Assert.Equal(new[] { "COUNT Number Slider = 4 (0..10) [INPUTS]" }, Lines(o["controls"]));
+            Assert.Equal(new[] { "COUNT · Number Slider = 4 (0..10) [INPUTS]" }, Lines(o["controls"]));
             var groups = Lines(o["groups"]);
             Assert.Equal(2, groups.Count);
             Assert.Equal("INPUTS · 2 objects · out: COUNT (1) → MATHS; NUMS (1) → MATHS", groups[0]);
             Assert.StartsWith("MATHS · 3 objects · 1 error · in ← NUMS, COUNT", groups[1]);
             Assert.Null(o["ungrouped"]);
-            Assert.Contains($"{Short(add)} Addition [MATHS] error: Data conversion failed from Text to Number", Lines(o["problems"]));
+            Assert.Contains($"{Short(add)} · Addition [MATHS] · error: Data conversion failed from Text to Number", Lines(o["problems"]));
             Assert.Contains("group='NAME'", (string)o["next"]);
         }
 
@@ -333,9 +333,9 @@ namespace Cordyceps.Tests
             Assert.Equal(new[] { "CHORDS [OTHER]" }, Lines(g["in"]));
             Assert.Equal(new[]
             {
-                "INDEX Panel = \"0 | 2\"",
-                $"{Short(split)} Text Split · T ← INDEX",
-                $"{Short(item)} List Item · L ← CHORDS [OTHER] · i (graft) ← {Short(split)} Text Split"
+                "INDEX · Panel = \"0 | 2\"",
+                $"{Short(split)} · Text Split · T ← INDEX",
+                $"{Short(item)} · List Item · L ← CHORDS [OTHER] · i (graft) ← {Short(split)} Text Split"
             }, Lines(g["objects"]));
             Assert.Equal(new[] { $"{Short(item)} List Item (4) → {Short(after)} Line" }, Lines(g["out"]));
         }
@@ -372,9 +372,9 @@ namespace Cordyceps.Tests
             var g = (JObject)OutlineView.Groups(model, new[] { outer.Id })["groups"][0];
             Assert.Equal(new[]
             {
-                "INNER (group) · 2 objects · out: A (1) → OUTER",
-                "B Panel = \"b\" [INNER]",
-                $"{Short(own)} Merge · D1 ← A"
+                "INNER · group · 2 objects · out: A (1) → OUTER",
+                "B · Panel = \"b\" [INNER]",
+                $"{Short(own)} · Merge · D1 ← A"
             }, Lines(g["objects"]));
 
             var innerDetail = (JObject)OutlineView.Groups(model, new[] { inner.Id })["groups"][0];
@@ -421,7 +421,7 @@ namespace Cordyceps.Tests
             var o = OutlineView.Around(model, chain[2].Id, 1);
             Assert.Equal("N2", (string)o["around"]);
             Assert.Equal(1, (int)o["depth"]);
-            Assert.Equal(new[] { "N1 Number · ← N0", "N2 Number · ← N1", "N3 Number · ← N2" }, Lines(o["objects"]));
+            Assert.Equal(new[] { "N1 · Number · ← N0", "N2 · Number · ← N1", "N3 · Number · ← N2" }, Lines(o["objects"]));
             Assert.Equal(new[] { "N0" }, Lines(o["fedFrom"]));
             Assert.Equal(new[] { "N4" }, Lines(o["feeds"]));
 
@@ -447,7 +447,7 @@ namespace Cordyceps.Tests
 
             Assert.Equal(OutlineView.MaxAroundObjects, ((JArray)o["objects"]).Count);
             Assert.Equal(71 - OutlineView.MaxAroundObjects, (int)o["more"]["objects"]);
-            Assert.Equal("HUB Number", Lines(o["objects"])[0]);
+            Assert.Equal("HUB · Number", Lines(o["objects"])[0]);
             // The 59 leaves shown feed 59 objects past the edge; the 11 leaves cut off are past it too.
             Assert.Equal("+62 more", Lines(o["feeds"]).Last());
             Assert.Equal(62, (int)o["more"]["feeds"]);
@@ -539,7 +539,7 @@ namespace Cordyceps.Tests
             }, groups);
 
             var g = (JObject)OutlineView.Groups(snap, new[] { left.Id })["groups"][0];
-            Assert.Equal(new[] { "SHARED Addition [RIGHT] · A ← SRC [FEED]", "LEFTONLY Addition · A ← SHARED" }, Lines(g["objects"]));
+            Assert.Equal(new[] { "SHARED · Addition [RIGHT] · A ← SRC [FEED]", "LEFTONLY · Addition · A ← SHARED" }, Lines(g["objects"]));
             Assert.Equal(new[] { "SHARED (2) → RIGHT" }, Lines(g["out"]));
         }
 
@@ -642,15 +642,15 @@ namespace Cordyceps.Tests
 
             Assert.Equal(new[]
             {
-                $"ERR Circle error: {new string('x', 99)}…",
-                "BADPARAM Number error: bad data",
-                "WARN Circle warning: w1 (+2 more)",
-                "DISC Circle disconnected: missing R, C"
+                $"ERR · Circle · error: {new string('x', 99)}…",
+                "BADPARAM · Number · error: bad data",
+                "WARN · Circle · warning: w1 (+2 more)",
+                "DISC · Circle · disconnected: missing R, C"
             }, problems);
             // The same classification status uses, node for node.
             foreach (var n in snap.Nodes)
             {
-                bool listed = problems.Any(p => p.StartsWith(n.NickName + " ", StringComparison.Ordinal));
+                bool listed = problems.Any(p => p.StartsWith(n.NickName + " · ", StringComparison.Ordinal));
                 Assert.Equal(ObjectHealth.Classify(n).Status != HealthStatus.Ok, listed);
             }
             Assert.StartsWith("7 objects · 0 groups · 2 errors · 1 warning · 1 disconnected", (string)o["summary"]);
@@ -665,7 +665,7 @@ namespace Cordyceps.Tests
             n.PreviewHidden = true;
             var g = c.Group("G", 0, 0, n);
             var line = Lines(OutlineView.Groups(c.Build(), new[] { g.Id })["groups"][0]["objects"]).Single();
-            Assert.Equal("C1 Circle · disabled · preview off · disconnected: missing R", line);
+            Assert.Equal("C1 · Circle · disabled · preview off · disconnected: missing R", line);
         }
 
         // ---- caps ----------------------------------------------------------------------------------
@@ -724,7 +724,7 @@ namespace Cordyceps.Tests
             var snap = c.Build();
             Assert.EndsWith("in ← P0, P1, P2, P3, P4, P5, P6, P7, +2 more", Lines(OutlineView.Overview(snap)["groups"]).Single());
             var line = Lines(OutlineView.Groups(snap, new[] { g.Id })["groups"][0]["objects"]).Single();
-            Assert.Equal("SINK Merge · D ← P0, P1, P2, P3, P4, P5, P6, P7, +2 more", line);
+            Assert.Equal("SINK · Merge · D ← P0, P1, P2, P3, P4, P5, P6, P7, +2 more", line);
         }
 
         [Fact]
@@ -735,7 +735,7 @@ namespace Cordyceps.Tests
             var p = c.Panel(longNick, "line one\nline two is quite a bit longer than thirty");
             var g = c.Group("G", 0, 0, p);
             var line = Lines(OutlineView.Groups(c.Build(), new[] { g.Id })["groups"][0]["objects"]).Single();
-            Assert.Equal($"{longNick} Panel = \"line one / line two is quite…\"", line);
+            Assert.Equal($"{longNick} · Panel = \"line one / line two is quite…\"", line);
         }
 
         [Fact]
@@ -754,7 +754,7 @@ namespace Cordyceps.Tests
 
             var lines = Lines(OutlineView.Groups(c.Build(), new[] { g.Id })["groups"][0]["objects"]);
 
-            Assert.Equal(new[] { "C1 Circle · R (simplify, reverse) · disconnected: missing R", "NOTE Panel = \"short…\"" }, lines);
+            Assert.Equal(new[] { "C1 · Circle · R (simplify, reverse) · disconnected: missing R", "NOTE · Panel = \"short…\"" }, lines);
         }
 
         // ---- identifiers ----------------------------------------------
@@ -773,9 +773,66 @@ namespace Cordyceps.Tests
             var snap = c.Build();
             var groups = Lines(OutlineView.Overview(snap)["groups"]);
             Assert.Equal($"{name} · 1 object · out: A (1) → OTHER", groups[0]);
-            Assert.Equal($"A Number [{name}]", Lines(OutlineView.Around(snap, b.Id, 1)["objects"])[0]);
-            Assert.Equal("B Number [OTHER] · ← A", Lines(OutlineView.Around(snap, b.Id, 1)["objects"])[1]);
+            Assert.Equal($"A · Number [{name}]", Lines(OutlineView.Around(snap, b.Id, 1)["objects"])[0]);
+            Assert.Equal("B · Number [OTHER] · ← A", Lines(OutlineView.Around(snap, b.Id, 1)["objects"])[1]);
             Assert.Equal(name, (string)OutlineView.Groups(snap, new[] { snap.Groups[0].Id })["groups"][0]["group"]);
+        }
+
+        [Fact]
+        public void MultiWordName_OnAMultiWordType_IsTheFirstField()
+        {
+            var c = new Canvas();
+            var wall = c.Slider("Wall Height", "3.5", "0", "10", x: 0);
+            var split = c.Comp("Split List", "Main Split", x: 100).In("List", "L").In("Index", "i", optional: true)
+                .Out("List A", "A", items: 1).Out("List B", "B", items: 1).Warning("Index out of range");
+            c.Wire(wall, 0, split, 0);
+            var g = c.Group("Wall Inputs", 0, 0, wall, split);
+            var snap = c.Build();
+
+            var o = OutlineView.Overview(snap);
+            Assert.Equal(new[] { "Wall Height · Number Slider = 3.5 (0..10) [Wall Inputs]" }, Lines(o["controls"]));
+            Assert.Equal(new[] { "Main Split · Split List [Wall Inputs] · warning: Index out of range" }, Lines(o["problems"]));
+            Assert.Equal(new[]
+            {
+                "Wall Height · Number Slider = 3.5 (0..10)",
+                "Main Split · Split List · L ← Wall Height · warning: Index out of range"
+            }, Lines(OutlineView.Groups(snap, new[] { g.Id })["groups"][0]["objects"]));
+            // Cut at the first ' · ', the name resolves back to its own object.
+            Assert.Equal(wall.Id, ObjectResolver.Resolve(snap, Lines(o["controls"])[0].Split(" · ")[0], ResolveScope.Objects).Entry.Id);
+            Assert.Equal(split.Id, ObjectResolver.Resolve(snap, Lines(o["problems"])[0].Split(" · ")[0], ResolveScope.Objects).Entry.Id);
+        }
+
+        [Fact]
+        public void UnprintableNames_PrintTheirIds_InHeadsTagsAndLists()
+        {
+            var c = new Canvas();
+            var a = c.Param("Number", "Width (m)", x: 0);
+            var b = c.Comp("Circle", "r, s", x: 100).In("Radius", "R").Error("boom");
+            c.Wire(a, 0, b, 0);
+            var g = c.Group("IN · OUT", 0, 0, a);
+            c.Group("SINK", 100, 0, b);
+            var snap = c.Build();
+
+            var o = OutlineView.Overview(snap);
+            var all = o.ToString();
+            Assert.DoesNotContain("Width (m)", all);
+            Assert.DoesNotContain("r, s", all);
+            Assert.DoesNotContain("IN · OUT", all);
+            Assert.Equal($"{Short(g)} · 1 object · out: {Short(a)} Number (1) → SINK", Lines(o["groups"])[0]);
+            Assert.Equal($"{Short(b)} · Circle [SINK] · error: boom", Lines(o["problems"]).Single());
+            Assert.Equal($"{Short(a)} · Number [{Short(g)}]", Lines(OutlineView.Around(snap, b.Id, 1)["objects"])[0]);
+        }
+
+        [Fact]
+        public void CappedProblems_SendAgentsToStatus_ForEveryObject_ParameterObjectsIncluded()
+        {
+            var c = new Canvas();
+            for (int i = 0; i < 11; i++) c.Param("Number", $"P{i}", x: i).Warning("w");
+            var o = OutlineView.Overview(c.Build());
+            Assert.Equal(1, (int)o["more"]["problems"]);
+            var next = (string)o["next"];
+            Assert.Contains("gh_inspect(action='status') lists every object's status, parameter objects included", next);
+            Assert.DoesNotContain("only in outline", next);
         }
 
         [Fact]
@@ -824,6 +881,13 @@ namespace Cordyceps.Tests
             c.Wire(dup, 0, circle, 0);
             var sink = c.Comp("Line", "SINK", x: 300).In("A");
             c.Wire(circle, 1, sink, 0);
+            // A multi-word name on a multi-word type, and a name that cannot be cut out of a line.
+            var wall = c.Slider("Wall Height", "3", "0", "9", x: -60, y: 100);
+            var mainSplit = c.Comp("Split List", "Main Split", x: 250, y: 100).In("List", "L").In("Index", "i", optional: true)
+                .Out("List A", "A", items: 1).Out("List B", "B", items: 1).Warning("w");
+            c.Wire(wall, 0, mainSplit, 0);
+            var comma = c.Comp("Addition", "a, b", x: 260, y: 150).In("A").Error("e");
+            c.Wire(mainSplit, 1, comma, 0);
             var long60 = new string('L', 60);
             c.Group(long60, -50, 0, slider, panel);
             c.Group("DUP", 0, 0, s1, s2);
@@ -841,7 +905,7 @@ namespace Cordyceps.Tests
             {
                 var detail = (JObject)OutlineView.Groups(snap, new[] { g.Id })["groups"][0];
                 foreach (var line in Lines(detail["objects"]))
-                    (line.Contains(" (group) · ") ? groupHeads : heads).Add(line);
+                    (IsChildGroupLine(line) ? groupHeads : heads).Add(line);
                 Assert.Equal(g.Id, ResolveGroup(snap, (string)detail["group"]));
                 Assert.Equal(g.Id, ResolveGroup(snap, (string)detail["id"]));
             }
@@ -875,8 +939,8 @@ namespace Cordyceps.Tests
             int outputTokens = 0;
             foreach (var line in groupHeads)
             {
+                // The name is the first field, whole; a child line's second field is "group".
                 var name = line.Split(" · ")[0];
-                if (name.EndsWith(" (group)", StringComparison.Ordinal)) name = name.Substring(0, name.Length - " (group)".Length);
                 var id = ResolveGroup(snap, name);
                 Assert.Equal(new DisplayNames(snap).DisplayName(id), name);
                 // out: entries name an object and, when it has several outputs, one of its ports.
@@ -885,7 +949,7 @@ namespace Cordyceps.Tests
                     {
                         var head = entry.Substring(0, entry.IndexOf(" → ", StringComparison.Ordinal));
                         int open = head.LastIndexOf(" (", StringComparison.Ordinal);
-                        var who = ParseHead(snap, head.Substring(0, open) + " ", allowBareName: true);
+                        var who = ParseRef(snap, head.Substring(0, open));
                         var inner = head.Substring(open + 2, head.Length - open - 3);
                         if (who.Outputs.Count > 1)
                         {
@@ -900,9 +964,13 @@ namespace Cordyceps.Tests
             Assert.True(portTokens > 5);
             Assert.True(outputTokens > 0);
             var all = string.Join("\n", heads.Concat(groupHeads));
-            Assert.Contains($"{Short(s2)} Text Split", all);   // a shared nickname
-            Assert.Contains($"{s1.Id:D} Text Split", all);     // its short id is another object's nickname, so the full GUID
-            Assert.Contains($"{Short(dup)} Merge", all);       // a default nickname
+            Assert.Contains($"{Short(s2)} · Text Split", all);   // a shared nickname
+            Assert.Contains($"{s1.Id:D} · Text Split", all);     // its short id is another object's nickname, so the full GUID
+            Assert.Contains($"{Short(dup)} · Merge", all);       // a default nickname
+            Assert.Contains("Wall Height · Number Slider = 3 (0..9)", all);
+            Assert.Contains("Main Split · Split List", all);
+            Assert.Contains($"{Short(comma)} · Addition", all);  // "a, b" holds a separator, so the id
+            Assert.DoesNotContain("a, b", all);
             Assert.Contains(long60, all);
             Assert.Contains("A ← ", all);                       // a shared port nickname, so the name
             Assert.Contains(" · 0 ← ", all);                    // a shared port name and nickname, so the index
@@ -915,26 +983,47 @@ namespace Cordyceps.Tests
             return r.Entry.Id;
         }
 
+        private static bool IsChildGroupLine(string line)
+        {
+            var fields = line.Split(" · ");
+            return fields.Length > 1 && fields[1] == "group";
+        }
+
         /// <summary>
-        /// The node a line starts with: some prefix of the line, ending at a space, that resolves to
-        /// a node, is that node's DisplayName, and is followed by its type (or, with
-        /// <paramref name="allowBareName"/>, by nothing).
+        /// The node a line starts with, read the way an agent reads it: the first field, cut at the
+        /// first <c>" · "</c> and nothing else, resolves to a node, is that node's DisplayName, and the
+        /// second field starts with its type.
         /// </summary>
-        private static CanvasNode ParseHead(CanvasSnapshot snap, string line, bool allowBareName = false)
+        private static CanvasNode ParseHead(CanvasSnapshot snap, string line)
+        {
+            var fields = line.Split(" · ");
+            Assert.True(fields.Length > 1, $"no ' · ' after the name in: {line}");
+            var r = ObjectResolver.Resolve(snap, fields[0], ResolveScope.Objects);
+            Assert.True(r.IsResolved && !r.Entry.IsGroup, $"'{fields[0]}' at the start of '{line}': {r.Error}");
+            var node = snap.Node(r.Entry.Id);
+            Assert.Equal(new DisplayNames(snap).DisplayName(node.Id), fields[0]);
+            Assert.StartsWith(node.TypeName, fields[1], StringComparison.Ordinal);
+            return node;
+        }
+
+        /// <summary>
+        /// An inline reference: the whole text is a DisplayName, or a DisplayId, one space, and the type.
+        /// </summary>
+        private static CanvasNode ParseRef(CanvasSnapshot snap, string text)
         {
             var names = new DisplayNames(snap);
-            for (int k = line.IndexOf(' '); k > 0; k = line.IndexOf(' ', k + 1))
-            {
-                var candidate = line.Substring(0, k);
-                var r = ObjectResolver.Resolve(snap, candidate, ResolveScope.Objects);
-                if (!r.IsResolved || r.Entry.IsGroup) continue;
-                var node = snap.Node(r.Entry.Id);
-                var rest = line.Substring(k + 1);
-                if ((rest.StartsWith(node.TypeName, StringComparison.Ordinal) || (allowBareName && rest.Length == 0))
-                    && names.DisplayName(node.Id) == candidate)
-                    return node;
-            }
-            throw new Xunit.Sdk.XunitException($"no printed name at the start of: {line}");
+            var r = ObjectResolver.Resolve(snap, text, ResolveScope.Objects);
+            if (r.IsResolved && !r.Entry.IsGroup && names.DisplayName(r.Entry.Id) == text)
+                return snap.Node(r.Entry.Id);
+            int space = text.IndexOf(' ');
+            Assert.True(space > 0, $"not a printed reference: {text}");
+            var id = text.Substring(0, space);
+            r = ObjectResolver.Resolve(snap, id, ResolveScope.Objects);
+            Assert.True(r.IsResolved && !r.Entry.IsGroup, $"'{id}' in '{text}': {r.Error}");
+            var node = snap.Node(r.Entry.Id);
+            Assert.Equal(names.DisplayId(node.Id), id);
+            Assert.Equal(node.TypeName, text.Substring(space + 1));
+            return node;
         }
 
         private static void AssertPortRoundTrips(IReadOnlyList<CanvasPort> ports, string token, bool isInput)
@@ -990,8 +1079,8 @@ namespace Cordyceps.Tests
 
             var lines = Lines(o["groups"][0]["objects"]);
             Assert.Equal(OutlineView.MaxObjectLines, lines.Count);
-            Assert.Equal("N0 Number", lines[0]);
-            Assert.Equal("N1 Number · ← N0", lines[1]);
+            Assert.Equal("N0 · Number", lines[0]);
+            Assert.Equal("N1 · Number · ← N0", lines[1]);
             Assert.Equal(n - OutlineView.MaxObjectLines, (int)o["more"]["objects"]);
         }
 
@@ -1150,7 +1239,7 @@ namespace Cordyceps.Tests
   ""summary"": ""9 objects · 4 groups · 1 error · 1 warning · 1 disconnected · 1 disabled · 0 not solved · 1 preview off"",
   ""solver"": ""on"",
   ""controls"": [
-    ""COUNT Number Slider = 4 (0..10) [INPUTS]""
+    ""COUNT · Number Slider = 4 (0..10) [INPUTS]""
   ],
   ""groups"": [
     ""INPUTS · 2 objects · out: COUNT (1) → MATHS, OUTPUT; NUMS (1) → MATHS"",
@@ -1159,9 +1248,9 @@ namespace Cordyceps.Tests
   ],
   ""ungrouped"": ""3 objects · inputs: NOTE = \""read me\"" · ends: 00000007 Circle (0), OLD (disabled)"",
   ""problems"": [
-    ""SUM Addition [MATHS] error: Data conversion failed from Text to Number (+1 more)"",
-    ""00000006 Split List [OUTPUT] warning: Index out of range"",
-    ""00000007 Circle disconnected: missing R""
+    ""SUM · Addition [MATHS] · error: Data conversion failed from Text to Number (+1 more)"",
+    ""00000006 · Split List [OUTPUT] · warning: Index out of range"",
+    ""00000007 · Circle · disconnected: missing R""
   ],
   ""disabled"": [
     ""OLD""
@@ -1180,9 +1269,9 @@ namespace Cordyceps.Tests
         ""COUNT [INPUTS]""
       ],
       ""objects"": [
-        ""00000003 Series · S ← NUMS [INPUTS] · C ← COUNT [INPUTS]"",
-        ""SUM Addition · A ← 00000003 Series · error: Data conversion failed from Text to Number (+1 more)"",
-        ""INNER (group) · 1 object · in ← 00000003 Series · out: RESULT (4) → OUTPUT""
+        ""00000003 · Series · S ← NUMS [INPUTS] · C ← COUNT [INPUTS]"",
+        ""SUM · Addition · A ← 00000003 Series · error: Data conversion failed from Text to Number (+1 more)"",
+        ""INNER · group · 1 object · in ← 00000003 Series · out: RESULT (4) → OUTPUT""
       ],
       ""out"": [
         ""RESULT (4) → OUTPUT""
@@ -1195,9 +1284,9 @@ namespace Cordyceps.Tests
   ""around"": ""RESULT"",
   ""depth"": 1,
   ""objects"": [
-    ""00000003 Series [MATHS] · S ← NUMS [INPUTS] · C ← COUNT [INPUTS]"",
-    ""RESULT Number [INNER, OUTPUT] · ← 00000003 Series"",
-    ""00000006 Split List [OUTPUT] · L ← RESULT · i (graft) ← COUNT [INPUTS] · warning: Index out of range""
+    ""00000003 · Series [MATHS] · S ← NUMS [INPUTS] · C ← COUNT [INPUTS]"",
+    ""RESULT · Number [INNER, OUTPUT] · ← 00000003 Series"",
+    ""00000006 · Split List [OUTPUT] · L ← RESULT · i (graft) ← COUNT [INPUTS] · warning: Index out of range""
   ],
   ""fedFrom"": [
     ""NUMS [INPUTS]"",
