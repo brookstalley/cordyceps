@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
 using System.Text.Json;
+using Cordyceps.Core.Naming;
 
 namespace Cordyceps.Core
 {
@@ -84,28 +85,10 @@ namespace Cordyceps.Core
             int bestDist = int.MaxValue;
             foreach (var c in candidates)
             {
-                int d = Distance(unknown.ToLowerInvariant(), c.ToLowerInvariant());
+                int d = NameSuggestions.EditDistance(unknown.ToLowerInvariant(), c.ToLowerInvariant());
                 if (d <= limit && d < bestDist) { best = c; bestDist = d; }
             }
             return best;
-        }
-
-        private static int Distance(string a, string b)
-        {
-            var prev = new int[b.Length + 1];
-            var cur = new int[b.Length + 1];
-            for (int j = 0; j <= b.Length; j++) prev[j] = j;
-            for (int i = 1; i <= a.Length; i++)
-            {
-                cur[0] = i;
-                for (int j = 1; j <= b.Length; j++)
-                {
-                    int cost = a[i - 1] == b[j - 1] ? 0 : 1;
-                    cur[j] = Math.Min(Math.Min(cur[j - 1] + 1, prev[j] + 1), prev[j - 1] + cost);
-                }
-                (prev, cur) = (cur, prev);
-            }
-            return prev[b.Length];
         }
     }
 }

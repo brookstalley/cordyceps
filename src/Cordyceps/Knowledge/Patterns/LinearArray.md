@@ -33,7 +33,7 @@ Series → Unit X/Y/Z (Factor) → Move (Motion)
 |-----------|--------|
 | Bidirectional | Range with domain (-count/2, count/2) |
 | Along curve | Divide Curve → use points/tangents |
-| With rotation | Chain Rotate after Move |
+| With rotation | Chain Rotate (`Transform/Rotate`) after Move |
 | Variable spacing | Replace Series with custom list |
 
 ## Common Mistakes

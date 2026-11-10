@@ -39,7 +39,7 @@ namespace Cordyceps.Core
             {
                 if (proxy?.Desc == null) continue;
 
-                bool deprecated = proxy.Obsolete || deprecation.IsDeprecated(proxy.Guid) || HasObsoleteTypeName(proxy);
+                bool deprecated = IsDeprecated(proxy, deprecation);
 
                 if (!libraries.TryGetValue(proxy.LibraryGuid, out var plugin))
                 {
@@ -67,6 +67,14 @@ namespace Cordyceps.Core
         }
 
         /// <summary>
+        /// Whether a type counts as deprecated. The one test, used by both the catalog the name
+        /// rule resolves against and by search, so search never calls current a type that add
+        /// treats as deprecated.
+        /// </summary>
+        private static bool IsDeprecated(IGH_ObjectProxy proxy, DeprecationRegistry deprecation) =>
+            proxy.Obsolete || deprecation.IsDeprecated(proxy.Guid) || HasObsoleteTypeName(proxy);
+
+        /// <summary>
         /// Grasshopper keeps superseded components as classes whose names carry <c>OBSOLETE</c>,
         /// sometimes without setting the proxy's flag. A proxy whose type cannot be loaded is judged
         /// on its flags alone.
@@ -88,10 +96,15 @@ namespace Cordyceps.Core
         public static TypeResolution ResolveType(string type) => TypeNameRule.Resolve(type, BuildCatalog());
 
         /// <summary>
-        /// Create the object a type name selects. On success <c>component</c> is set (not yet in any
-        /// document); otherwise <c>component</c> is null and <see cref="TypeResolution"/> plus
-        /// <see cref="TypeNameRule.Explain"/> say why. Nothing is created unless the name resolves
-        /// to exactly one type.
+        /// Create the object a type name selects. Either a success or a failure, never both:
+        /// <list type="bullet">
+        /// <item>Success: <c>component</c> is set (not yet in any document), <c>error</c> is null,
+        /// and <c>resolution</c> is resolved, its <see cref="TypeResolution.Match"/> describing the
+        /// type created.</item>
+        /// <item>Failure: <c>component</c> is null and <c>error</c> says why (from
+        /// <see cref="TypeNameRule.Explain"/>, or that a resolved type could not be instantiated).</item>
+        /// </list>
+        /// Nothing is created unless the name resolves to exactly one type.
         /// </summary>
         public static (IGH_DocumentObject component, TypeResolution resolution, string error) TryCreate(string type)
         {
@@ -99,10 +112,24 @@ namespace Cordyceps.Core
 
             if (resolution.Kind == TypeResolutionKind.GuidNotInstalled && resolution.Guid.HasValue)
             {
-                // A GUID selects that type even when no listed proxy carries it.
+                // A GUID selects that type even when no listed proxy carries it. The emitted object
+                // then describes the type, so the result is an ordinary resolved success.
                 var byGuid = CreateByGuid(resolution.Guid.Value);
                 if (byGuid != null)
+                {
+                    resolution.Kind = TypeResolutionKind.Resolved;
+                    resolution.Match = new TypeCandidate
+                    {
+                        Name = byGuid.Name,
+                        Category = byGuid.Category,
+                        SubCategory = byGuid.SubCategory,
+                        Description = byGuid.Description,
+                        Guid = resolution.Guid.Value,
+                        Deprecated = byGuid.Obsolete
+                    };
+                    resolution.UsedDeprecated = byGuid.Obsolete;
                     return (Prepare(byGuid), resolution, null);
+                }
             }
 
             if (!resolution.IsResolved)
@@ -110,9 +137,13 @@ namespace Cordyceps.Core
 
             var component = CreateByGuid(resolution.Match.Guid);
             if (component == null)
+            {
+                DebugLog.Error($"gh_canvas add: '{resolution.Text}' resolved to {resolution.Match.Describe()}, " +
+                               "but the component server returned no object for that GUID (EmitObject returned null).");
                 return (null, resolution,
                     $"'{resolution.Match.PathText}' ({resolution.Match.Guid:D}) resolved but could not be instantiated; " +
                     "see gh_inspect(action='log').");
+            }
 
             return (Prepare(component), resolution, null);
         }
@@ -147,7 +178,7 @@ namespace Cordyceps.Core
             {
                 // Return all component names, non-deprecated first
                 var proxies = Instances.ComponentServer.ObjectProxies
-                    .Select(p => new { Proxy = p, IsDeprecated = p.Obsolete || deprecationRegistry.IsDeprecated(p.Guid) })
+                    .Select(p => new { Proxy = p, IsDeprecated = IsDeprecated(p, deprecationRegistry) })
                     .OrderBy(x => x.IsDeprecated ? 1 : 0)  // Non-deprecated first
                     .ThenBy(x => x.Proxy.Desc.Name)
                     .Take(MAX_COMPONENTS_LIST);
@@ -175,7 +206,7 @@ namespace Cordyceps.Core
                 var matches = Instances.ComponentServer.ObjectProxies
                     .Where(p => p.Desc.Name.ToLowerInvariant().Contains(normalizedQuery)
                              || (p.Desc.Description?.ToLowerInvariant().Contains(normalizedQuery) ?? false))
-                    .Select(p => new { Proxy = p, IsDeprecated = p.Obsolete || deprecationRegistry.IsDeprecated(p.Guid) })
+                    .Select(p => new { Proxy = p, IsDeprecated = IsDeprecated(p, deprecationRegistry) })
                     .OrderBy(x => x.IsDeprecated ? 1 : 0)  // Non-deprecated first
                     .ThenBy(x => x.Proxy.Desc.Name.Length)  // Then by name length
                     .Take(MAX_SEARCH_RESULTS);

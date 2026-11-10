@@ -32,6 +32,22 @@ nothing. The ambiguous-name response moves its code from `error` to `code` so `e
 the explanation. The type catalog is rebuilt per call rather than cached, so a plugin loaded
 mid-session is seen.
 
+**Decisions carried over, not made here:** `python` and `Python 3 Script` stay pinned to Rhino's
+unified Script component, as before this change; the dedicated Python 3 component is reached as
+`Maths/Python 3 Script`. Whether that pin is right is an open question for the owner. The Stream
+Filter pin names a GUID that is not installed on the machine this was checked on, so there the
+name resolves by the ordinary rule. `rect` now names the Rectangle parameter explicitly; before
+this change it took the first exact match in the installed order, which was the parameter on the
+install checked, so this is a choice rather than a preserved guarantee.
+
+**Spellings kept and removed:** kept — GUID; every alias, as an exact whole-text rewrite; the
+pinned built-ins; exact name ignoring case; a name qualified by category; a name followed by its
+category in parentheses. Added — a name qualified by category and subcategory. Removed — the
+shortest-name-containing-the-text fallback on add; the second registry rule that mapped bare words
+(point, curve, line, circle, number) to parameter types and then fell back to a substring; the
+first-match lookup behind component docs and the component resource URI; the substring step for
+port names.
+
 **Verification:** suite green (`prawduct-hook test-status`); Release build clean. The Grasshopper
 adapters need a running Rhino and are enqueued as VRF-016, VRF-017 and VRF-018.
 

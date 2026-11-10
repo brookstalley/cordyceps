@@ -149,7 +149,7 @@ namespace Cordyceps.Core.Naming
     /// <item>A GUID selects that type.</item>
     /// <item>An entry in <see cref="Aliases"/> rewrites the whole text, exactly and ignoring case
     /// (<c>python</c> → <c>Python 3 Script</c>).</item>
-    /// <item>A name in <see cref="Pinned"/> always means that built-in type, even when a plugin
+    /// <item>A name in <see cref="Pinned"/> always means the GUID pinned for it, even when a plugin
     /// ships a type with the same name.</item>
     /// <item>Otherwise the name must equal a type's name, ignoring case, optionally narrowed as
     /// <c>Category/Name</c>, <c>Category/Subcategory/Name</c> or <c>Name (Category)</c>. Exactly
@@ -181,13 +181,16 @@ namespace Cordyceps.Core.Naming
                 { "yzplane", "YZ Plane" },
                 { "yz", "YZ Plane" },
 
-                // Geometry
+                // Geometry. Each target must resolve to exactly one type on a stock install, the
+                // type the shorthand has always created. Rectangle, Circle and Line are each both a
+                // component and a parameter, so those three are written out: the shorthand has
+                // always meant the parameter.
                 { "cube", "Box" },
-                { "rect", "Rectangle" },
-                { "circ", "Circle" },
+                { "rect", "Params/Rectangle" },
+                { "circ", "Params/Circle" },
                 { "cyl", "Cylinder" },
                 { "pt", "Point" },
-                { "ln", "Line" },
+                { "ln", "Params/Line" },
                 { "crv", "Curve" },
 
                 // Parameters
@@ -205,9 +208,13 @@ namespace Cordyceps.Core.Naming
             };
 
         /// <summary>
-        /// Built-in names that always mean the core Grasshopper type, so a plugin type that shares
+        /// Built-in names that always select the GUID given here, so a plugin type that shares
         /// the name cannot make them ambiguous. A pin whose GUID is not installed is skipped and
-        /// the name goes through the ordinary rule.
+        /// the name goes through the ordinary rule. Note that "Python 3 Script" is pinned to Rhino
+        /// 8's unified "Script" component (c9b2d725-…, named "Script" in an install, no language
+        /// until code starts with a directive), not to the dedicated "Python 3 Script" component;
+        /// this is the mapping the registry has always used, kept as it was. The dedicated one is
+        /// reached as "Maths/Python 3 Script" or by its GUID.
         /// </summary>
         public static readonly IReadOnlyDictionary<string, Guid> Pinned =
             new Dictionary<string, Guid>(StringComparer.OrdinalIgnoreCase)

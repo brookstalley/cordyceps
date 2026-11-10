@@ -27,7 +27,7 @@ Plane = Origin + X + Y + Z axes. Z = X × Y (cross product).
 
 ```
 Care about rotation around direction axis?
-├─ NO → Plane Normal (direction as Normal)
+├─ NO → Plane Normal (direction as Z-Axis)
 └─ YES → Construct Plane (Z = X × Y must = direction)
 ```
 
@@ -36,7 +36,7 @@ Care about rotation around direction axis?
 **Wrong**: Vector2Pt (toward target) → Construct Plane (X-axis) → Cylinder
 **Result**: Cylinders perpendicular to target
 
-**Right**: Vector2Pt (toward target) → Plane Normal (Normal) → Cylinder
+**Right**: Vector2Pt (toward target) → Plane Normal (Z-Axis) → Cylinder
 **Result**: Cylinders point toward target
 
 ## Patterns

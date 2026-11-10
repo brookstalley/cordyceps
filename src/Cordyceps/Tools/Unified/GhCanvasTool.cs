@@ -38,7 +38,8 @@ namespace Cordyceps.Tools.Unified
                         "type must name exactly one installed type: its exact name (case ignored), 'Category/Name', 'Category/Subcategory/Name', 'Name (Category)', or a GUID. Partial names are never matched.",
                         "Many names exist as both a component and a parameter (e.g. 'Circle', 'Line'): plain 'Circle' is ambiguous, so write 'Curve/Circle' (component) or 'Params/Circle' (parameter).",
                         "A deprecated type is used only when it is the only one with that name; the response then carries deprecated=true and a warning naming any replacement.",
-                        "Shorthands are exact whole-name aliases: python, c#, slider, plane (XY Plane), filter (Stream Filter), pt, crv, ln, num, int, bool, str and a few more. 'Panel', 'Number Slider', 'C# Script', 'Python 3 Script' and 'Stream Filter' always mean the built-in Grasshopper type.",
+                        "Shorthands are exact whole-name aliases: python, c#, slider, plane (XY Plane), filter (Stream Filter), and pt, crv, ln, circ, rect, cube, num, int, bool, str, which create the parameter (ln = 'Params/Line', circ = 'Params/Circle', rect = 'Params/Rectangle'). 'Panel', 'Number Slider', 'C# Script' and 'Stream Filter' always mean the built-in Grasshopper type.",
+                        "'Python 3 Script' (and python, 'python script', ghpython) creates Rhino's unified 'Script' component (Maths/Script, GUID c9b2d725-6f87-4b07-af90-bd9aefef68eb), which has no language until its code starts with '#! python 3'. The dedicated Python 3 Script component is 'Maths/Python 3 Script'.",
                         "Nothing is created unless the name resolves. An ambiguous name returns code='ambiguous_name' with every match and a 'use' spelling for each; an unknown name returns code='unknown_type' with 'suggestions' (each with a 'use' spelling). Retry with one of those, or browse with action='search'.",
                         "A GUID is always exact.",
                         "Adding a slider: pass min/max/value/decimals to configure it in one call (e.g. type='slider', min=0, max=100, value=50, decimals=2). Non-slider components ignore these.",
@@ -529,21 +530,10 @@ namespace Cordyceps.Tools.Unified
 
                     var bounds = component.Attributes.Bounds;
                     int inputCount = 0, outputCount = 0;
-                    string categoryStr = null, subcategory = null;
-
-                    // The resolved type is the one created, so its category is authoritative. Only an
-                    // object emitted from a GUID no listed proxy carries falls back to a lookup.
-                    if (resolution.IsResolved)
-                    {
-                        categoryStr = resolution.Match.Category;
-                        subcategory = resolution.Match.SubCategory;
-                    }
-                    else
-                    {
-                        var proxy = Instances.ComponentServer.ObjectProxies.FirstOrDefault(p => p.Guid == component.ComponentGuid);
-                        categoryStr = proxy?.Desc.Category;
-                        subcategory = proxy?.Desc.SubCategory;
-                    }
+                    // A created component always comes with a resolved match describing the type
+                    // created (TryCreate's contract), so its category is authoritative.
+                    string categoryStr = resolution.Match.Category;
+                    string subcategory = resolution.Match.SubCategory;
 
                     if (component is IGH_Component ghComp)
                     {
@@ -574,7 +564,7 @@ namespace Cordyceps.Tools.Unified
 
                     // A deprecated type is only ever chosen when it is the sole match; say so, so
                     // the caller can move to the replacement deliberately.
-                    if (resolution.IsResolved && resolution.UsedDeprecated)
+                    if (resolution.UsedDeprecated)
                     {
                         added["deprecated"] = true;
                         added["warning"] = $"'{resolution.Match.PathText}' is deprecated; it was used because it is the only type with that name." +

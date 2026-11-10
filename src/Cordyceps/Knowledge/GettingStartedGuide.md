@@ -95,7 +95,7 @@ the call, and nothing is created or wired.
 - The exact name, case ignored: `type='Number Slider'`, `type='merge'`
 - Narrowed by category: `type='Curve/Circle'`, `type='Curve/Primitive/Circle'`, or `type='Circle (Curve)'`
 - A GUID, always exact
-- A few exact whole-name shorthands: `python`, `c#`, `slider`, `plane` (XY Plane), `filter` (Stream Filter), `pt`, `crv`, `num`, `int`, `bool`, `str`, …
+- A few exact whole-name shorthands: `python`, `c#`, `slider`, `plane` (XY Plane), `filter` (Stream Filter), plus the parameter shorthands `pt`, `crv`, `ln`, `circ`, `rect`, `num`, `int`, `bool`, `str`, … (`ln` is `Params/Line`)
 
 Many names are both a component and a parameter: plain `Circle` or `Line` is **ambiguous**. The
 error (`code: "ambiguous_name"`) lists every match with its category, role, plugin and GUID, plus a

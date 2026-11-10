@@ -670,7 +670,9 @@ Key points:
 - Argument names are exact (case-sensitive). An argument that is not a parameter of the tool is an error that names it, suggests the closest parameter, and lists the valid ones - the call is not run
 - Names are exact, never guessed. Component types (gh_canvas add type=, gh_inspect docs,
   gh://component/{name}): exact name (case ignored), Category/Name, Category/Subcategory/Name,
-  Name (Category), or GUID; a few exact shorthands (python, c#, slider, plane, filter, pt, crv...).
+  Name (Category), or GUID; a few exact shorthands (python, c#, slider, plane, filter, pt, crv, ln...;
+  pt/crv/ln/circ/rect create the parameter). type='Python 3 Script' (and python) creates the unified
+  Script component; start its code with '#! python 3'.
   A name shared by a component and a parameter (Circle, Line) is ambiguous: write Curve/Circle. An
   ambiguous or unknown name creates nothing; the error lists matches or suggestions, each with a
   'use' spelling to pass back. Partial matching exists only in gh_canvas(action='search')
@@ -928,8 +930,6 @@ Resources: gh://docs/getting-started, gh://docs/data-trees, gh://docs/common-err
                 }
             };
         }
-
-        private static object ConvertJsonValue(JsonElement element, Type targetType) => Core.JsonTypeConverter.ConvertJsonValue(element, targetType);
 
         /// <summary>
         /// Record that a command was executed

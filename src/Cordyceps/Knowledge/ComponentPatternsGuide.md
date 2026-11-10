@@ -2,7 +2,7 @@
 
 **Writing these names.** Component names below are Grasshopper's own; pass them to
 `gh_canvas(action='add', type=...)` exactly (case is ignored, partial names are not matched). Where a
-component shares its name with a parameter — Circle, Line, Arc, Rectangle, Point — add the category:
+component shares its name with a parameter — Circle, Line, Rectangle — add the category:
 `type='Curve/Circle'`. A name in parentheses after a component, as in "Circle (Radius)", is the input
 port to wire; pass that name or its nickname as `targetParam`. When a name is refused, the error lists
 the candidates or near names, each with a `use` spelling that works.
@@ -54,7 +54,7 @@ the candidates or near names, each with a `use` spelling that works.
 | Mirror | Geometry, Plane |
 
 **Linear array**: Geometry + Series → Unit Vector → Move
-**Radial array**: Geometry + Series (0 to 2π) → Rotate
+**Radial array**: Geometry + Series (0 to 2π) → Rotate (`Transform/Rotate`)
 
 ## Analysis
 

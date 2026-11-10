@@ -104,7 +104,7 @@ Numeric parameters (e.g., `x`, `y`, `lens`, `wait`, `timeout`, `azimuth`) accept
 
 | Error | Cause | Fix |
 |-------|-------|-----|
-| "Unknown arguments: 'x' (did you mean 'y'?)… Valid parameters: …" | An argument name is not a parameter of that tool. Names are exact and case-sensitive (`sourceid` is not `sourceId`). Nothing was run | Every unknown name is listed in one response with the closest valid parameter; fix the names and resend. Also returned when `arguments` is not a JSON object |
+| "Unknown argument: 'x' (did you mean 'y'?). Valid parameters: …" (one wrong name) or "Unknown arguments: 'x' (did you mean 'y'?), 'z'. Valid parameters: …" (several) | An argument name is not a parameter of that tool. Names are exact and case-sensitive (`sourceid` is not `sourceId`). Nothing was run | Every unknown name is listed in one response with the closest valid parameter where one is near; fix the names and resend. When `arguments` is not a JSON object the error is "Invalid arguments: 'arguments' must be a JSON object…" instead |
 | "Protected: required for MCP" | Modifying Cordyceps component | Cannot modify; work with other components |
 | "No active document" | GH/Rhino not ready | Ensure document open, `gh_document(action='info')` |
 | "No bakeable outputs" | Non-geometry component | Only geometry types can bake |
