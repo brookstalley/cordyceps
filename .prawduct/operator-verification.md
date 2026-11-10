@@ -419,3 +419,73 @@ only exists in a running document.
    `Source: 'sourceParam' is required for a component — …` instead of silently disconnecting port 0.
 5. `gh_canvas(action='modifier', id='...', side='input', param='2')` still reports the same
    out-of-range message it did before this change (unchanged behaviour, now from the shared rule).
+
+## VRF-016 — strict-inputs Chunk 01 — every Cordyceps component is protected infrastructure
+
+**Status:** pending
+**Added:** 2026-11-09 (strict-inputs, #88)
+**Where to verify:** Rhino 8 + Grasshopper with an MCP client connected.
+
+**Why this needs a human:** `Core/InfrastructureIds` is unit-tested, but the adapter that gathers
+each bridge's wired neighbours through `Attributes.GetTopLevel.DocObject` needs live objects.
+
+**Verify:**
+
+1. Place two Cordyceps components on one canvas (the second on a different port). Wire a slider or
+   panel into each, and put a group around one of them.
+2. `gh_canvas(action='list')` shows neither component, neither wired neighbour, nor the group.
+3. `gh_canvas(action='delete', id=<second component's id>)` is refused as protected.
+4. `gh_document(action='clear')` leaves both components, their neighbours and the group in place.
+
+## VRF-017 — strict-inputs Chunk 02 — unknown tool arguments are an error
+
+**Status:** pending
+**Added:** 2026-11-09 (strict-inputs, #89)
+**Where to verify:** any MCP client connected to a running Cordyceps.
+
+**Why this needs a human:** `Core/ToolArgumentBinder` is unit-tested, but that a real client
+receives the error as a tool result (`isError: true`) rather than a protocol failure, and still
+sends its ordinary calls unchanged, only shows over a live connection.
+
+**Verify:**
+
+1. `gh_wire(action='list', sourceid='x')` returns `Unknown arguments: 'sourceid' (did you mean
+   'sourceId'?). Valid parameters: …` and nothing runs.
+2. An ordinary call from the client in use (Claude Code, Claude Desktop through `mcp-remote`)
+   still works — the client is not adding arguments of its own that are now refused.
+3. A call with no arguments object at all (`gh_inspect` with only `action`) still works.
+
+## VRF-018 — strict-inputs Chunk 03 — component types and ports resolve strictly
+
+**Status:** pending
+**Added:** 2026-11-09 (strict-inputs, #90)
+**Where to verify:** Rhino 8 + Grasshopper with the Cordyceps component placed and an MCP client connected.
+
+**Why this needs a human:** `Core/Naming/TypeNameRule` and `Core/ParamSpecLookup` are unit-tested
+against a test catalog. Which names are unique in a real install, whether the five pinned GUIDs
+match the installed built-ins, and that nothing lands on the canvas after a refusal need a live host.
+
+**Verify:**
+
+1. `gh_canvas(action='add', type=…)` succeeds for each of: `Number Slider` (range 0..1, value 0.5),
+   `slider` with `min=0, max=100, value=50`, `Panel`, `python`, `c#`, `csharp Script`, `filter`,
+   `Merge` (created, not ambiguous), `Curve/Circle`, `Circle (Curve)`, `Curve/Primitive/Circle`,
+   `Center Box`, `Curve/Interpolate`, `Transform/Rotate`.
+2. `type='Circle'` returns `code: ambiguous_name` listing a Curve component and a Params parameter,
+   each with a `use` spelling, and **nothing is added to the canvas**.
+3. `type='Cull'` returns `code: unknown_type` with Cull Pattern among the suggestions; nothing added.
+4. `type='Kangaroo2/Goals-Pt/Anchor'` without Kangaroo returns `code: unknown_category`. A random
+   GUID returns `guid_not_installed`; a real component GUID creates it.
+5. The pinned names (`Panel`, `Number Slider`, `C# Script`, `Python 3 Script`, `Stream Filter`)
+   create the built-in types. A wrong pin falls back to the ordinary rule silently, so check the
+   created object's type, not only that something was created.
+6. `gh_wire(action='connect')` from a slider to a Circle: `targetParam='R'`, `'radius'` and `'1'`
+   connect; `'Rad'` is refused with `Did you mean 'R' …` and **no wire is created**.
+7. On Cull Pattern, `targetParam='Pattern'` is refused with the suggestion `'P'`.
+   `gh_canvas(action='modifier')` with a partial `param` is refused the same way.
+8. `gh_inspect(action='docs', component='Curve/Circle')` works; `component='Circle'` returns the
+   ambiguity payload. `gh://component/Curve/Circle` and `gh://component/Number%20Slider` render.
+9. The names the corrected guide tables rely on exist and are unique in this install: Revolution,
+   Cylinder, Sphere, Solid Union, Mirror, Scale, Range, Length, Area, Distance, Repeat Data,
+   Boolean Toggle, and Rectangular Grid's port names (`Extent X`, `Extent Y`, `Size X`, `Size Y`).
+10. Adding a type whose only match is deprecated returns `deprecated: true` and a `warning`.
