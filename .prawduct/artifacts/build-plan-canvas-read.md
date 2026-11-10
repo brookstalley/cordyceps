@@ -155,6 +155,14 @@ Critic mode: per-chunk reviews (inferred for a five-chunk plan), with Chunk 01 o
     path has one owner in the id helpers; documents say `status` lists components only. Settled
     by the Product goal. Not changed, and put to the owner: whether `status` should also read
     parameter objects, and how an outline line separates a multi-word name from its type.
+  - Left as is after the review, on the record: the full-GUID reading still has two owners (the
+    resolver's rule 2, and the id helpers' direct path that spares GUID callers a snapshot), and
+    repeats are marked in both `ResolveMany` (used by outline) and `IdBatch` (used by the tools).
+    Folding them needs the resolver to read a GUID-only index without a snapshot, which belongs
+    with batch's overlay index (#96) and the per-entry loop item (#105). The outline help's
+    `Caps:` tip still says every capped list ends `+N more`, which is not true of the `objects`
+    arrays; it is corrected with the next change to that help text (#104). `unread` can count a
+    wire into a free parameter twice; the statement still appears, only the number is high.
   - After 03 merged, the target-resolution loop in the tree action file passes to Chunk 02 (it
     must use the per-call lookup once names resolve through a snapshot), and
     `TreeStatusText.SolverOff` becomes the one source of solver-off wording for Chunk 04.
@@ -797,4 +805,4 @@ Type: cumulative-final. Coordinator.
   three defects found in source (silent member skips; infrastructure leaks in move, bulk connect
   and group_move; the negative log limit) if the coordinator files them.
 - [x] Backlog items for the deliberately deferred work (see the report).
-- [ ] Cumulative Critic dispositioned; reflection.
+- [x] Cumulative Critic dispositioned; reflection.

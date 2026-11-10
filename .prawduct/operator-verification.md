@@ -600,7 +600,7 @@ Script component.
     called with a nickname return the full GUID in `id`.
 21. `gh_canvas(action='config', id='<the value list>', items='null')` is an error and the list keeps
     its items.
-22. A group's GUID on `gh_wire(action='list')`, `gh_inspect(action='outputs')` and
+22. (Run before step 17, while POSTS still exists.) A group's GUID on `gh_wire(action='list')`, `gh_inspect(action='outputs')` and
     `gh_canvas(action='get')` is refused (`… is a group; this action works on components and
     parameters, not groups`), while `gh_canvas(action='move')` and `delete` still act on the group.
 23. `gh_canvas(action='move', moves='[{"id":"R","x":0,"y":0},{"id":"<R short id>","x":50,"y":50}]')`:

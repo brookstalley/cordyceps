@@ -28,13 +28,17 @@ many-id calls before the first mutation. New `gh_canvas(action='outline')` (`Out
 Hyperceps with header attributions; README credits updated, `LICENSE` unchanged.
 
 **Decisions:** names are scoped and ids are not: an object action matches nicknames of non-group
-objects only, a group action matches group names only, and a GUID or prefix reaches any object.
+objects only, and a group action matches group names only. A group's GUID or prefix reaches the
+actions that act on groups (`delete`, `move`, `rename`, `info`, `bounds`, `zoom`, member arrays,
+`outline id=`); every other object action refuses a group.
 Default nicknames resolve when unique, destructive actions included (flagged for the owner). Error
 payloads are text only, with candidates inline. Member arrays are all-or-nothing; `delete`, `move`,
-`preview`, `enable` and bulk `connect` keep per-entry results. Responses that echo an id echo the
+`preview`, `enable` and bulk `connect` keep per-entry results; a repeated object is acted on once
+in `delete`, `preview` and `enable` and is a failed entry in `move`. Responses that echo an id echo the
 resolved GUID. Tree's `object` is the nickname as a label and `id` the GUID as the handle. Outline
-counts are qualified (`stale`, `disabled`) and its problem list is capped at 10, with `status` for
-the full list. `gh_inspect` `limit` defaults to 0 meaning the action's default.
+counts are qualified (`stale`, `disabled`), it states wires it could not read (`unread`), and its
+problem list is capped at 10; `status` lists every component's problems, while problems on
+parameter objects appear only in outline (#106). `gh_inspect` `limit` defaults to 0 meaning the action's default.
 
 **Not done here:** batch edits, sweeps, the edit transaction and undo (#91), solve policy, moving
 `status`, `trace`, `list`, `group_list` and `gh_wire list` onto the snapshot, stored values on
@@ -45,4 +49,4 @@ round-trip, snapshot, health, golden outline outputs, tree summary); Release bui
 Grasshopper adapters need a running Rhino and are enqueued as VRF-019, VRF-020 and VRF-021.
 
 ## Consumer note
-breaking: object ids now also accept an 8+ hex GUID prefix or a unique case-sensitive nickname, and group actions a group's exact name; an ambiguous name acts on nothing and lists the ids. `group_move` and `list group=` no longer match case-insensitively or by substring; member arrays of `group_create`/`group_add`/`group_remove` fail the call on any unresolved id instead of skipping it; `gh_wire list` with an unknown id is an error; several non-GUID error texts changed; responses echo the resolved full GUID; `gh_inspect log limit=0` now returns the default 100 entries. Also: new `gh_canvas(action='outline')` and `gh_inspect(action='tree')`.
+breaking: object ids now also accept an 8+ hex GUID prefix or a unique case-sensitive nickname, and group actions a group's exact name; an ambiguous name acts on nothing and lists the ids. `group_move` and `list group=` no longer match case-insensitively or by substring; member arrays of `group_create`/`group_add`/`group_remove` fail the call on any unresolved id instead of skipping it; `gh_wire list` with an unknown id is an error; several non-GUID error texts changed; responses echo the resolved full GUID; a repeated id in `delete`/`preview`/`enable` is one action with a note; `move` fails a second entry for the same object; actions that work only on components and parameters refuse a group's id (several returned an empty success before); `gh_inspect log limit=0` now returns the default 100 entries. Also: new `gh_canvas(action='outline')` and `gh_inspect(action='tree')`.
