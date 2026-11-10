@@ -178,6 +178,37 @@ namespace Cordyceps.Tests
             Assert.Equal("same object as entry 0: give one position per object", outcomes[2].Error);
         }
 
+        // ---- destructive intent (delete ids=[...]): a default nickname fails its entry only ----
+
+        [Fact]
+        public void Destructive_MixedList_TheDefaultNicknameEntryFails_TheOthersAreActedOn()
+        {
+            var circle = TestCanvas.Id(4);
+            var snap = TestCanvas.Snap(new[]
+            {
+                TestCanvas.Node(A, "COUNT", "Series"),
+                TestCanvas.Node(circle, "Circle", "Circle", isDefault: true)
+            });
+            Func<string, (Guid? Id, string Error)> destructive = text =>
+            {
+                var r = ObjectResolver.Resolve(snap, text, ResolveScope.Objects, ResolveIntent.Destructive);
+                return r.IsResolved ? (r.Entry.Id, (string)null) : ((Guid?)null, r.Error);
+            };
+
+            var outcomes = IdBatch.Collect(new[] { "COUNT", "Circle", "00000004" }, destructive);
+
+            Assert.True(outcomes[0].ActOn);
+            Assert.False(outcomes[1].IsResolved);
+            Assert.Equal("Circle", outcomes[1].Text);
+            Assert.Equal(
+                "'Circle' is the default nickname of 00000004 Circle, which every new Circle gets, so it never selects what this action removes. "
+                + "Pass id '00000004', or name it first with gh_canvas(action='rename', id='00000004', nickname='NEW') and pass that name",
+                outcomes[1].Error);
+            Assert.True(outcomes[2].ActOn);
+            Assert.Equal(new[] { A, circle }, IdBatch.DistinctIds(outcomes));
+            Assert.Empty(IdBatch.DuplicateNotes(outcomes, "ids"));
+        }
+
         [Fact]
         public void RefuseRepeats_NeedsAReason()
         {

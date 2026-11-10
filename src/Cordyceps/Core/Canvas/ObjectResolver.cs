@@ -14,6 +14,15 @@ namespace Cordyceps.Core.Canvas
         /// <summary>The type name candidate lists print for a group.</summary>
         public const string GroupTypeName = "Group";
 
+        /// <summary>
+        /// The name every new group carries until someone names it: <c>new GH_Group()</c> is
+        /// constructed as "Group", and <c>group_add</c> without a name uses the same text.
+        /// </summary>
+        public const string DefaultGroupName = "Group";
+
+        /// <summary>True when a group's name is the one every new group starts with.</summary>
+        public static bool IsDefaultGroupName(string name) => string.Equals(name, DefaultGroupName, StringComparison.Ordinal);
+
         public ObjectEntry(Guid id, string nickName, bool isDefaultNickName, string typeName, bool isGroup)
         {
             Id = id;
@@ -28,6 +37,11 @@ namespace Cordyceps.Core.Canvas
         /// <summary>The object's nickname, or a group's name.</summary>
         public string NickName { get; }
 
+        /// <summary>
+        /// True when the nickname is the one every new object of the type gets (for a group,
+        /// <see cref="DefaultGroupName"/>): a name nobody chose, so it never picks what a
+        /// <see cref="ResolveIntent.Destructive"/> call removes.
+        /// </summary>
         public bool IsDefaultNickName { get; }
         public string TypeName { get; }
         public bool IsGroup { get; }
@@ -71,6 +85,23 @@ namespace Cordyceps.Core.Canvas
 
         /// <summary>Group actions. Names match group names only; a GUID or prefix must land on a group.</summary>
         Groups
+    }
+
+    /// <summary>
+    /// What the caller will do with the object it names. The lookups a removal action uses take it
+    /// with no default, so a new removal action cannot forget to decide.
+    /// </summary>
+    public enum ResolveIntent
+    {
+        /// <summary>Reads, edits, moves, wiring: every reading resolves, a default nickname included.</summary>
+        Ordinary,
+
+        /// <summary>
+        /// The call removes something (an object, a group, wires). A nickname reading that lands on
+        /// a default nickname is refused even when it is unique: it names whichever object of that
+        /// type happens to be alone right now. A GUID, a GUID prefix and a chosen nickname resolve.
+        /// </summary>
+        Destructive
     }
 
     /// <summary>Which reading of the text named the object. Later readings (a batch ref) are added here.</summary>
@@ -141,6 +172,10 @@ namespace Cordyceps.Core.Canvas
     /// <item>Two candidates in one reading, or two readings naming different objects, is an error.</item>
     /// <item>Cordyceps infrastructure is absent from every reading, with the same "not found" text
     /// as an object that does not exist.</item>
+    /// <item>Under <see cref="ResolveIntent.Destructive"/>, a name reading that lands on a default
+    /// nickname (or the default group name) is refused even when it is unique, with an error that
+    /// prints the id to pass instead. When the prefix reading names the same object, it resolves
+    /// by prefix.</item>
     /// </list>
     /// </summary>
     public static class ObjectResolver
@@ -151,13 +186,17 @@ namespace Cordyceps.Core.Canvas
         /// <summary>The longest text read as a GUID prefix; 36 characters is a whole D-form GUID.</summary>
         public const int MaxPrefixLength = 35;
 
-        public static Resolution Resolve(IObjectIndex index, string text, ResolveScope scope)
+        /// <summary>Resolve with <see cref="ResolveIntent.Ordinary"/> intent: for actions that remove nothing.</summary>
+        public static Resolution Resolve(IObjectIndex index, string text, ResolveScope scope) =>
+            Resolve(index, text, scope, ResolveIntent.Ordinary);
+
+        public static Resolution Resolve(IObjectIndex index, string text, ResolveScope scope, ResolveIntent intent)
         {
             if (index == null) throw new ArgumentNullException(nameof(index));
-            var outcome = Decide(index, text, scope);
+            var outcome = Decide(index, text, scope, intent);
             return outcome.Entry != null
                 ? Resolution.Resolved(outcome.Entry, outcome.MatchedBy)
-                : Resolution.Failed(Describe(index, text, scope, outcome));
+                : Resolution.Failed(Describe(index, text, scope, intent, outcome));
         }
 
         /// <summary>
@@ -165,14 +204,18 @@ namespace Cordyceps.Core.Canvas
         /// resolves to the same object as an earlier one carries <see cref="ResolvedEntry.DuplicateOf"/>,
         /// so the caller acts on the object once.
         /// </summary>
-        public static IReadOnlyList<ResolvedEntry> ResolveMany(IObjectIndex index, IReadOnlyList<string> texts, ResolveScope scope)
+        public static IReadOnlyList<ResolvedEntry> ResolveMany(IObjectIndex index, IReadOnlyList<string> texts, ResolveScope scope) =>
+            ResolveMany(index, texts, scope, ResolveIntent.Ordinary);
+
+        /// <summary><see cref="ResolveMany(IObjectIndex, IReadOnlyList{string}, ResolveScope)"/> with an explicit intent.</summary>
+        public static IReadOnlyList<ResolvedEntry> ResolveMany(IObjectIndex index, IReadOnlyList<string> texts, ResolveScope scope, ResolveIntent intent)
         {
             if (index == null) throw new ArgumentNullException(nameof(index));
             var results = new List<ResolvedEntry>();
             var firstIndex = new Dictionary<Guid, int>();
             for (int i = 0; i < (texts?.Count ?? 0); i++)
             {
-                var r = Resolve(index, texts[i], scope);
+                var r = Resolve(index, texts[i], scope, intent);
                 int? dup = null;
                 if (r.IsResolved)
                 {
@@ -216,6 +259,7 @@ namespace Cordyceps.Core.Canvas
             GroupNotFound,
             NotAGroup,
             AmbiguousName,
+            DefaultName,
             AmbiguousPrefix,
             TwoReadings,
             NotFound
@@ -235,7 +279,7 @@ namespace Cordyceps.Core.Canvas
         /// The decision alone, with no message text. Kept apart from <see cref="Describe"/> because a
         /// message lists candidates by their display id, and computing a display id resolves again.
         /// </summary>
-        private static Outcome Decide(IObjectIndex index, string text, ResolveScope scope)
+        private static Outcome Decide(IObjectIndex index, string text, ResolveScope scope, ResolveIntent intent)
         {
             var o = new Outcome();
             if (string.IsNullOrWhiteSpace(text))
@@ -278,7 +322,15 @@ namespace Cordyceps.Core.Canvas
 
             if (byName != null)
             {
-                Resolve(o, byName, scope == ResolveScope.Objects ? MatchedBy.Nickname : MatchedBy.GroupName);
+                bool refused = intent == ResolveIntent.Destructive && byName.IsDefaultNickName;
+                if (refused && byPrefix == null)
+                {
+                    o.Failure = Failure.DefaultName;
+                    return o;
+                }
+                // A default name that is also a prefix of the same object's id resolves by the prefix.
+                Resolve(o, byName, refused ? MatchedBy.GuidPrefix
+                    : scope == ResolveScope.Objects ? MatchedBy.Nickname : MatchedBy.GroupName);
                 return o;
             }
             if (byPrefix != null)
@@ -301,11 +353,19 @@ namespace Cordyceps.Core.Canvas
 
         // ---- messages ----
 
-        private static string Describe(IObjectIndex index, string text, ResolveScope scope, Outcome o)
+        private static string Describe(IObjectIndex index, string text, ResolveScope scope, ResolveIntent intent, Outcome o)
         {
             var display = new DisplayNames(index);
             switch (o.Failure)
             {
+                case Failure.DefaultName:
+                    return DefaultNameRefusal(display, text, o.Names[0]);
+                case Failure.AmbiguousName when intent == ResolveIntent.Destructive && o.Names.All(e => e.IsDefaultNickName):
+                    return scope == ResolveScope.Objects
+                        ? $"'{text}' is the default nickname of {o.Names.Count} objects: {Candidates(display, o.Names)}. "
+                          + "A default nickname never selects what this action removes; pass one of these ids"
+                        : $"'{text}' is the default name of {o.Names.Count} groups: {Candidates(display, o.Names)}. "
+                          + "A default group name never selects what this action removes; pass one of these ids";
                 case Failure.Required:
                     return "Component ID is required";
                 case Failure.GuidNotFound:
@@ -325,17 +385,33 @@ namespace Cordyceps.Core.Canvas
                     return $"'{text}' names two objects: {nameWord} → {Candidate(display, o.Names[0])}; "
                            + $"GUID prefix → {Candidate(display, o.Prefixed[0])}. Use a longer GUID prefix";
                 default:
-                    return NotFound(index, display, text, scope);
+                    return NotFound(index, display, text, scope, intent);
             }
         }
 
-        private static string NotFound(IObjectIndex index, DisplayNames display, string text, ResolveScope scope)
+        /// <summary>
+        /// The refusal of a unique default name under destructive intent. It prints the id that
+        /// works and the rename call that makes a name work, so the next call can be the right one.
+        /// </summary>
+        private static string DefaultNameRefusal(DisplayNames display, string text, ObjectEntry e)
+        {
+            var id = display.DisplayId(e.Id);
+            return e.IsGroup
+                ? $"'{text}' is the default name of group {id}, which every new group gets, so it never selects what this action removes. "
+                  + $"Pass id '{id}', or name the group first with gh_canvas(action='group_rename', id='{id}', name='NEW') and pass that name"
+                : $"'{text}' is the default nickname of {id} {e.TypeName}, which every new {e.TypeName} gets, so it never selects what this action removes. "
+                  + $"Pass id '{id}', or name it first with gh_canvas(action='rename', id='{id}', nickname='NEW') and pass that name";
+        }
+
+        private static string NotFound(IObjectIndex index, DisplayNames display, string text, ResolveScope scope, ResolveIntent intent)
         {
             var visible = index.Entries.Where(e => !index.IsInfrastructure(e.Id)).ToList();
             var msg = scope == ResolveScope.Objects ? $"No object named '{text}'." : $"No group named '{text}'.";
 
+            // Under destructive intent a default name would only be refused, so it is never suggested.
             var scopeNames = visible
-                .Where(e => e.IsGroup == (scope == ResolveScope.Groups) && e.NickName.Length > 0)
+                .Where(e => e.IsGroup == (scope == ResolveScope.Groups) && e.NickName.Length > 0
+                            && !(intent == ResolveIntent.Destructive && e.IsDefaultNickName))
                 .Select(e => e.NickName);
             var closest = NameSuggestions.Closest(text, scopeNames);
             if (closest != null) msg += $" Did you mean '{closest}'?";
@@ -373,7 +449,7 @@ namespace Cordyceps.Core.Canvas
         /// <summary>True when <paramref name="text"/> resolves to <paramref name="id"/> in the scope; builds no message.</summary>
         internal static bool ResolvesTo(IObjectIndex index, string text, ResolveScope scope, Guid id)
         {
-            var o = Decide(index, text, scope);
+            var o = Decide(index, text, scope, ResolveIntent.Ordinary);
             return o.Entry != null && o.Entry.Id == id;
         }
     }

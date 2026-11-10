@@ -313,7 +313,7 @@ namespace Cordyceps.Core.Canvas
             }
             foreach (var g in groupList)
             {
-                var e = new ObjectEntry(g.Id, g.NickName, false, ObjectEntry.GroupTypeName, isGroup: true);
+                var e = new ObjectEntry(g.Id, g.NickName, ObjectEntry.IsDefaultGroupName(g.NickName), ObjectEntry.GroupTypeName, isGroup: true);
                 AddEntry(e);
                 if (!string.IsNullOrEmpty(g.NickName)) Bucket(_byGroupName, g.NickName).Add(e);
             }
