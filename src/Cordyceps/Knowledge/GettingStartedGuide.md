@@ -7,15 +7,29 @@ Visual dataflow graph for parametric 3D. Components on canvas connect via wires.
 Use `action='help'` on any tool for parameters.
 
 **Grasshopper:**
-- `gh_canvas` — components, values, groups, bake, zoomable params, data modifiers
+- `gh_canvas` — components, values, groups, outline, bake, zoomable params, data modifiers
 - `gh_wire` — connect, disconnect, list, clear, validate
 - `gh_document` — save, clear, solver, snapshots, capture
 - `gh_script` — get/set script code, configure params
-- `gh_inspect` — status, outputs, trace, disconnected
+- `gh_inspect` — status, outputs, tree, trace, disconnected
 
 **Rhino:**
 - `rhino_scene` — objects, layers, selection, visibility
 - `rhino_render` — display, camera, materials, environments, render
+
+## Orient First
+
+On a definition you did not build, start with one call:
+
+```
+gh_canvas(action='outline')
+```
+
+It returns the groups and how data flows between them, the controls and their values, item
+counts, and problems (by the `status` rule, capped at 10). Every line starts with a name you can
+pass back as an id. Then `outline` with `group='NAME'` or `id='NAME'` for detail. See
+`gh://docs/canvas-outline`. Outline is for orientation; `gh_inspect(action='status')` gives the
+full problem list.
 
 ## Workflow
 
@@ -89,6 +103,18 @@ or nickname, or a 0-based index, and is unnecessary for a free-floating param. `
 Names that select one thing are never guessed. A near miss is an error that tells you how to fix
 the call, and nothing is created or wired.
 
+**Canvas objects** (`id`, `ids`, `sourceId`, `targetId`, `moves`, `connections`, on every tool):
+
+- The full GUID, as returned by `add`
+- An 8+ hex-digit GUID prefix: `id='3f2a91c0'` (the short ids `outline` prints)
+- The object's nickname, exact and case-sensitive, when exactly one object carries it. Default
+  nicknames such as `Circle` count too, so they work while only one Circle is on the canvas
+
+A nickname two objects share acts on nothing: the error lists both ids
+(`'Pt' is the nickname of 2 objects: 1a2b3c4d Point, 5e6f7a8b Point; name one by its id`). A near miss gets `Did you mean`.
+On `group_*` actions and `group=`, `id` names a **group** by its exact name, GUID or prefix; a group's
+name does not work as an object id elsewhere (the error says so and gives the group's id).
+
 **Component types** (`gh_canvas(action='add', type=...)`, `gh_inspect(action='docs')`,
 `gh://component/{name}`):
 
@@ -132,7 +158,8 @@ When the cluster editor is open, `gh_document(action='recompute')` and `gh_docum
 
 ## Resources
 
-- `gh://docs/data-trees` — essential for list/tree ops
+- `gh://docs/canvas-outline` — reading `gh_canvas(action='outline')`
+- `gh://docs/data-trees` — essential for list/tree ops; `gh_inspect(action='tree')`
 - `gh://docs/common-errors` — error→fix reference
 - `gh://docs/rendering` — bake→materials→viewport→capture
 - `gh://component/{name}` — component I/O docs (`{name}` is written as for `add`, e.g. `gh://component/Curve/Circle`)

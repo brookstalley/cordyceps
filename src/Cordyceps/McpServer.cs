@@ -643,13 +643,15 @@ namespace Cordyceps
             return @"Cordyceps: MCP control of Grasshopper (parametric 3D design).
 
 READ FIRST: gh://docs/getting-started (use resources/read)
+ORIENT FIRST on an existing definition: gh_canvas(action='outline') - groups, data flow, controls,
+counts and problems in one call; then group='NAME' or id='NAME' for detail (gh://docs/canvas-outline)
 
 UNIFIED TOOLS (use action='help' for details):
-- gh_canvas: add, delete, move, rename, find, search, list, info, bounds, validate, constant, bake, zoom, view, get, set, config, preview, enable, group_create, group_delete, group_add, group_remove, group_list, group_rename, group_color, group_move, zoomable, modifier
+- gh_canvas: add, delete, move, rename, find, search, list, outline, info, bounds, validate, constant, bake, zoom, view, get, set, config, preview, enable, group_create, group_delete, group_add, group_remove, group_list, group_rename, group_color, group_move, zoomable, modifier
 - gh_wire: connect, disconnect, list, clear, validate
 - gh_document: info, save, clear, solver, recompute (rejected while a solution is running), undo, redo (both disabled — use snapshot/revert), snapshot, revert, snapshots, snapshot_delete (max 20 snapshots kept; oldest evicted), capture_canvas, capture_viewport, capture_region, capture_views
 - gh_script: get, set, configure, info (set/configure rebuild the component from the new source and report rebuilt/verified; compile errors surface on the component — check gh_inspect(action='status') after writing code)
-- gh_inspect: connection, status, outputs, trace, disconnected, geometry, log, reports, categories, docs
+- gh_inspect: connection, status, outputs, trace, disconnected, geometry, log, tree (a data tree's shape without its data), reports, categories, docs
 - rhino_scene: objects, select, deselect, set_layer, set_name, layers, layer_create, layer_set, layer_delete, hide, show, delete, set_color, bbox, place_image, script
 - rhino_render: display, camera, zoom, modes, render, settings, ground, sun, skylight, view_save, view_load, view_list, view_delete, light_add, light_list, light_set, light_delete, material_list, material_library, material_instantiate, material_create, material_texture, material_apply, material_delete, env_list, env_current, env_set, env_create, env_delete
 
@@ -676,6 +678,11 @@ Key points:
   A name shared by a component and a parameter (Circle, Line) is ambiguous: write Curve/Circle. An
   ambiguous or unknown name creates nothing; the error lists matches or suggestions, each with a
   'use' spelling to pass back. Partial matching exists only in gh_canvas(action='search')
+- Names for canvas objects (id, ids, sourceId, targetId, moves, connections): a GUID, an 8+ hex GUID
+  prefix, or a unique nickname (exact, case-sensitive; default nicknames like Circle count). Group
+  actions (group_*, group=) take a group's exact name or id; a group name is not an object id.
+  A name that fits two things acts on nothing and the error lists their ids; outline prints a
+  usable name for every object
 - Param specs (param/sourceParam/targetParam) on a COMPONENT: a 0-based index, or the port's exact
   name or nickname (case is ignored only when that leaves one match). A partial or ambiguous name
   is refused with suggestions and the side's port list. sourceParam is always an output,
@@ -689,8 +696,9 @@ Key points:
 
 VERIFY PERIODICALLY: After completing a section of work, run gh_inspect(action='status')
 to catch errors in components you didn't directly modify. Changes can break downstream components.
+outline's problem list is capped at 10; status lists every one.
 
-Resources: gh://docs/getting-started, gh://docs/data-trees, gh://docs/common-errors, gh://component/{name}, gh://patterns/*
+Resources: gh://docs/getting-started, gh://docs/canvas-outline, gh://docs/data-trees, gh://docs/common-errors, gh://component/{name}, gh://patterns/*
 ";
         }
 
