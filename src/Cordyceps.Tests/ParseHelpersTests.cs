@@ -324,3 +324,81 @@ public class ParseHelpersDeserializeTests
         Assert.StartsWith("Invalid JSON format", error);
     }
 }
+
+/// <summary>
+/// Arguments that carry names keep every string a string: Json.NET's default turns date-shaped
+/// text into a Date token, which reads back as a culture-dependent date and names nothing.
+/// </summary>
+public class ParseHelpersJsonTextTests
+{
+    [Fact]
+    public void ParseJsonKeepingText_DateShapedString_StaysAString()
+    {
+        var token = ParseHelpers.ParseJsonKeepingText("[\"2026-01-01T00:00:00\", {\"id\": \"2026-01-01T00:00:00Z\"}]");
+        Assert.Equal(Newtonsoft.Json.Linq.JTokenType.String, token[0].Type);
+        Assert.Equal("2026-01-01T00:00:00", (string)token[0]);
+        Assert.Equal("2026-01-01T00:00:00Z", ParseHelpers.TextOf(token[1]["id"]));
+    }
+
+    [Fact]
+    public void ParseJsonKeepingText_TextAfterTheValue_IsAnError()
+    {
+        Assert.Throws<Newtonsoft.Json.JsonReaderException>(() => ParseHelpers.ParseJsonKeepingText("[1] [2]"));
+    }
+
+    [Fact]
+    public void ParseJsonKeepingText_DuplicateKeys_RefusedOnlyWhenAsked()
+    {
+        const string json = "{\"id\": \"a\", \"id\": \"b\"}";
+        Assert.Equal("b", (string)ParseHelpers.ParseJsonKeepingText(json)["id"]);
+        Assert.Throws<Newtonsoft.Json.JsonReaderException>(() => ParseHelpers.ParseJsonKeepingText(json, rejectDuplicateKeys: true));
+    }
+
+    [Fact]
+    public void TextOf_ReadsEachKindOfValue()
+    {
+        var o = ParseHelpers.ParseJsonKeepingText("{\"s\": \"x\", \"n\": null, \"i\": 2, \"f\": 1.5, \"o\": {\"a\": 1}}");
+        Assert.Equal("x", ParseHelpers.TextOf(o["s"]));
+        Assert.Null(ParseHelpers.TextOf(o["n"]));
+        Assert.Null(ParseHelpers.TextOf(o["missing"]));
+        Assert.Equal("2", ParseHelpers.TextOf(o["i"]));
+        Assert.Equal("{\"a\":1}", ParseHelpers.TextOf(o["o"]));
+
+        var saved = CultureInfo.CurrentCulture;
+        try
+        {
+            CultureInfo.CurrentCulture = new CultureInfo("de-DE");
+            Assert.Equal("1.5", ParseHelpers.TextOf(o["f"]));
+        }
+        finally
+        {
+            CultureInfo.CurrentCulture = saved;
+        }
+    }
+
+    // The typed string readers (ids lists of delete, preview and enable; member arrays) were
+    // already safe: Json.NET reads a string element of a string list with ReadAsString, which
+    // never parses dates. Pinned here so a later change to those readers cannot lose it.
+
+    [Fact]
+    public void TryDeserializeArray_OfStrings_KeepsDateShapedText()
+    {
+        Assert.True(ParseHelpers.TryDeserializeArray<string>("[\"2026-01-01T00:00:00\"]", out var ids, out var error), error);
+        Assert.Equal("2026-01-01T00:00:00", Assert.Single(ids));
+    }
+
+    [Fact]
+    public void TryDeserializeList_OfStrings_KeepsDateShapedText()
+    {
+        Assert.True(ParseHelpers.TryDeserializeList<string>("[\"2026-01-01T00:00:00Z\"]", out var ids, out var error), error);
+        Assert.Equal("2026-01-01T00:00:00Z", Assert.Single(ids));
+    }
+
+    [Fact]
+    public void DeserializeObject_ListOfStrings_KeepsDateShapedText()
+    {
+        // The exact call gh_canvas delete and the preview/enable id lists make.
+        var ids = Newtonsoft.Json.JsonConvert.DeserializeObject<System.Collections.Generic.List<string>>("[\"2026-01-01T00:00:00\"]");
+        Assert.Equal("2026-01-01T00:00:00", Assert.Single(ids));
+    }
+}

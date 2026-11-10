@@ -104,7 +104,9 @@ namespace Cordyceps.Core.Canvas
             JArray array;
             try
             {
-                array = JArray.Parse(group);
+                // Strings stay strings: a group can be named "2026-01-01T00:00:00".
+                array = ParseHelpers.ParseJsonKeepingText(group) as JArray
+                        ?? throw new JsonReaderException("expected a JSON array");
             }
             catch (JsonReaderException ex)
             {

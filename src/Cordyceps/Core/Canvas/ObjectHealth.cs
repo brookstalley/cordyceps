@@ -90,7 +90,7 @@ namespace Cordyceps.Core.Canvas
             if (isComponent && inputs != null)
             {
                 var missing = inputs
-                    .Where(i => !i.Optional && i.SourceCount == 0 && i.VolatileCount == 0)
+                    .Where(IsMissing)
                     .Select(i => i.Name)
                     .ToList();
                 if (missing.Count > 0)
@@ -99,6 +99,15 @@ namespace Cordyceps.Core.Canvas
 
             return new HealthResult(HealthStatus.Ok, null, null);
         }
+
+        /// <summary>
+        /// The missing-input rule on its own: a required input with no source and no data. Used by
+        /// <see cref="Classify(MessageLevel, IEnumerable{string}, IEnumerable{string}, IEnumerable{HealthInput}, bool)"/>
+        /// and by <c>gh_inspect(action='disconnected')</c>, which lists such inputs whatever the
+        /// component's message level, so the two cannot disagree on what "missing" means.
+        /// </summary>
+        public static bool IsMissing(HealthInput input) =>
+            !input.Optional && input.SourceCount == 0 && input.VolatileCount == 0;
 
         /// <summary>The health of a snapshot node (components get the DISCONNECTED check; everything else does not).</summary>
         public static HealthResult Classify(CanvasNode node)

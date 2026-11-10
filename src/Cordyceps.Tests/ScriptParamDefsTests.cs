@@ -71,5 +71,20 @@ namespace Cordyceps.Tests
             Assert.Null(error);
             Assert.Null(defs); // null = side omitted, leave params and wires untouched
         }
+
+        [Fact]
+        public void TryParse_DateShapedName_StaysTheName()
+        {
+            Assert.True(ScriptParamDefs.TryParse("[{\"name\":\"2026-01-01T00:00:00\"}]", out var defs, out var error), error);
+            Assert.Equal("2026-01-01T00:00:00", defs[0].Name);
+        }
+
+        [Fact]
+        public void TryParse_TextAfterTheArray_IsMalformed()
+        {
+            Assert.False(ScriptParamDefs.TryParse("[{\"name\":\"x\"}] []", out var defs, out var error));
+            Assert.Null(defs);
+            Assert.StartsWith("not valid JSON", error);
+        }
     }
 }

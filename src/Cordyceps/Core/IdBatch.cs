@@ -87,6 +87,24 @@ namespace Cordyceps.Core
             return $"Nothing was changed: {failed.Count} of {outcomes.Count} {field} did not resolve. {string.Join("; ", parts)}";
         }
 
+        /// <summary>
+        /// For an action whose entries each carry their own payload (<c>moves</c>: a position per
+        /// entry), two entries for one object are two different requests, so acting once would drop
+        /// one silently. Every repeat becomes a failed entry,
+        /// <c>same object as entry i: {reason}</c>; the first entry for the object is unchanged
+        /// and still acted on. Idempotent actions (delete, preview, enable) keep
+        /// <see cref="Collect"/>'s act-once-with-a-note instead.
+        /// </summary>
+        public static IReadOnlyList<IdOutcome> RefuseRepeats(IReadOnlyList<IdOutcome> outcomes, string reason)
+        {
+            if (string.IsNullOrEmpty(reason)) throw new ArgumentException("a reason is required", nameof(reason));
+            return (outcomes ?? Array.Empty<IdOutcome>())
+                .Select(o => o.DuplicateOf.HasValue && o.IsResolved
+                    ? new IdOutcome(o.Index, o.Text, null, $"{o.Note}: {reason}", o.DuplicateOf)
+                    : o)
+                .ToList();
+        }
+
         /// <summary>The ids to act on, in the caller's order, each once.</summary>
         public static IReadOnlyList<Guid> DistinctIds(IReadOnlyList<IdOutcome> outcomes) =>
             (outcomes ?? Array.Empty<IdOutcome>()).Where(o => o.ActOn).Select(o => o.Id.Value).ToList();
