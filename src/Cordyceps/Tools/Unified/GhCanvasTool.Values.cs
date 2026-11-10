@@ -158,6 +158,10 @@ namespace Cordyceps.Tools.Unified
                     try
                     {
                         var itemList = JsonConvert.DeserializeObject<List<Dictionary<string, string>>>(items);
+                        // Check the whole list before clearing: a JSON null list or entry would
+                        // otherwise empty the value list and then fail.
+                        if (itemList == null || itemList.Any(i => i == null))
+                            return ToolHelpers.ErrorResponse("'items' must be a JSON array of {name, value} objects, e.g. [{\"name\":\"A\",\"value\":\"1\"}]");
                         valueList.ListItems.Clear();
 
                         foreach (var item in itemList)

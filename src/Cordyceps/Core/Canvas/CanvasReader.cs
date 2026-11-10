@@ -143,7 +143,7 @@ namespace Cordyceps.Core.Canvas
             {
                 return ReadFullNode(obj, defaults, nodeIds, infra, dropped);
             }
-            catch (Exception ex)
+            catch (Exception ex) // prawduct:allow prawduct/broad-except -- rethrown at once naming the object; nothing is swallowed, and third-party components can throw anything
             {
                 throw new InvalidOperationException(
                     $"Could not read canvas object '{obj.NickName}' ({obj.InstanceGuid}): {ex.Message}", ex);

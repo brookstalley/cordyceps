@@ -130,6 +130,13 @@ Critic mode: per-chunk reviews (inferred for a five-chunk plan), with Chunk 01 o
     GUID; `group_add` refuses self-membership; `delete`, `preview`, `enable` and bulk `connect`
     answer a JSON `null` list with an error instead of throwing. Settled by C1 and by the Product
     goal (a call acts on what it named or says why not).
+  - Chunk 04's refinements to C2 are accepted and listed under C2, with one change by the
+    coordinator: the delegate ignored `depth` when `id` named a group; it is an error instead.
+    Settled by the Product goal (a call does what it says or says why not).
+  - Chunk 01's review observations were fixed on a separate branch: a Names-level snapshot throws
+    on questions only a Full read answers; the default-nickname set is rebuilt per read (no cache
+    that a plugin load can stale); objects with no solve state are marked; dropped wires are
+    logged. `config` on a value list now checks `items` before clearing the list.
   - After 03 merged, the target-resolution loop in the tree action file passes to Chunk 02 (it
     must use the per-call lookup once names resolve through a snapshot), and
     `TreeStatusText.SolverOff` becomes the one source of solver-off wording for Chunk 04.
@@ -360,8 +367,24 @@ out: [...]}], more}`.
 - At most 150 object lines across all requested groups, after which `more` gives the count left out.
 - A direct member that is also in a child group gets its own line and is counted in the child's line.
 
-**Around** (`id=`): `{success, around: NAME, depth, objects: [lines; the centre prefixed "* "],
-fedFrom: [names just past the depth edge], feeds: [...], more}`, at most 60 objects.
+**Around** (`id=`): `{success, around: NAME, depth, objects: [lines], fedFrom: [names just past
+the depth edge], feeds: [...], more}`, at most 60 objects. The `around` field names the centre; its
+line carries no marker, because a marker would break the identifier rule.
+
+**Refinements settled while building (pinned by the golden tests):**
+- Group order: groups in a cycle are ordered as strongly connected components (Tarjan, then Kahn),
+  not appended by position. Overlapping groups make cycles routinely (one shared member gives an
+  edge each way), and appending let whatever a cycle feeds jump ahead of it. Same cost bound.
+- A port token falls back to the port's 0-based index when both its nickname and its name are
+  shared on that side.
+- Inside a list, a name that is only an id is followed by its type (`00000007 Circle`).
+- Group-detail and around object lines carry `= VALUE` for controls, as `controls` does.
+- Group tags in a group detail leave out the group being shown.
+- Group detail and around carry `solver` and `note` only when the solver is not plainly on.
+- `out:` entries are separated by `; ` (each destination list uses `, `); a recipient in no group
+  is named directly.
+- A parameter object's input prints no port label (`← SRC`). Output modifiers are not shown.
+- `depth` passed with a group's id is an error (a group is shown whole), like `depth` without `id`.
 
 **What outline does not claim:** its help and guides say it is for orientation and that it lists
 problems with the same rule as `status`, capped at 10. When `more.problems` is set, run `status`

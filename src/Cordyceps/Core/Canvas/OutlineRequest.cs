@@ -26,11 +26,12 @@ namespace Cordyceps.Core.Canvas
         public const int MinDepth = 1;
         public const int MaxDepth = 10;
 
-        private OutlineRequest(string id, IReadOnlyList<string> groups, int depth)
+        private OutlineRequest(string id, IReadOnlyList<string> groups, int depth, bool depthGiven)
         {
             Id = id;
             GroupTexts = groups;
             Depth = depth;
+            DepthGiven = depthGiven;
         }
 
         /// <summary>The caller's <c>id</c>, unchanged; null when not given.</summary>
@@ -41,6 +42,9 @@ namespace Cordyceps.Core.Canvas
 
         /// <summary>Wires each way for the around view (the default when not given).</summary>
         public int Depth { get; }
+
+        /// <summary>Whether the caller passed <c>depth</c>, as opposed to getting the default.</summary>
+        public bool DepthGiven { get; }
 
         public OutlineMode Mode => Id != null ? OutlineMode.Around : GroupTexts != null ? OutlineMode.Groups : OutlineMode.Overview;
 
@@ -79,7 +83,7 @@ namespace Cordyceps.Core.Canvas
                     return false;
             }
 
-            request = new OutlineRequest(id, groups, depth == 0 ? DefaultDepth : depth);
+            request = new OutlineRequest(id, groups, depth == 0 ? DefaultDepth : depth, depth != 0);
             return true;
         }
 
@@ -150,6 +154,13 @@ namespace Cordyceps.Core.Canvas
                     if (!r.IsResolved)
                     {
                         error = r.Error;
+                        return false;
+                    }
+                    // depth counts wires around one object; a group has no "around", so a depth
+                    // passed with a group's id is refused rather than quietly dropped.
+                    if (r.Entry.IsGroup && DepthGiven)
+                    {
+                        error = "depth only applies when id names an object; this id is a group, which is shown whole (omit depth)";
                         return false;
                     }
                     target = r.Entry.IsGroup

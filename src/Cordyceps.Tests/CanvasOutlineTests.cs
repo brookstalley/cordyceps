@@ -1037,6 +1037,11 @@ namespace Cordyceps.Tests
             Assert.Equal(OutlineMode.Groups, t1.Mode);
             Assert.Equal("MATHS", (string)t1.Render(snap)["groups"][0]["group"]);
 
+            // depth means "wires around one object"; with a group's id it is refused, not dropped.
+            Assert.True(OutlineRequest.TryParse(Short(groups["maths"]), null, 3, out var groupWithDepth, out _));
+            Assert.False(groupWithDepth.TryResolve(snap, out _, out var depthError));
+            Assert.Contains("this id is a group", depthError);
+
             Assert.True(OutlineRequest.TryParse("RESULT", null, 1, out var byName, out _));
             Assert.True(byName.TryResolve(snap, out var t2, out _));
             Assert.Equal(OutlineMode.Around, t2.Mode);
