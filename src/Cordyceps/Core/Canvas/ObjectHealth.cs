@@ -1,0 +1,123 @@
+using System;
+using System.Collections.Generic;
+using System.Linq;
+
+namespace Cordyceps.Core.Canvas
+{
+    /// <summary>The one health classification <c>status</c> and <c>outline</c> share.</summary>
+    public enum HealthStatus
+    {
+        Ok,
+        Error,
+        Warning,
+        Disconnected
+    }
+
+    /// <summary>What the DISCONNECTED rule needs to know about one input.</summary>
+    public readonly struct HealthInput
+    {
+        public HealthInput(string name, bool optional, int sourceCount, int volatileCount)
+        {
+            Name = name ?? string.Empty;
+            Optional = optional;
+            SourceCount = sourceCount;
+            VolatileCount = volatileCount;
+        }
+
+        public string Name { get; }
+        public bool Optional { get; }
+
+        /// <summary>Grasshopper's raw source count (a wire from anything, infrastructure included, counts).</summary>
+        public int SourceCount { get; }
+
+        public int VolatileCount { get; }
+    }
+
+    /// <summary>One object's health: its status, the messages behind it, and the inputs it is missing.</summary>
+    public sealed class HealthResult
+    {
+        public HealthResult(HealthStatus status, IReadOnlyList<string> messages, IReadOnlyList<string> missingInputs)
+        {
+            Status = status;
+            Messages = messages ?? Array.Empty<string>();
+            MissingInputs = missingInputs ?? Array.Empty<string>();
+        }
+
+        public HealthStatus Status { get; }
+
+        /// <summary>Every message at the level that set the status (errors for ERROR, warnings for WARNING).</summary>
+        public IReadOnlyList<string> Messages { get; }
+
+        /// <summary>The names of required inputs with no source and no data (DISCONNECTED only).</summary>
+        public IReadOnlyList<string> MissingInputs { get; }
+
+        /// <summary><c>OK</c>, <c>ERROR</c>, <c>WARNING</c> or <c>DISCONNECTED</c>, as <c>status</c> prints it.</summary>
+        public string StatusText => ObjectHealth.StatusText(Status);
+
+        /// <summary>
+        /// The message as <c>status</c> prints it: the messages joined with <c>"; "</c>,
+        /// <c>Missing: A, B</c> for DISCONNECTED, or empty for OK.
+        /// </summary>
+        public string Message => Status switch
+        {
+            HealthStatus.Error => string.Join("; ", Messages),
+            HealthStatus.Warning => string.Join("; ", Messages),
+            HealthStatus.Disconnected => $"Missing: {string.Join(", ", MissingInputs)}",
+            _ => string.Empty
+        };
+    }
+
+    /// <summary>
+    /// Host-free health rule, in this order: an Error-level object is ERROR; a Warning-level object
+    /// is WARNING; otherwise a component with any input that is required, has no source and holds no
+    /// data is DISCONNECTED, listing those inputs; else OK. Remarks never change a status. A
+    /// parameter object has no inputs in this sense, so only the ERROR and WARNING levels apply.
+    /// </summary>
+    public static class ObjectHealth
+    {
+        public static HealthResult Classify(
+            MessageLevel level,
+            IEnumerable<string> errors,
+            IEnumerable<string> warnings,
+            IEnumerable<HealthInput> inputs,
+            bool isComponent)
+        {
+            if (level == MessageLevel.Error)
+                return new HealthResult(HealthStatus.Error, (errors ?? Enumerable.Empty<string>()).ToList(), null);
+            if (level == MessageLevel.Warning)
+                return new HealthResult(HealthStatus.Warning, (warnings ?? Enumerable.Empty<string>()).ToList(), null);
+
+            if (isComponent && inputs != null)
+            {
+                var missing = inputs
+                    .Where(i => !i.Optional && i.SourceCount == 0 && i.VolatileCount == 0)
+                    .Select(i => i.Name)
+                    .ToList();
+                if (missing.Count > 0)
+                    return new HealthResult(HealthStatus.Disconnected, null, missing);
+            }
+
+            return new HealthResult(HealthStatus.Ok, null, null);
+        }
+
+        /// <summary>The health of a snapshot node (components get the DISCONNECTED check; everything else does not).</summary>
+        public static HealthResult Classify(CanvasNode node)
+        {
+            if (node == null) throw new ArgumentNullException(nameof(node));
+            return Classify(
+                node.MessageLevel,
+                node.Errors,
+                node.Warnings,
+                node.Inputs.Select(p => new HealthInput(p.Name, p.Optional, p.SourceCount, p.VolatileCount)),
+                node.Kind == NodeKind.Component);
+        }
+
+        public static string StatusText(HealthStatus status) => status switch
+        {
+            HealthStatus.Error => "ERROR",
+            HealthStatus.Warning => "WARNING",
+            HealthStatus.Disconnected => "DISCONNECTED",
+            _ => "OK"
+        };
+    }
+}
