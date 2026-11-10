@@ -115,10 +115,8 @@ Critic mode: per-chunk reviews (inferred for a five-chunk plan), with Chunk 01 o
   - *Inferred:* when a response echoes the id the caller passed, it now echoes the resolved full
     GUID (D format), so a caller who passed a name gets the handle back. Callers who passed a GUID
     see no change except canonical formatting.
-- **Owner's call, flagged:** whether destructive actions (`delete`, `gh_wire clear`, `group_delete`)
-  accept a *default* nickname. Built as inferred (yes) and shown to the owner in the PR; the
-  alternative, refusing default nicknames on destructive actions only, makes the rule depend on
-  the action. Reversing it is one condition in the resolver plus its tests.
+- **Owner's call, answered (ruling 6):** destructive actions refuse a default nickname. The first
+  build accepted one; Chunk 06 reversed it.
 - **Release:** several entries are breaking (the Changed list in Chunk 05), so this is a major version under semantic
   versioning. The owner sets the number at release.
 - **Decisions made mid-build:**

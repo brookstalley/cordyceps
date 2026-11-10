@@ -46,6 +46,19 @@ lists phantom objects (#106). Outline lines head `NAME · Type`, and a nickname 
 `OutlineGrammar.IsPrintable` says it can be cut back out of a line; otherwise, as for a default
 nickname or a group named `Group`, the id is printed (#104). `gh_inspect` `limit` defaults to 0 meaning the action's default.
 
+**Also fixed on the way:** the bridge component is no longer revealed by `move`, bulk `connect`
+or `group_move` (they said "Protected"); `gh_inspect log` with a negative `limit` is an error and
+clears nothing; a JSON `null` for `ids`, `connections` or value-list `items` is an error instead
+of a throw, and `config` checks `items` before clearing the list; names shaped like dates work in
+JSON arguments; one bad entry in a bulk `connect` fails only that entry. Member arrays gained two
+contract changes of their own: `group_add` refuses a group listed as its own member, and
+`group_remove` reports entries that resolve but are not members under `notMembers`.
+
+**Open for the owner:** whether removing a port (`gh_canvas zoomable` remove or set_count, a
+`gh_script` parameter rebuild) counts as destructive for the default-nickname rule; today those
+actions still accept a unique default nickname. `CLAUDE.md`'s release section was condensed to
+the branch rule, the two commands and a pointer to `docs/release-process.md`, which holds the rest.
+
 **Not done here:** batch edits, sweeps, the edit transaction and undo (#91), solve policy, moving
 `status`, `trace`, `list`, `group_list` and `gh_wire list` onto the snapshot, stored values on
 unwired inputs and group colours in outline.

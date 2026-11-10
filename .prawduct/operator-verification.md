@@ -550,7 +550,7 @@ appear in `GH_Group.ObjectIDs`, and what a locked object reports are facts of th
 
 **Canvas for the checks:** a Circle renamed `C1`, two Point parameters left at their default
 nickname `Pt`, a Number Slider renamed `R`, a group `POSTS` around `C1`, a Value List, and a C#
-Script component. Steps 26-31 add a Circle left at its default nickname `Circle` (the only object
+Script component. Steps 26-32 add a Circle left at its default nickname `Circle` (the only object
 carrying it) and a group made with Ctrl+G; nothing before them depends on either.
 
 **Verify:**
