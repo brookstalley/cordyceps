@@ -4,6 +4,7 @@ type: fix
 scope: strict-inputs
 date: 2026-11-09
 title: a call does what it says, or says why not
+closes: [brookstalley/cordyceps#88, brookstalley/cordyceps#89, brookstalley/cordyceps#90]
 ---
 **Why:** a review of the Hyperceps fork (Yibin Yang, MIT) against Cordyceps found three places
 where a call that named something slightly wrong succeeded on something else, and one unrelated
