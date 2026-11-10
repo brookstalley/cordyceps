@@ -19,7 +19,7 @@ gh_canvas(action='outline', id='COUNT', depth=3)             # the wiring around
 
 | Argument | Takes | Rules |
 |----------|-------|-------|
-| `group` | One group name or id, or a JSON array of them | Group names match exactly (case-sensitive). A text that starts with `[` must parse as a JSON array of strings |
+| `group` | One group name or id, or a JSON array of them | Group names match exactly (case-sensitive). A text that starts with `[` must parse as a JSON array of strings, so a group named `[WIP] facade` is passed as `group='["[WIP] facade"]'` |
 | `id` | One object: GUID, 8+ hex GUID prefix, or unique nickname | A group's id shows that group, like `group=` |
 | `depth` | 1-10, default 2 | Only with `id`, and only when `id` names an object (a group is shown whole) |
 

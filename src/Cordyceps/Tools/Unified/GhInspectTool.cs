@@ -128,6 +128,7 @@ namespace Cordyceps.Tools.Unified
             },
             Notes = new[]
             {
+                "id names an object by GUID, 8+ hex GUID prefix, or unique nickname (exact, case-sensitive); a name that fits two objects is an error listing their ids",
                 "Use 'status' to quickly identify errors and warnings",
                 "Use 'trace' to understand data flow through your definition",
                 "Use 'connection' when a call is slow or silent — it distinguishes a busy solver from a host blocked by a modal dialog"

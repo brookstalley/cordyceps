@@ -280,13 +280,27 @@ namespace Cordyceps.Tests
         [Fact]
         public void Parse_SingleId_DefaultsToOutputAndTwentyRuns()
         {
-            var r = Parse(id: " abc12345 ");
+            var r = Parse(id: "abc12345");
             var t = Assert.Single(r.Targets);
             Assert.Equal("abc12345", t.Id);
             Assert.Equal("id", t.Label);
             Assert.Null(t.Param);
             Assert.False(r.InputSide);
             Assert.Equal(20, r.MaxRuns);
+        }
+
+        [Fact]
+        public void Parse_NeverTrimsAnIdOrParam()
+        {
+            // The name rule reads text exactly as given (" COUNT" is not COUNT, and the resolver
+            // suggests the right spelling); tree must not be the one tool that trims.
+            var single = Parse(id: " abc12345 ", param: " R ");
+            Assert.Equal(" abc12345 ", single.Targets[0].Id);
+            Assert.Equal(" R ", single.Targets[0].Param);
+
+            var many = Parse(ids: "[\" a1\", {\"id\": \"b2 \", \"param\": \" X\"}]");
+            Assert.Equal(new[] { " a1", "b2 " }, many.Targets.Select(t => t.Id));
+            Assert.Equal(" X", many.Targets[1].Param);
         }
 
         [Fact]

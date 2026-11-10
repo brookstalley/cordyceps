@@ -137,6 +137,14 @@ Critic mode: per-chunk reviews (inferred for a five-chunk plan), with Chunk 01 o
     on questions only a Full read answers; the default-nickname set is rebuilt per read (no cache
     that a plugin load can stale); objects with no solve state are marked; dropped wires are
     logged. `config` on a value list now checks `items` before clearing the list.
+  - Found while writing the docs against the code: tree trimmed `id`, `ids` entries and `param`
+    where C1 says text is never trimmed, so `" COUNT"` resolved in tree and nowhere else. Tree no
+    longer trims; the test that pinned trimming was written on this branch and asserted the
+    departure, so it is corrected rather than kept. Also recorded as built: bulk `connect` resolves
+    every connection first and then wires the ones that resolved (per-entry results, like
+    `delete`); group detail caps `in` and `out` at 16, inline name lists at 8, `out:` entries per
+    group line at 6 with 4 destinations each; tree reports an aborted last solution only when the
+    solver is off (each tree's owner state says whether it computed).
   - After 03 merged, the target-resolution loop in the tree action file passes to Chunk 02 (it
     must use the per-call lookup once names resolve through a snapshot), and
     `TreeStatusText.SolverOff` becomes the one source of solver-off wording for Chunk 04.

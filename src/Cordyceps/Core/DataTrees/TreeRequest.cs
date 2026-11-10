@@ -137,7 +137,7 @@ namespace Cordyceps.Core.DataTrees
                     error = "'param' is empty; omit it to read every port on the side";
                     return false;
                 }
-                targets = new List<TreeTarget> { new TreeTarget("id", id.Trim(), param?.Trim()) };
+                targets = new List<TreeTarget> { new TreeTarget("id", id, param) };
                 return true;
             }
 
@@ -209,7 +209,7 @@ namespace Cordyceps.Core.DataTrees
                     error = $"{label}: the id is empty";
                     return false;
                 }
-                target = new TreeTarget(label, text.Trim(), null);
+                target = new TreeTarget(label, text, null);
                 return true;
             }
 
@@ -239,14 +239,14 @@ namespace Cordyceps.Core.DataTrees
                     if (paramToken.Type == JTokenType.Integer)
                         param = paramToken.Value<long>().ToString(CultureInfo.InvariantCulture);
                     else if (paramToken.Type == JTokenType.String && !string.IsNullOrWhiteSpace(paramToken.Value<string>()))
-                        param = paramToken.Value<string>().Trim();
+                        param = paramToken.Value<string>();
                     else
                     {
                         error = $"{label}: 'param' must be a non-empty string or a port index";
                         return false;
                     }
                 }
-                target = new TreeTarget(label, idValue.Value<string>().Trim(), param);
+                target = new TreeTarget(label, idValue.Value<string>(), param);
                 return true;
             }
 
