@@ -22,7 +22,7 @@ namespace Cordyceps.Tools.Unified
         private readonly GrasshopperContext _context;
 
         private const string GroupIdTip = "'id' names the group: its exact name (case-sensitive), its GUID, or an 8+ hex GUID prefix. A name two groups share acts on nothing and lists both ids";
-        private const string MembersTip = "Every entry of 'ids' is an object (GUID, 8+ hex GUID prefix, or unique nickname; a group by its id). If any entry does not resolve, the call fails naming it and nothing is changed; a repeated object is added once, with a note";
+        private const string MembersTip = "Every entry of 'ids' is an object (GUID, 8+ hex GUID prefix, or unique nickname; a group by its id). If any entry does not resolve, the call fails naming it and nothing is changed; a repeated object is acted on once, with a note";
 
         private static readonly UnifiedToolInfo ToolInfo = new UnifiedToolInfo
         {
@@ -61,7 +61,7 @@ namespace Cordyceps.Tools.Unified
                     Tips = new[] {
                         "Use 'id' for single, 'ids' (JSON array) for bulk",
                         "Each id may be a GUID, an 8+ hex GUID prefix, or a unique nickname (default nicknames such as 'Circle' too). Every id is resolved before anything is deleted",
-                        "A name that fits two objects, or an id that fits nothing, deletes nothing for that entry and its error lists the candidates by id; the other entries are still deleted (per-id results)",
+                        "A name that fits two objects, or an id that fits nothing, deletes nothing for that entry (an ambiguous name's error lists the candidates by id); the other entries are still deleted (per-id results)",
                         "A repeated object is deleted once; the later entry carries note 'same object as entry i'"
                     }
                 },

@@ -142,6 +142,10 @@ namespace Cordyceps.Tools.Unified
                     return ToolHelpers.ErrorResponse("Provide sourceId+targetId for single, or connections array for bulk");
                 }
 
+                // The JSON literal null deserializes to a null list; that is a malformed call, not zero connections.
+                if (connectionList == null)
+                    return ToolHelpers.ErrorResponse("'connections' must be a JSON array: [{sourceId,sourceParam,targetId,targetParam},...]");
+
                 // Pass 1: resolve every connection's source, target and ports against one lookup,
                 // before the first wire is added. Pass 2 wires only the connections that passed.
                 var lookup = new ObjectLookup(doc);

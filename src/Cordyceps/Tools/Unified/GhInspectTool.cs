@@ -310,7 +310,7 @@ namespace Cordyceps.Tools.Unified
                     }
                 }
 
-                return JsonConvert.SerializeObject(new { success = true, id, name = obj.Name, outputs });
+                return JsonConvert.SerializeObject(new { success = true, id = obj.InstanceGuid.ToString(), name = obj.Name, outputs });
             });
         }
 
@@ -413,7 +413,7 @@ namespace Cordyceps.Tools.Unified
                     }
                 }
 
-                return JsonConvert.SerializeObject(new { success = true, id, name = obj.Name, outputs });
+                return JsonConvert.SerializeObject(new { success = true, id = obj.InstanceGuid.ToString(), name = obj.Name, outputs });
             });
         }
 

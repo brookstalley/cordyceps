@@ -101,7 +101,7 @@ namespace Cordyceps.Tools.Unified
                     // would hide typos and duplicate groups. Omit groupId to create a group.
                     if (!ToolHelpers.TryGetUnprotectedGroup(lookup, groupId, out group, out var groupError))
                         return ToolHelpers.ErrorResponse(
-                            $"{groupError}{(groupError.EndsWith(".") ? " " : ". ")}Omit 'id' (and pass 'name') to create a new group.");
+                            $"{groupError}{(groupError.EndsWith(".") || groupError.EndsWith("?") ? " " : ". ")}Omit 'id' (and pass 'name') to create a new group.");
                 }
 
                 if (!ToolHelpers.TryResolveIdArray(lookup, componentIds, "ids", out var objects, out var outcomes, out error))

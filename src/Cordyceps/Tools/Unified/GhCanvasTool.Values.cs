@@ -48,7 +48,7 @@ namespace Cordyceps.Tools.Unified
                 return JsonConvert.SerializeObject(new
                 {
                     success = true,
-                    id,
+                    id = component.InstanceGuid.ToString(),
                     name = component.Name,
                     nickname = component.NickName,
                     valueType,
@@ -108,7 +108,7 @@ namespace Cordyceps.Tools.Unified
                 return JsonConvert.SerializeObject(new
                 {
                     success = true,
-                    id,
+                    id = component.InstanceGuid.ToString(),
                     type = component.Name,
                     value
                 });
@@ -145,7 +145,7 @@ namespace Cordyceps.Tools.Unified
                     return JsonConvert.SerializeObject(new
                     {
                         success = true,
-                        id,
+                        id = component.InstanceGuid.ToString(),
                         type = "slider",
                         min = (double)slider.Slider.Minimum,
                         max = (double)slider.Slider.Maximum,
@@ -176,7 +176,7 @@ namespace Cordyceps.Tools.Unified
                         return JsonConvert.SerializeObject(new
                         {
                             success = true,
-                            id,
+                            id = component.InstanceGuid.ToString(),
                             type = "value_list",
                             itemCount = valueList.ListItems.Count,
                             items = valueList.ListItems.Select(i => new { name = i.Name, value = i.Expression }).ToList()

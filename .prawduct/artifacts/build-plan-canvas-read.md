@@ -125,6 +125,11 @@ Critic mode: per-chunk reviews (inferred for a five-chunk plan), with Chunk 01 o
     snapshot also gives a group its bounds' top-left as its position, exposes the top-level groups
     of a node, and promotes a group reachable only through a nesting cycle to top level so it
     cannot vanish from an overview. Settled by the Product goal (every printed name round-trips).
+  - Chunk 02's departures from "a full GUID behaves exactly as today" are accepted: group actions
+    answer a missing GUID with the Groups-scope text C1.2 gives; `move`'s not-found text gains the
+    GUID; `group_add` refuses self-membership; `delete`, `preview`, `enable` and bulk `connect`
+    answer a JSON `null` list with an error instead of throwing. Settled by C1 and by the Product
+    goal (a call acts on what it named or says why not).
   - After 03 merged, the target-resolution loop in the tree action file passes to Chunk 02 (it
     must use the per-call lookup once names resolve through a snapshot), and
     `TreeStatusText.SolverOff` becomes the one source of solver-off wording for Chunk 04.
@@ -694,8 +699,13 @@ Type: cumulative-final. Coordinator.
     - `group_move` and `list group=` match group names exactly (case and whole name);
     - member arrays fail the call on any unresolved id instead of skipping it;
     - `gh_wire list` with an unknown id is an error;
-    - non-GUID error texts changed;
-    - response echoes carry the resolved GUID;
+    - non-GUID error texts changed, including on `move`: a missing id reads `Component ID is
+      required` (was `Invalid or missing id`) and a bad x or y reads `Invalid x/y: …`;
+    - on group actions a missing full GUID reads `Group not found: {text}` (was `Component not
+      found: {guid}`); a non-group GUID on `list group=` reads `Object is not a group`;
+    - `group_add` refuses a group listed as its own member;
+    - every response that echoes an id carries the resolved GUID, `get`, `set`, `config`,
+      `outputs` and `geometry` included;
     - `gh_inspect` `limit` defaults to 0 (the action's default), so `log` with an explicit
       `limit=0` returns the default 100 entries where it returned none.
   - Fixed: infrastructure existence leaked by `move`, bulk connect and `group_move`; a negative
