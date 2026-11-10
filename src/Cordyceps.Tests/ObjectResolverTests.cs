@@ -564,6 +564,20 @@ namespace Cordyceps.Tests
         }
 
         [Fact]
+        public void Display_AGroupWithTheDefaultName_PrintsItsId()
+        {
+            // group_delete refuses the default group name even when one group carries it, so the
+            // name outline prints for that group must be one group_delete accepts: its id.
+            var g = new Guid("00000030-0000-0000-0000-000000000000");
+            var snap = TestCanvas.Snap(new[] { TestCanvas.Node(A, "COUNT") }, new[] { TestCanvas.Group(g, "Group") });
+            var names = new DisplayNames(snap);
+
+            Assert.Equal("00000030", names.DisplayName(g));
+            Assert.True(ObjectResolver.Resolve(snap, names.DisplayName(g), ResolveScope.Groups, ResolveIntent.Destructive).IsResolved);
+            Assert.False(ObjectResolver.Resolve(snap, "Group", ResolveScope.Groups, ResolveIntent.Destructive).IsResolved);
+        }
+
+        [Fact]
         public void Display_GroupShortId_MustResolveInBothScopes()
         {
             // Group G2's short id equals group G1's name: in the Groups scope it reads two ways.

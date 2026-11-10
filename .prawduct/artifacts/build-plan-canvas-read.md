@@ -177,6 +177,19 @@ Critic mode: per-chunk reviews (inferred for a five-chunk plan), with Chunk 01 o
     `Caps:` tip still says every capped list ends `+N more`, which is not true of the `objects`
     arrays; it is corrected with the next change to that help text (#104). `unread` can count a
     wire into a free parameter twice; the statement still appears, only the number is high.
+  - Chunks 06 and 07 (the owner's second rulings) as built, with the delegates' refinements
+    accepted: the intent (ordinary or destructive) is a required argument where many ids are
+    resolved, and an explicit overload on the single lookups; "Did you mean" never offers a default
+    name under destructive intent; a set nickname shared with a default one keeps the ordinary
+    ambiguity text; the default group name is taken to be exactly `Group` (to confirm live). The
+    printable-name rule also refuses a nickname containing ` (`, ` [` or ` = ` (what follows a
+    name on a line) and, for groups, `]`, so `Width (m)` prints as its id. Problem lines put
+    ` · ` before the health text and a child group line reads `NAME · group · …`. Status and
+    outline share one population predicate (`ObjectHealth.IsSubject`), and status now walks active
+    objects, so phantom objects no longer appear in it. Added by the coordinator at integration:
+    a group carrying the default name is printed by its id, because `group_delete` refuses that
+    name and every printed name must work everywhere. Settled by owner rulings 6-8 and the
+    Product goal.
   - After 03 merged, the target-resolution loop in the tree action file passes to Chunk 02 (it
     must use the per-call lookup once names resolve through a snapshot), and
     `TreeStatusText.SolverOff` becomes the one source of solver-off wording for Chunk 04.
@@ -779,14 +792,14 @@ Contract (C1, rule 9, new):
 - Non-destructive actions are unchanged.
 
 Deliverables:
-- [ ] `src/Cordyceps/Core/Canvas/ObjectResolver.cs`: the intent parameter, the refusal and its text.
-- [ ] `src/Cordyceps/Core/ToolHelpers.cs` and `src/Cordyceps/Core/IdBatch.cs`: the intent carried
+- [x] `src/Cordyceps/Core/Canvas/ObjectResolver.cs`: the intent parameter, the refusal and its text.
+- [x] `src/Cordyceps/Core/ToolHelpers.cs` and `src/Cordyceps/Core/IdBatch.cs`: the intent carried
   through the lookups, required at the call site so a new removal action cannot forget to decide
   (the shape the group refusal already uses).
-- [ ] `src/Cordyceps/Tools/Unified/GhCanvasTool.cs`, `src/Cordyceps/Tools/Unified/GhCanvasTool.Groups.cs`
+- [x] `src/Cordyceps/Tools/Unified/GhCanvasTool.cs`, `src/Cordyceps/Tools/Unified/GhCanvasTool.Groups.cs`
   and `src/Cordyceps/Tools/Unified/GhWireTool.cs`: the four actions pass destructive intent; their
   `ActionInfo` tips and parameter descriptions say so.
-- [ ] `src/Cordyceps.Tests/ObjectResolverTests.cs` and `src/Cordyceps.Tests/IdBatchTests.cs`: a
+- [x] `src/Cordyceps.Tests/ObjectResolverTests.cs` and `src/Cordyceps.Tests/IdBatchTests.cs`: a
   unique default nickname refused under destructive intent and resolved under ordinary intent; a
   set nickname, a GUID and a prefix resolved under both; the default group name; the exact error
   text; a mixed `ids` list.
@@ -817,11 +830,11 @@ Contract:
   omissions in `more.objects` only).
 
 Deliverables:
-- [ ] `src/Cordyceps/Tools/Unified/GhInspectTool.cs`: `ActionStatus` reads the wider population.
-- [ ] `src/Cordyceps/Core/Canvas/ObjectResolver.cs`: the `DisplayNames` rule only.
-- [ ] `src/Cordyceps/Core/Canvas/OutlineView.cs` and `src/Cordyceps/Tools/Unified/GhCanvasTool.Outline.cs`:
+- [x] `src/Cordyceps/Tools/Unified/GhInspectTool.cs`: `ActionStatus` reads the wider population.
+- [x] `src/Cordyceps/Core/Canvas/ObjectResolver.cs`: the `DisplayNames` rule only.
+- [x] `src/Cordyceps/Core/Canvas/OutlineView.cs` and `src/Cordyceps/Tools/Unified/GhCanvasTool.Outline.cs`:
   the line heads, the status wording, the tips.
-- [ ] `src/Cordyceps.Tests/CanvasOutlineTests.cs`, `src/Cordyceps.Tests/ObjectResolverTests.cs`
+- [x] `src/Cordyceps.Tests/CanvasOutlineTests.cs`, `src/Cordyceps.Tests/ObjectResolverTests.cs`
   (display-name cases only) and `src/Cordyceps.Tests/ObjectHealthTests.cs`: goldens updated to the
   new heads; a multi-word nickname on a multi-word type; nicknames that are not printable; the
   status population rule where it can be expressed host-free.

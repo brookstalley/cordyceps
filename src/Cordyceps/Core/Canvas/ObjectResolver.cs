@@ -510,7 +510,9 @@ namespace Cordyceps.Core.Canvas
             if (entry == null)
                 result = DisplayId(id);
             else if (entry.IsGroup)
-                result = OutlineGrammar.IsPrintable(entry.NickName, isGroup: true)
+                // A default group name is refused by group_delete, like a default nickname by
+                // delete, so it is never printed as a name: every printed name must work everywhere.
+                result = !entry.IsDefaultNickName && OutlineGrammar.IsPrintable(entry.NickName, isGroup: true)
                          && ObjectResolver.ResolvesTo(_index, entry.NickName, ResolveScope.Groups, id)
                     ? entry.NickName : DisplayId(id);
             else
