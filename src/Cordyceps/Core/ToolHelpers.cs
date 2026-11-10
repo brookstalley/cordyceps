@@ -337,12 +337,21 @@ namespace Cordyceps.Core
         /// also returning the active document.
         /// </summary>
         public static bool TryGetUnprotectedComponentWithDoc(GrasshopperContext context, string id,
+            out GH_Document doc, out IGH_DocumentObject obj, out string error, string worksOn = null) =>
+            TryGetUnprotectedComponentWithDoc(context, id, ResolveIntent.Ordinary, out doc, out obj, out error, worksOn);
+
+        /// <summary>
+        /// <see cref="TryGetUnprotectedComponentWithDoc(GrasshopperContext, string, out GH_Document, out IGH_DocumentObject, out string, string)"/>
+        /// with the caller's <paramref name="intent"/>. An action that removes something calls this
+        /// form with <see cref="ResolveIntent.Destructive"/>; the overloads without an intent are ordinary.
+        /// </summary>
+        public static bool TryGetUnprotectedComponentWithDoc(GrasshopperContext context, string id, ResolveIntent intent,
             out GH_Document doc, out IGH_DocumentObject obj, out string error, string worksOn = null)
         {
             obj = null;
             if (!TryGetActiveDocument(context, out doc, out error))
                 return false;
-            return TryGetUnprotectedComponent(new ObjectLookup(doc), id, out obj, out error, worksOn);
+            return TryGetUnprotectedComponent(new ObjectLookup(doc), id, intent, out obj, out error, worksOn);
         }
 
         /// <summary>
@@ -350,9 +359,14 @@ namespace Cordyceps.Core
         /// so a loop over many ids computes infrastructure once and builds at most one snapshot.
         /// </summary>
         public static bool TryGetUnprotectedComponent(ObjectLookup lookup, string id,
+            out IGH_DocumentObject obj, out string error, string worksOn = null) =>
+            TryGetUnprotectedComponent(lookup, id, ResolveIntent.Ordinary, out obj, out error, worksOn);
+
+        /// <summary>The per-call-lookup component form with the caller's <paramref name="intent"/> (see <see cref="ResolveIntent"/>).</summary>
+        public static bool TryGetUnprotectedComponent(ObjectLookup lookup, string id, ResolveIntent intent,
             out IGH_DocumentObject obj, out string error, string worksOn = null)
         {
-            if (!TryGetUnprotectedObject(lookup, id, out obj, out error))
+            if (!TryGetUnprotectedObject(lookup, id, intent, out obj, out error))
                 return false;
             if (obj is GH_Group group)
             {
@@ -378,12 +392,17 @@ namespace Cordyceps.Core
             return TryGetUnprotectedObject(new ObjectLookup(doc), id, out obj, out error);
         }
 
-        /// <summary>The per-call-lookup form of <see cref="TryGetUnprotectedObject(GrasshopperContext, string, out IGH_DocumentObject, out string)"/>.</summary>
+        /// <summary>The per-call-lookup form of <see cref="TryGetUnprotectedObject(GrasshopperContext, string, out IGH_DocumentObject, out string)"/>, ordinary intent.</summary>
         public static bool TryGetUnprotectedObject(ObjectLookup lookup, string id,
+            out IGH_DocumentObject obj, out string error) =>
+            TryGetUnprotectedObject(lookup, id, ResolveIntent.Ordinary, out obj, out error);
+
+        /// <summary>The per-call-lookup object form with the caller's <paramref name="intent"/> (see <see cref="ResolveIntent"/>).</summary>
+        public static bool TryGetUnprotectedObject(ObjectLookup lookup, string id, ResolveIntent intent,
             out IGH_DocumentObject obj, out string error)
         {
             obj = null;
-            if (!TryResolveTarget(lookup, id, ResolveScope.Objects, out var target, out error))
+            if (!TryResolveTarget(lookup, id, ResolveScope.Objects, intent, out var target, out error))
                 return false;
             return TryFindComponent(lookup.Document, target, out obj, out error);
         }
@@ -403,9 +422,10 @@ namespace Cordyceps.Core
         /// infrastructure is refused here (<c>Component not found: {guid}</c>, or
         /// <c>Group not found: {text}</c> in the Groups scope) and existence is left to the caller,
         /// which reads the document. Any other text goes to <see cref="ObjectResolver"/> in
-        /// <paramref name="scope"/> over the lookup's names-only snapshot.
+        /// <paramref name="scope"/> and <paramref name="intent"/> over the lookup's names-only
+        /// snapshot. Intent never changes the GUID path: a full GUID is precise whatever the action.
         /// </summary>
-        private static bool TryResolveTarget(ObjectLookup lookup, string id, ResolveScope scope,
+        private static bool TryResolveTarget(ObjectLookup lookup, string id, ResolveScope scope, ResolveIntent intent,
             out Guid target, out string error)
         {
             if (lookup == null) throw new ArgumentNullException(nameof(lookup));
@@ -424,7 +444,7 @@ namespace Cordyceps.Core
                 return true;
             }
 
-            var r = ObjectResolver.Resolve(lookup.Index, id, scope);
+            var r = ObjectResolver.Resolve(lookup.Index, id, scope, intent);
             if (!r.IsResolved)
             {
                 error = r.Error;
@@ -441,19 +461,31 @@ namespace Cordyceps.Core
         /// full GUID takes the direct path (no snapshot). Must be called on the UI thread.
         /// </summary>
         public static bool TryGetUnprotectedGroup(GrasshopperContext context, string id,
+            out GH_Document doc, out GH_Group group, out string error) =>
+            TryGetUnprotectedGroup(context, id, ResolveIntent.Ordinary, out doc, out group, out error);
+
+        /// <summary>
+        /// The group lookup with the caller's <paramref name="intent"/>: <c>group_delete</c> passes
+        /// <see cref="ResolveIntent.Destructive"/>, so the default group name never selects the group it removes.
+        /// </summary>
+        public static bool TryGetUnprotectedGroup(GrasshopperContext context, string id, ResolveIntent intent,
             out GH_Document doc, out GH_Group group, out string error)
         {
             group = null;
             if (!TryGetActiveDocument(context, out doc, out error))
                 return false;
-            return TryGetUnprotectedGroup(new ObjectLookup(doc), id, out group, out error);
+            return TryGetUnprotectedGroup(new ObjectLookup(doc), id, intent, out group, out error);
         }
 
-        /// <summary>The group overload for a per-call <see cref="ObjectLookup"/>.</summary>
-        public static bool TryGetUnprotectedGroup(ObjectLookup lookup, string id, out GH_Group group, out string error)
+        /// <summary>The group overload for a per-call <see cref="ObjectLookup"/>, ordinary intent.</summary>
+        public static bool TryGetUnprotectedGroup(ObjectLookup lookup, string id, out GH_Group group, out string error) =>
+            TryGetUnprotectedGroup(lookup, id, ResolveIntent.Ordinary, out group, out error);
+
+        /// <summary>The group overload for a per-call <see cref="ObjectLookup"/> with the caller's <paramref name="intent"/>.</summary>
+        public static bool TryGetUnprotectedGroup(ObjectLookup lookup, string id, ResolveIntent intent, out GH_Group group, out string error)
         {
             group = null;
-            if (!TryResolveTarget(lookup, id, ResolveScope.Groups, out var target, out error))
+            if (!TryResolveTarget(lookup, id, ResolveScope.Groups, intent, out var target, out error))
                 return false;
 
             var obj = lookup.Document.FindObject(target, true);
@@ -477,9 +509,12 @@ namespace Cordyceps.Core
         /// <see cref="IdBatch"/>) and the live object for each resolved id. With
         /// <paramref name="acceptGroups"/> false, an entry naming a group fails with the
         /// <see cref="DefaultGroupRefusal"/> text (or <paramref name="worksOn"/>).
+        /// <paramref name="intent"/> has no default, like <paramref name="acceptGroups"/>: an action
+        /// that removes what it names passes <see cref="ResolveIntent.Destructive"/>, and then an
+        /// entry naming an object by its default nickname fails (the others still resolve).
         /// </summary>
         public static IReadOnlyList<IdOutcome> ResolveIds(ObjectLookup lookup, IReadOnlyList<string> texts,
-            bool acceptGroups, out Dictionary<Guid, IGH_DocumentObject> objects, string worksOn = null)
+            bool acceptGroups, ResolveIntent intent, out Dictionary<Guid, IGH_DocumentObject> objects, string worksOn = null)
         {
             var found = new Dictionary<Guid, IGH_DocumentObject>();
             var outcomes = IdBatch.Collect(texts, text =>
@@ -487,8 +522,8 @@ namespace Cordyceps.Core
                 IGH_DocumentObject obj;
                 string err;
                 var ok = acceptGroups
-                    ? TryGetUnprotectedObject(lookup, text, out obj, out err)
-                    : TryGetUnprotectedComponent(lookup, text, out obj, out err, worksOn);
+                    ? TryGetUnprotectedObject(lookup, text, intent, out obj, out err)
+                    : TryGetUnprotectedComponent(lookup, text, intent, out obj, out err, worksOn);
                 if (!ok)
                     return (null, err);
                 found[obj.InstanceGuid] = obj;
@@ -512,7 +547,7 @@ namespace Cordyceps.Core
             if (!ParseHelpers.TryDeserializeArray<string>(json, out var texts, out error))
                 return false;
 
-            outcomes = ResolveIds(lookup, texts, acceptGroups: true, out var found);
+            outcomes = ResolveIds(lookup, texts, acceptGroups: true, ResolveIntent.Ordinary, out var found);
             error = IdBatch.AllOrNothingError(outcomes, field);
             if (error != null)
                 return false;

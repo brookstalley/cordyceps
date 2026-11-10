@@ -69,7 +69,7 @@ namespace Cordyceps.Tools.Unified
         {
             return _context.ExecuteOnUiThread(() =>
             {
-                if (!ToolHelpers.TryGetUnprotectedGroup(_context, id, out var doc, out var group, out var error))
+                if (!ToolHelpers.TryGetUnprotectedGroup(_context, id, Core.Canvas.ResolveIntent.Destructive, out var doc, out var group, out var error))
                     return ToolHelpers.ErrorResponse(error);
 
                 var deletedId = group.InstanceGuid.ToString();

@@ -60,8 +60,9 @@ namespace Cordyceps.Tools.Unified
                     Example = "action='delete', id='abc-123' OR action='delete', ids='[\"a\",\"b\"]'",
                     Tips = new[] {
                         "Use 'id' for single, 'ids' (JSON array) for bulk",
-                        "Each id may be a GUID, an 8+ hex GUID prefix, or a unique nickname (default nicknames such as 'Circle' too). Every id is resolved before anything is deleted",
-                        "A name that fits two objects, or an id that fits nothing, deletes nothing for that entry (an ambiguous name's error lists the candidates by id); the other entries are still deleted (per-id results)",
+                        "Each id may be a GUID, an 8+ hex GUID prefix, or a unique nickname you set. Every id is resolved before anything is deleted",
+                        "A default nickname (the one every new object of the type gets, like 'Circle') never selects what delete removes, even when only one object has it: the error prints the id to pass, or rename the object first (action='rename') and pass the new name",
+                        "A name that fits two objects, a default nickname, or an id that fits nothing, deletes nothing for that entry (an ambiguous name's error lists the candidates by id); the other entries are still deleted (per-id results)",
                         "A repeated object is deleted once; the later entry carries note 'same object as entry i'"
                     }
                 },
@@ -243,7 +244,7 @@ namespace Cordyceps.Tools.Unified
                     Description = "Delete a visual group (components remain)",
                     Required = new[] { "id" },
                     Example = "action='group_delete', id='abc-123'",
-                    Tips = new[] { GroupIdTip }
+                    Tips = new[] { GroupIdTip, "The default group name 'Group' never selects what group_delete removes, even when only one group has it: the error prints the id to pass, or rename the group first (action='group_rename') and pass the new name" }
                 },
                 ["group_add"] = new ActionInfo
                 {
@@ -345,8 +346,8 @@ namespace Cordyceps.Tools.Unified
             [Description("Component type for 'add' (exact name, 'Category/Name', 'Category/Subcategory/Name', or GUID; never matched partially), search query for 'search', or type filter for 'list'")] string type = null,
             [Description("X position")] double x = double.NaN,
             [Description("Y position")] double y = double.NaN,
-            [Description("Object: GUID, 8+ hex GUID prefix, or unique nickname; on group_* actions: a group name or id")] string id = null,
-            [Description("JSON array of objects, each a GUID, 8+ hex GUID prefix, or unique nickname")] string ids = null,
+            [Description("Object: GUID, 8+ hex GUID prefix, or unique nickname; on group_* actions: a group name or id. delete and group_delete never take a default nickname or the default group name 'Group'")] string id = null,
+            [Description("JSON array of objects, each a GUID, 8+ hex GUID prefix, or unique nickname (for delete, not a default nickname)")] string ids = null,
             [Description("JSON array of moves: [{id,x,y},...]; each id is an object: GUID, 8+ hex GUID prefix, or unique nickname")] string moves = null,
             [Description("Nickname for rename/find/add")] string nickname = null,
             [Description("Search query")] string query = null,
@@ -639,7 +640,7 @@ namespace Cordyceps.Tools.Unified
                 // ambiguous id deletes nothing of its own and cannot leave the call half-applied
                 // by failing midway. Ids that resolve are deleted; each failure is reported.
                 var lookup = new ObjectLookup(doc);
-                var outcomes = ToolHelpers.ResolveIds(lookup, idList, acceptGroups: true, out var resolved);
+                var outcomes = ToolHelpers.ResolveIds(lookup, idList, acceptGroups: true, Core.Canvas.ResolveIntent.Destructive, out var resolved);
 
                 var results = new List<object>();
                 var deletedIds = new List<string>();
@@ -756,7 +757,7 @@ namespace Cordyceps.Tools.Unified
                 // entries that passed.
                 var lookup = new ObjectLookup(doc);
                 var outcomes = IdBatch.RefuseRepeats(
-                    ToolHelpers.ResolveIds(lookup, entries.Select(e => e.Id).ToList(), acceptGroups: true, out var resolved),
+                    ToolHelpers.ResolveIds(lookup, entries.Select(e => e.Id).ToList(), acceptGroups: true, Core.Canvas.ResolveIntent.Ordinary, out var resolved),
                     "give one position per object");
 
                 var results = new List<object>();

@@ -38,7 +38,7 @@ namespace Cordyceps.Tools.Unified
                     Description = "Remove a wire between components",
                     Required = new[] { "sourceId", "sourceParam", "targetId", "targetParam" },
                     Example = "action='disconnect', sourceId='a', sourceParam='0', targetId='b', targetParam='R'",
-                    Tips = new[] { "If the wire doesn't exist, the error lists the target input's current sources (currentSources) so you can correct the call", "On a component, an index that does not exist is refused with the valid range — it never falls back to a name match; a free-floating param object is itself the target and ignores the spec" }
+                    Tips = new[] { "Removes a wire, so sourceId and targetId never resolve by a default nickname (one every new object of the type gets, like 'Circle'), even a unique one: pass the GUID or prefix the error prints, or a nickname you set with gh_canvas(action='rename')", "If the wire doesn't exist, the error lists the target input's current sources (currentSources) so you can correct the call", "On a component, an index that does not exist is refused with the valid range — it never falls back to a name match; a free-floating param object is itself the target and ignores the spec" }
                 },
                 ["list"] = new ActionInfo
                 {
@@ -52,7 +52,8 @@ namespace Cordyceps.Tools.Unified
                     Name = "clear",
                     Description = "Clear all inputs on a component",
                     Required = new[] { "id" },
-                    Example = "action='clear', id='abc-123'"
+                    Example = "action='clear', id='abc-123'",
+                    Tips = new[] { "Removes wires, so id never resolves by a default nickname (one every new object of the type gets, like 'Circle'), even a unique one: pass the GUID or prefix the error prints, or a nickname you set with gh_canvas(action='rename')" }
                 },
                 ["validate"] = new ActionInfo
                 {
@@ -72,7 +73,7 @@ namespace Cordyceps.Tools.Unified
             {
                 "On a component, parameters are specified by exact name or nickname, or by 0-based index; an index outside the port list is refused with the valid range rather than matched as a name. Case is ignored only when that leaves one match; a partial or ambiguous name is refused with the candidates, never guessed. sourceParam is always an output and targetParam always an input. A free-floating param object is itself the target",
                 "Disable solver before bulk wiring: gh_document(action='solver', enabled=false)",
-                "Ids: an object is named by its GUID, an 8+ hex GUID prefix, or its unique nickname (exact, case-sensitive). A name two objects share is refused with both ids; bulk connect resolves every connection before adding any wire. list with an id that names nothing is an error, not an empty list"
+                "Ids: an object is named by its GUID, an 8+ hex GUID prefix, or its unique nickname (exact, case-sensitive). A name two objects share is refused with both ids. disconnect and clear remove wires, so a default nickname never selects their objects, even when unique; bulk connect resolves every connection before adding any wire. list with an id that names nothing is an error, not an empty list"
             }
         };
 
@@ -84,12 +85,12 @@ namespace Cordyceps.Tools.Unified
         [McpServerTool, Description("Connection operations. Actions: connect|disconnect|list|clear|validate|help")]
         public string GhWire(
             [Description("Action to perform")] string action,
-            [Description("Source object: GUID, 8+ hex GUID prefix, or unique nickname")] string sourceId = null,
+            [Description("Source object: GUID, 8+ hex GUID prefix, or unique nickname (for disconnect, not a default nickname)")] string sourceId = null,
             [Description("Source output port: exact name or nickname, or 0-based index")] string sourceParam = null,
-            [Description("Target object: GUID, 8+ hex GUID prefix, or unique nickname")] string targetId = null,
+            [Description("Target object: GUID, 8+ hex GUID prefix, or unique nickname (for disconnect, not a default nickname)")] string targetId = null,
             [Description("Target input port: exact name or nickname, or 0-based index")] string targetParam = null,
             [Description("JSON array of connections for bulk connect: [{sourceId,sourceParam,targetId,targetParam},...]; each id is an object: GUID, 8+ hex GUID prefix, or unique nickname")] string connections = null,
-            [Description("Object: GUID, 8+ hex GUID prefix, or unique nickname, for list filter or clear")] string id = null,
+            [Description("Object: GUID, 8+ hex GUID prefix, or unique nickname, for list filter or clear (for clear, not a default nickname)")] string id = null,
             [Description("Alias for id (for list filter). Object: GUID, 8+ hex GUID prefix, or unique nickname")] string componentId = null)
         {
             if (string.Equals(action, "help", StringComparison.OrdinalIgnoreCase))
@@ -237,10 +238,10 @@ namespace Cordyceps.Tools.Unified
                     return ToolHelpers.ErrorResponse(error);
 
                 var lookup = new ObjectLookup(doc);
-                if (!ToolHelpers.TryGetUnprotectedComponent(lookup, sourceId, out var srcObj, out error))
+                if (!ToolHelpers.TryGetUnprotectedComponent(lookup, sourceId, Core.Canvas.ResolveIntent.Destructive, out var srcObj, out error))
                     return ToolHelpers.ErrorResponse($"Source: {error}");
 
-                if (!ToolHelpers.TryGetUnprotectedComponent(lookup, targetId, out var tgtObj, out error))
+                if (!ToolHelpers.TryGetUnprotectedComponent(lookup, targetId, Core.Canvas.ResolveIntent.Destructive, out var tgtObj, out error))
                     return ToolHelpers.ErrorResponse($"Target: {error}");
 
                 var sourceOutput = GetOutputParameter(srcObj, sourceParam, "sourceParam", out var sourceParamError);
@@ -359,7 +360,7 @@ namespace Cordyceps.Tools.Unified
         {
             return _context.ExecuteOnUiThread(() =>
             {
-                if (!ToolHelpers.TryGetUnprotectedComponentWithDoc(_context, id, out var doc, out var component, out var error))
+                if (!ToolHelpers.TryGetUnprotectedComponentWithDoc(_context, id, Core.Canvas.ResolveIntent.Destructive, out var doc, out var component, out var error))
                     return ToolHelpers.ErrorResponse(error);
 
                 IEnumerable<IGH_Param> inputs = component is IGH_Component comp

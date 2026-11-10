@@ -254,6 +254,120 @@ namespace Cordyceps.Tests
             AssertResolved(Obj(snap, "00000001"), A, MatchedBy.Nickname);
         }
 
+        // ---- destructive intent: a default nickname never selects what is removed ----
+
+        private static Resolution DelObj(IObjectIndex index, string text) => ObjectResolver.Resolve(index, text, ResolveScope.Objects, ResolveIntent.Destructive);
+        private static Resolution DelGrp(IObjectIndex index, string text) => ObjectResolver.Resolve(index, text, ResolveScope.Groups, ResolveIntent.Destructive);
+
+        private static readonly Guid DefaultGroup = TestCanvas.Id(0x20);
+        private static readonly Guid DefaultGroup2 = TestCanvas.Id(0x21);
+
+        [Fact]
+        public void Destructive_UniqueDefaultNickname_IsRefused_NamingTheIdAndTheRename()
+        {
+            AssertFailed(DelObj(Canvas(), "Circle"),
+                "'Circle' is the default nickname of abcdef01 Circle, which every new Circle gets, so it never selects what this action removes. "
+                + "Pass id 'abcdef01', or name it first with gh_canvas(action='rename', id='abcdef01', nickname='NEW') and pass that name");
+        }
+
+        [Fact]
+        public void Ordinary_UniqueDefaultNickname_StillResolves()
+        {
+            AssertResolved(ObjectResolver.Resolve(Canvas(), "Circle", ResolveScope.Objects, ResolveIntent.Ordinary), Hexy, MatchedBy.Nickname);
+        }
+
+        [Fact]
+        public void Destructive_SetNicknameGuidAndPrefix_ResolveAsBefore()
+        {
+            AssertResolved(DelObj(Canvas(), "COUNT"), A, MatchedBy.Nickname);
+            AssertResolved(DelObj(Canvas(), Hexy.ToString()), Hexy, MatchedBy.Guid);
+            AssertResolved(DelObj(Canvas(), "abcdef01"), Hexy, MatchedBy.GuidPrefix);
+            AssertResolved(DelGrp(Canvas(), "POSTS"), Posts, MatchedBy.GroupName);
+        }
+
+        [Fact]
+        public void Destructive_RefusalIdItPrints_ResolvesUnderTheSameIntent()
+        {
+            AssertResolved(DelObj(Canvas(), "abcdef01"), Hexy, MatchedBy.GuidPrefix);
+            AssertResolved(DelObj(Canvas(), "00000002"), B, MatchedBy.GuidPrefix);
+        }
+
+        [Fact]
+        public void Destructive_SharedDefaultNickname_SaysNoNameWorks_AndListsEveryId()
+        {
+            AssertFailed(DelObj(Canvas(), "Pt"),
+                "'Pt' is the default nickname of 2 objects: 00000002 Point, 00000003 Point. "
+                + "A default nickname never selects what this action removes; pass one of these ids");
+        }
+
+        [Fact]
+        public void Destructive_NicknameSharedBySetAndDefault_KeepsTheOrdinaryAmbiguityText()
+        {
+            // Renaming the default one would leave the set nickname unique, and that would then work.
+            var snap = TestCanvas.Snap(new[] { TestCanvas.Node(A, "Pt", "Point"), TestCanvas.Node(B, "Pt", "Point", isDefault: true) });
+            AssertFailed(DelObj(snap, "Pt"), "'Pt' is the nickname of 2 objects: 00000001 Point, 00000002 Point; name one by its id");
+        }
+
+        [Fact]
+        public void Destructive_DefaultNicknameThatIsAlsoThePrefixOfTheSameObject_ResolvesByPrefix()
+        {
+            var snap = TestCanvas.Snap(new[] { TestCanvas.Node(Hexy, "abcdef01", "Point", isDefault: true), TestCanvas.Node(A, "a") });
+            AssertResolved(DelObj(snap, "abcdef01"), Hexy, MatchedBy.GuidPrefix);
+        }
+
+        [Fact]
+        public void Destructive_NotFound_NeverSuggestsADefaultNickname()
+        {
+            Assert.Equal("No object named 'Circl'. Did you mean 'Circle'?", Obj(Canvas(), "Circl").Error);
+            AssertFailed(DelObj(Canvas(), "Circl"), "No object named 'Circl'.");
+        }
+
+        [Fact]
+        public void DefaultGroupName_IsMarkedDefault_OnlyForTheExactText()
+        {
+            var snap = TestCanvas.Snap(new[] { TestCanvas.Node(A, "a") },
+                new[] { TestCanvas.Group(DefaultGroup, "Group"), TestCanvas.Group(DefaultGroup2, "group"), TestCanvas.Group(Posts, "POSTS") });
+            Assert.True(snap.Find(DefaultGroup).IsDefaultNickName);
+            Assert.False(snap.Find(DefaultGroup2).IsDefaultNickName);
+            Assert.False(snap.Find(Posts).IsDefaultNickName);
+        }
+
+        [Fact]
+        public void Destructive_UniqueDefaultGroupName_IsRefused_NamingTheIdAndTheGroupRename()
+        {
+            var snap = TestCanvas.Snap(new[] { TestCanvas.Node(A, "a") }, new[] { TestCanvas.Group(DefaultGroup, "Group", new[] { A }) });
+
+            AssertResolved(Grp(snap, "Group"), DefaultGroup, MatchedBy.GroupName);
+            AssertFailed(DelGrp(snap, "Group"),
+                "'Group' is the default name of group 00000020, which every new group gets, so it never selects what this action removes. "
+                + "Pass id '00000020', or name the group first with gh_canvas(action='group_rename', id='00000020', name='NEW') and pass that name");
+            AssertResolved(DelGrp(snap, "00000020"), DefaultGroup, MatchedBy.GuidPrefix);
+            AssertResolved(DelGrp(snap, DefaultGroup.ToString()), DefaultGroup, MatchedBy.Guid);
+        }
+
+        [Fact]
+        public void Destructive_SharedDefaultGroupName_SaysNoNameWorks_AndListsEveryId()
+        {
+            var snap = TestCanvas.Snap(new[] { TestCanvas.Node(A, "a") },
+                new[] { TestCanvas.Group(DefaultGroup, "Group"), TestCanvas.Group(DefaultGroup2, "Group") });
+
+            AssertFailed(DelGrp(snap, "Group"),
+                "'Group' is the default name of 2 groups: 00000020 Group, 00000021 Group. "
+                + "A default group name never selects what this action removes; pass one of these ids");
+        }
+
+        [Fact]
+        public void Many_Destructive_RefusesOnlyTheDefaultEntry()
+        {
+            var results = ObjectResolver.ResolveMany(Canvas(), new[] { "COUNT", "Circle", "abcdef01" }, ResolveScope.Objects, ResolveIntent.Destructive);
+
+            AssertResolved(results[0].Resolution, A, MatchedBy.Nickname);
+            Assert.False(results[1].Resolution.IsResolved);
+            Assert.StartsWith("'Circle' is the default nickname of abcdef01 Circle", results[1].Resolution.Error);
+            AssertResolved(results[2].Resolution, Hexy, MatchedBy.GuidPrefix);
+            Assert.Null(results[2].DuplicateOf);
+        }
+
         // ---- unpinned outcomes ----
 
         private static readonly Guid P1 = Guid.Parse("abcdef01-1111-4111-8111-111111111111");
