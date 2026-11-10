@@ -194,6 +194,17 @@ Critic mode: per-chunk reviews (inferred for a five-chunk plan), with Chunk 01 o
     removing a port (`zoomable` remove or set_count, a script parameter rebuild) counts as
     destructive for the default-nickname rule; today those actions still accept a unique default
     nickname.
+  - From the forced boundary review (the owner authorised one round past the budget): status's
+    name fallback moved into tested host-free code (`ObjectHealth.LabelFor`); the printable rule
+    tests both edges of a name at once, so a one-character `·`, `←`, `→` or `=` prints as an id;
+    the view joins fields, items and entries with the grammar's constants and the grammar says
+    which sequences are only listed; the default group name has one definition. Recorded as the
+    builder's reading, not the owner's: the four-action destructive list (`group_remove` and the
+    two port removals are with the owner as #107), and that a nickname equal to the type's
+    standard nickname or to the type's name counts as default (Grasshopper assigns either,
+    depending on its Draw Full Names setting; to confirm live). Left as is: destructive intent is
+    an explicit overload on the single lookups, as recorded above; the refusal offers the id
+    first and a rename second, which stands beside the general advice not to rename while building.
   - After 03 merged, the target-resolution loop in the tree action file passes to Chunk 02 (it
     must use the per-call lookup once names resolve through a snapshot), and
     `TreeStatusText.SolverOff` becomes the one source of solver-off wording for Chunk 04.

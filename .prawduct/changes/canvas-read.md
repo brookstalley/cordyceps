@@ -31,10 +31,13 @@ Hyperceps with header attributions; README credits updated, `LICENSE` unchanged.
 objects only, and a group action matches group names only. A group's GUID or prefix reaches the
 actions that act on groups (`delete`, `move`, `rename`, `info`, `bounds`, `zoom`, member arrays,
 `outline id=`); every other object action refuses a group.
-Default nicknames resolve when unique on every action except those that remove something
-(`delete`, `group_delete`, `gh_wire disconnect` and `clear`), which refuse a default nickname and
-the default group name `Group` even when unique; the error prints the id to pass and the rename
-call that makes a name work (owner ruling, second set). Error
+The owner ruled (second set) that a default nickname never selects what a destructive action
+removes. Which actions that covers is the builder's reading, not the owner's list: `delete`,
+`group_delete`, `gh_wire disconnect` and `clear` refuse a default nickname and the default group
+name `Group` even when unique, and the error prints the id to pass and the rename call that makes
+a name work. A nickname counts as default when it equals the type's standard nickname or the
+type's name, because Grasshopper assigns one or the other to a new object depending on its Draw
+Full Names setting. Error
 payloads are text only, with candidates inline. Member arrays are all-or-nothing; `delete`, `move`,
 `preview`, `enable` and bulk `connect` keep per-entry results; a repeated object is acted on once
 in `delete`, `preview` and `enable` and is a failed entry in `move`. Responses that echo an id echo the
@@ -54,9 +57,10 @@ JSON arguments; one bad entry in a bulk `connect` fails only that entry. Member 
 contract changes of their own: `group_add` refuses a group listed as its own member, and
 `group_remove` reports entries that resolve but are not members under `notMembers`.
 
-**Open for the owner:** whether removing a port (`gh_canvas zoomable` remove or set_count, a
-`gh_script` parameter rebuild) counts as destructive for the default-nickname rule; today those
-actions still accept a unique default nickname. `CLAUDE.md`'s release section was condensed to
+**Open for the owner (#107):** whether three more removals count as destructive for the
+default-nickname rule: taking members out of a group (`group_remove`), and removing a port
+(`gh_canvas zoomable` remove or set_count, a `gh_script` parameter rebuild). Today those actions
+still accept a unique default nickname. `CLAUDE.md`'s release section was condensed to
 the branch rule, the two commands and a pointer to `docs/release-process.md`, which holds the rest.
 
 **Not done here:** batch edits, sweeps, the edit transaction and undo (#91), solve policy, moving

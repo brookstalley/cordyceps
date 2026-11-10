@@ -494,7 +494,7 @@ namespace Cordyceps.Core.Canvas
             {
                 if (n.Outputs.Count == 1) return $"{Ref(n.Id)} ({CountText(n, n.Outputs[0])})";
                 var parts = Enumerable.Range(0, n.Outputs.Count).Select(i => $"{PortToken(n.Outputs, i, false)}: {CountText(n, n.Outputs[i])}");
-                return $"{Ref(n.Id)} ({string.Join(", ", parts)})";
+                return $"{Ref(n.Id)} ({string.Join(OutlineGrammar.Item, parts)})";
             }
 
             // ---- summary and solver ----
@@ -509,7 +509,7 @@ namespace Cordyceps.Core.Canvas
                 int disabled = nodes.Count(n => n.Locked);
                 int notSolved = nodes.Count(n => IsSolvable(n) && !n.Locked && n.Phase != NodePhase.Computed);
                 int previewOff = nodes.Count(n => n.PreviewHidden == true);
-                return string.Join(" · ",
+                return string.Join(OutlineGrammar.Field,
                     Count(nodes.Count, "object"),
                     Count(_s.Groups.Count, "group"),
                     Count(errors, "error"),
@@ -592,7 +592,7 @@ namespace Cordyceps.Core.Canvas
                     var input = n.Inputs[i];
                     var mods = input.ModifierWords;
                     var label = own ? "" : PortToken(n.Inputs, i, true);
-                    if (mods.Count > 0) label = (label + $" ({string.Join(", ", mods)})").TrimStart();
+                    if (mods.Count > 0) label = (label + $" ({string.Join(OutlineGrammar.Item, mods)})").TrimStart();
                     if (input.Sources.Count > 0)
                     {
                         var refs = input.Sources.Select(src => SourceRef(src, shown)).Distinct();
@@ -630,7 +630,7 @@ namespace Cordyceps.Core.Canvas
                 {
                     case HealthStatus.Error: return Messages("error", h.Messages);
                     case HealthStatus.Warning: return Messages("warning", h.Messages);
-                    case HealthStatus.Disconnected: return "disconnected: missing " + string.Join(", ", MissingTokens(n, h));
+                    case HealthStatus.Disconnected: return "disconnected: missing " + string.Join(OutlineGrammar.Item, MissingTokens(n, h));
                     default: return null;
                 }
             }
@@ -739,8 +739,8 @@ namespace Cordyceps.Core.Canvas
                 var inbound = Inbound(members, withGroups: false);
                 if (inbound.Count > 0) parts.Add("in ← " + Join(inbound, MaxNames));
                 var outbound = Outbound(members);
-                if (outbound.Count > 0) parts.Add("out: " + Join(outbound, MaxOutEntries, "; "));
-                return string.Join(" · ", parts);
+                if (outbound.Count > 0) parts.Add("out: " + Join(outbound, MaxOutEntries, OutlineGrammar.Entry));
+                return string.Join(OutlineGrammar.Field, parts);
             }
 
             /// <summary>The ungrouped objects: <c>N objects · inputs: … · ends: … · feeds: GROUP, …</c>.</summary>
@@ -756,7 +756,7 @@ namespace Cordyceps.Core.Canvas
                 var feeds = nodes.SelectMany(n => _s.Downstream(n.Id)).Where(r => !set.Contains(r))
                     .SelectMany(r => _s.TopLevelGroupsOf(r)).Distinct().Select(Name).ToList();
                 if (feeds.Count > 0) parts.Add("feeds: " + Join(feeds, MaxNames));
-                return string.Join(" · ", parts);
+                return string.Join(OutlineGrammar.Field, parts);
             }
 
             /// <summary>Where data enters: a control, or an unwired panel with text, that nothing feeds.</summary>
@@ -799,7 +799,7 @@ namespace Cordyceps.Core.Canvas
                 if (inputs.Count > 0) parts.Add("inputs: " + Join(inputs.Select(InputRef), MaxNames));
                 if (named.Count > 0) parts.Add("named: " + Join(named.Select(n => Name(n.Id)), MaxNames));
                 if (ends.Count > 0) parts.Add("ends: " + Join(ends.Select(EndRef), MaxNames));
-                return string.Join(" · ", parts);
+                return string.Join(OutlineGrammar.Field, parts);
             }
 
             /// <summary>The user gave it a nickname, and that nickname is what prints.</summary>
@@ -887,9 +887,9 @@ namespace Cordyceps.Core.Canvas
 
                 var summary = new List<string> { Count(members.Count, "object") };
                 var parents = _s.ParentsOf(g.Id);
-                if (parents.Count > 0) summary.Add("inside " + string.Join(", ", parents.Select(Name)));
+                if (parents.Count > 0) summary.Add("inside " + string.Join(OutlineGrammar.Item, parents.Select(Name)));
                 AddProblemCounts(members, summary, withState: true);
-                o["summary"] = string.Join(" · ", summary);
+                o["summary"] = string.Join(OutlineGrammar.Field, summary);
 
                 var inbound = Inbound(members, withGroups: true);
                 if (inbound.Count > 0) o["in"] = Capped(inbound, MaxDetailEdges, more, "in");

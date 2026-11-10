@@ -550,7 +550,9 @@ appear in `GH_Group.ObjectIDs`, and what a locked object reports are facts of th
 
 **Canvas for the checks:** a Circle renamed `C1`, two Point parameters left at their default
 nickname `Pt`, a Number Slider renamed `R`, a group `POSTS` around `C1`, a Value List, and a C#
-Script component. Steps 26-32 add a Circle left at its default nickname `Circle` (the only object
+Script component. A fresh Circle is nicknamed `Circle` or `Cir` depending on Grasshopper's Draw Full Names
+display setting; both count as default, so use whichever the canvas shows wherever these steps
+say `Circle`. Steps 26-32 add a Circle left at its default nickname `Circle` (the only object
 carrying it) and a group made with Ctrl+G; nothing before them depends on either.
 
 **Verify:**
@@ -769,3 +771,6 @@ outline does need real files and real runtime messages.
 20. Rename a slider `Width (m)`: outline prints it by its short id (`<id> · Number Slider = …`),
     and `gh_canvas(action='info', id='Width (m)')` still resolves it. A slider renamed `A · B`
     prints as its id too.
+21. Clear a slider's and a panel's nickname in Grasshopper (rename to nothing), then run
+    `gh_inspect(action='status')`: each entry's `name` is its type name (`Number Slider`, `Panel`),
+    never an empty string. Note what nickname a freshly placed slider and panel actually carry.

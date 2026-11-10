@@ -6,9 +6,12 @@ namespace Cordyceps.Core.Canvas
 {
     /// <summary>
     /// The separators outline prints around names, in one place, and the rule that decides whether
-    /// a nickname can be printed as a name at all. <see cref="OutlineView"/> builds its lines from
-    /// these constants and <see cref="DisplayNames"/> refuses any nickname that contains one, so a
-    /// printed name can always be cut back out of its line: it ends at the first separator after it.
+    /// a nickname can be printed as a name at all. <see cref="OutlineView"/> joins its fields, items
+    /// and entries with these constants; the arrow, detail, tag and value sequences are written in
+    /// its line templates and are listed here so the rule can refuse them (a new sequence printed
+    /// beside a name belongs in this list). <see cref="DisplayNames"/> refuses any nickname that
+    /// contains one, so a printed name can always be cut back out of its line: it ends at the first
+    /// separator after it.
     /// Host-free.
     /// </summary>
     public static class OutlineGrammar
@@ -85,15 +88,19 @@ namespace Cordyceps.Core.Canvas
                 // "a," followed by " (R)" would read as "a" then ", (R)"; "(m)" after "← " would
                 // read as a port. Only a separator that starts exactly where the name ends, or ends
                 // exactly where it starts, is allowed.
-                foreach (var neighbour in Neighbours)
+                // Both sides at once: a one-character name such as "·" only forms " · " with a
+                // space on each side, which neither edge shows alone.
+                foreach (var left in Neighbours)
+                foreach (var right in Neighbours)
                 {
-                    var after = name + neighbour;
-                    var first = after.IndexOf(sep, StringComparison.Ordinal);
-                    if (first >= 0 && first < name.Length) return false;
-
-                    var before = neighbour + name;
-                    var last = before.LastIndexOf(sep, StringComparison.Ordinal);
-                    if (last >= 0 && last + sep.Length > neighbour.Length) return false;
+                    var line = left + name + right;
+                    int nameStart = left.Length, nameEnd = left.Length + name.Length;
+                    for (var at = line.IndexOf(sep, StringComparison.Ordinal); at >= 0;
+                         at = line.IndexOf(sep, at + 1, StringComparison.Ordinal))
+                    {
+                        // An occurrence wholly inside a neighbour is the neighbour itself.
+                        if (at < nameEnd && at + sep.Length > nameStart) return false;
+                    }
                 }
             }
             if (isGroup && name.IndexOf(TagsClose, StringComparison.Ordinal) >= 0) return false;

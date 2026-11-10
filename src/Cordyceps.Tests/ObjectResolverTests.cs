@@ -726,6 +726,10 @@ namespace Cordyceps.Tests
         [InlineData("a = b")]
         [InlineData("a,")]                   // followed by " (R)" it would read as "a" then ", (R)"
         [InlineData("a;")]
+        [InlineData("·")]                    // with a space each side it is the field separator itself
+        [InlineData("←")]
+        [InlineData("→")]
+        [InlineData("=")]
         [InlineData("(m)")]                  // after "← " it would read as a port
         [InlineData("= x")]                  // after a space it would read as a value
         [InlineData("[A")]

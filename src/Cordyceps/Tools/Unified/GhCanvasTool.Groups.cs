@@ -120,8 +120,8 @@ namespace Cordyceps.Tools.Unified
                 if (group == null)
                 {
                     group = new GH_Group();
-                    group.NickName = groupName ?? "Group";
-                    group.Name = groupName ?? "Group";
+                    group.NickName = groupName ?? Core.Canvas.ObjectEntry.DefaultGroupName;
+                    group.Name = groupName ?? Core.Canvas.ObjectEntry.DefaultGroupName;
                     doc.AddObject(group, false);
                 }
 

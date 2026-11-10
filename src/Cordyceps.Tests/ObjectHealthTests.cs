@@ -228,5 +228,16 @@ namespace Cordyceps.Tests
             Assert.Contains("WALL · Slider · warning: w", problems);
             Assert.DoesNotContain(problems, p => p.StartsWith("SCRIBBLE", StringComparison.Ordinal));
         }
+
+        [Theory]
+        [InlineData("Wall Height", "Number Slider", "Wall Height")]
+        [InlineData("", "Number Slider", "Number Slider")]      // nobody named it: the type stands in
+        [InlineData(null, "Panel", "Panel")]
+        [InlineData("Panel", "Panel", "Panel")]
+        [InlineData("", null, "")]
+        public void LabelFor_IsTheNickname_OrTheTypeNameWhenThereIsNone(string nickName, string typeName, string expected)
+        {
+            Assert.Equal(expected, ObjectHealth.LabelFor(nickName, typeName));
+        }
     }
 }

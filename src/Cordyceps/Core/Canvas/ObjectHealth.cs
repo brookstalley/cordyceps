@@ -75,6 +75,14 @@ namespace Cordyceps.Core.Canvas
     /// </summary>
     public static class ObjectHealth
     {
+        /// <summary>
+        /// The name a status entry shows for an object: its nickname, or its type name when the
+        /// nickname is empty (a slider or panel nobody has named can carry none). Never empty for
+        /// an object that has a type name.
+        /// </summary>
+        public static string LabelFor(string nickName, string typeName) =>
+            string.IsNullOrEmpty(nickName) ? (typeName ?? string.Empty) : nickName;
+
         public static HealthResult Classify(
             MessageLevel level,
             IEnumerable<string> errors,

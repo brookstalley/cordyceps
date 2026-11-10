@@ -380,7 +380,7 @@ namespace Cordyceps.Core
         /// <summary>
         /// Resolve an object id for an action that acts on groups as well as components and
         /// parameters (delete, move, rename, info, bounds, zoom, group member arrays): a group's
-        /// GUID or GUID prefix resolves to the group. A nickname never matches a group (C1 scopes).
+        /// GUID or GUID prefix resolves to the group. A nickname never matches a group: names are scoped, ids are not.
         /// Must be called on the UI thread.
         /// </summary>
         public static bool TryGetUnprotectedObject(GrasshopperContext context, string id,
