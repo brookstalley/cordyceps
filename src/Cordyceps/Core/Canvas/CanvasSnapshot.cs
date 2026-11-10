@@ -277,9 +277,12 @@ namespace Cordyceps.Core.Canvas
             CanvasDetail detail,
             IEnumerable<CanvasNode> nodes,
             IEnumerable<CanvasGroup> groups,
-            IEnumerable<Guid> infrastructure)
+            IEnumerable<Guid> infrastructure,
+            int unreadWires = 0)
         {
+            if (unreadWires < 0) throw new ArgumentOutOfRangeException(nameof(unreadWires), "cannot be negative");
             DocumentName = documentName ?? string.Empty;
+            UnreadWires = unreadWires;
             _solver = solver ?? new SolverFlags();
             Detail = detail;
             _infrastructure = new HashSet<Guid>(infrastructure ?? Enumerable.Empty<Guid>());
@@ -325,6 +328,15 @@ namespace Cordyceps.Core.Canvas
         }
 
         public string DocumentName { get; }
+
+        /// <summary>
+        /// Wire sources the reader found on a port but could not place on the canvas (no owner, an
+        /// owner that is not a canvas node, or a source that is not an output of its owner). Those
+        /// wires are absent from <see cref="Wires"/>, so an input fed only by them looks unfed;
+        /// every view that prints wiring says so when this is not zero. Wires from Cordyceps'
+        /// infrastructure are dropped by design and are not counted.
+        /// </summary>
+        public int UnreadWires { get; }
 
         /// <summary>The solver switches. Full detail only: a Names snapshot never read them.</summary>
         public SolverFlags Solver

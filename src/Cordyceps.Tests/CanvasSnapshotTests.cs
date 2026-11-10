@@ -355,5 +355,15 @@ namespace Cordyceps.Tests
             Assert.Equal(new[] { a }, s.Upstream(b));
             Assert.Equal(new[] { b }, s.Downstream(a));
         }
+
+        [Fact]
+        public void UnreadWires_DefaultsToNone_CarriesTheReadersCount_AndIsNeverNegative()
+        {
+            var nodes = new[] { TestCanvas.Node(A, "A", "Point") };
+            Assert.Equal(0, TestCanvas.Snap(nodes).UnreadWires);
+            Assert.Equal(2, new CanvasSnapshot("t", new SolverFlags(), CanvasDetail.Full, nodes, null, null, unreadWires: 2).UnreadWires);
+            Assert.Throws<ArgumentOutOfRangeException>(() =>
+                new CanvasSnapshot("t", new SolverFlags(), CanvasDetail.Full, nodes, null, null, unreadWires: -1));
+        }
     }
 }

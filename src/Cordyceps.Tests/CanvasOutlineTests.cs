@@ -97,6 +97,7 @@ namespace Cordyceps.Tests
             private readonly List<CanvasGroup> _groups = new List<CanvasGroup>();
             private int _next;
             public SolverFlags Solver = new SolverFlags();
+            public int UnreadWires;
 
             private Guid NewId() => TestCanvas.Id(++_next);
 
@@ -150,7 +151,7 @@ namespace Cordyceps.Tests
             }
 
             public CanvasSnapshot Build() =>
-                new CanvasSnapshot("test.gh", Solver, CanvasDetail.Full, _nodes.Select(n => n.Build()), _groups, Array.Empty<Guid>());
+                new CanvasSnapshot("test.gh", Solver, CanvasDetail.Full, _nodes.Select(n => n.Build()), _groups, Array.Empty<Guid>(), UnreadWires);
         }
 
         private static List<string> Lines(JToken t) => t?.Values<string>().ToList() ?? new List<string>();
@@ -501,7 +502,7 @@ namespace Cordyceps.Tests
             Assert.Equal(new[] { a, b, d, cc }, fed);
         }
 
-        // ---- overlapping groups (report 1.6 defect 2) ----------------------------------------------
+        // ---- overlapping groups ----------------------------------------------
 
         [Fact]
         public void OverlappingSiblingGroups_TagBoth_CountOnce_ShareAndKeepEdgesFromBoth()
@@ -556,7 +557,7 @@ namespace Cordyceps.Tests
             Assert.Equal(new[] { "FIRST", "SECOND" }, lines.Select(l => l.Split(' ')[0]));
         }
 
-        // ---- qualified counts (report 1.6 defect 1) ------------------------------------------------
+        // ---- qualified counts ------------------------------------------------
 
         [Theory]
         [InlineData(false, true, false, "off: this document's solver is disabled")]
@@ -619,7 +620,7 @@ namespace Cordyceps.Tests
             Assert.Equal(new[] { "L" }, Lines(o["disabled"]));
         }
 
-        // ---- problems by the status rule (report 1.6 defects 3 and 6) ------------------------------
+        // ---- problems by the status rule ------------------------------
 
         [Fact]
         public void Problems_UseTheStatusRule_InStatusOrder_WithEveryMessageCounted()
@@ -756,7 +757,7 @@ namespace Cordyceps.Tests
             Assert.Equal(new[] { "C1 Circle · R (simplify, reverse) · disconnected: missing R", "NOTE Panel = \"short…\"" }, lines);
         }
 
-        // ---- identifiers (report 1.6 defects 4 and 5) ----------------------------------------------
+        // ---- identifiers ----------------------------------------------
 
         [Fact]
         public void LongGroupName_IsPrintedWhole_Everywhere()
@@ -1037,6 +1038,68 @@ namespace Cordyceps.Tests
 
             Assert.True(OutlineRequest.TryParse(null, "[\"[WIP] facade\"]", 0, out var wrapped, out _));
             Assert.Equal(new[] { "[WIP] facade" }, wrapped.GroupTexts);
+        }
+
+        [Fact]
+        public void GroupArray_DateShapedName_StaysAName()
+        {
+            // Json.NET reads date-shaped text as a Date unless told not to; the overview prints this
+            // group by this name, so the array form must hand the same text to the resolver.
+            Assert.True(OutlineRequest.TryParse(null, "[\"2026-01-01T00:00:00\", \"MATHS\"]", 0, out var req, out var e), e);
+            Assert.Equal(new[] { "2026-01-01T00:00:00", "MATHS" }, req.GroupTexts);
+
+            var c = new Canvas();
+            var a = c.Comp("Addition", "SUM");
+            c.Group("2026-01-01T00:00:00", 0, 0, a);
+            var snap = c.Build();
+            Assert.True(OutlineRequest.TryParse(null, "[\"2026-01-01T00:00:00\"]", 0, out var dated, out _));
+            Assert.True(dated.TryResolve(snap, out var t, out var re), re);
+            Assert.Equal("2026-01-01T00:00:00", (string)t.Render(snap)["groups"][0]["group"]);
+        }
+
+        [Fact]
+        public void GroupArray_TrailingText_IsMalformed()
+        {
+            Assert.False(OutlineRequest.TryParse(null, "[\"A\"] x", 0, out _, out var e));
+            Assert.StartsWith("group looks like a JSON array but does not parse", e);
+        }
+
+        // ---- wires the reader could not place ------------------------------------------------------
+
+        private static Canvas UnreadCanvas(int unread, out NodeSpec sum, out CanvasGroup maths)
+        {
+            var c = new Canvas { UnreadWires = unread };
+            var x = c.Param("Number", "X", 0, 0);
+            sum = c.Comp("Addition", "SUM", 100, 0).In("A").In("B").Out("Result", "R", 1);
+            c.Wire(x, 0, sum, 0);
+            maths = c.Group("MATHS", 0, 0, x, sum);
+            return c;
+        }
+
+        [Fact]
+        public void UnreadWires_AreStatedInEveryView()
+        {
+            var c = UnreadCanvas(3, out var sum, out var maths);
+            var snap = c.Build();
+            const string expected = "3 wire(s) could not be read, so some inputs may show as unfed; gh_inspect(action='log') names them";
+
+            Assert.Equal(expected, (string)OutlineView.Overview(snap)["unread"]);
+            Assert.Equal(expected, (string)OutlineView.Groups(snap, new[] { maths.Id })["unread"]);
+            Assert.Equal(expected, (string)OutlineView.Around(snap, sum.Id, 2)["unread"]);
+
+            // The statement does not stand in for success: the call still answered.
+            Assert.True((bool)OutlineView.Overview(snap)["success"]);
+        }
+
+        [Fact]
+        public void UnreadWires_None_PrintsNothing()
+        {
+            var c = UnreadCanvas(0, out var sum, out var maths);
+            var snap = c.Build();
+            Assert.Null(OutlineView.Overview(snap)["unread"]);
+            Assert.Null(OutlineView.Groups(snap, new[] { maths.Id })["unread"]);
+            Assert.Null(OutlineView.Around(snap, sum.Id, 2)["unread"]);
+            Assert.Null(OutlineView.UnreadText(0));
         }
 
         [Fact]

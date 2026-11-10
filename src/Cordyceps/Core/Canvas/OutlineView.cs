@@ -27,7 +27,9 @@ namespace Cordyceps.Core.Canvas
     /// <item>Group membership is a multimap: an object in two groups is tagged with both, and every
     /// group it sits in counts it.</item>
     /// <item>Problems use <see cref="ObjectHealth"/>, the rule <c>status</c> uses, and are capped;
-    /// outline orients, <c>status</c> lists everything.</item>
+    /// outline orients. <c>status</c> lists every component's problems; errors and warnings on
+    /// parameter objects appear only in outline.</item>
+    /// <item>Wires the reader could not place are counted in <c>unread</c>, never left silent.</item>
     /// <item>Absent things print nothing.</item>
     /// </list>
     /// </summary>
@@ -52,6 +54,11 @@ namespace Cordyceps.Core.Canvas
 
         public const string StaleNote = "counts are from the last solution and may be out of date";
 
+        /// <summary>The <c>unread</c> statement for <paramref name="count"/> wires the reader could not place; null for none.</summary>
+        public static string UnreadText(int count) => count <= 0
+            ? null
+            : $"{I(count)} wire(s) could not be read, so some inputs may show as unfed; gh_inspect(action='log') names them";
+
         // ---- overview -------------------------------------------------------------------------------
 
         public static JObject Overview(CanvasSnapshot snapshot)
@@ -62,6 +69,7 @@ namespace Cordyceps.Core.Canvas
             if (!string.IsNullOrEmpty(s.DocumentName)) o["document"] = s.DocumentName;
             o["summary"] = v.Summary();
             v.AddSolver(o, always: true);
+            v.AddUnread(o);
             var more = new JObject();
 
             var controls = v.ByPosition(s.Nodes.Where(n => n.IsControl)).ToList();
@@ -93,7 +101,7 @@ namespace Cordyceps.Core.Canvas
                 ? "group='NAME' shows how one group is wired inside (a JSON list for several); id='NAME' shows what feeds one object and what it feeds (depth=N wires each way, default 2)"
                 : "id='NAME' shows what feeds one object and what it feeds (depth=N wires each way, default 2)";
             if (more["problems"] != null)
-                next += "; problems are capped, so run gh_inspect(action='status') for the full list";
+                next += "; problems are capped: gh_inspect(action='status') lists every component's problems (errors and warnings on parameter objects appear only in outline)";
             o["next"] = next;
             return o;
         }
@@ -117,6 +125,7 @@ namespace Cordyceps.Core.Canvas
             }
             var o = new JObject { ["success"] = true };
             v.AddSolver(o, always: false);
+            v.AddUnread(o);
             o["groups"] = list;
             if (more.Count > 0) o["more"] = more;
             return o;
@@ -147,6 +156,7 @@ namespace Cordyceps.Core.Canvas
 
             var o = new JObject { ["success"] = true };
             v.AddSolver(o, always: false);
+            v.AddUnread(o);
             o["around"] = v.Name(centre.Id);
             o["depth"] = depth;
             o["objects"] = new JArray(order.Select(id => v.ObjectLine(s.Node(id), set, Guid.Empty)));
@@ -520,6 +530,16 @@ namespace Cordyceps.Core.Canvas
                 bool plain = off == null && !f.LastSolutionAborted;
                 if (always || !plain) o["solver"] = text;
                 if (!plain) o["note"] = StaleNote;
+            }
+
+            /// <summary>
+            /// <c>unread</c>, only when the reader could not place some wires: those inputs would
+            /// otherwise read as unfed under a plain success.
+            /// </summary>
+            public void AddUnread(JObject o)
+            {
+                var text = UnreadText(_s.UnreadWires);
+                if (text != null) o["unread"] = text;
             }
 
             // ---- lines ----
