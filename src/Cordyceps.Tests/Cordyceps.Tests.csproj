@@ -37,6 +37,10 @@
     <Compile Include="..\Cordyceps\Core\ParamSyncPlan.cs" Link="ParamSyncPlan.cs" />
     <Compile Include="..\Cordyceps\Core\InfrastructureIds.cs" Link="InfrastructureIds.cs" />
     <!-- canvas-read 01: link this chunk's new host-free files directly below -->
+    <Compile Include="..\Cordyceps\Core\Canvas\CanvasSnapshot.cs" Link="Canvas\CanvasSnapshot.cs" />
+    <Compile Include="..\Cordyceps\Core\Canvas\GuidPrefixIndex.cs" Link="Canvas\GuidPrefixIndex.cs" />
+    <Compile Include="..\Cordyceps\Core\Canvas\ObjectResolver.cs" Link="Canvas\ObjectResolver.cs" />
+    <Compile Include="..\Cordyceps\Core\Canvas\ObjectHealth.cs" Link="Canvas\ObjectHealth.cs" />
     <Compile Include="..\Cordyceps\Core\ParamSpecLookup.cs" Link="ParamSpecLookup.cs" />
     <Compile Include="..\Cordyceps\Core\Naming\NameSuggestions.cs" Link="Naming\NameSuggestions.cs" />
     <Compile Include="..\Cordyceps\Core\Naming\TypeNameRule.cs" Link="Naming\TypeNameRule.cs" />
