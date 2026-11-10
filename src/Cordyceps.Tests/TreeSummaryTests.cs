@@ -193,7 +193,7 @@ namespace Cordyceps.Tests
         public void Alignment_IgnoresSingleBranchInputsWhenOthersDiffer()
         {
             var note = TreeAlignment.Check(new[] { L("A", Flat(3)), L("S", Flat(1)), L("B", Flat(12)) });
-            Assert.DoesNotContain("S has", note);
+            Assert.Equal("inputs don't line up: A has 3 branches, B has 12 branches", note);
         }
 
         // ---- TreeStatusText ----
@@ -206,7 +206,8 @@ namespace Cordyceps.Tests
             Assert.Equal("off: this document's solver is disabled", TreeStatusText.SolverOff(false, true, false).Value.Text);
             Assert.Equal("off: Grasshopper's solver is disabled", TreeStatusText.SolverOff(true, false, false).Value.Text);
             Assert.Equal("off: Grasshopper's solver is disabled; the last solution was aborted", TreeStatusText.SolverOff(true, false, true).Value.Text);
-            Assert.Contains("and", TreeStatusText.SolverOff(false, false, false).Value.Text);
+            Assert.Equal("off: this document's solver is disabled and Grasshopper's solver is disabled",
+                TreeStatusText.SolverOff(false, false, false).Value.Text);
         }
 
         [Fact]
@@ -304,6 +305,28 @@ namespace Cordyceps.Tests
             Assert.Equal(new[] { "ids[0]", "ids[1]", "ids[2]" }, r.Targets.Select(t => t.Label));
             Assert.Equal(new[] { "a1", "b2", "c3" }, r.Targets.Select(t => t.Id));
             Assert.Equal(new string[] { null, "X", "0" }, r.Targets.Select(t => t.Param));
+        }
+
+        [Fact]
+        public void Parse_Ids_DateShapedTextStaysAnId()
+        {
+            // Json.NET reads date-shaped strings as dates unless told not to; a nickname can look like one.
+            var r = Parse(ids: "[\"2026-01-01T00:00:00\", {\"id\": \"2026-01-01T00:00:00Z\"}]");
+            Assert.Equal(new[] { "2026-01-01T00:00:00", "2026-01-01T00:00:00Z" }, r.Targets.Select(t => t.Id));
+        }
+
+        [Fact]
+        public void Parse_Ids_PortIndexBeyondInt64_IsALabelledError()
+        {
+            var error = Fail(ids: "[{\"id\": \"a1\", \"param\": 99999999999999999999999}]");
+            Assert.StartsWith("ids[0]: 'param' index", error);
+            Assert.Contains("out of range", error);
+        }
+
+        [Fact]
+        public void Parse_Ids_TextAfterTheArray_IsAnError()
+        {
+            Assert.Contains("not valid JSON", Fail(ids: "[\"a1\"] [\"b2\"]"));
         }
 
         [Fact]

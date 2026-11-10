@@ -107,6 +107,19 @@ Critic mode: per-chunk reviews (inferred for a five-chunk plan), with Chunk 01 o
   the action. Reversing it is one condition in the resolver plus its tests.
 - **Release:** several entries are breaking (the Changed list in Chunk 05), so this is a major version under semantic
   versioning. The owner sets the number at release.
+- **Decisions made mid-build:**
+  - Tree's `object` field is the nickname and `id` the full GUID; tree prints no DisplayName.
+    Settled by the Architecture goal (03 stays independent of the snapshot, and one snapshot read
+    per `tree` call buys nothing when `id` is already printed). Recorded after the Chunk 03 review
+    flagged the code as departing from the first draft of C3.
+  - Chunk 03's refinements to C3 are accepted (both-solvers-off wording, `side: parameter`, one
+    alignment note, `solved: false` with owner-state notes, integer `param` in `ids`, blank text is
+    an error). Settled by the Product goal: a result never says less than is true.
+  - `gh_inspect log` with an explicit `limit=0` now means the default 100 (it returned nothing
+    before). A consequence of the sentinel fix; announced in the CHANGELOG.
+  - After 03 merged, the target-resolution loop in the tree action file passes to Chunk 02 (it
+    must use the per-call lookup once names resolve through a snapshot), and
+    `TreeStatusText.SolverOff` becomes the one source of solver-off wording for Chunk 04.
 - **Level:** High for 01, 02 and 03. Medium for 04: the line grammar is a design judgement, pinned
   by golden tests and shown to the owner in the PR. The runtime facts marked unverified below go
   to the operator queue (05).
@@ -283,7 +296,13 @@ is on and the owner's `Phase` is Computed. It prints `N stale` when either is fa
   - `on`
   - `off: this document's solver is disabled`
   - `off: Grasshopper's solver is disabled`
-  - either of those followed by `; the last solution was aborted`.
+  - `off: this document's solver is disabled and Grasshopper's solver is disabled`
+  - any of those followed by `; the last solution was aborted`.
+
+  The off wording comes from `TreeStatusText.SolverOff` (built by Chunk 03), so `tree` and
+  `outline` cannot drift apart. When the solver is on and the last solution was aborted, outline
+  prints `on; the last solution was aborted` and adds the same note, because an aborted solve
+  leaves counts from two different solutions on the canvas.
 
   When it is not `on`, add `note: "counts are from the last solution and may be out of date"`.
 - `controls`: sliders, toggles and value lists. `NAME Type = VALUE[ (min..max)][ [GROUPS]]`, in
@@ -337,6 +356,8 @@ Parameters:
 - Exactly one of `id` (one object) or `ids` (a JSON array of 1-50 entries, each an id string or
   `{"id": "...", "param": "..."}` with no other keys).
 - Optional `param`, only with `id`: a port spec, resolved with `ParamSpecLookup` on the chosen side.
+  In an `ids` entry, `param` may be a string or an integer index. A blank `id` or `param` is an
+  error, not "not given".
 - Optional `side`: `output` (default) or `input`. Any other value is an error.
 - Optional `limit`: path groups per tree, 1-500, default 20. An explicit value is honoured exactly,
   including 100 (report 2.6 #1). Out of range is an error.
@@ -348,10 +369,16 @@ parameter objects (`McpServer.cs`, "A free-floating parameter object …").
 
 Result: `{success, solver?, trees: [...], errors?: ["ids[i]: …"]}`. `success` is false when any
 target failed; the trees that resolved are still returned.
-- Each tree: `{target, object (DisplayName once 02 lands; until then the GUID), id (full GUID),
+- Each tree: `{target, object (the nickname as the canvas shows it), id (full GUID),
   port ("Name", or "NickName (Name)" when they differ), side, type, branches, items, nulls?,
   invalid?, emptyBranches?, depth, perBranch, paths[], morePathGroups?, notes?[], solved?: false,
   message?, note?}`.
+- `object` is a label for the reader, not a handle: two objects can carry the same nickname, and
+  `id` is what a follow-up call passes. (Amended mid-build; the first draft printed a DisplayName,
+  which needs a canvas snapshot per call and would have tied tree to the resolver. See Decisions.)
+- `side` reads `parameter` for a parameter object, where `side` and `param` do not apply.
+- `solved: false` marks a tree whose owner is not Computed; `note` then says which state the owner
+  is in (locked, failed, computing, or not computed and why).
 - `depth` and `perBranch` are a number, or `{min, max}` when they vary.
 - `paths` are runs: `{0;0}..{0;9}: 1 each` or `{0;3}: 4`.
 - `items` includes nulls. `invalid` counts non-null goo with `IsValid == false` (report 2.6 #4).
@@ -368,8 +395,9 @@ Notes, fixed from Hyperceps:
 - The mixed-depth note likewise leaves out "Simplify may help".
 - New, for `side='input'` with no `param` (report 2.6 #3): when two or more inputs of the component
   each have more than one branch and their branch counts differ, add the note `inputs don't line
-  up: A has 3 branches, B has 12`. When the counts match but the path lists differ, add a note
-  that names both.
+  up: A has 3 branches, B has 12 branches`. When the counts match but the path lists differ, add a
+  note that names both. The note names every input involved and is attached once, to the first
+  tree with more than one branch.
 
 ## Prep (coordinator, one commit on `feat/canvas-read` before any dispatch)
 
@@ -538,6 +566,9 @@ disposition. Rhino-object sites are left alone.
 Owns: `src/Cordyceps/Core/ToolHelpers.cs`; every GhCanvasTool partial file under `src/Cordyceps/Tools/Unified/`
 except the outline partial; `src/Cordyceps/Tools/Unified/GhWireTool.cs`;
 `src/Cordyceps/Tools/Unified/GhScriptTool.cs`; the 02 anchor block.
+Also owns, now that 03 has merged: the target-resolution loop in
+`src/Cordyceps/Tools/Unified/GhInspectTool.Tree.cs` (one per-call lookup for all of a call's ids;
+nothing else in that file).
 Must not touch: `src/Cordyceps/Tools/Unified/GhInspectTool.cs` (03 owns it, including its `id`
 description), `src/Cordyceps/Tools/Unified/GhCanvasTool.Outline.cs`, the files under
 `src/Cordyceps/Core/Canvas/` (a needed change is sent to the coordinator, who lands it on the branch
@@ -652,7 +683,8 @@ Type: cumulative-final. Coordinator.
     - `gh_wire list` with an unknown id is an error;
     - non-GUID error texts changed;
     - response echoes carry the resolved GUID;
-    - `gh_inspect` `limit` defaults to 0 (the action's default).
+    - `gh_inspect` `limit` defaults to 0 (the action's default), so `log` with an explicit
+      `limit=0` returns the default 100 entries where it returned none.
   - Fixed: infrastructure existence leaked by `move`, bulk connect and `group_move`; a negative
     `log` limit threw.
 - [ ] `src/Cordyceps/McpServer.cs` `GetServerInstructions()`:

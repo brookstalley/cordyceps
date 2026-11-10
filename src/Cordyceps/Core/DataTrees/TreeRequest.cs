@@ -158,7 +158,15 @@ namespace Cordyceps.Core.DataTrees
             try
             {
                 // Duplicate keys in one entry would silently keep the last; refuse them instead.
-                root = JToken.Parse(ids, new JsonLoadSettings { DuplicatePropertyNameHandling = DuplicatePropertyNameHandling.Error });
+                // Strings stay strings: by default Json.NET turns date-shaped text into a Date token,
+                // which would refuse a nickname such as "2026-01-01T00:00:00".
+                using (var reader = new JsonTextReader(new System.IO.StringReader(ids)) { DateParseHandling = DateParseHandling.None })
+                {
+                    root = JToken.Load(reader, new JsonLoadSettings { DuplicatePropertyNameHandling = DuplicatePropertyNameHandling.Error });
+                    // Anything after the first value is a malformed call, not something to ignore.
+                    if (reader.Read())
+                        throw new JsonReaderException("unexpected text after the JSON array");
+                }
             }
             catch (JsonException ex)
             {
@@ -222,6 +230,12 @@ namespace Cordyceps.Core.DataTrees
                 string param = null;
                 if (obj.TryGetValue("param", out var paramToken))
                 {
+                    // An integer too large for Int64 arrives as a BigInteger; it is no port's index.
+                    if (paramToken.Type == JTokenType.Integer && !(((JValue)paramToken).Value is long))
+                    {
+                        error = $"{label}: 'param' index {paramToken.ToString(Formatting.None)} is out of range";
+                        return false;
+                    }
                     if (paramToken.Type == JTokenType.Integer)
                         param = paramToken.Value<long>().ToString(CultureInfo.InvariantCulture);
                     else if (paramToken.Type == JTokenType.String && !string.IsNullOrWhiteSpace(paramToken.Value<string>()))
