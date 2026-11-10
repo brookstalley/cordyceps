@@ -37,6 +37,8 @@ output, and what differs from its pytest-shaped instructions: read `docs/testing
 
 **Core/Naming/TypeNameRule.cs** + **Core/ComponentRegistry.cs** - The rule that turns a component-type name into one type (GUID, exact aliases such as "python", pinned built-ins, exact name or `Category/Name`; never a partial match) lives host-free in `Core/Naming/TypeNameRule.cs`, with "did you mean" helpers in `Core/Naming/NameSuggestions.cs`. `ComponentRegistry` is only the Grasshopper adapter: it builds the installed-type catalog the rule reads, creates the resolved type, and runs `search`. Change resolution or aliases in the rule, not the adapter.
 
+**Core/Canvas/** - The host-free canvas model and the one object-name rule. `CanvasReader.cs` is the only Grasshopper adapter: called on the UI thread, it reads the document once into a `CanvasSnapshot` (`Names` detail for id lookups, `Full` for outline). `ObjectResolver.cs` turns the text a caller passes as an object or group id into one object (full GUID, 8+ hex GUID prefix, unique case-sensitive nickname, group name in the Groups scope; an ambiguous name is an error listing candidates) and chooses the display names outline prints, each checked to resolve back. `ObjectHealth.cs` is the OK/ERROR/WARNING/DISCONNECTED rule `gh_inspect(action='status')` and outline share; `OutlineRequest.cs` and `OutlineView.cs` are outline's argument rules and views. `ToolHelpers.TryGetUnprotectedComponent`/`TryGetUnprotectedGroup`/`TryResolveIdArray` are the choke points every tool goes through. Change name resolution in the resolver, not at a call site. Data-tree summaries for `gh_inspect(action='tree')` live in `Core/DataTrees/`.
+
 **Core/UnifiedToolHelpers.cs** - Shared utilities for the unified tool architecture including action dispatch, help generation, and standardized response formatting.
 
 **Core/ToolHelpers.cs** - Shared document/component utilities used across every tool: active-document and component resolution (by GUID or name), protected/infrastructure-id checks, cluster-safe recompute, component-info builders, JSON (de)serialization helpers, and `SuccessResponse`/`ErrorResponse` formatting.
@@ -62,11 +64,11 @@ AI agents discover Cordyceps through a layered documentation system. All of thes
 Each tool class is marked with `[McpServerToolType]` and contains a single method marked with `[McpServerTool]`. The method name is converted to snake_case for the MCP tool name (e.g., `GhCanvas` -> `gh_canvas`). Each tool uses an `action` parameter to dispatch to different operations.
 
 **Grasshopper Tools (5):**
-- **GhCanvasTool** (`gh_canvas`) - Components, values, groups: add, delete, move, find, search, list, bake, get/set values, group management, zoomable parameter management, per-parameter data modifiers (flatten/graft/simplify/reverse)
+- **GhCanvasTool** (`gh_canvas`) - Components, values, groups: add, delete, move, find, search, list, outline (compact read of the whole definition), bake, get/set values, group management, zoomable parameter management, per-parameter data modifiers (flatten/graft/simplify/reverse)
 - **GhWireTool** (`gh_wire`) - Connect/disconnect components, bulk wiring, validate connections
 - **GhDocumentTool** (`gh_document`) - Save, clear documents; snapshots; solver control; capture canvas/viewport
 - **GhScriptTool** (`gh_script`) - Configure C#/Python script components
-- **GhInspectTool** (`gh_inspect`) - Non-blocking connection/liveness probe, component status, trace data flow, retrieve debug output
+- **GhInspectTool** (`gh_inspect`) - Non-blocking connection/liveness probe, component status, data-tree shape (`tree`), trace data flow, retrieve debug output
 
 **Rhino Tools (2):**
 - **RhinoSceneTool** (`rhino_scene`) - Object management, selection, layers (full CRUD), visibility

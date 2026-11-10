@@ -53,6 +53,10 @@ namespace Cordyceps.Resources
                 "Getting Started with Grasshopper",
                 "Essential guide for AI agents - read this first! Covers key concepts, workflow, common mistakes, and tool overview");
 
+            RegisterEmbeddedResource("gh://docs/canvas-outline", "Knowledge.CanvasOutlineGuide.md",
+                "Reading a Canvas with Outline",
+                "How to read gh_canvas(action='outline'): the overview, group detail and around views, the line grammar, stale and disabled counts, caps, and what outline does not show");
+
             RegisterEmbeddedResource("gh://docs/data-trees", "Knowledge.DataTreesGuide.md",
                 "Grasshopper Data Trees Guide",
                 "Comprehensive guide to understanding Grasshopper's data tree system, paths, access modes, and common patterns");

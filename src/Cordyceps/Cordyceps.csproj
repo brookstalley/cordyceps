@@ -70,6 +70,7 @@
     <EmbeddedResource Include="Knowledge\McpTestingGuide.md" />
     <EmbeddedResource Include="Knowledge\RenderingGuide.md" />
     <EmbeddedResource Include="Knowledge\CommonErrorsGuide.md" />
+    <EmbeddedResource Include="Knowledge\CanvasOutlineGuide.md" />
     <EmbeddedResource Include="Knowledge\Patterns\LinearArray.md" />
     <EmbeddedResource Include="Knowledge\Patterns\GridArray.md" />
     <EmbeddedResource Include="Knowledge\Prompts\CreateParametricGeometry.md" />

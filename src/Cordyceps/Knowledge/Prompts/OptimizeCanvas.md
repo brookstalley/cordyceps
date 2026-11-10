@@ -2,10 +2,11 @@
 
 ## Step 1: Get Current Status
 ```
+gh_canvas(action='outline')
 gh_inspect(action='status')
-gh_canvas(action='list')
 ```
-Count the total components and identify complex areas.
+The outline's `summary` counts the objects; its group lines show item counts on the wires
+between groups, which point at the areas carrying large data. `status` gives the full problem list.
 
 ## Step 2: Identify Expensive Operations
 
@@ -23,11 +24,12 @@ Look for:
 ## Step 3: Analyze Data Flow
 For suspected slow components:
 ```
-gh_inspect(action='trace', id=[component_id], direction='upstream')
-gh_inspect(action='outputs', id=[component_id])
+gh_canvas(action='outline', id=[component_id])
+gh_inspect(action='tree', id=[component_id])
 ```
 
-Check if data structures are unnecessarily complex.
+Check if data structures are unnecessarily complex: `tree` reports branch and item counts and
+notes such as redundant leading path indices, without pulling the data.
 
 ## Step 4: Optimization Strategies
 
