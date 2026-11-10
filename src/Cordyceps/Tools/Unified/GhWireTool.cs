@@ -71,7 +71,8 @@ namespace Cordyceps.Tools.Unified
             Notes = new[]
             {
                 "On a component, parameters are specified by exact name or nickname, or by 0-based index; an index outside the port list is refused with the valid range rather than matched as a name. Case is ignored only when that leaves one match; a partial or ambiguous name is refused with the candidates, never guessed. sourceParam is always an output and targetParam always an input. A free-floating param object is itself the target",
-                "Disable solver before bulk wiring: gh_document(action='solver', enabled=false)"
+                "Disable solver before bulk wiring: gh_document(action='solver', enabled=false)",
+                "Ids: an object is named by its GUID, an 8+ hex GUID prefix, or its unique nickname (exact, case-sensitive). A name two objects share is refused with both ids; bulk connect resolves every connection before adding any wire. list with an id that names nothing is an error, not an empty list"
             }
         };
 
@@ -83,13 +84,13 @@ namespace Cordyceps.Tools.Unified
         [McpServerTool, Description("Connection operations. Actions: connect|disconnect|list|clear|validate|help")]
         public string GhWire(
             [Description("Action to perform")] string action,
-            [Description("Source component GUID")] string sourceId = null,
+            [Description("Source object: GUID, 8+ hex GUID prefix, or unique nickname")] string sourceId = null,
             [Description("Source output port: exact name or nickname, or 0-based index")] string sourceParam = null,
-            [Description("Target component GUID")] string targetId = null,
+            [Description("Target object: GUID, 8+ hex GUID prefix, or unique nickname")] string targetId = null,
             [Description("Target input port: exact name or nickname, or 0-based index")] string targetParam = null,
-            [Description("JSON array of connections for bulk connect")] string connections = null,
-            [Description("Component GUID for list filter or clear")] string id = null,
-            [Description("Alias for id (for list filter)")] string componentId = null)
+            [Description("JSON array of connections for bulk connect: [{sourceId,sourceParam,targetId,targetParam},...]; each id is an object: GUID, 8+ hex GUID prefix, or unique nickname")] string connections = null,
+            [Description("Object: GUID, 8+ hex GUID prefix, or unique nickname, for list filter or clear")] string id = null,
+            [Description("Alias for id (for list filter). Object: GUID, 8+ hex GUID prefix, or unique nickname")] string componentId = null)
         {
             if (string.Equals(action, "help", StringComparison.OrdinalIgnoreCase))
                 return UnifiedToolHelpers.GenerateHelp(ToolInfo);
@@ -126,8 +127,6 @@ namespace Cordyceps.Tools.Unified
                 if (!ToolHelpers.TryGetActiveDocument(_context, out var doc, out var error))
                     return ToolHelpers.ErrorResponse(error);
 
-                var infraIds = ToolHelpers.GetCordycepsInfrastructureIds(doc);
-
                 List<dynamic> connectionList;
                 if (!string.IsNullOrEmpty(connections))
                 {
@@ -143,88 +142,75 @@ namespace Cordyceps.Tools.Unified
                     return ToolHelpers.ErrorResponse("Provide sourceId+targetId for single, or connections array for bulk");
                 }
 
-                var results = new List<object>();
+                // Pass 1: resolve every connection's source, target and ports against one lookup,
+                // before the first wire is added. Pass 2 wires only the connections that passed.
+                var lookup = new ObjectLookup(doc);
+                var results = new object[connectionList.Count];
+                var pending = new List<(int Index, IGH_DocumentObject Src, IGH_Param Output, IGH_DocumentObject Tgt, IGH_Param Input)>();
                 int successCount = 0, failCount = 0;
-                // Every distinct target must be expired — expiring only the last one leaves the
-                // other targets of a bulk connect stale until something else recomputes them.
-                var targetsToExpire = new Dictionary<Guid, IGH_DocumentObject>();
 
-                foreach (var conn in connectionList)
+                for (int i = 0; i < connectionList.Count; i++)
                 {
-                    string srcId = conn.sourceId?.ToString();
-                    string srcParam = conn.sourceParam?.ToString() ?? "0";
-                    string tgtId = conn.targetId?.ToString();
-                    string tgtParam = conn.targetParam?.ToString() ?? "0";
+                    var conn = connectionList[i];
+                    string srcId = conn?.sourceId?.ToString();
+                    string srcParam = conn?.sourceParam?.ToString() ?? "0";
+                    string tgtId = conn?.targetId?.ToString();
+                    string tgtParam = conn?.targetParam?.ToString() ?? "0";
 
                     if (string.IsNullOrEmpty(srcId) || string.IsNullOrEmpty(tgtId))
                     {
-                        results.Add(new { success = false, error = "Missing sourceId or targetId" });
+                        results[i] = new { success = false, error = "Missing sourceId or targetId" };
                         failCount++;
                         continue;
                     }
 
-                    if (!Guid.TryParse(srcId, out Guid srcGuid))
+                    if (!ToolHelpers.TryGetUnprotectedComponent(lookup, srcId, out var srcObj, out var srcError))
                     {
-                        results.Add(new { success = false, error = "Invalid source GUID" });
+                        results[i] = new { success = false, error = $"Source: {srcError}" };
                         failCount++;
                         continue;
                     }
-                    if (infraIds.Contains(srcGuid))
+                    if (!ToolHelpers.TryGetUnprotectedComponent(lookup, tgtId, out var tgtObj, out var tgtError))
                     {
-                        results.Add(new { success = false, error = "Protected: required for MCP server" });
-                        failCount++;
-                        continue;
-                    }
-
-                    if (!Guid.TryParse(tgtId, out Guid tgtGuid))
-                    {
-                        results.Add(new { success = false, error = "Invalid target GUID" });
-                        failCount++;
-                        continue;
-                    }
-                    if (infraIds.Contains(tgtGuid))
-                    {
-                        results.Add(new { success = false, error = "Protected: required for MCP server" });
-                        failCount++;
-                        continue;
-                    }
-
-                    var srcObj = doc.FindObject(srcGuid, true);
-                    var tgtObj = doc.FindObject(tgtGuid, true);
-                    if (srcObj == null || tgtObj == null)
-                    {
-                        results.Add(new { success = false, error = "Component not found" });
+                        results[i] = new { success = false, error = $"Target: {tgtError}" };
                         failCount++;
                         continue;
                     }
 
                     var sourceOutput = GetOutputParameter(srcObj, srcParam, "sourceParam", out var srcParamError);
-                    var targetInput = GetInputParameter(tgtObj, tgtParam, "targetParam", out var tgtParamError);
-
                     if (sourceOutput == null)
                     {
                         var available = srcObj is IGH_Component c ? c.Params.Output.Select(p => p.Name).ToList() : new List<string>();
-                        results.Add(new { success = false, error = $"Source: {srcParamError}", availableOutputs = available });
+                        results[i] = new { success = false, error = $"Source: {srcParamError}", availableOutputs = available };
                         failCount++;
                         continue;
                     }
 
+                    var targetInput = GetInputParameter(tgtObj, tgtParam, "targetParam", out var tgtParamError);
                     if (targetInput == null)
                     {
                         var available = tgtObj is IGH_Component c ? c.Params.Input.Select(p => p.Name).ToList() : new List<string>();
-                        results.Add(new { success = false, error = $"Target: {tgtParamError}", availableInputs = available });
+                        results[i] = new { success = false, error = $"Target: {tgtParamError}", availableInputs = available };
                         failCount++;
                         continue;
                     }
 
+                    pending.Add((i, srcObj, sourceOutput, tgtObj, targetInput));
+                }
+
+                // Every distinct target must be expired — expiring only the last one leaves the
+                // other targets of a bulk connect stale until something else recomputes them.
+                var targetsToExpire = new Dictionary<Guid, IGH_DocumentObject>();
+                foreach (var (index, srcObj, sourceOutput, tgtObj, targetInput) in pending)
+                {
                     targetInput.AddSource(sourceOutput);
                     targetsToExpire[tgtObj.InstanceGuid] = tgtObj;
-                    results.Add(new
+                    results[index] = new
                     {
                         success = true,
-                        source = new { id = srcId, name = srcObj.NickName ?? srcObj.Name, param = sourceOutput.Name },
-                        target = new { id = tgtId, name = tgtObj.NickName ?? tgtObj.Name, param = targetInput.Name }
-                    });
+                        source = new { id = srcObj.InstanceGuid.ToString(), name = srcObj.NickName ?? srcObj.Name, param = sourceOutput.Name },
+                        target = new { id = tgtObj.InstanceGuid.ToString(), name = tgtObj.NickName ?? tgtObj.Name, param = targetInput.Name }
+                    };
                     successCount++;
                 }
 
@@ -245,10 +231,14 @@ namespace Cordyceps.Tools.Unified
         {
             return _context.ExecuteOnUiThread(() =>
             {
-                if (!ToolHelpers.TryGetUnprotectedComponentWithDoc(_context, sourceId, out var doc, out var srcObj, out var error))
+                if (!ToolHelpers.TryGetActiveDocument(_context, out var doc, out var error))
+                    return ToolHelpers.ErrorResponse(error);
+
+                var lookup = new ObjectLookup(doc);
+                if (!ToolHelpers.TryGetUnprotectedComponent(lookup, sourceId, out var srcObj, out error))
                     return ToolHelpers.ErrorResponse($"Source: {error}");
 
-                if (!ToolHelpers.TryGetUnprotectedComponent(_context, targetId, out var tgtObj, out error))
+                if (!ToolHelpers.TryGetUnprotectedComponent(lookup, targetId, out var tgtObj, out error))
                     return ToolHelpers.ErrorResponse($"Target: {error}");
 
                 var sourceOutput = GetOutputParameter(srcObj, sourceParam, "sourceParam", out var sourceParamError);
@@ -291,8 +281,8 @@ namespace Cordyceps.Tools.Unified
                 {
                     success = true,
                     disconnected = true,
-                    source = new { id = sourceId, param = sourceOutput.Name },
-                    target = new { id = targetId, param = targetInput.Name }
+                    source = new { id = srcObj.InstanceGuid.ToString(), param = sourceOutput.Name },
+                    target = new { id = tgtObj.InstanceGuid.ToString(), param = targetInput.Name }
                 });
             });
         }
@@ -304,12 +294,14 @@ namespace Cordyceps.Tools.Unified
                 if (!ToolHelpers.TryGetActiveDocument(_context, out var doc, out var error))
                     return ToolHelpers.ErrorResponse(error);
 
+                // The filter resolves like any object id: an id that names nothing is an error,
+                // never an empty list that reads as "no wires".
                 Guid? filterGuid = null;
                 if (!string.IsNullOrEmpty(componentId))
                 {
-                    if (!Guid.TryParse(componentId, out Guid parsed))
-                        return ToolHelpers.ErrorResponse("Invalid componentId format");
-                    filterGuid = parsed;
+                    if (!ToolHelpers.TryGetUnprotectedComponent(new ObjectLookup(doc), componentId, out var filterObj, out var filterError))
+                        return ToolHelpers.ErrorResponse(filterError);
+                    filterGuid = filterObj.InstanceGuid;
                 }
 
                 var infraIds = ToolHelpers.GetCordycepsInfrastructureIds(doc);
@@ -355,7 +347,7 @@ namespace Cordyceps.Tools.Unified
                     ["count"] = connections.Count,
                     ["connections"] = connections
                 };
-                if (filterGuid.HasValue) result["filteredBy"] = componentId;
+                if (filterGuid.HasValue) result["filteredBy"] = filterGuid.Value.ToString();
 
                 return JsonConvert.SerializeObject(result);
             });
@@ -395,7 +387,7 @@ namespace Cordyceps.Tools.Unified
                 return JsonConvert.SerializeObject(new
                 {
                     success = true,
-                    componentId = id,
+                    componentId = component.InstanceGuid.ToString(),
                     componentName = component.Name,
                     clearedCount,
                     clearedInputs
@@ -410,7 +402,8 @@ namespace Cordyceps.Tools.Unified
                 if (!ToolHelpers.TryGetActiveDocument(_context, out var doc, out var error))
                     return ToolHelpers.ErrorResponse(error);
 
-                if (!ToolHelpers.TryGetUnprotectedComponent(_context, sourceId, out var srcObj, out error))
+                var lookup = new ObjectLookup(doc);
+                if (!ToolHelpers.TryGetUnprotectedComponent(lookup, sourceId, out var srcObj, out error))
                     return ToolHelpers.ErrorResponse($"Source: {error}");
 
                 // If no target specified, list possible outputs from source
@@ -432,14 +425,14 @@ namespace Cordyceps.Tools.Unified
                     return JsonConvert.SerializeObject(new
                     {
                         success = true,
-                        sourceId,
+                        sourceId = srcObj.InstanceGuid.ToString(),
                         sourceName = srcObj.NickName ?? srcObj.Name,
                         outputs,
                         hint = "Specify targetId to validate a specific connection"
                     });
                 }
 
-                if (!ToolHelpers.TryGetUnprotectedComponent(_context, targetId, out var tgtObj, out error))
+                if (!ToolHelpers.TryGetUnprotectedComponent(lookup, targetId, out var tgtObj, out error))
                     return ToolHelpers.ErrorResponse($"Target: {error}");
 
                 var sourceOutput = GetOutputParameter(srcObj, sourceParam ?? "0", "sourceParam", out var sourceParamError);
@@ -459,8 +452,8 @@ namespace Cordyceps.Tools.Unified
                 {
                     success = true,
                     valid = compatibility.Level != "incompatible",
-                    source = new { id = sourceId, name = srcObj.NickName ?? srcObj.Name, param = sourceOutput.Name, type = sourceOutput.TypeName },
-                    target = new { id = targetId, name = tgtObj.NickName ?? tgtObj.Name, param = targetInput.Name, type = targetInput.TypeName },
+                    source = new { id = srcObj.InstanceGuid.ToString(), name = srcObj.NickName ?? srcObj.Name, param = sourceOutput.Name, type = sourceOutput.TypeName },
+                    target = new { id = tgtObj.InstanceGuid.ToString(), name = tgtObj.NickName ?? tgtObj.Name, param = targetInput.Name, type = targetInput.TypeName },
                     compatibility = new { level = compatibility.Level, message = compatibility.Message }
                 });
             });

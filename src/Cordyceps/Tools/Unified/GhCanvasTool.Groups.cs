@@ -21,16 +21,19 @@ namespace Cordyceps.Tools.Unified
                 if (!ToolHelpers.TryGetActiveDocument(_context, out var doc, out var error))
                     return ToolHelpers.ErrorResponse(error);
 
-                // Parse member ids BEFORE creating the group: malformed JSON is a hard error
-                // (parity with group_add), never a silently-empty group under success:true.
-                List<Guid> guids = null;
+                // Resolve every member BEFORE creating the group: a member that does not resolve
+                // (malformed JSON, unknown, ambiguous, or infrastructure, which reads as not found)
+                // is an error and nothing is created. A group half-built from a typo is a
+                // mutation the caller did not ask for; grouping the Cordyceps component would
+                // also turn the whole user group into hidden infrastructure.
+                var lookup = new ObjectLookup(doc);
+                var members = new List<IGH_DocumentObject>();
+                IReadOnlyList<IdOutcome> outcomes = null;
                 if (!string.IsNullOrEmpty(componentIds))
                 {
-                    if (!ToolHelpers.TryParseGuidArray(componentIds, out guids, out var parseError))
-                        return ToolHelpers.ErrorResponse(parseError);
+                    if (!ToolHelpers.TryResolveIdArray(lookup, componentIds, "ids", out members, out outcomes, out var resolveError))
+                        return ToolHelpers.ErrorResponse(resolveError);
                 }
-
-                var infraIds = ToolHelpers.GetCordycepsInfrastructureIds(doc);
 
                 var group = new GH_Group();
                 group.NickName = name;
@@ -41,37 +44,24 @@ namespace Cordyceps.Tools.Unified
 
                 doc.AddObject(group, false);
 
-                var addedIds = new List<string>();
-                if (guids != null)
-                {
-                    foreach (var guid in guids)
-                    {
-                        // Infrastructure ids are invisible to callers (treated as not found) —
-                        // grouping the Cordyceps component would silently turn the whole user
-                        // group into hidden infrastructure.
-                        if (infraIds.Contains(guid)) continue;
-
-                        var obj = doc.FindObject(guid, true);
-                        if (obj != null)
-                        {
-                            group.AddObject(obj.InstanceGuid);
-                            addedIds.Add(guid.ToString());
-                        }
-                    }
+                foreach (var obj in members)
+                    group.AddObject(obj.InstanceGuid);
+                if (members.Count > 0)
                     group.ExpireCaches();
-                }
 
                 Instances.ActiveCanvas?.Invalidate();
 
-                return JsonConvert.SerializeObject(new
+                var result = new Dictionary<string, object>
                 {
-                    success = true,
-                    id = group.InstanceGuid.ToString(),
-                    name = group.NickName,
-                    color = ColorTranslator.ToHtml(group.Colour),
-                    memberCount = addedIds.Count,
-                    memberIds = addedIds
-                });
+                    ["success"] = true,
+                    ["id"] = group.InstanceGuid.ToString(),
+                    ["name"] = group.NickName,
+                    ["color"] = ColorTranslator.ToHtml(group.Colour),
+                    ["memberCount"] = members.Count,
+                    ["memberIds"] = members.Select(o => o.InstanceGuid.ToString()).ToList()
+                };
+                AddDuplicateNotes(result, outcomes);
+                return JsonConvert.SerializeObject(result);
             });
         }
 
@@ -79,18 +69,16 @@ namespace Cordyceps.Tools.Unified
         {
             return _context.ExecuteOnUiThread(() =>
             {
-                if (!ToolHelpers.TryGetUnprotectedComponentWithDoc(_context, id, out var doc, out var obj, out var error))
+                if (!ToolHelpers.TryGetUnprotectedGroup(_context, id, out var doc, out var group, out var error))
                     return ToolHelpers.ErrorResponse(error);
 
-                if (!(obj is GH_Group group))
-                    return ToolHelpers.ErrorResponse($"Object is not a group: {id}");
-
+                var deletedId = group.InstanceGuid.ToString();
                 doc.RemoveObject(group, true);
 
                 return JsonConvert.SerializeObject(new
                 {
                     success = true,
-                    deleted = id
+                    deleted = deletedId
                 });
             });
         }
@@ -102,40 +90,31 @@ namespace Cordyceps.Tools.Unified
                 if (!ToolHelpers.TryGetActiveDocument(_context, out var doc, out var error))
                     return ToolHelpers.ErrorResponse(error);
 
-                if (!ToolHelpers.TryParseGuidArray(componentIds, out var guids, out error))
-                    return ToolHelpers.ErrorResponse(error);
-
-                var infraIds = ToolHelpers.GetCordycepsInfrastructureIds(doc);
-
-                var objects = new List<IGH_DocumentObject>();
-                foreach (var guid in guids)
-                {
-                    // Infrastructure ids are invisible to callers (treated as not found) —
-                    // grouping the Cordyceps component would silently turn the whole user
-                    // group into hidden infrastructure.
-                    if (infraIds.Contains(guid)) continue;
-
-                    var obj = doc.FindObject(guid, true);
-                    if (obj != null)
-                        objects.Add(obj);
-                }
-
-                if (objects.Count == 0)
-                    return ToolHelpers.ErrorResponse("No valid components found");
+                // Everything resolves before anything changes: the group (when named) and every
+                // member. One member that does not resolve fails the call and nothing is added.
+                var lookup = new ObjectLookup(doc);
 
                 GH_Group group = null;
                 if (!string.IsNullOrEmpty(groupId))
                 {
                     // An explicit groupId must resolve — silently creating a new group here
                     // would hide typos and duplicate groups. Omit groupId to create a group.
-                    if (!Guid.TryParse(groupId, out Guid gGuid))
-                        return ToolHelpers.ErrorResponse($"Invalid group id format: {groupId}");
+                    if (!ToolHelpers.TryGetUnprotectedGroup(lookup, groupId, out group, out var groupError))
+                        return ToolHelpers.ErrorResponse(
+                            $"{groupError}{(groupError.EndsWith(".") ? " " : ". ")}Omit 'id' (and pass 'name') to create a new group.");
+                }
 
-                    if (!infraIds.Contains(gGuid))
-                        group = doc.FindObject(gGuid, true) as GH_Group;
+                if (!ToolHelpers.TryResolveIdArray(lookup, componentIds, "ids", out var objects, out var outcomes, out error))
+                    return ToolHelpers.ErrorResponse(error);
 
-                    if (group == null)
-                        return ToolHelpers.ErrorResponse($"Group not found: {groupId}. Omit 'id' (and pass 'name') to create a new group.");
+                if (objects.Count == 0)
+                    return ToolHelpers.ErrorResponse("No valid components found");
+
+                if (group != null)
+                {
+                    var self = outcomes.FirstOrDefault(o => o.Id == group.InstanceGuid);
+                    if (self != null)
+                        return ToolHelpers.ErrorResponse($"Nothing was changed: ids[{self.Index}] '{self.Text}' is the group itself; a group cannot contain itself");
                 }
 
                 if (group == null)
@@ -157,15 +136,17 @@ namespace Cordyceps.Tools.Unified
 
                 var bounds = group.Attributes?.Bounds ?? RectangleF.Empty;
 
-                return JsonConvert.SerializeObject(new
+                var result = new Dictionary<string, object>
                 {
-                    success = true,
-                    groupId = group.InstanceGuid.ToString(),
-                    groupName = group.NickName,
-                    addedCount = objects.Count,
-                    addedIds = objects.Select(o => o.InstanceGuid.ToString()).ToList(),
-                    bounds = new { x = bounds.X, y = bounds.Y, width = bounds.Width, height = bounds.Height }
-                });
+                    ["success"] = true,
+                    ["groupId"] = group.InstanceGuid.ToString(),
+                    ["groupName"] = group.NickName,
+                    ["addedCount"] = objects.Count,
+                    ["addedIds"] = objects.Select(o => o.InstanceGuid.ToString()).ToList(),
+                    ["bounds"] = new { x = bounds.X, y = bounds.Y, width = bounds.Width, height = bounds.Height }
+                };
+                AddDuplicateNotes(result, outcomes);
+                return JsonConvert.SerializeObject(result);
             });
         }
 
@@ -173,39 +154,58 @@ namespace Cordyceps.Tools.Unified
         {
             return _context.ExecuteOnUiThread(() =>
             {
-                if (!ToolHelpers.TryGetUnprotectedComponent(_context, groupId, out var obj, out var error))
+                if (!ToolHelpers.TryGetActiveDocument(_context, out var doc, out var error))
                     return ToolHelpers.ErrorResponse(error);
 
-                if (!(obj is GH_Group group))
-                    return ToolHelpers.ErrorResponse($"Object is not a group: {groupId}");
-
-                if (!ToolHelpers.TryParseGuidArray(componentIds, out var guids, out error))
+                // The group and every entry resolve before anything is removed; one entry that
+                // does not resolve fails the call and the group is left as it was.
+                var lookup = new ObjectLookup(doc);
+                if (!ToolHelpers.TryGetUnprotectedGroup(lookup, groupId, out var group, out error))
                     return ToolHelpers.ErrorResponse(error);
 
-                int removedCount = 0;
+                if (!ToolHelpers.TryResolveIdArray(lookup, componentIds, "ids", out var objects, out var outcomes, out error))
+                    return ToolHelpers.ErrorResponse(error);
+
+                var memberIds = new HashSet<Guid>(group.ObjectIDs ?? new List<Guid>());
                 var removedIds = new List<string>();
+                var notMembers = new List<string>();
 
-                foreach (var guid in guids)
+                foreach (var obj in objects)
                 {
-                    if (group.ObjectIDs != null && group.ObjectIDs.Contains(guid))
+                    var guid = obj.InstanceGuid;
+                    if (memberIds.Contains(guid))
                     {
                         group.RemoveObject(guid);
-                        removedCount++;
                         removedIds.Add(guid.ToString());
+                    }
+                    else
+                    {
+                        notMembers.Add(guid.ToString());
                     }
                 }
 
                 group.ExpireCaches();
                 Instances.ActiveCanvas?.Invalidate();
 
-                return JsonConvert.SerializeObject(new
+                var result = new Dictionary<string, object>
                 {
-                    success = true,
-                    groupId = group.InstanceGuid.ToString(),
-                    removedCount,
-                    removedIds
-                });
+                    ["success"] = true,
+                    ["groupId"] = group.InstanceGuid.ToString(),
+                    ["removedCount"] = removedIds.Count,
+                    ["removedIds"] = removedIds
+                };
+                if (notMembers.Count > 0) result["notMembers"] = notMembers;
+                AddDuplicateNotes(result, outcomes);
+                return JsonConvert.SerializeObject(result);
             });
+        }
+
+        /// <summary>Adds <c>notes</c> (<c>ids[i]: same object as entry j</c>) when a member array repeated an object.</summary>
+        private static void AddDuplicateNotes(Dictionary<string, object> result, IReadOnlyList<IdOutcome> outcomes)
+        {
+            if (outcomes == null) return;
+            var notes = IdBatch.DuplicateNotes(outcomes, "ids");
+            if (notes.Count > 0) result["notes"] = notes;
         }
 
         private string ActionGroupList()
@@ -254,11 +254,8 @@ namespace Cordyceps.Tools.Unified
         {
             return _context.ExecuteOnUiThread(() =>
             {
-                if (!ToolHelpers.TryGetUnprotectedComponent(_context, id, out var obj, out var error))
+                if (!ToolHelpers.TryGetUnprotectedGroup(_context, id, out _, out var group, out var error))
                     return ToolHelpers.ErrorResponse(error);
-
-                if (!(obj is GH_Group group))
-                    return ToolHelpers.ErrorResponse($"Object is not a group: {id}");
 
                 string oldName = group.NickName;
                 group.NickName = newName;
@@ -279,11 +276,8 @@ namespace Cordyceps.Tools.Unified
         {
             return _context.ExecuteOnUiThread(() =>
             {
-                if (!ToolHelpers.TryGetUnprotectedComponent(_context, id, out var obj, out var error))
+                if (!ToolHelpers.TryGetUnprotectedGroup(_context, id, out _, out var group, out var error))
                     return ToolHelpers.ErrorResponse(error);
-
-                if (!(obj is GH_Group group))
-                    return ToolHelpers.ErrorResponse($"Object is not a group: {id}");
 
                 if (!ToolHelpers.TryParseColor(color, out var groupColor))
                     return ToolHelpers.ErrorResponse($"Invalid color: {color}");
@@ -294,7 +288,7 @@ namespace Cordyceps.Tools.Unified
                 return JsonConvert.SerializeObject(new
                 {
                     success = true,
-                    id,
+                    id = group.InstanceGuid.ToString(),
                     color = ColorTranslator.ToHtml(group.Colour)
                 });
             });
@@ -310,32 +304,9 @@ namespace Cordyceps.Tools.Unified
                 if (!ToolHelpers.TryGetActiveDocument(_context, out var doc, out var error))
                     return ToolHelpers.ErrorResponse(error);
 
-                var infraIds = ToolHelpers.GetCordycepsInfrastructureIds(doc);
-
-                GH_Group targetGroup = null;
-                if (Guid.TryParse(groupSpec, out Guid groupGuid))
-                {
-                    if (infraIds.Contains(groupGuid))
-                        return ToolHelpers.ErrorResponse($"Protected: required for MCP server. Cannot modify: {groupSpec}");
-                    targetGroup = doc.FindObject(groupGuid, true) as GH_Group;
-                }
-
-                if (targetGroup == null)
-                {
-                    foreach (var obj in doc.Objects)
-                    {
-                        if (obj is GH_Group g && !infraIds.Contains(g.InstanceGuid) &&
-                            (g.NickName?.Equals(groupSpec, StringComparison.OrdinalIgnoreCase) == true ||
-                             g.Name?.Equals(groupSpec, StringComparison.OrdinalIgnoreCase) == true))
-                        {
-                            targetGroup = g;
-                            break;
-                        }
-                    }
-                }
-
-                if (targetGroup == null)
-                    return ToolHelpers.ErrorResponse($"Group not found: {groupSpec}");
+                // Exact name (ordinal), full GUID or 8+ hex GUID prefix; infrastructure is not found.
+                if (!ToolHelpers.TryGetUnprotectedGroup(new ObjectLookup(doc), groupSpec, out var targetGroup, out error))
+                    return ToolHelpers.ErrorResponse(error);
 
                 var memberIds = targetGroup.ObjectIDs?.ToList() ?? new List<Guid>();
                 if (memberIds.Count == 0)

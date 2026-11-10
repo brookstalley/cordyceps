@@ -44,11 +44,13 @@ namespace Cordyceps.Tools.Unified
                     return ToolHelpers.ErrorResponse(docError);
 
                 // Resolve every target first; nothing is read until all of them have been looked at.
+                // One lookup for the call, so names cost one snapshot however many targets there are.
                 var errors = new List<string>();
                 var reads = new List<TreeRead>();
+                var lookup = new ObjectLookup(doc);
                 foreach (var target in request.Targets)
                 {
-                    if (!ToolHelpers.TryGetUnprotectedComponent(_context, target.Id, out var obj, out var error))
+                    if (!ToolHelpers.TryGetUnprotectedComponent(lookup, target.Id, out var obj, out var error))
                     {
                         errors.Add($"{target.Label}: {error}");
                         continue;
