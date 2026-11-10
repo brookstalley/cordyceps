@@ -284,5 +284,76 @@ namespace Cordyceps.Tests
             Assert.True(t4);
             Assert.Equal(200, CanvasText.Cap(new string('x', 500), CanvasText.PanelTextCap, out _).Length);
         }
+
+        // ---- Names detail ----
+
+        private static CanvasSnapshot NamesSnap()
+        {
+            var g = TestCanvas.Group(TestCanvas.Id(0x101), "G", new[] { TestCanvas.Id(1) });
+            return TestCanvas.Snap(
+                new[]
+                {
+                    TestCanvas.Node(TestCanvas.Id(1), "a"),
+                    TestCanvas.Node(TestCanvas.Id(2), "b", inputs: new[] { TestCanvas.Port("x", TestCanvas.From(TestCanvas.Id(1))) })
+                },
+                new[] { g }, detail: CanvasDetail.Names);
+        }
+
+        [Fact]
+        public void NamesSnapshot_RefusesFullQuestions_NamingTheMemberAndTheDetail()
+        {
+            var s = NamesSnap();
+            var a = TestCanvas.Id(1);
+            var calls = new (string Member, Action Call)[]
+            {
+                ("Solver", () => _ = s.Solver),
+                ("Wires", () => _ = s.Wires),
+                ("Upstream", () => s.Upstream(a)),
+                ("Downstream", () => s.Downstream(a))
+            };
+            foreach (var (member, call) in calls)
+            {
+                var ex = Assert.Throws<InvalidOperationException>(call);
+                Assert.Contains(member, ex.Message);
+                Assert.Contains("Names detail", ex.Message);
+            }
+        }
+
+        [Fact]
+        public void NamesSnapshot_StillAnswersWhatTheResolverAndDisplayNamesUse()
+        {
+            var s = NamesSnap();
+            var a = TestCanvas.Id(1);
+            var g1 = TestCanvas.Id(0x101);
+
+            Assert.Equal(CanvasDetail.Names, s.Detail);
+            Assert.NotNull(s.Node(a));
+            Assert.NotNull(s.Group(g1));
+            Assert.Equal(new[] { g1 }, s.GroupsOf(a));
+            Assert.Empty(s.ParentsOf(g1));
+            Assert.Single(s.TopLevelGroups);
+            Assert.Equal(new[] { a }, s.EffectiveMembers(g1));
+            Assert.Single(s.WithNickname("a"));
+            Assert.Single(s.WithGroupName("G"));
+            Assert.Single(s.WithPrefix("00000001"));
+            Assert.NotNull(s.Find(a));
+            Assert.Equal(3, s.Entries.Count());
+            Assert.Equal("00000001", new DisplayNames(s).ShortId(a));
+            Assert.Equal("a", new DisplayNames(s).DisplayName(a));
+        }
+
+        [Fact]
+        public void FullSnapshot_AnswersSolverWiresAndNeighbours()
+        {
+            var a = TestCanvas.Id(1);
+            var b = TestCanvas.Id(2);
+            var s = TestCanvas.Snap(
+                new[] { TestCanvas.Node(a, "a"), TestCanvas.Node(b, "b", inputs: new[] { TestCanvas.Port("x", TestCanvas.From(a)) }) });
+
+            Assert.True(s.Solver.IsOn);
+            Assert.Single(s.Wires);
+            Assert.Equal(new[] { a }, s.Upstream(b));
+            Assert.Equal(new[] { b }, s.Downstream(a));
+        }
     }
 }

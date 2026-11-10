@@ -254,6 +254,66 @@ namespace Cordyceps.Tests
             AssertResolved(Obj(snap, "00000001"), A, MatchedBy.Nickname);
         }
 
+        // ---- unpinned outcomes ----
+
+        private static readonly Guid P1 = Guid.Parse("abcdef01-1111-4111-8111-111111111111");
+        private static readonly Guid P2 = Guid.Parse("abcdef01-2222-4222-8222-222222222222");
+        private static readonly Guid Nick = TestCanvas.Id(0x40);
+
+        [Fact]
+        public void UniqueNickname_ThatIsAlsoAnAmbiguousPrefix_IsAnError_NotAResolution()
+        {
+            var snap = TestCanvas.Snap(new[]
+            {
+                TestCanvas.Node(Nick, "abcdef01", "Point"),
+                TestCanvas.Node(P1, "p1"),
+                TestCanvas.Node(P2, "p2")
+            });
+
+            var r = Obj(snap, "abcdef01");
+
+            Assert.False(r.IsResolved);
+            Assert.Null(r.Entry);
+            // The ambiguous prefix is reported on its own: the unique nickname does not break the tie.
+            AssertFailed(r, "GUID prefix 'abcdef01' matches 2 objects: abcdef01-1 Addition, abcdef01-2 Addition; give more characters");
+        }
+
+        [Fact]
+        public void GroupsScope_PrefixLandingOnOneGroup_Resolves()
+        {
+            var g1 = Guid.Parse("abcdef01-1111-4111-8111-111111111111");
+            var g2 = Guid.Parse("beadfeed-1111-4111-8111-111111111111");
+            var snap = TestCanvas.Snap(new[] { TestCanvas.Node(A, "a") }, new[] { TestCanvas.Group(g1, "ONE"), TestCanvas.Group(g2, "TWO") });
+
+            AssertResolved(Grp(snap, "abcdef01"), g1, MatchedBy.GuidPrefix);
+        }
+
+        [Fact]
+        public void GroupsScope_PrefixLandingOnTwoGroups_IsTheAmbiguousPrefixError()
+        {
+            var snap = TestCanvas.Snap(new[] { TestCanvas.Node(A, "a") },
+                new[] { TestCanvas.Group(P1, "ONE"), TestCanvas.Group(P2, "TWO") });
+
+            var r = Grp(snap, "abcdef01");
+
+            Assert.False(r.IsResolved);
+            AssertFailed(r, "GUID prefix 'abcdef01' matches 2 objects: abcdef01-1 Group, abcdef01-2 Group; give more characters");
+        }
+
+        [Fact]
+        public void NFormGuid_32Hex_IsReadAsAGuid()
+        {
+            // Guid.TryParse accepts the 32-digit N form, so it is read only as a GUID.
+            AssertResolved(Obj(Canvas(), Hexy.ToString("N")), Hexy, MatchedBy.Guid);
+        }
+
+        [Fact]
+        public void GuidWithSurroundingWhitespace_IsTrimmedByGuidTryParse_AndReadAsAGuid()
+        {
+            // Guid.TryParse tolerates leading and trailing white space, unlike names, which are never trimmed.
+            AssertResolved(Obj(Canvas(), "  " + Hexy.ToString() + " \t"), Hexy, MatchedBy.Guid);
+        }
+
         // ---- Objects scope and groups ----
 
         [Fact]

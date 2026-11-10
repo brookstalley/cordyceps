@@ -104,6 +104,11 @@ namespace Cordyceps.Core.Canvas
         public static HealthResult Classify(CanvasNode node)
         {
             if (node == null) throw new ArgumentNullException(nameof(node));
+            if (node.Detail != CanvasDetail.Full)
+                throw new InvalidOperationException(
+                    "ObjectHealth.Classify(CanvasNode) needs Full detail, but this node was read at Names detail.");
+            // An object with no solve state (a scribble, a sketch) is never unhealthy.
+            if (!node.HasSolveState) return new HealthResult(HealthStatus.Ok, null, null);
             return Classify(
                 node.MessageLevel,
                 node.Errors,
