@@ -32,7 +32,8 @@ acted on nothing.
 | "Group not found: X" | No group has that full GUID | Check with `group_list` |
 | "Nothing was changed: 1 of 2 ids did not resolve. ids[1] 'nope': No object named 'nope'." | A member array (`group_create`, `group_add`, `group_remove` `ids`) had an entry that did not resolve. These calls are all-or-nothing: no group is created or changed | Fix the named entries and resend |
 | "Nothing was changed: ids[0] 'X' is the group itself; a group cannot contain itself" | `group_add` was asked to add a group to itself | Remove that entry |
-| An entry with `note: "same object as entry 0"` | Two entries of `ids`/`moves` named the same object | Not an error: the object was acted on once |
+| An entry with `note: "same object as entry 0"` | Two entries of `ids` in `delete`, `preview` or `enable` named the same object | Not an error: the object was acted on once. If entry 0 failed, the repeat fails with `same object as entry 0, which …` |
+| `notes: ["ids[1]: same object as entry 0"]` at the top of the response | A member array (`group_create`, `group_add`, `group_remove`) named the same object twice | Not an error: the object was used once |
 
 `delete`, `move`, `preview`, `enable` and bulk `gh_wire connect` resolve every entry before
 changing anything, then act on the entries that resolved and report each failure per entry

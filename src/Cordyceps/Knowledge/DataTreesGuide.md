@@ -112,7 +112,7 @@ gh_inspect(action='tree', ids='["abc12345", {"id": "def67890", "param": "Result"
   tree, so `param` and `side` do not apply; its tree reads `side: "parameter"`.
 - `limit`: path groups per tree, 1-500, default 20. Out of range is an error.
 
-Each tree is `{target, object, id, port, side, type, branches, items, depth, perBranch, paths, …}`.
+Each tree is `{target, object, id, port, side, type, branches, items, …}`, and a tree with at least one branch also has `depth`, `perBranch` and `paths`.
 `object` is the nickname as the canvas shows it (a label: two objects can share it); `id` is the
 full GUID to pass to a follow-up call. Optional fields appear only when they apply: `nulls`,
 `invalid` (non-null items whose `IsValid` is false), `emptyBranches`, `morePathGroups`, `notes`,
@@ -120,6 +120,16 @@ full GUID to pass to a follow-up call. Optional fields appear only when they app
 and `message` (the owner's first warning or error, clipped at 160 characters, with `(+K more)`).
 `depth` and `perBranch` are a number, or `{min, max}` when they vary. A `solver` field at the top
 appears only when the solver is off.
+
+**An empty tree** (no branches, which is what an unfilled or failed output holds) has no `depth`,
+`perBranch`, `paths` or `notes` at all, only `branches: 0` and `items: 0`:
+
+```json
+{"target": "abc12345", "object": "Pt", "id": "<full GUID>", "port": "P (Point)", "side": "output", "type": "Point", "branches": 0, "items": 0}
+```
+
+When the owner has not computed, is locked, or has failed, it also carries `solved: false` and a
+`note`; a warning or error on it adds `message`. Read those to see why the tree is empty.
 
 `paths` are runs: `{0;0}..{0;9}: 1 each` is ten consecutive branches of one item each; `{0;3}: 4` is
 one branch of four. `items` counts nulls.

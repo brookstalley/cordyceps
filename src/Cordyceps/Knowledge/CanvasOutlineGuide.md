@@ -5,8 +5,10 @@ data flows between them, the controls and their values, item counts, and problem
 when you open a definition you did not build, instead of `list` + `gh_wire(action='list')` +
 `group_list`.
 
-Outline is for orientation. It lists problems with the same rule as `gh_inspect(action='status')`,
-but it caps them at 10, and it does not replace `status`.
+Outline is for orientation. It classifies problems with the same rule as `gh_inspect(action='status')`,
+but it caps the list at 10, and it also covers parameter objects (sliders, panels, free parameters)
+that carry an error or warning, which `status` does not read: `status` looks at components only.
+It does not replace `status`, and the two counts can differ.
 
 ## Three views
 
@@ -45,7 +47,7 @@ clipped or decorated.
 | `PORT (graft)` | The input's modifiers: `graft`, `flatten`, `simplify`, `reverse` |
 | `NAME (COUNT)` / `NAME (PORT: COUNT)` | Items on an output; `PORT:` appears only when the object has several outputs |
 | `00000007 Circle` | Inside a list, a name that is only an id is followed by the object's type |
-| `+N more` | The list was capped; `more` says how many were left out |
+| `+N more` | A list was capped. On a top-level field (`controls`, `groups`, `problems`, `disabled`, `networks`, `in`, `out`, `fedFrom`, `feeds`) it is the last entry and `more` repeats the number. Inside one line (`in ←`, `inputs:`, `ends:`, `contains:`, `out:` and similar) it ends the text and is not counted in `more`. The `objects` lists of group detail and around never carry it: see Caps |
 | `…` | A value, message or panel text was clipped (values at 30 characters, messages at 100, panel text at 30) |
 
 ## Counts: `stale` and `disabled`
@@ -100,7 +102,7 @@ From a canvas with four groups (two of them overlapping), an error, a warning an
 
 | Field | Content |
 |-------|---------|
-| `summary` | Always the same eight counts in this order: `objects · groups · errors · warnings · disconnected · disabled · not solved · preview off`. An object in several groups is counted once |
+| `summary` | Always present, always the same eight counts in this order: `objects · groups · errors · warnings · disconnected · disabled · not solved · preview off`. An object in several groups is counted once |
 | `solver`, `note` | See above |
 | `controls` | Sliders, toggles and value lists: `NAME Type = VALUE[ (min..max)][ [GROUPS]]`, left to right. Values are written in invariant culture (`0.5`, never `0,5`) |
 | `groups` | One line per top-level group, upstream groups first: `GROUP · N objects[ · E errors][ · W warnings][ · D disconnected][ · contains: CHILD (n objects), …][ · shares K objects with OTHER, …][ · in ← NAME, …][ · out: NAME (COUNT) → GROUP, …]`. `out:` entries are separated by `; `; a recipient in no group is named directly |
@@ -108,12 +110,16 @@ From a canvas with four groups (two of them overlapping), an error, a warning an
 | `networks`, `unconnected` | Instead of `groups`/`ungrouped` on a canvas with no groups: one line per set of wired-together objects, largest first, `network k · N objects · inputs: NAME = VALUE, … · named: … · ends: NAME (PORT: COUNT, …)` (just `network ·` when there is one; every output of an end is counted); then `unconnected`, `N objects: NAME, …`, for objects with no wire |
 | `problems` | Errors, then warnings, then disconnected, each left to right: `NAME Type[ [GROUPS]] error: MSG[ (+K more)]`, `… warning: …`, `… disconnected: missing PORT, …` |
 | `disabled` | Locked objects |
-| `more` | How many entries each capped field left out; absent when nothing was capped |
-| `next` | What to call next. When `problems` is capped it also says to run `gh_inspect(action='status')` for the full list |
 
-`problems` uses the rule `status` uses: an error or warning on any object; DISCONNECTED for a
+`controls`, `groups`, `ungrouped`, `problems` and `disabled` are left out when they would be empty (`networks` and `unconnected` likewise on a canvas with no groups). `summary`, `solver` and `next` are always present.
+| `more` | How many entries each capped field left out; absent when nothing was capped |
+| `next` | What to call next. When `problems` is capped it also says to run `gh_inspect(action='status')`, which lists every component's problems (not those on parameter objects) |
+
+`problems` classifies with the rule `status` uses: an error or warning on an object; DISCONNECTED for a
 component with a required input that has no wire and no data. A parameter object has no inputs to
-miss, so it is listed only for an error or warning.
+miss, so it is listed only for an error or warning. `status` reads components only, so an error or
+warning on a parameter object appears in outline (`problems` and the summary's error and warning
+counts) and nowhere in `status`.
 
 ## Overlapping and nested groups
 
@@ -201,7 +207,11 @@ just past the depth edge.
 | Names inside one field (`in ←`, `inputs:`, `ends:`, `contains:`, `fedFrom`, `feeds`, sources on one input) | 8 |
 | `out:` entries on one group line / destinations per entry | 6 / 4 |
 
-A capped list ends `+N more`, and top-level capped fields are counted in `more`.
+Two kinds of cap. A capped top-level list (`controls`, `groups`, `problems`, `disabled`, `networks`,
+`in`, `out`, `fedFrom`, `feeds`) ends with an entry `+N more` and `more` records the same N under
+that field's name. The `objects` arrays of group detail and around do not: every entry is a real
+object line, and what was left out is reported only as `more.objects`. A `+N more` that ends the
+text inside one line (the name caps) is not counted in `more` at all.
 
 ## What outline does not show
 
@@ -211,7 +221,7 @@ A capped list ends `+N more`, and top-level capped fields are counted in `more`.
 - Plugin "wireless" connections (send/receive components that pass data without a Grasshopper
   wire). Outline follows wires only, so such objects look unconnected.
 - Cordyceps' own bridge component and the objects wired to it.
-- Every problem: `problems` stops at 10. When `more.problems` is set, run `gh_inspect(action='status')`.
+- Every problem: `problems` stops at 10. When `more.problems` is set, run `gh_inspect(action='status')` for every component's problems; problems on parameter objects are listed only here, so they stay capped.
 
 ## Using the names
 

@@ -47,7 +47,7 @@
 
 ## Debugging
 
-1. `gh_inspect(action='status')` — find errors/warnings (every one; outline caps its list at 10)
+1. `gh_inspect(action='status')` — find errors/warnings on components (every one; outline caps its list at 10, but outline also shows errors and warnings on parameter objects such as sliders and panels, which `status` does not read)
 2. `gh_canvas(action='outline', id='...')` — what feeds the object and what it feeds
 3. `gh_inspect(action='tree', id='...')` — branch paths and item counts, without the data
 4. `gh_inspect(action='trace', id='...', direction='upstream')` — trace data flow
