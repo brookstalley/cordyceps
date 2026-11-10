@@ -43,7 +43,9 @@ an id**, to any tool that takes that kind of thing:
 A name is never clipped or decorated. A nickname is **printable** only when it can be cut cleanly
 out of any line: it is not empty, has no whitespace at either end, no line break or other control
 character, does not start with `[` or `+`, and contains none of the sequences outline prints next
-to a name: ` · `, `, `, `; `, ` ← `, ` → `, ` (`, ` [`, ` = `. A group name also contains no `]`.
+to a name: ` · `, `, `, `; `, ` ← `, ` → `, ` (`, ` [`, ` = `. Nor may one of those form where the
+name meets what is printed beside it, so a name ending in `,` or `;`, or starting with `(` or
+`= `, is not printable either. A group name also contains no `]`.
 So an object nicknamed `Width (m)` is printed by its id. The nickname still works as an id where it
 is unique; outline just does not print it. (A group name that starts with `[` is passed inside a
 JSON array, as in the table above.)

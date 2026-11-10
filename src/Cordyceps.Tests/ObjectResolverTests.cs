@@ -699,7 +699,6 @@ namespace Cordyceps.Tests
         [InlineData("a←b")]
         [InlineData("x=y")]
         [InlineData("pts[0]")]               // an object name may hold ']' (only group names sit inside tags)
-        [InlineData("a,")]                   // ',' then ', ' still cuts at the end of the name
         [InlineData("N+1")]
         [InlineData("COUNT")]
         public void Printable_AcceptsNamesThatCutCleanly(string name)
@@ -725,6 +724,10 @@ namespace Cordyceps.Tests
         [InlineData("Width (m)")]
         [InlineData("a [b]")]
         [InlineData("a = b")]
+        [InlineData("a,")]                   // followed by " (R)" it would read as "a" then ", (R)"
+        [InlineData("a;")]
+        [InlineData("(m)")]                  // after "← " it would read as a port
+        [InlineData("= x")]                  // after a space it would read as a value
         [InlineData("[A")]
         [InlineData("+3 more")]
         [InlineData("a ·")]                  // ' ·' then ' · ' would show the separator one character early

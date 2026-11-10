@@ -263,7 +263,8 @@ namespace Cordyceps.Tools.Unified
                     components.Add(new
                     {
                         id = obj.InstanceGuid.ToString(),
-                        name = obj.NickName != obj.Name ? obj.NickName : obj.Name,
+                        // A slider or panel nobody has named can carry an empty nickname.
+                        name = string.IsNullOrEmpty(obj.NickName) ? obj.Name : obj.NickName,
                         type = obj.Name,
                         status,
                         message

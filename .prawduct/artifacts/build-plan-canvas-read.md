@@ -190,6 +190,12 @@ Critic mode: per-chunk reviews (inferred for a five-chunk plan), with Chunk 01 o
     a group carrying the default name is printed by its id, because `group_delete` refuses that
     name and every printed name must work everywhere. Settled by owner rulings 6-8 and the
     Product goal.
+  - From the review of 06 and 07: a name is printable only if no separator can form across its
+    edge with any neighbour (so `a,` and `(m)` print as ids); status falls back to the type name
+    when a parameter object has an empty nickname. Put to the owner, not decided: whether
+    removing a port (`zoomable` remove or set_count, a script parameter rebuild) counts as
+    destructive for the default-nickname rule; today those actions still accept a unique default
+    nickname.
   - After 03 merged, the target-resolution loop in the tree action file passes to Chunk 02 (it
     must use the per-call lookup once names resolve through a snapshot), and
     `TreeStatusText.SolverOff` becomes the one source of solver-off wording for Chunk 04.
@@ -793,9 +799,10 @@ Contract (C1, rule 9, new):
 
 Deliverables:
 - [x] `src/Cordyceps/Core/Canvas/ObjectResolver.cs`: the intent parameter, the refusal and its text.
-- [x] `src/Cordyceps/Core/ToolHelpers.cs` and `src/Cordyceps/Core/IdBatch.cs`: the intent carried
-  through the lookups, required at the call site so a new removal action cannot forget to decide
-  (the shape the group refusal already uses).
+- [x] `src/Cordyceps/Core/ToolHelpers.cs`: the intent carried through the lookups; a required
+  argument where many ids are resolved, an explicit overload on the single lookups.
+  (`src/Cordyceps/Core/IdBatch.cs` needed no change: the intent reaches it through the resolving
+  closure.)
 - [x] `src/Cordyceps/Tools/Unified/GhCanvasTool.cs`, `src/Cordyceps/Tools/Unified/GhCanvasTool.Groups.cs`
   and `src/Cordyceps/Tools/Unified/GhWireTool.cs`: the four actions pass destructive intent; their
   `ActionInfo` tips and parameter descriptions say so.
@@ -847,11 +854,11 @@ Owns: the files above. Must not touch: the resolve rule in the resolver's file (
 ### Chunk 08: documentation and records for the second rulings; cumulative review; PR
 Type: cumulative-final. Delegated documentation, coordinator integration.
 
-- [ ] `CHANGELOG.md`, `src/Cordyceps/McpServer.cs` instruction text, the Knowledge guides and
+- [x] `CHANGELOG.md`, `src/Cordyceps/McpServer.cs` instruction text, the Knowledge guides and
   prompts, `README.md`: destructive actions and default nicknames; status covers every object
   (every "components only" sentence written for the first boundary review is reversed); the
   outline grammar with `NAME · Type` and the printable-name rule, from the new goldens.
-- [ ] `.prawduct/operator-verification.md`: VRF-019 and VRF-021 steps updated to the new
+- [x] `.prawduct/operator-verification.md`: VRF-019 and VRF-021 steps updated to the new
   behaviour; `.prawduct/changes/canvas-read.md`: decisions and `closes: [104, 106]`.
 - [ ] Combined suite green with evidence recorded; one cumulative review naming 06, 07 and 08;
   findings dispositioned; reflection.

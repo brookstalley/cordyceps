@@ -88,8 +88,9 @@ namespace Cordyceps.Core.Canvas
     }
 
     /// <summary>
-    /// What the caller will do with the object it names. The lookups a removal action uses take it
-    /// with no default, so a new removal action cannot forget to decide.
+    /// What the caller will do with the object it names. Where many ids are resolved at once the
+    /// intent is a required argument; the single lookups have an explicit-intent overload, and the
+    /// overloads without it mean <see cref="Ordinary"/>.
     /// </summary>
     public enum ResolveIntent
     {

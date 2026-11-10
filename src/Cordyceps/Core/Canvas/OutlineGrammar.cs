@@ -59,6 +59,14 @@ namespace Cordyceps.Core.Canvas
         /// </summary>
         public static bool IsPrintable(string name, bool isGroup)
         {
+            return IsPrintableCore(name, isGroup);
+        }
+
+        /// <summary>What can stand directly beside a printed name: any separator, or one space.</summary>
+        private static readonly string[] Neighbours = new[] { Field, Item, Entry, FedFrom, Feeds, Detail, Tags, Value, " " };
+
+        private static bool IsPrintableCore(string name, bool isGroup)
+        {
             if (string.IsNullOrEmpty(name)) return false;
             if (char.IsWhiteSpace(name[0]) || char.IsWhiteSpace(name[name.Length - 1])) return false;
             foreach (var c in name)
@@ -72,10 +80,21 @@ namespace Cordyceps.Core.Canvas
             foreach (var sep in Separators)
             {
                 if (name.IndexOf(sep, StringComparison.Ordinal) >= 0) return false;
-                // Across the edges: the separator must first appear exactly where the name ends,
-                // and last appear exactly where it starts.
-                if ((name + sep).IndexOf(sep, StringComparison.Ordinal) != name.Length) return false;
-                if ((sep + name).LastIndexOf(sep, StringComparison.Ordinal) != 0) return false;
+                // Across the edges: whatever stands next to the name (any separator, or the single
+                // space before a type or a port), no separator may form that reaches into the name.
+                // "a," followed by " (R)" would read as "a" then ", (R)"; "(m)" after "← " would
+                // read as a port. Only a separator that starts exactly where the name ends, or ends
+                // exactly where it starts, is allowed.
+                foreach (var neighbour in Neighbours)
+                {
+                    var after = name + neighbour;
+                    var first = after.IndexOf(sep, StringComparison.Ordinal);
+                    if (first >= 0 && first < name.Length) return false;
+
+                    var before = neighbour + name;
+                    var last = before.LastIndexOf(sep, StringComparison.Ordinal);
+                    if (last >= 0 && last + sep.Length > neighbour.Length) return false;
+                }
             }
             if (isGroup && name.IndexOf(TagsClose, StringComparison.Ordinal) >= 0) return false;
             return true;
