@@ -140,5 +140,20 @@ namespace Cordyceps.Tests
             Assert.Equal(string.Empty, r.Message);
             Assert.Throws<ArgumentNullException>(() => ObjectHealth.Classify((CanvasNode)null));
         }
+
+        // gh_inspect(action='disconnected') applies this predicate per input, whatever the level.
+        [Theory]
+        [InlineData(false, 0, 0, true)]   // required, unwired, empty: missing
+        [InlineData(true, 0, 0, false)]   // optional
+        [InlineData(false, 1, 0, false)]  // wired (any source counts, infrastructure included)
+        [InlineData(false, 0, 3, false)]  // holds data (internalised or persistent)
+        public void IsMissing_IsTheRuleClassifyUses(bool optional, int sources, int items, bool missing)
+        {
+            var input = new HealthInput("A", optional, sources, items);
+            Assert.Equal(missing, ObjectHealth.IsMissing(input));
+
+            var r = ObjectHealth.Classify(MessageLevel.None, null, null, new[] { input }, isComponent: true);
+            Assert.Equal(missing ? HealthStatus.Disconnected : HealthStatus.Ok, r.Status);
+        }
     }
 }

@@ -59,7 +59,8 @@ namespace Cordyceps.Core.Canvas
                 }
                 : new SolverFlags();
 
-            return new CanvasSnapshot(doc.DisplayName, solver, detail, nodes, groups, infra);
+            // The count travels with the snapshot so the views can tell the caller, not only the log.
+            return new CanvasSnapshot(doc.DisplayName, solver, detail, nodes, groups, infra, unreadWires: dropped.Count);
         }
 
         /// <summary>
@@ -75,8 +76,18 @@ namespace Cordyceps.Core.Canvas
                 level,
                 level == MessageLevel.Error ? obj.RuntimeMessages(GH_RuntimeMessageLevel.Error) : null,
                 level == MessageLevel.Warning ? obj.RuntimeMessages(GH_RuntimeMessageLevel.Warning) : null,
-                comp?.Params.Input.Select(i => new HealthInput(i.Name, i.Optional, i.SourceCount, i.VolatileDataCount)),
+                comp == null ? null : HealthInputs(comp),
                 comp != null);
+        }
+
+        /// <summary>
+        /// What the shared health rule reads about each input of <paramref name="comp"/>, in input
+        /// order (so entry i is <c>Params.Input[i]</c>). Must be called on the UI thread.
+        /// </summary>
+        public static IReadOnlyList<HealthInput> HealthInputs(IGH_Component comp)
+        {
+            if (comp == null) throw new ArgumentNullException(nameof(comp));
+            return comp.Params.Input.Select(i => new HealthInput(i.Name, i.Optional, i.SourceCount, i.VolatileDataCount)).ToList();
         }
 
         /// <summary>Grasshopper's message level, mapped by name onto the host-free one.</summary>

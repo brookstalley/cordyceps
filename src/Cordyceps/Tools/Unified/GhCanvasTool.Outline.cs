@@ -30,7 +30,8 @@ namespace Cordyceps.Tools.Unified
                     "id: an object's name or id shows what feeds it and what it feeds, depth wires each way (depth 1-10, default 2; only with id). A group's id shows that group. id and group together is an error.",
                     "Every object line starts with a name you can pass back as an id to any tool that takes an object; a group line starts with the group's name, which group actions and outline group= take (a group name starting with '[' goes inside a JSON array). Port names before ← work as param specs. A name that is only an id is followed by its type in lists.",
                     "Counts read 'N stale' when the solver is off or the object has not computed in the current solution, and 'disabled' when the object is locked: don't trust a stale 0. The solver field says why.",
-                    "problems uses the same rule as gh_inspect(action='status') (ERROR, WARNING, DISCONNECTED), capped at 10. When more.problems is set, run status for the full list. Outline is for orientation; it does not replace status.",
+                    "problems uses the same rule as gh_inspect(action='status') (ERROR, WARNING, DISCONNECTED), capped at 10. status lists every component's problems; errors and warnings on parameter objects appear only in outline. When more.problems is set, run status for the components left out. Outline is for orientation; it does not replace status.",
+                    "unread appears when some wires could not be read: those inputs may show as unfed, and gh_inspect(action='log') names the wires.",
                     "Caps: 20 controls, 60 group lines, 10 problems, 20 disabled, 10 networks, 150 object lines per group call, 60 objects around an id; a capped list ends '+N more' and more gives the counts left out.",
                     "Not shown: stored values on unwired inputs, group colours, and plugin 'wireless' connections (invisible to Grasshopper's wires)."
                 }

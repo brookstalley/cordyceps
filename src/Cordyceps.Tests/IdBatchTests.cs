@@ -134,5 +134,54 @@ namespace Cordyceps.Tests
 
             Assert.Equal(new[] { "a", "b", "c" }, seen);
         }
+
+        // ---- moves: an entry per position, so a repeat is a second request -------------------------
+
+        [Fact]
+        public void RefuseRepeats_TheLaterEntryFails_TheFirstIsStillActedOn()
+        {
+            // Two positions for one object (once by name, once by prefix): acting once would drop one.
+            var outcomes = IdBatch.RefuseRepeats(Collect("COUNT", "00000001"), "give one position per object");
+
+            Assert.True(outcomes[0].ActOn);
+            Assert.Equal(A, outcomes[0].Id);
+
+            Assert.False(outcomes[1].IsResolved);
+            Assert.False(outcomes[1].ActOn);
+            Assert.Null(outcomes[1].Id);
+            Assert.Equal("same object as entry 0: give one position per object", outcomes[1].Error);
+            Assert.Equal("00000001", outcomes[1].Text);
+            Assert.Equal(0, outcomes[1].DuplicateOf);
+
+            Assert.Equal(new[] { A }, IdBatch.DistinctIds(outcomes));
+        }
+
+        [Fact]
+        public void RefuseRepeats_LeavesDistinctAndFailedEntriesAsTheyWere()
+        {
+            var collected = Collect("COUNT", "Pt", B.ToString(), "COUNT");
+            var outcomes = IdBatch.RefuseRepeats(collected, "give one position per object");
+
+            Assert.Same(collected[0], outcomes[0]);
+            Assert.Same(collected[1], outcomes[1]); // the ambiguous nickname keeps its own error
+            Assert.Same(collected[2], outcomes[2]);
+            Assert.StartsWith("same object as entry 0:", outcomes[3].Error);
+            Assert.Equal(new[] { A, B }, IdBatch.DistinctIds(outcomes));
+        }
+
+        [Fact]
+        public void RefuseRepeats_ThreeEntriesForOneObject_AllPointAtTheFirst()
+        {
+            var outcomes = IdBatch.RefuseRepeats(Collect(A.ToString(), "COUNT", "00000001"), "give one position per object");
+            Assert.True(outcomes[0].ActOn);
+            Assert.Equal("same object as entry 0: give one position per object", outcomes[1].Error);
+            Assert.Equal("same object as entry 0: give one position per object", outcomes[2].Error);
+        }
+
+        [Fact]
+        public void RefuseRepeats_NeedsAReason()
+        {
+            Assert.Throws<ArgumentException>(() => IdBatch.RefuseRepeats(Collect("COUNT"), ""));
+        }
     }
 }

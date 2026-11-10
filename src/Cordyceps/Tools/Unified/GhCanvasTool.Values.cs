@@ -211,7 +211,7 @@ namespace Cordyceps.Tools.Unified
                 // Per-id results (mirrors ActionDelete): unresolvable ids and components that
                 // don't support preview are reported as failures, not silently skipped.
                 // Every id resolves against one lookup before the first change.
-                var outcomes = ToolHelpers.ResolveIds(new ObjectLookup(doc), idList, out var resolved);
+                var outcomes = ToolHelpers.ResolveIds(new ObjectLookup(doc), idList, acceptGroups: false, out var resolved);
                 var results = new List<object>();
                 var applied = new HashSet<Guid>();
                 int changed = 0, failed = 0;
@@ -271,7 +271,7 @@ namespace Cordyceps.Tools.Unified
                 // Per-id results (mirrors ActionDelete): unresolvable ids and components that
                 // can't be enabled/disabled are reported as failures, not silently skipped.
                 // Every id resolves against one lookup before the first change.
-                var outcomes = ToolHelpers.ResolveIds(new ObjectLookup(doc), idList, out var resolved);
+                var outcomes = ToolHelpers.ResolveIds(new ObjectLookup(doc), idList, acceptGroups: false, out var resolved);
                 var results = new List<object>();
                 var applied = new HashSet<Guid>();
                 int changed = 0, failed = 0;

@@ -639,7 +639,7 @@ namespace Cordyceps.Tools.Unified
                 // ambiguous id deletes nothing of its own and cannot leave the call half-applied
                 // by failing midway. Ids that resolve are deleted; each failure is reported.
                 var lookup = new ObjectLookup(doc);
-                var outcomes = ToolHelpers.ResolveIds(lookup, idList, out var resolved);
+                var outcomes = ToolHelpers.ResolveIds(lookup, idList, acceptGroups: true, out var resolved);
 
                 var results = new List<object>();
                 var deletedIds = new List<string>();
@@ -734,80 +734,51 @@ namespace Cordyceps.Tools.Unified
                 if (!ToolHelpers.TryGetActiveDocument(_context, out var doc, out var error))
                     return ToolHelpers.ErrorResponse(error);
 
-                List<dynamic> moveList;
+                List<MoveEntry> entries;
                 if (!string.IsNullOrEmpty(moves))
                 {
-                    if (!ToolHelpers.TryDeserializeList<dynamic>(moves, out moveList, out error))
+                    // Names stay text (a nickname can look like a date); see Core/BulkEntries.
+                    if (!BulkEntries.TryParseMoves(moves, out entries, out error))
                         return ToolHelpers.ErrorResponse(error);
                 }
                 else if (!string.IsNullOrEmpty(id) && !double.IsNaN(x) && !double.IsNaN(y))
                 {
-                    moveList = new List<dynamic> { new { id, x, y } };
+                    entries = new List<MoveEntry> { new MoveEntry(id, x, y, null) };
                 }
                 else
                 {
                     return ToolHelpers.ErrorResponse("Provide 'id'+'x'+'y' for single move, or 'moves' array for bulk");
                 }
 
-                // Pass 1: read every entry's id and coordinates and resolve the ids against one
-                // lookup, before anything moves. Pass 2 moves only the entries that passed.
+                // Pass 1: resolve every entry's id against one lookup, before anything moves. Each
+                // entry carries its own position, so a second entry for one object is a failed
+                // entry, never a dropped position (IdBatch.RefuseRepeats). Pass 2 moves only the
+                // entries that passed.
                 var lookup = new ObjectLookup(doc);
-                var texts = new List<string>();
-                var coords = new List<(double X, double Y, string Error)>();
-                foreach (var move in moveList)
-                {
-                    string compId = null;
-                    try
-                    {
-                        compId = move?.id?.ToString();
-                        coords.Add(((double)move.x, (double)move.y, (string)null));
-                    }
-                    catch (Exception ex)
-                    {
-                        coords.Add((0d, 0d, $"Invalid x/y: {ex.Message}"));
-                    }
-                    texts.Add(compId);
-                }
-                var outcomes = ToolHelpers.ResolveIds(lookup, texts, out var resolved);
+                var outcomes = IdBatch.RefuseRepeats(
+                    ToolHelpers.ResolveIds(lookup, entries.Select(e => e.Id).ToList(), acceptGroups: true, out var resolved),
+                    "give one position per object");
 
                 var results = new List<object>();
                 int successCount = 0, failCount = 0;
-                var moved = new HashSet<Guid>();
                 foreach (var outcome in outcomes)
                 {
-                    var (moveX, moveY, coordError) = coords[outcome.Index];
-                    if (!outcome.IsResolved || coordError != null)
+                    var entry = entries[outcome.Index];
+                    if (!outcome.ActOn || entry.Error != null)
                     {
-                        results.Add(new { success = false, id = outcome.Text, error = outcome.Error ?? coordError });
+                        results.Add(new { success = false, id = outcome.Text, error = outcome.Error ?? entry.Error });
                         failCount++;
                         continue;
                     }
 
                     var guid = outcome.Id.Value;
-                    if (!outcome.ActOn)
-                    {
-                        // The same object as an earlier entry: it moves once, to that entry's position.
-                        if (moved.Contains(guid))
-                        {
-                            results.Add(new { success = true, id = guid.ToString(), note = outcome.Note });
-                            successCount++;
-                        }
-                        else
-                        {
-                            results.Add(new { success = false, id = outcome.Text, error = $"{outcome.Note}, which was not moved" });
-                            failCount++;
-                        }
-                        continue;
-                    }
-
                     try
                     {
                         var component = resolved[guid];
-                        component.Attributes.Pivot = new PointF((float)moveX, (float)moveY);
+                        component.Attributes.Pivot = new PointF((float)entry.X, (float)entry.Y);
                         component.Attributes.ExpireLayout();
-                        moved.Add(guid);
 
-                        results.Add(new { success = true, id = guid.ToString(), x = moveX, y = moveY });
+                        results.Add(new { success = true, id = guid.ToString(), x = entry.X, y = entry.Y });
                         successCount++;
                     }
                     catch (Exception ex)
@@ -819,13 +790,13 @@ namespace Cordyceps.Tools.Unified
 
                 Instances.ActiveCanvas?.Invalidate();
 
-                if (moveList.Count == 1 && successCount == 1)
+                if (entries.Count == 1 && successCount == 1)
                 {
                     var r = (dynamic)results[0];
                     return JsonConvert.SerializeObject(new { success = true, id = r.id, x = r.x, y = r.y });
                 }
 
-                return JsonConvert.SerializeObject(new { success = failCount == 0, total = moveList.Count, succeeded = successCount, failed = failCount, results });
+                return JsonConvert.SerializeObject(new { success = failCount == 0, total = entries.Count, succeeded = successCount, failed = failCount, results });
             });
         }
 
@@ -833,7 +804,7 @@ namespace Cordyceps.Tools.Unified
         {
             return _context.ExecuteOnUiThread(() =>
             {
-                if (!ToolHelpers.TryGetUnprotectedComponent(_context, id, out var component, out var error))
+                if (!ToolHelpers.TryGetUnprotectedObject(_context, id, out var component, out var error))
                     return ToolHelpers.ErrorResponse(error);
 
                 component.NickName = nickname;
@@ -971,7 +942,7 @@ namespace Cordyceps.Tools.Unified
         {
             return _context.ExecuteOnUiThread(() =>
             {
-                if (!ToolHelpers.TryGetUnprotectedComponent(_context, id, out var obj, out var error))
+                if (!ToolHelpers.TryGetUnprotectedObject(_context, id, out var obj, out var error))
                     return ToolHelpers.ErrorResponse(error);
 
                 var info = ToolHelpers.BuildFullComponentInfo(obj, includeSuccess: true);
@@ -983,7 +954,7 @@ namespace Cordyceps.Tools.Unified
         {
             return _context.ExecuteOnUiThread(() =>
             {
-                if (!ToolHelpers.TryGetUnprotectedComponent(_context, id, out var component, out var error))
+                if (!ToolHelpers.TryGetUnprotectedObject(_context, id, out var component, out var error))
                     return ToolHelpers.ErrorResponse(error);
 
                 var bounds = component.Attributes.Bounds;
@@ -1179,7 +1150,7 @@ namespace Cordyceps.Tools.Unified
                 if (!string.IsNullOrEmpty(id))
                 {
                     // Zoom to specific component
-                    if (!ToolHelpers.TryGetUnprotectedComponent(_context, id, out var component, out var error))
+                    if (!ToolHelpers.TryGetUnprotectedObject(_context, id, out var component, out var error))
                         return ToolHelpers.ErrorResponse(error);
 
                     bounds = component.Attributes.Bounds;

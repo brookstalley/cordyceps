@@ -158,15 +158,9 @@ namespace Cordyceps.Core.DataTrees
             try
             {
                 // Duplicate keys in one entry would silently keep the last; refuse them instead.
-                // Strings stay strings: by default Json.NET turns date-shaped text into a Date token,
-                // which would refuse a nickname such as "2026-01-01T00:00:00".
-                using (var reader = new JsonTextReader(new System.IO.StringReader(ids)) { DateParseHandling = DateParseHandling.None })
-                {
-                    root = JToken.Load(reader, new JsonLoadSettings { DuplicatePropertyNameHandling = DuplicatePropertyNameHandling.Error });
-                    // Anything after the first value is a malformed call, not something to ignore.
-                    if (reader.Read())
-                        throw new JsonReaderException("unexpected text after the JSON array");
-                }
+                // Strings stay strings (a nickname can look like "2026-01-01T00:00:00"), and
+                // anything after the first value is a malformed call.
+                root = ParseHelpers.ParseJsonKeepingText(ids, rejectDuplicateKeys: true);
             }
             catch (JsonException ex)
             {

@@ -3,9 +3,9 @@
 using System.Collections.Generic;
 using System.Linq;
 using Cordyceps.Core;
+using Cordyceps.Core.Canvas;
 using Cordyceps.Core.DataTrees;
 using Grasshopper.Kernel;
-using Grasshopper.Kernel.Special;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 
@@ -50,7 +50,8 @@ namespace Cordyceps.Tools.Unified
                 var lookup = new ObjectLookup(doc);
                 foreach (var target in request.Targets)
                 {
-                    if (!ToolHelpers.TryGetUnprotectedComponent(lookup, target.Id, out var obj, out var error))
+                    if (!ToolHelpers.TryGetUnprotectedComponent(lookup, target.Id, out var obj, out var error,
+                            worksOn: "tree reads components and parameters"))
                     {
                         errors.Add($"{target.Label}: {error}");
                         continue;
@@ -77,11 +78,7 @@ namespace Cordyceps.Tools.Unified
 
         private static TreeRead Resolve(TreeTarget target, IGH_DocumentObject obj, bool inputSide, List<string> errors)
         {
-            if (obj is GH_Group)
-            {
-                errors.Add($"{target.Label}: {obj.NickName} is a group; tree reads components and parameters");
-                return null;
-            }
+            // A group never gets here: the lookup refuses it in tree's own words.
 
             // A parameter object has one tree, so side and param do not apply to it.
             if (obj is IGH_Param standalone && !(obj is IGH_Component))
@@ -145,11 +142,13 @@ namespace Cordyceps.Tools.Unified
                 foreach (var kv in TreeSummary.Describe(branches, request.MaxRuns))
                     tree[kv.Key] = kv.Value;
 
-                // A warning or error on the owner usually explains an empty or odd tree.
-                var level = read.Owner.RuntimeMessageLevel;
-                if (level >= GH_RuntimeMessageLevel.Warning)
+                // A warning or error on the owner usually explains an empty or odd tree. The level
+                // and its messages come from the shared health rule, as status and outline read them.
+                var health = CanvasReader.Health(read.Owner);
+                if (health.Status == HealthStatus.Error || health.Status == HealthStatus.Warning)
                 {
-                    var text = TreeStatusText.FormatMessage(level.ToString(), read.Owner.RuntimeMessages(level).ToList());
+                    var levelName = health.Status == HealthStatus.Error ? "Error" : "Warning";
+                    var text = TreeStatusText.FormatMessage(levelName, health.Messages.ToList());
                     if (text != null) tree["message"] = text;
                 }
 

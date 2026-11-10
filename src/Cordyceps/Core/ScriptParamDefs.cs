@@ -41,7 +41,8 @@ namespace Cordyceps.Core
             JToken token;
             try
             {
-                token = JToken.Parse(json);
+                // Strings stay strings: a parameter named "2026-01-01T00:00:00" keeps that name.
+                token = ParseHelpers.ParseJsonKeepingText(json);
             }
             catch (JsonException ex)
             {
@@ -66,9 +67,9 @@ namespace Cordyceps.Core
 
                 result.Add(new ScriptParamDef
                 {
-                    Name = obj["name"]?.ToString() ?? "param",
-                    Type = obj["type"]?.ToString() ?? "object",
-                    Access = obj["access"]?.ToString() ?? ""
+                    Name = ParseHelpers.TextOf(obj["name"]) ?? "param",
+                    Type = ParseHelpers.TextOf(obj["type"]) ?? "object",
+                    Access = ParseHelpers.TextOf(obj["access"]) ?? ""
                 });
             }
 

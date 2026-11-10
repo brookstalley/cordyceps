@@ -127,24 +127,22 @@ namespace Cordyceps.Tools.Unified
                 if (!ToolHelpers.TryGetActiveDocument(_context, out var doc, out var error))
                     return ToolHelpers.ErrorResponse(error);
 
-                List<dynamic> connectionList;
+                List<ConnectionEntry> connectionList;
                 if (!string.IsNullOrEmpty(connections))
                 {
-                    try { connectionList = JsonConvert.DeserializeObject<List<dynamic>>(connections); }
-                    catch (Exception ex) { return ToolHelpers.ErrorResponse($"Failed to parse connections JSON: {ex.Message}"); }
+                    // Names stay text (a nickname can look like a date); see Core/BulkEntries.
+                    // The JSON literal null, or anything but an array, is a malformed call.
+                    if (!BulkEntries.TryParseConnections(connections, out connectionList, out var parseError))
+                        return ToolHelpers.ErrorResponse(parseError);
                 }
                 else if (!string.IsNullOrEmpty(sourceId) && !string.IsNullOrEmpty(targetId))
                 {
-                    connectionList = new List<dynamic> { new { sourceId, sourceParam = sourceParam ?? "0", targetId, targetParam = targetParam ?? "0" } };
+                    connectionList = new List<ConnectionEntry> { new ConnectionEntry(sourceId, sourceParam ?? "0", targetId, targetParam ?? "0", null) };
                 }
                 else
                 {
                     return ToolHelpers.ErrorResponse("Provide sourceId+targetId for single, or connections array for bulk");
                 }
-
-                // The JSON literal null deserializes to a null list; that is a malformed call, not zero connections.
-                if (connectionList == null)
-                    return ToolHelpers.ErrorResponse("'connections' must be a JSON array: [{sourceId,sourceParam,targetId,targetParam},...]");
 
                 // Pass 1: resolve every connection's source, target and ports against one lookup,
                 // before the first wire is added. Pass 2 wires only the connections that passed.
@@ -156,14 +154,14 @@ namespace Cordyceps.Tools.Unified
                 for (int i = 0; i < connectionList.Count; i++)
                 {
                     var conn = connectionList[i];
-                    string srcId = conn?.sourceId?.ToString();
-                    string srcParam = conn?.sourceParam?.ToString() ?? "0";
-                    string tgtId = conn?.targetId?.ToString();
-                    string tgtParam = conn?.targetParam?.ToString() ?? "0";
+                    string srcId = conn.SourceId;
+                    string srcParam = conn.SourceParam;
+                    string tgtId = conn.TargetId;
+                    string tgtParam = conn.TargetParam;
 
-                    if (string.IsNullOrEmpty(srcId) || string.IsNullOrEmpty(tgtId))
+                    if (conn.Error != null)
                     {
-                        results[i] = new { success = false, error = "Missing sourceId or targetId" };
+                        results[i] = new { success = false, error = conn.Error };
                         failCount++;
                         continue;
                     }

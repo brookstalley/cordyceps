@@ -347,10 +347,14 @@ namespace Cordyceps.Tools.Unified
                         || comp.Name.IndexOf(type, StringComparison.OrdinalIgnoreCase) >= 0;
                     if (!include) continue;
 
-                    foreach (var input in comp.Params.Input)
+                    // The missing-input rule is ObjectHealth's, the one status and outline use. It is
+                    // applied per input whatever the component's message level, as this action always has.
+                    var inputs = Core.Canvas.CanvasReader.HealthInputs(comp);
+                    for (int i = 0; i < inputs.Count; i++)
                     {
-                        if (!input.Optional && input.SourceCount == 0 && input.VolatileDataCount == 0)
+                        if (Core.Canvas.ObjectHealth.IsMissing(inputs[i]))
                         {
+                            var input = comp.Params.Input[i];
                             disconnected.Add(new
                             {
                                 componentId = comp.InstanceGuid.ToString(),
