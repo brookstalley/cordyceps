@@ -13,7 +13,7 @@ namespace Cordyceps.Tools.Unified
     /// Unified inspect tool - diagnostic and inspection operations
     /// </summary>
     [McpServerToolType]
-    public class GhInspectTool
+    public partial class GhInspectTool
     {
         private const int MAX_TRACE_DEPTH = 50;
         private readonly GrasshopperContext _context;
@@ -80,7 +80,25 @@ namespace Cordyceps.Tools.Unified
                     Name = "log",
                     Description = "Get debug log entries",
                     Optional = new[] { "limit", "clear" },
-                    Example = "action='log', limit=50, clear=true"
+                    Example = "action='log', limit=50, clear=true",
+                    Tips = new[] { "limit: most recent entries to return (default 100 when omitted or 0). A negative limit is an error." }
+                },
+                ["tree"] = new ActionInfo
+                {
+                    Name = "tree",
+                    Description = "See the SHAPE of a data tree without pulling its data: branch paths, items per branch, nulls, depth. Diagnoses mismatched trees cheaply",
+                    Optional = new[] { "id", "ids", "param", "side", "limit" },
+                    Example = "action='tree', id='abc12345' OR action='tree', ids='[\"abc12345\", {\"id\": \"def67890\", \"param\": \"Result\"}]', side='input'",
+                    Tips = new[]
+                    {
+                        "Give exactly one of id (one object) or ids (a JSON array of 1-50 entries, each an id string or {\"id\": \"...\", \"param\": \"...\"} with no other keys).",
+                        "param (only with id): one port, by name, nickname or 0-based index. Without it every port on the side is read.",
+                        "side: 'output' (default) or 'input'. side='input' shows the tree as the component receives it; with no param, a note names inputs whose branch counts or paths differ.",
+                        "A parameter object (slider, panel, free parameter) has one tree, so param and side do not apply to it; its side reads 'parameter'.",
+                        "limit: path groups per tree, 1-500 (default 20 when omitted or 0). An out-of-range value is an error, never adjusted.",
+                        "paths are runs: '{0;0}..{0;9}: 1 each' is ten consecutive branches of one item; '{0;3}: 4' is one branch of four. items includes nulls; invalid counts non-null items whose IsValid is false.",
+                        "A group is an error. Trees that resolve are returned alongside errors (success=false). solver appears only when the solver is off; a tree whose owner has not computed says why in note."
+                    }
                 },
                 ["reports"] = new ActionInfo
                 {
@@ -121,16 +139,19 @@ namespace Cordyceps.Tools.Unified
             _context = context;
         }
 
-        [McpServerTool, Description("Inspection operations. Actions: connection|status|outputs|trace|disconnected|geometry|log|reports|categories|docs|help")]
+        [McpServerTool, Description("Inspection operations. Actions: connection|status|outputs|trace|disconnected|geometry|log|tree|reports|categories|docs|help")]
         public string GhInspect(
             [Description("Action to perform")] string action,
-            [Description("Component GUID")] string id = null,
+            [Description("Object: GUID, 8+ hex GUID prefix, or unique nickname")] string id = null,
             [Description("Category filter")] string category = null,
             [Description("Component type filter")] string type = null,
             [Description("Trace direction (upstream/downstream)")] string direction = "upstream",
             [Description("Component type for docs: exact name, 'Category/Name', or GUID (never matched partially)")] string component = null,
-            [Description("Log entry limit")] int limit = 100,
-            [Description("Clear log after retrieval (true/false)")] string clear = null)
+            [Description("log: most recent entries (default 100); tree: path groups per tree, 1-500 (default 20). 0 or omitted means the action's default; negative is an error")] int limit = 0,
+            [Description("Clear log after retrieval (true/false)")] string clear = null,
+            [Description("tree: JSON array of 1-50 objects to read, each an id string or {\"id\": \"...\", \"param\": \"...\"}. Use instead of id")] string ids = null,
+            [Description("tree, with id: one port by name, nickname or 0-based index (default: every port on the side)")] string param = null,
+            [Description("tree: 'output' (default) or 'input'")] string side = null)
         {
             if (string.Equals(action, "help", StringComparison.OrdinalIgnoreCase))
                 return UnifiedToolHelpers.GenerateHelp(ToolInfo);
@@ -141,8 +162,11 @@ namespace Cordyceps.Tools.Unified
                 ("type", type),
                 ("direction", direction),
                 ("component", component),
-                ("limit", limit != 100 ? (object)limit : null),
-                ("clear", clear)
+                ("limit", limit != 0 ? (object)limit : null),
+                ("clear", clear),
+                ("ids", ids),
+                ("param", param),
+                ("side", side)
             );
 
             var validationError = UnifiedToolHelpers.ValidateAction(ToolInfo, action, providedParams);
@@ -160,6 +184,7 @@ namespace Cordyceps.Tools.Unified
                 "disconnected" => ActionDisconnected(type),
                 "geometry" => ActionGeometry(id),
                 "log" => ActionLog(limit, clearBool),
+                "tree" => ActionTree(id, ids, param, side, limit),
                 "reports" => ActionReports(),
                 "categories" => ActionCategories(),
                 "docs" => ActionDocs(component),
@@ -394,8 +419,12 @@ namespace Cordyceps.Tools.Unified
 
         private string ActionLog(int limit, bool clear)
         {
+            // Validate before GetEntries: clearing is a mutation and must not happen on a bad limit.
+            if (!Core.DataTrees.LimitRule.TryResolveLog(limit, out var count, out var limitError))
+                return ToolHelpers.ErrorResponse(limitError);
+
             var entries = DebugLog.GetEntries(clear);
-            var recent = entries.Count > limit ? entries.GetRange(entries.Count - limit, limit) : entries;
+            var recent = entries.Count > count ? entries.GetRange(entries.Count - count, count) : entries;
 
             var logLines = recent.Select(e => new
             {

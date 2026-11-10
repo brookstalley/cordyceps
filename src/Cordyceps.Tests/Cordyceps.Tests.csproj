@@ -54,6 +54,10 @@
     <Compile Include="..\Cordyceps\Core\ServerState.cs" Link="ServerState.cs" />
     <Compile Include="..\Cordyceps\Core\SnapshotStore.cs" Link="SnapshotStore.cs" />
     <!-- canvas-read 03: link this chunk's new host-free files directly below -->
+    <Compile Include="..\Cordyceps\Core\DataTrees\TreeSummary.cs" Link="DataTrees\TreeSummary.cs" />
+    <Compile Include="..\Cordyceps\Core\DataTrees\TreeAlignment.cs" Link="DataTrees\TreeAlignment.cs" />
+    <Compile Include="..\Cordyceps\Core\DataTrees\TreeStatusText.cs" Link="DataTrees\TreeStatusText.cs" />
+    <Compile Include="..\Cordyceps\Core\DataTrees\TreeRequest.cs" Link="DataTrees\TreeRequest.cs" />
     <Compile Include="..\Cordyceps\Core\SolverState.cs" Link="SolverState.cs" />
     <Compile Include="..\Cordyceps\Core\StatusEnvelope.cs" Link="StatusEnvelope.cs" />
     <Compile Include="..\Cordyceps\Core\ToolArgumentBinder.cs" Link="ToolArgumentBinder.cs" />
