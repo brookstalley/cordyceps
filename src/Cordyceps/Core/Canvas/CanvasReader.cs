@@ -183,8 +183,15 @@ namespace Cordyceps.Core.Canvas
                     valueText = toggle.Value ? "true" : "false";
                     break;
                 case GH_ValueList list:
-                    valueText = list.SelectedItems.FirstOrDefault()?.Name;
+                {
+                    // Read from the items' flags: SelectedItems selects item 0 itself when a
+                    // dropdown has nothing selected, and a read must not change the document.
+                    int shown = ValueListItems.ReportedIndex(
+                        list.ListItems.Select(i => i.Selected).ToList(),
+                        checkList: list.ListMode == GH_ValueListMode.CheckList);
+                    valueText = shown < 0 ? null : list.ListItems[shown].Name;
                     break;
+                }
                 case GH_Panel panel:
                     if (panel.SourceCount == 0)
                         panelText = CanvasText.Cap(panel.UserText ?? string.Empty, CanvasText.PanelTextCap, out panelTruncated);

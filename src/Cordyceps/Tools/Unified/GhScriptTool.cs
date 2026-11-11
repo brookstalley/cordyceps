@@ -319,6 +319,12 @@ namespace Cordyceps.Tools.Unified
                 if (!ScriptParamDefs.TryParse(outputs, out var outputDefs, out var outputsError))
                     return ToolHelpers.ErrorResponse($"Invalid outputs JSON: {outputsError}");
 
+                // A parameter side on a component that cannot vary its parameters is refused whole,
+                // here, before the edit opens: writing the code and then answering success:false
+                // would leave half a request applied.
+                if ((inputDefs != null || outputDefs != null) && !(component is IGH_VariableParameterComponent))
+                    return RefuseFixedParameters(ghComponent, code);
+
                 // A configure that drops or renames an existing port cuts its wires, so it is decided
                 // here, before the first mutation, from the same plan each route below executes.
                 if (!ToolHelpers.TryConfirmPortRemoval(doc, id, component,
@@ -349,11 +355,10 @@ namespace Cordyceps.Tools.Unified
             // Whether this call wrote source: null when no 'code' was passed, true once written. A
             // write that fails rolls the call back, so it is never false.
             bool? codeSet = null;
-            // The parameter half: null when no side was asked for, true when it was applied, false
-            // when the component cannot vary its parameters. A request half-dropped under
-            // success:true is the failure mode this pair exists to make machine-readable.
+            // The parameter half: null when no side was asked for, true when it was applied. A
+            // component that cannot vary its parameters never gets here with a side asked for
+            // (RefuseFixedParameters answers before the edit), so it is never false.
             bool? parametersApplied = null;
-            string parametersError = null;
             // Set once the source lands, so the rebuild that follows the parameter work can
             // check itself against the text that was actually written.
             string writtenSource = null;
@@ -405,33 +410,12 @@ namespace Cordyceps.Tools.Unified
                 if (lost.Count > 0) lostConnections = lost;
             }
 
-            // Reaching here with a parameter side requested means the branch above declined
-            // it — the component cannot vary its parameters. Record the refusal before the
-            // code write, so it is reported alongside it: writing the source is not permission
-            // to drop the other half of the request silently.
-            if (!configured && anyParamSide)
-            {
-                parametersApplied = false;
-                parametersError = $"'{component.GetType().Name}' cannot vary its parameters, "
-                    + "so the requested inputs/outputs were not applied. The inputs/outputs "
-                    + "in this response are the component's unchanged surface.";
-            }
-
             if (!configured && !string.IsNullOrEmpty(code))
             {
                 tx.RecordGeneric(component);
 
                 var finalSource = PreserveLanguageDirective(component, code);
-                try
-                {
-                    WriteScriptSource(component, finalSource);
-                }
-                catch (EditRollbackException ex) when (parametersError != null)
-                {
-                    // Both halves failed: the rollback's message carries the parameter refusal
-                    // too, so the source error is not the only thing reported.
-                    throw new EditRollbackException($"{ex.Message} Also: {parametersError}");
-                }
+                WriteScriptSource(component, finalSource);
                 languageWarning = ScriptDirective.LanguageWarning(component.GetType().Name, finalSource);
 
                 SyncScriptParams(component, finalSource, out var lost);
@@ -452,48 +436,26 @@ namespace Cordyceps.Tools.Unified
                 configured = true;
                 codeSet = true;
                 writtenSource = finalSource;
-                // The port counts here are the component's own, not the requested ones —
-                // say so when a parameter request was refused, or the numbers read as
-                // confirmation that it was applied.
                 message = $"Source set ({ghComponent.Params.Input.Count} inputs, {ghComponent.Params.Output.Count} outputs)";
-                if (parametersError != null)
-                    message += $" — but {parametersError}";
             }
             else if (!configured)
             {
-                // Tell the two no-op cases apart. One message for both told a caller who
-                // HAD passed inputs to pass inputs, which reads as though the request never
-                // arrived — and it sits beside a rebuildSkipped that correctly reports
-                // nothing changed, so the pair has to agree on why.
-                message = parametersError != null
-                    ? $"No configuration applied: {parametersError} Pass 'code' to set its source instead."
-                    : "No configuration applied. Provide 'code' and/or 'inputs'/'outputs' parameters.";
+                message = "No configuration applied. Provide 'code' and/or 'inputs'/'outputs' parameters.";
             }
 
-            // The paths above rebuild whenever they changed something; this covers the ones
-            // that changed nothing — a component that cannot vary its parameters, a call that
-            // supplied neither side. They report why instead of returning nothing, so a caller
-            // never has to read an absent rebuild field as an answer.
+            // The paths above rebuild whenever they changed something; this covers a call that
+            // supplied neither code nor a side. It reports why instead of returning nothing, so a
+            // caller never has to read an absent rebuild field as an answer.
             if (rebuildFields == null)
                 rebuildFields = ScriptComponents.RebuildForChange(component, parametersChanged, writtenSource);
 
-            var finalInputs = new List<object>();
-            var finalOutputs = new List<object>();
-
-            foreach (var param in ghComponent.Params.Input)
-                finalInputs.Add(new { name = param.Name, type = param.TypeName, access = param.Access.ToString() });
-            foreach (var param in ghComponent.Params.Output)
-                finalOutputs.Add(new { name = param.Name, type = param.TypeName });
-
-            // A refused parameter change makes the whole call a failure even when the source
-            // landed: a partial apply must be detectable, not reported as success:true.
             var configureResponse = new Dictionary<string, object>
             {
-                ["success"] = configured && parametersApplied != false,
+                ["success"] = configured,
                 ["id"] = component.InstanceGuid.ToString(),
                 ["message"] = message,
-                ["inputs"] = finalInputs,
-                ["outputs"] = finalOutputs
+                ["inputs"] = DescribeInputs(ghComponent),
+                ["outputs"] = DescribeOutputs(ghComponent)
             };
             // Unconditional: every route to here has filled these, so the response always
             // states whether the component's program was rebuilt.
@@ -503,8 +465,6 @@ namespace Cordyceps.Tools.Unified
                 configureResponse["codeSet"] = codeSet.Value;
             if (parametersApplied.HasValue)
                 configureResponse["parametersApplied"] = parametersApplied.Value;
-            if (parametersError != null)
-                configureResponse["parametersError"] = parametersError;
             if (languageWarning != null)
                 configureResponse["languageWarning"] = languageWarning;
 
@@ -518,6 +478,51 @@ namespace Cordyceps.Tools.Unified
 
             return JsonConvert.SerializeObject(configureResponse);
         }
+
+        /// <summary>
+        /// The answer to <c>configure</c> asking for inputs or outputs on a component that cannot
+        /// vary its parameters. Nothing is changed, the code included: the call is refused whole,
+        /// before its edit opens. The reply keeps the fields a refused parameter half has always
+        /// carried, so a caller reads <c>parametersApplied</c>/<c>parametersError</c> as before,
+        /// and echoes the component's unchanged surface.
+        /// </summary>
+        private static string RefuseFixedParameters(IGH_Component ghComponent, string code)
+        {
+            string parametersError = $"'{ghComponent.GetType().Name}' cannot vary its parameters, "
+                + "so the requested inputs/outputs were not applied. The inputs/outputs "
+                + "in this response are the component's unchanged surface.";
+            bool codeGiven = !string.IsNullOrEmpty(code);
+
+            var response = new Dictionary<string, object>
+            {
+                ["success"] = false,
+                ["id"] = ghComponent.InstanceGuid.ToString(),
+                ["error"] = codeGiven
+                    ? $"No configuration applied: {parametersError} The code was not written either; to set only the source, call again without inputs/outputs."
+                    : $"No configuration applied: {parametersError} Pass 'code' to set its source instead.",
+                ["parametersApplied"] = false,
+                ["parametersError"] = parametersError,
+                ["inputs"] = DescribeInputs(ghComponent),
+                ["outputs"] = DescribeOutputs(ghComponent)
+            };
+            if (codeGiven)
+                response["codeSet"] = false;
+            // Nothing changed, so nothing is rebuilt (this reports why without touching the
+            // component); every configure reply answers the rebuild question.
+            foreach (var field in ScriptComponents.RebuildForChange(ghComponent, parametersChanged: false, writtenSource: null))
+                response[field.Key] = field.Value;
+            return JsonConvert.SerializeObject(response);
+        }
+
+        private static List<object> DescribeInputs(IGH_Component ghComponent) =>
+            ghComponent.Params.Input
+                .Select(p => (object)new { name = p.Name, type = p.TypeName, access = p.Access.ToString() })
+                .ToList();
+
+        private static List<object> DescribeOutputs(IGH_Component ghComponent) =>
+            ghComponent.Params.Output
+                .Select(p => (object)new { name = p.Name, type = p.TypeName })
+                .ToList();
 
         private const string ReconnectHint = "These connections were lost due to parameter changes. "
             + "To restore, pass the lostConnections array as 'connections' to gh_wire(action='connect'), "
@@ -1014,121 +1019,6 @@ namespace Cordyceps.Tools.Unified
                 "geometry" or "geom" => typeof(Rhino.Geometry.GeometryBase),
                 _ => null
             };
-        }
-
-        /// <summary>
-        /// Create a typed parameter instance based on type name
-        /// </summary>
-        private IGH_Param CreateTypedParameter(string typeName)
-        {
-            if (string.IsNullOrEmpty(typeName))
-                return new Param_GenericObject();
-
-            // Normalize type name (case-insensitive, trim whitespace)
-            var normalized = typeName.Trim().ToLowerInvariant();
-
-            // Map common type names to Grasshopper parameter types
-            switch (normalized)
-            {
-                // Numeric types
-                case "double":
-                case "number":
-                case "float":
-                    return new Param_Number();
-
-                case "int":
-                case "integer":
-                    return new Param_Integer();
-
-                case "bool":
-                case "boolean":
-                    return new Param_Boolean();
-
-                // String types
-                case "string":
-                case "text":
-                    return new Param_String();
-
-                // Geometric types - Points and Vectors
-                case "point":
-                case "point3d":
-                case "pt":
-                    return new Param_Point();
-
-                case "vector":
-                case "vector3d":
-                case "vec":
-                    return new Param_Vector();
-
-                case "plane":
-                    return new Param_Plane();
-
-                // Curves
-                case "curve":
-                case "crv":
-                    return new Param_Curve();
-
-                case "line":
-                case "ln":
-                    return new Param_Line();
-
-                case "circle":
-                case "circ":
-                    return new Param_Circle();
-
-                case "arc":
-                    return new Param_Arc();
-
-                case "polyline":
-                    return new Param_Curve(); // Polyline uses Param_Curve
-
-                // Surfaces
-                case "surface":
-                case "srf":
-                    return new Param_Surface();
-
-                case "brep":
-                    return new Param_Brep();
-
-                // Mesh
-                case "mesh":
-                case "msh":
-                    return new Param_Mesh();
-
-                // Box and other shapes
-                case "box":
-                    return new Param_Box();
-
-                case "rectangle":
-                case "rect":
-                    return new Param_Rectangle();
-
-                // Geometry (generic)
-                case "geometry":
-                case "geom":
-                    return new Param_Geometry();
-
-                // Color
-                case "color":
-                case "colour":
-                    return new Param_Colour();
-
-                // Interval and Domain
-                case "interval":
-                case "domain":
-                    return new Param_Interval();
-
-                // Transform
-                case "transform":
-                case "xform":
-                    return new Param_Transform();
-
-                // Generic/Object (fallback)
-                case "object":
-                case "generic":
-                default:
-                    return new Param_GenericObject();
-            }
         }
 
         #endregion

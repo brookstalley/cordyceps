@@ -45,27 +45,27 @@ namespace Cordyceps.Tools.Unified
 
                 return _context.Edit(doc, EditReplies.RecordName("gh_canvas", "group_create"), tx =>
                 {
-                // The group is new, so its membership and colour need no record; the add does.
-                tx.AddObject(group);
+                    // The group is new, so its membership and colour need no record; the add does.
+                    tx.AddObject(group);
 
-                foreach (var obj in members)
-                    group.AddObject(obj.InstanceGuid);
-                if (members.Count > 0)
-                    group.ExpireCaches();
+                    foreach (var obj in members)
+                        group.AddObject(obj.InstanceGuid);
+                    if (members.Count > 0)
+                        group.ExpireCaches();
 
-                Instances.ActiveCanvas?.Invalidate();
+                    Instances.ActiveCanvas?.Invalidate();
 
-                var result = new Dictionary<string, object>
-                {
-                    ["success"] = true,
-                    ["id"] = group.InstanceGuid.ToString(),
-                    ["name"] = group.NickName,
-                    ["color"] = ColorTranslator.ToHtml(group.Colour),
-                    ["memberCount"] = members.Count,
-                    ["memberIds"] = members.Select(o => o.InstanceGuid.ToString()).ToList()
-                };
-                AddDuplicateNotes(result, outcomes);
-                return JsonConvert.SerializeObject(result);
+                    var result = new Dictionary<string, object>
+                    {
+                        ["success"] = true,
+                        ["id"] = group.InstanceGuid.ToString(),
+                        ["name"] = group.NickName,
+                        ["color"] = ColorTranslator.ToHtml(group.Colour),
+                        ["memberCount"] = members.Count,
+                        ["memberIds"] = members.Select(o => o.InstanceGuid.ToString()).ToList()
+                    };
+                    AddDuplicateNotes(result, outcomes);
+                    return JsonConvert.SerializeObject(result);
                 });
             });
         }
@@ -127,41 +127,41 @@ namespace Cordyceps.Tools.Unified
 
                 return _context.Edit(doc, EditReplies.RecordName("gh_canvas", "group_add"), tx =>
                 {
-                if (group == null)
-                {
-                    group = new GH_Group();
-                    group.NickName = groupName ?? Core.Canvas.ObjectEntry.DefaultGroupName;
-                    group.Name = groupName ?? Core.Canvas.ObjectEntry.DefaultGroupName;
-                    tx.AddObject(group);
-                }
-                else
-                {
-                    // Membership and colour live in the group's archive.
-                    tx.RecordGeneric(group);
-                }
+                    if (group == null)
+                    {
+                        group = new GH_Group();
+                        group.NickName = groupName ?? Core.Canvas.ObjectEntry.DefaultGroupName;
+                        group.Name = groupName ?? Core.Canvas.ObjectEntry.DefaultGroupName;
+                        tx.AddObject(group);
+                    }
+                    else
+                    {
+                        // Membership and colour live in the group's archive.
+                        tx.RecordGeneric(group);
+                    }
 
-                if (ToolHelpers.TryParseColor(color, out var parsedColor))
-                    group.Colour = parsedColor;
+                    if (ToolHelpers.TryParseColor(color, out var parsedColor))
+                        group.Colour = parsedColor;
 
-                foreach (var obj in objects)
-                    group.AddObject(obj.InstanceGuid);
+                    foreach (var obj in objects)
+                        group.AddObject(obj.InstanceGuid);
 
-                group.ExpireCaches();
-                Instances.ActiveCanvas?.Invalidate();
+                    group.ExpireCaches();
+                    Instances.ActiveCanvas?.Invalidate();
 
-                var bounds = group.Attributes?.Bounds ?? RectangleF.Empty;
+                    var bounds = group.Attributes?.Bounds ?? RectangleF.Empty;
 
-                var result = new Dictionary<string, object>
-                {
-                    ["success"] = true,
-                    ["groupId"] = group.InstanceGuid.ToString(),
-                    ["groupName"] = group.NickName,
-                    ["addedCount"] = objects.Count,
-                    ["addedIds"] = objects.Select(o => o.InstanceGuid.ToString()).ToList(),
-                    ["bounds"] = new { x = bounds.X, y = bounds.Y, width = bounds.Width, height = bounds.Height }
-                };
-                AddDuplicateNotes(result, outcomes);
-                return JsonConvert.SerializeObject(result);
+                    var result = new Dictionary<string, object>
+                    {
+                        ["success"] = true,
+                        ["groupId"] = group.InstanceGuid.ToString(),
+                        ["groupName"] = group.NickName,
+                        ["addedCount"] = objects.Count,
+                        ["addedIds"] = objects.Select(o => o.InstanceGuid.ToString()).ToList(),
+                        ["bounds"] = new { x = bounds.X, y = bounds.Y, width = bounds.Width, height = bounds.Height }
+                    };
+                    AddDuplicateNotes(result, outcomes);
+                    return JsonConvert.SerializeObject(result);
                 });
             });
         }
@@ -184,41 +184,41 @@ namespace Cordyceps.Tools.Unified
 
                 return _context.Edit(doc, EditReplies.RecordName("gh_canvas", "group_remove"), tx =>
                 {
-                var memberIds = new HashSet<Guid>(group.ObjectIDs ?? new List<Guid>());
-                var removedIds = new List<string>();
-                var notMembers = new List<string>();
+                    var memberIds = new HashSet<Guid>(group.ObjectIDs ?? new List<Guid>());
+                    var removedIds = new List<string>();
+                    var notMembers = new List<string>();
 
-                // Recorded only when a member will leave: a call that changes nothing pushes nothing.
-                if (objects.Any(o => memberIds.Contains(o.InstanceGuid)))
-                    tx.RecordGeneric(group);
+                    // Recorded only when a member will leave: a call that changes nothing pushes nothing.
+                    if (objects.Any(o => memberIds.Contains(o.InstanceGuid)))
+                        tx.RecordGeneric(group);
 
-                foreach (var obj in objects)
-                {
-                    var guid = obj.InstanceGuid;
-                    if (memberIds.Contains(guid))
+                    foreach (var obj in objects)
                     {
-                        group.RemoveObject(guid);
-                        removedIds.Add(guid.ToString());
+                        var guid = obj.InstanceGuid;
+                        if (memberIds.Contains(guid))
+                        {
+                            group.RemoveObject(guid);
+                            removedIds.Add(guid.ToString());
+                        }
+                        else
+                        {
+                            notMembers.Add(guid.ToString());
+                        }
                     }
-                    else
+
+                    group.ExpireCaches();
+                    Instances.ActiveCanvas?.Invalidate();
+
+                    var result = new Dictionary<string, object>
                     {
-                        notMembers.Add(guid.ToString());
-                    }
-                }
-
-                group.ExpireCaches();
-                Instances.ActiveCanvas?.Invalidate();
-
-                var result = new Dictionary<string, object>
-                {
-                    ["success"] = true,
-                    ["groupId"] = group.InstanceGuid.ToString(),
-                    ["removedCount"] = removedIds.Count,
-                    ["removedIds"] = removedIds
-                };
-                if (notMembers.Count > 0) result["notMembers"] = notMembers;
-                AddDuplicateNotes(result, outcomes);
-                return JsonConvert.SerializeObject(result);
+                        ["success"] = true,
+                        ["groupId"] = group.InstanceGuid.ToString(),
+                        ["removedCount"] = removedIds.Count,
+                        ["removedIds"] = removedIds
+                    };
+                    if (notMembers.Count > 0) result["notMembers"] = notMembers;
+                    AddDuplicateNotes(result, outcomes);
+                    return JsonConvert.SerializeObject(result);
                 });
             });
         }
@@ -356,33 +356,33 @@ namespace Cordyceps.Tools.Unified
 
                 return _context.Edit(doc, EditReplies.RecordName("gh_canvas", "group_move"), tx =>
                 {
-                int movedCount = 0;
-                foreach (var memberId in memberIds)
-                {
-                    var member = doc.FindObject(memberId, true);
-                    if (member?.Attributes != null)
+                    int movedCount = 0;
+                    foreach (var memberId in memberIds)
                     {
-                        tx.RecordPivot(member);
-                        var pivot = member.Attributes.Pivot;
-                        member.Attributes.Pivot = new PointF(pivot.X + (float)dx, pivot.Y + (float)dy);
-                        member.Attributes.ExpireLayout();
-                        movedCount++;
+                        var member = doc.FindObject(memberId, true);
+                        if (member?.Attributes != null)
+                        {
+                            tx.RecordPivot(member);
+                            var pivot = member.Attributes.Pivot;
+                            member.Attributes.Pivot = new PointF(pivot.X + (float)dx, pivot.Y + (float)dy);
+                            member.Attributes.ExpireLayout();
+                            movedCount++;
+                        }
                     }
-                }
 
-                targetGroup.ExpireCaches();
-                Instances.ActiveCanvas?.Invalidate();
+                    targetGroup.ExpireCaches();
+                    Instances.ActiveCanvas?.Invalidate();
 
-                var bounds = targetGroup.Attributes?.Bounds ?? RectangleF.Empty;
+                    var bounds = targetGroup.Attributes?.Bounds ?? RectangleF.Empty;
 
-                return JsonConvert.SerializeObject(new
-                {
-                    success = true,
-                    groupId = targetGroup.InstanceGuid.ToString(),
-                    movedCount,
-                    offset = new { dx, dy },
-                    bounds = new { x = bounds.X, y = bounds.Y, width = bounds.Width, height = bounds.Height }
-                });
+                    return JsonConvert.SerializeObject(new
+                    {
+                        success = true,
+                        groupId = targetGroup.InstanceGuid.ToString(),
+                        movedCount,
+                        offset = new { dx, dy },
+                        bounds = new { x = bounds.X, y = bounds.Y, width = bounds.Width, height = bounds.Height }
+                    });
                 });
             });
         }
