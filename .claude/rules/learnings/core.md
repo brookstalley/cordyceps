@@ -39,7 +39,7 @@ Critic and reflection gates, so on a `cumulative-final` plan hold it until that 
 
 The durable lesson under both rules: **a checkbox is only as true as whoever last touched it.**
 When the owning mechanism changed, every plan whose prose cited the old one became a plan nobody
-was ticking — `build-plan-reliability.md` still sits six-unticked for work merged in PR #26.
+was ticking — `build-plan-reliability.md` sat six-unticked for months after PR #26 merged.
 
 ### Refresh stale `.test-evidence.json` via the hook, not by hand
 

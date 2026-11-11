@@ -372,12 +372,9 @@ build_state:
 #
 # active_build_plan: artifacts/build-plan-my-scope.md
 #
-# Points at the conventional path, which currently holds the
-# release-artifact-provenance plan (that plan also declares `branch:`, so it
-# resolves for itself). The completed issues-2026-08 plan was moved to
-# artifacts/archive/ rather than deleted. artifacts/build-plan-reliability.md is
-# a second retained plan, held live until the next develop->main release per the
-# gitflow plan lifecycle.
+# Left unset: every live plan here is scope-named and declares `branch:`, so
+# each one resolves for its own branch. Released plans move to
+# artifacts/archive/ (`prawduct-hook plan-backfill`) rather than being deleted.
 active_build_plan:
 
 # =============================================================================
