@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using Grasshopper;
 using Grasshopper.Kernel;
 
@@ -33,12 +34,18 @@ namespace Cordyceps.Core
         private static readonly HashSet<GH_Document> _watched =
             new HashSet<GH_Document>(ReferenceEqualityComparer.Instance);
 
+        // Documents watched only because the solve coordinator asked, which the document server
+        // does not know, so no DocumentRemoved will release them. Bounded by WatchAdoption.
+        private static readonly HashSet<GH_Document> _adopted =
+            new HashSet<GH_Document>(ReferenceEqualityComparer.Instance);
+
         private static bool _started;
 
         /// <summary>
         /// Begin watching the document server and every document already open. Idempotent, and a
-        /// no-op while Grasshopper's document server is not yet available — the caller runs on
-        /// every solve, so a later attempt succeeds.
+        /// no-op while Grasshopper's document server is not yet available — the bridge component
+        /// calls it from every one of its own solves, and the solve coordinator before scheduling,
+        /// so a later attempt succeeds.
         /// </summary>
         public static void Start()
         {
@@ -80,6 +87,7 @@ namespace Cordyceps.Core
                     Unwatch(document);
 
                 _watched.Clear();
+                _adopted.Clear();
                 _started = false;
             }
         }
@@ -91,6 +99,10 @@ namespace Cordyceps.Core
         /// solve scheduled on an unwatched document never reports its end, so a waiter on it
         /// would always run out its budget. Returns false when the watcher cannot run yet
         /// (no document server), in which case the solve's end will not be seen.
+        ///
+        /// <para>A document the server does not know is "adopted". Each call releases every other
+        /// adopted document that is no longer the active canvas document (<see cref="WatchAdoption"/>),
+        /// so at most two are held: the one being scheduled and the one on the canvas.</para>
         /// </summary>
         public static bool EnsureWatched(GH_Document document)
         {
@@ -99,6 +111,20 @@ namespace Cordyceps.Core
             lock (_gate)
             {
                 if (!_started) return false;
+
+                var server = Instances.DocumentServer;
+                var known = server != null
+                    && ((IEnumerable<GH_Document>)server).Any(d => ReferenceEquals(d, document));
+
+                var keep = new[] { document, Instances.ActiveCanvas?.Document };
+                foreach (var stale in WatchAdoption.ToRelease<GH_Document>(_adopted, keep, ReferenceEqualityComparer.Instance))
+                {
+                    _adopted.Remove(stale);
+                    Unwatch(stale);
+                }
+
+                if (!known && !_watched.Contains(document))
+                    _adopted.Add(document);
                 Watch(document);
                 return true;
             }
@@ -106,7 +132,12 @@ namespace Cordyceps.Core
 
         private static void OnDocumentAdded(GH_DocumentServer sender, GH_Document doc)
         {
-            lock (_gate) Watch(doc);
+            lock (_gate)
+            {
+                // The server knows it now, so its DocumentRemoved will release it.
+                _adopted.Remove(doc);
+                Watch(doc);
+            }
         }
 
         private static void OnDocumentRemoved(GH_DocumentServer sender, GH_Document doc)
@@ -127,13 +158,16 @@ namespace Cordyceps.Core
         private static void Unwatch(GH_Document document)
         {
             if (document == null || !_watched.Remove(document)) return;
+            _adopted.Remove(document);
 
             document.SolutionStart -= OnSolutionStart;
             document.SolutionEnd -= OnSolutionEnd;
 
             // A document closed mid-solution never raises SolutionEnd, and a stuck "solving" flag
-            // would report a healthy bridge as permanently busy.
-            SolverState.Shared.ForgetDocument(document.DocumentID);
+            // would report a healthy bridge as permanently busy. Solve state is keyed by id, so it
+            // stays while another watched document still carries the same one.
+            if (WatchAdoption.ShouldForget(document.DocumentID, _watched.Select(d => d.DocumentID)))
+                SolverState.Shared.ForgetDocument(document.DocumentID);
         }
 
         private static void OnSolutionStart(object sender, GH_SolutionEventArgs e)

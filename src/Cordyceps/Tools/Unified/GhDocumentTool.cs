@@ -43,7 +43,11 @@ namespace Cordyceps.Tools.Unified
                 {
                     Name = "info",
                     Description = "Get information about the current document",
-                    Example = "action='info'"
+                    Example = "action='info'",
+                    Tips = new[]
+                    {
+                        "solverEnabled is this document's own solver switch (gh_document(action='solver') sets it). solutionsLocked is Grasshopper's global switch: true when the solver is locked in Grasshopper (or Rhino is mid-command), which Cordyceps never changes. A solve runs only when solverEnabled is true and solutionsLocked is false."
+                    }
                 },
                 ["save"] = new ActionInfo
                 {
@@ -61,7 +65,7 @@ namespace Cordyceps.Tools.Unified
                     Tips = new[]
                     {
                         "Inside a cluster editor, cluster input/output hooks are preserved (reported as preservedClusterHooks) so the cluster interface stays intact",
-                        "The follow-up solve is scheduled, not waited for: the reply carries solve.state='scheduled', or solver_disabled / solutions_locked with solve.remedy when a solver switch is off"
+                        "The follow-up solve is scheduled, not waited for: the reply carries solve.state='scheduled', or solver_disabled / solutions_locked / not_watched with solve.remedy when it could not be scheduled"
                     }
                 },
                 ["solver"] = new ActionInfo
@@ -85,10 +89,12 @@ namespace Cordyceps.Tools.Unified
                     Tips = new[]
                     {
                         "timeout: whole seconds to wait, 1-300, default 30. Out of range or not a whole number is refused before anything is touched.",
-                        "The reply has solve: {state, elapsedMs, errors, warnings, remedy}. state is completed | aborted | over_budget | solver_disabled | solutions_locked | document_closed; success and recomputed are true only for completed. errors/warnings count objects at that runtime-message level, as gh_inspect(action='status') does.",
+                        "The reply has solve: {state, elapsedMs, errors, warnings, remedy}. state is completed | aborted | over_budget | not_started | solver_disabled | solutions_locked | not_watched | document_closed; success and recomputed are true only for completed. errors/warnings count objects at that runtime-message level, as gh_inspect(action='status') does.",
                         "aborted: someone pressed Escape in Grasshopper (or asked for an abort), so outputs may be partial. A human usually does that on purpose: ask before recomputing again.",
                         "over_budget: the solve is STILL RUNNING and Cordyceps cannot cancel it. Poll gh_inspect(action='connection') until grasshopper.solving is false, then gh_inspect(action='status'). Pass a larger timeout next time.",
+                        "not_started: the wait ran out with nothing solving and no solve finished, so the scheduled solve never ran (the solver was locked meanwhile, the Grasshopper editor was unavailable, or the document raises no solution events). Check gh_inspect(action='connection') and status, then retry.",
                         "solver_disabled: this document's solver is off; gh_document(action='solver', enabled=true) turns it on. solutions_locked: Grasshopper's global solver lock is on (or Rhino is mid-command); Cordyceps never changes it, so ask a human.",
+                        "not_watched: Cordyceps could not watch the document's solution events (the Cordyceps component's watcher is not running), so it scheduled nothing. Make sure the Cordyceps component is on the canvas and enabled, then retry.",
                         "If a solution is already running you get success=false with solving=true and solving_since — wait for it to finish and call again, do not retry in a tight loop.",
                         "The wait holds no lock: other calls keep working while it runs, and gh_inspect(action='connection') still tells a busy solver from a modal dialog."
                     }
@@ -288,6 +294,9 @@ namespace Cordyceps.Tools.Unified
                     filePath = doc.FilePath,
                     isModified = doc.IsModified,
                     solverEnabled = doc.Enabled,
+                    // The global switch is separate from the document's own, and only a human can
+                    // clear it, so it is reported beside it rather than folded into one flag.
+                    solutionsLocked = !GH_Document.EnableSolutions,
                     objectCount = userObjects.Count,
                     componentCount = userObjects.Count(o => o is IGH_Component),
                     parameterCount = userObjects.Count(o => o is IGH_Param && !(o is IGH_Component)),

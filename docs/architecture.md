@@ -44,7 +44,9 @@ holds the document lock while Grasshopper solves. A caller that needs the outcom
 thread on a ticket (document id + solve generation) through host-free `Core/SolveWait.cs`;
 host-free `Core/SolvePolicy.cs` maps the solver switches and the wait outcome to the reported
 `solve.state` and its remedy. Per-document solve state (solving, last finished solve, aborted) is
-kept by `Core/SolverState.cs`, fed from Grasshopper's solution events by `Core/SolutionWatcher.cs`.
+kept by `Core/SolverState.cs`, fed from Grasshopper's solution events by `Core/SolutionWatcher.cs`, which also watches a scheduled
+document the document server does not know (a reverted snapshot), bounded by host-free
+`Core/WatchAdoption.cs`.
 
 **Core/DebugLog.cs** - Centralized logging with Info, Warn, Error, Debug levels. Logs are
 retrievable via `gh_inspect(action='log')`.

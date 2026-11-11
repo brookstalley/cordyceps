@@ -81,13 +81,18 @@ namespace Cordyceps.Core
         {
             if (doc == null) throw new ArgumentNullException(nameof(doc));
 
-            // Decide before touching anything: a refused solve expires nothing.
-            var refusal = SolvePolicy.Refusal(doc.Enabled, GH_Document.EnableSolutions);
+            // Decide before touching the document: a refused solve expires nothing. Watching is
+            // asked last, and only when both switches allow a solve, so a refused solve adopts no
+            // document; a solve whose end could not be seen is not scheduled at all, because the
+            // only thing a waiter could ever report about it is a spent budget.
+            var refusal = SolvePolicy.Refusal(doc.Enabled, GH_Document.EnableSolutions,
+                watching: () => SolutionWatcher.EnsureWatched(doc));
             if (refusal != null)
+            {
+                if (refusal == SolveState.NotWatched)
+                    DebugLog.Warn("SolveCoordinator: the solution watcher is not running, so no solve was scheduled");
                 return SolveScheduling.Refused(refusal.Value, doc.Enabled);
-
-            if (!SolutionWatcher.EnsureWatched(doc))
-                DebugLog.Warn("SolveCoordinator: the solution watcher is not running, so this solve's end will not be recorded");
+            }
 
             if (expireAll)
             {

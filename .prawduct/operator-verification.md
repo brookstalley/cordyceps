@@ -883,7 +883,13 @@ ready for the liveness checks.
    the recompute call).
 5. **Lock solver reports locked:** turn on Grasshopper's "Lock Solver". `recompute` replies at once
    (no wait) with `solve.state: "solutions_locked"` and a remedy naming a human. `solver
-   enabled=true` replies `success: true` with `solve.state: "solutions_locked"`. Unlock the solver.
+   enabled=true` replies `success: true` with `solve.state: "solutions_locked"`, and
+   `gh_document(action='info')` shows `solutionsLocked: true`. Unlock the solver; `info` shows
+   `solutionsLocked: false`.
+5a. **over_budget only while solving:** `not_started` (a scheduled solve that never ran) is hard to
+   provoke by hand. Whenever a `recompute` replies `over_budget` in these checks, confirm
+   `gh_inspect(action='connection')` shows `solving: true` at that moment; an idle document at the
+   deadline must read `not_started`, never `over_budget`.
 6. **Document solver off:** `gh_document(action='solver', enabled=false)`, then `recompute`:
    `solve.state: "solver_disabled"`, remedy naming `solver enabled=true`. Then `solver enabled=true`
    replies `solve.state: "scheduled"` at once and the canvas solves on its own.

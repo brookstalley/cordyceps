@@ -28,6 +28,17 @@ namespace Cordyceps.Core
 
         /// <summary>The document closed before the solve finished, so its outcome is unknown.</summary>
         DocumentClosed,
+
+        /// <summary>
+        /// The wait ran out with nothing solving and no solve finished: the scheduled solve never ran.
+        /// </summary>
+        NotStarted,
+
+        /// <summary>
+        /// Cordyceps could not watch the document's solution events, so it could not have told when
+        /// a solve ended; it scheduled none.
+        /// </summary>
+        NotWatched,
     }
 
     /// <summary>
@@ -73,16 +84,20 @@ namespace Cordyceps.Core
         }
 
         /// <summary>
-        /// The state that stops a solve before it is scheduled, or null when both switches allow
-        /// one. The global switch is checked first: with it off Grasshopper returns before raising
-        /// <c>SolutionStart</c> or <c>SolutionEnd</c>, so a wait would never end. With only the
-        /// document's switch off the events fire but nothing is computed, so a "completed" answer
-        /// would be a lie.
+        /// The state that stops a solve before it is scheduled, or null when one can be scheduled
+        /// and observed. The global switch is checked first: with it off Grasshopper returns before
+        /// raising <c>SolutionStart</c> or <c>SolutionEnd</c>, so a wait would never end. With only
+        /// the document's switch off the events fire but nothing is computed, so a "completed"
+        /// answer would be a lie. Last, <paramref name="watching"/> is asked whether the solve's end
+        /// can be seen; it is asked only when both switches allow a solve, because asking can start
+        /// watching a document, which a refused solve must not do. Without it the solve could only
+        /// ever be reported as having run out of time.
         /// </summary>
-        public static SolveState? Refusal(bool documentEnabled, bool solutionsEnabled)
+        public static SolveState? Refusal(bool documentEnabled, bool solutionsEnabled, Func<bool> watching = null)
         {
             if (!solutionsEnabled) return SolveState.SolutionsLocked;
             if (!documentEnabled) return SolveState.SolverDisabled;
+            if (watching != null && !watching()) return SolveState.NotWatched;
             return null;
         }
 
@@ -95,6 +110,8 @@ namespace Cordyceps.Core
                     return aborted ? SolveState.Aborted : SolveState.Completed;
                 case SolveWaitOutcome.OverBudget:
                     return SolveState.OverBudget;
+                case SolveWaitOutcome.NotStarted:
+                    return SolveState.NotStarted;
                 case SolveWaitOutcome.Gone:
                     return SolveState.DocumentClosed;
                 default:
@@ -125,6 +142,8 @@ namespace Cordyceps.Core
                 case SolveState.SolverDisabled: return "solver_disabled";
                 case SolveState.SolutionsLocked: return "solutions_locked";
                 case SolveState.DocumentClosed: return "document_closed";
+                case SolveState.NotStarted: return "not_started";
+                case SolveState.NotWatched: return "not_watched";
                 default: throw new ArgumentOutOfRangeException(nameof(state), state, null);
             }
         }
@@ -158,6 +177,13 @@ namespace Cordyceps.Core
                              : " This document's own solver is off as well; once unlocked, turn it on with gh_document(action='solver', enabled=true).");
                 case SolveState.DocumentClosed:
                     return "The document closed before the solve finished, so its outcome is unknown.";
+                case SolveState.NotStarted:
+                    return "The scheduled solve never ran: Grasshopper's 'Lock Solver' was switched on meanwhile, the Grasshopper editor window was not available to start it, or the document raises no solution events. "
+                         + "Check gh_inspect(action='connection') and gh_inspect(action='status'), then retry recompute.";
+                case SolveState.NotWatched:
+                    return "Cordyceps could not watch this document's solution events, so it could not have told when a solve ended, and it scheduled none. "
+                         + "The Cordyceps bridge component's solution watcher is not running (Grasshopper's document server is not available to it). "
+                         + "Make sure the Cordyceps component is on the canvas and enabled, then retry.";
                 default:
                     return null;
             }

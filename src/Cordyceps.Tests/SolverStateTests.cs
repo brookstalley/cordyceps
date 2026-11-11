@@ -223,8 +223,10 @@ namespace Cordyceps.Tests
         }
 
         [Fact]
-        public void NestedBeginEnd_KeepsTheStartTimeRule_AndCountsEachEnd()
+        public void NestedBeginEnd_KeepsTheStartTime_AndOnlyTheOutermostEndCounts()
         {
+            // A solution started inside another deepens the solve; the inner end must neither
+            // clear "solving" nor publish a generation a waiter could take for the outer solve.
             var clock = new FakeClock();
             var state = NewState(clock);
             var doc = Guid.NewGuid();
@@ -233,12 +235,73 @@ namespace Cordyceps.Tests
             clock.Advance(TimeSpan.FromSeconds(5));
             state.BeginSolution(doc, "a.gh");
             Assert.Equal(T0, state.ActiveSolve.StartedUtc);
+            Assert.Equal(2, state.ActiveSolve.Depth);
 
-            state.EndSolution(doc);
-            state.EndSolution(doc);
+            state.EndSolution(doc, TimeSpan.FromSeconds(1), aborted: true);
+            Assert.True(state.IsSolving(doc));
+            Assert.Equal(1, state.ActiveSolve.Depth);
+            Assert.Equal(T0, state.ActiveSolve.StartedUtc);
+            Assert.Null(state.LastSolve(doc));
 
-            Assert.Equal(2, state.LastSolve(doc).Generation);
+            state.EndSolution(doc, TimeSpan.FromSeconds(6), aborted: false);
             Assert.False(state.IsSolving(doc));
+            Assert.Equal(1, state.LastSolve(doc).Generation);
+            // The record describes the outermost solve, not the inner one.
+            Assert.Equal(TimeSpan.FromSeconds(6), state.LastSolve(doc).Span);
+            Assert.False(state.LastSolve(doc).Aborted);
+        }
+
+        [Fact]
+        public void NestedSolve_DoesNotAnswerATicket_UntilTheOutermostEnd()
+        {
+            var state = NewState(new FakeClock());
+            var doc = Guid.NewGuid();
+            var ticket = state.TakeTicket(doc);
+
+            state.BeginSolution(doc, "a.gh");
+            state.BeginSolution(doc, "a.gh");
+            state.EndSolution(doc);
+            Assert.False(SolveWait.IsAnswered(ticket, state.Observe(doc)));
+
+            state.EndSolution(doc);
+            Assert.True(SolveWait.IsAnswered(ticket, state.Observe(doc)));
+        }
+
+        [Fact]
+        public void ExtraEndAfterTheDepthReachesZero_IsAnUnmatchedEnd_AndStillCounts()
+        {
+            // An end with no open start is a solve whose start went unseen (the watcher attached
+            // mid-solve); it never drives the depth negative or leaves the document solving.
+            var state = NewState(new FakeClock());
+            var doc = Guid.NewGuid();
+
+            state.BeginSolution(doc, "a.gh");
+            state.EndSolution(doc);
+            state.EndSolution(doc);
+            Assert.False(state.IsSolving(doc));
+            Assert.Equal(2, state.LastSolve(doc).Generation);
+
+            // A later solve starts from depth one again: a single end finishes it.
+            state.BeginSolution(doc, "a.gh");
+            Assert.Equal(1, state.ActiveSolve.Depth);
+            state.EndSolution(doc);
+            Assert.False(state.IsSolving(doc));
+            Assert.Equal(3, state.LastSolve(doc).Generation);
+        }
+
+        [Fact]
+        public void ForgetDocument_MidNestedSolve_ClearsTheWholeDepth()
+        {
+            var state = NewState(new FakeClock());
+            var doc = Guid.NewGuid();
+
+            state.BeginSolution(doc, "a.gh");
+            state.BeginSolution(doc, "a.gh");
+            state.ForgetDocument(doc);
+
+            Assert.False(state.IsSolving(doc));
+            state.BeginSolution(doc, "a.gh");
+            Assert.Equal(1, state.ActiveSolve.Depth);
         }
 
         [Fact]

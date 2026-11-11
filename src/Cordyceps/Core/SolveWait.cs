@@ -10,8 +10,15 @@ namespace Cordyceps.Core
         /// <summary>A solve finished after the ticket was taken; its record is attached.</summary>
         Completed,
 
-        /// <summary>The budget ran out first. The solve may still be running or not yet started.</summary>
+        /// <summary>The budget ran out while the document was solving: the solve is still running.</summary>
         OverBudget,
+
+        /// <summary>
+        /// The budget ran out with the document idle and no solve finished since the ticket: the
+        /// scheduled solve never ran (the global solver lock went on, the editor was not there to
+        /// fire the schedule, or the document raises no solution events).
+        /// </summary>
+        NotStarted,
 
         /// <summary>The document stopped being tracked (it closed) before a solve finished.</summary>
         Gone,
@@ -96,8 +103,12 @@ namespace Cordyceps.Core
                 if (IsAnswered(ticket, reading))
                     return new SolveWaitResult(SolveWaitOutcome.Completed, reading.Record, elapsed);
 
+                // At the deadline, say which wait ran out. Not answered and not solving means no
+                // solve has finished since the ticket and none is running: calling that "still
+                // running" would send the caller to wait for something that is not happening.
                 if (elapsed >= budget)
-                    return new SolveWaitResult(SolveWaitOutcome.OverBudget, null, elapsed);
+                    return new SolveWaitResult(
+                        reading.Solving ? SolveWaitOutcome.OverBudget : SolveWaitOutcome.NotStarted, null, elapsed);
 
                 var left = budget - elapsed;
                 sleep(left < poll ? left : poll);

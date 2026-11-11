@@ -69,12 +69,12 @@ namespace Cordyceps.Tests
         }
 
         [Fact]
-        public void Wait_GenerationNeverPasses_IsOverBudget_AtExactlyTheBudget()
+        public void Wait_StillSolvingAtTheDeadline_IsOverBudget_AtExactlyTheBudget()
         {
             var clock = new SleepClock();
             var ticket = new SolveTicket(Guid.NewGuid(), 2);
 
-            var result = SolveWait.Wait(ticket, _ => Reading(2, false), TimeSpan.FromMilliseconds(250),
+            var result = SolveWait.Wait(ticket, _ => Reading(2, true), TimeSpan.FromMilliseconds(250),
                 TimeSpan.FromMilliseconds(100), clock.Read, clock.Sleep);
 
             Assert.Equal(SolveWaitOutcome.OverBudget, result.Outcome);
@@ -82,6 +82,41 @@ namespace Cordyceps.Tests
             Assert.Equal(TimeSpan.FromMilliseconds(250), result.Elapsed);
             // The last sleep is trimmed to the budget left, so the wait never overshoots it.
             Assert.Equal(new[] { 100, 100, 50 }, clock.Sleeps.ConvertAll(s => (int)s.TotalMilliseconds));
+        }
+
+        [Fact]
+        public void Wait_IdleAtTheDeadline_WithNoFinishedSolve_IsNotStarted()
+        {
+            // Nothing solving and the generation never passed the ticket: the scheduled solve never
+            // ran. Reporting "still running" would send the caller to wait for nothing.
+            var clock = new SleepClock();
+            var ticket = new SolveTicket(Guid.NewGuid(), 2);
+
+            var result = SolveWait.Wait(ticket, _ => Reading(2, false), TimeSpan.FromMilliseconds(250),
+                TimeSpan.FromMilliseconds(100), clock.Read, clock.Sleep);
+
+            Assert.Equal(SolveWaitOutcome.NotStarted, result.Outcome);
+            Assert.Null(result.Record);
+            Assert.Equal(TimeSpan.FromMilliseconds(250), result.Elapsed);
+        }
+
+        [Fact]
+        public void Wait_TheDeadlineReadingDecides_NotAnEarlierOne()
+        {
+            // Solving early in the wait, idle at the deadline with nothing finished: not started
+            // is judged on the last reading, and the reverse case is over budget.
+            var clock = new SleepClock();
+            var ticket = new SolveTicket(Guid.NewGuid(), 0);
+            var readings = 0;
+
+            var idleAtEnd = SolveWait.Wait(ticket, _ => Reading(0, ++readings < 3), TimeSpan.FromMilliseconds(200),
+                TimeSpan.FromMilliseconds(100), clock.Read, clock.Sleep);
+            Assert.Equal(SolveWaitOutcome.NotStarted, idleAtEnd.Outcome);
+
+            readings = 0;
+            var solvingAtEnd = SolveWait.Wait(ticket, _ => Reading(0, ++readings >= 3), TimeSpan.FromMilliseconds(200),
+                TimeSpan.FromMilliseconds(100), clock.Read, clock.Sleep);
+            Assert.Equal(SolveWaitOutcome.OverBudget, solvingAtEnd.Outcome);
         }
 
         [Fact]
@@ -140,7 +175,7 @@ namespace Cordyceps.Tests
                     now = ++sleeps == 1 ? now.AddMinutes(-1) : now + by;
                 });
 
-            Assert.Equal(SolveWaitOutcome.OverBudget, result.Outcome);
+            Assert.Equal(SolveWaitOutcome.NotStarted, result.Outcome);
             Assert.True(result.Elapsed >= TimeSpan.Zero);
         }
 
@@ -226,6 +261,51 @@ namespace Cordyceps.Tests
             var result = await waiter.WaitAsync(TimeSpan.FromSeconds(10));
             Assert.Equal(SolveWaitOutcome.Completed, result.Outcome);
             Assert.Equal(2, result.Record.Generation);
+        }
+
+        [Fact]
+        public async Task Wait_ScheduledSolveThatNeverStarts_ReportsNotStarted_AtItsBudget()
+        {
+            // The ticket is taken, but no solve ever begins (a schedule that was dropped).
+            var state = new SolverState();
+            var doc = Guid.NewGuid();
+            var ticket = state.TakeTicket(doc);
+
+            var budget = TimeSpan.FromMilliseconds(300);
+            var stopwatch = Stopwatch.StartNew();
+            var result = await Task.Run(() => SolveWait.Wait(ticket, state.Observe, budget))
+                .WaitAsync(TimeSpan.FromSeconds(10));
+            stopwatch.Stop();
+
+            Assert.Equal(SolveWaitOutcome.NotStarted, result.Outcome);
+            Assert.True(stopwatch.Elapsed >= budget - TimeSpan.FromMilliseconds(20),
+                $"returned after {stopwatch.Elapsed.TotalMilliseconds} ms, before its {budget.TotalMilliseconds} ms budget");
+        }
+
+        [Fact]
+        public async Task Wait_AcrossANestedSolve_CompletesOnlyWhenTheOutermostSolveEnds()
+        {
+            // begin, begin (a solution started inside the first), then the inner end while the
+            // waiter runs: the waiter must keep waiting until the outer end.
+            var state = new SolverState();
+            var doc = Guid.NewGuid();
+            var ticket = state.TakeTicket(doc);
+            state.BeginSolution(doc, "outer.gh");
+            state.BeginSolution(doc, "outer.gh");
+
+            var waiter = Task.Run(() => SolveWait.Wait(ticket, state.Observe, TimeSpan.FromSeconds(30)));
+
+            state.EndSolution(doc);
+            var early = await Task.WhenAny(waiter, Task.Delay(TimeSpan.FromMilliseconds(250)));
+            Assert.NotSame(waiter, early);
+            Assert.True(state.IsSolving(doc));
+
+            state.EndSolution(doc, TimeSpan.FromSeconds(2));
+
+            var result = await waiter.WaitAsync(TimeSpan.FromSeconds(10));
+            Assert.Equal(SolveWaitOutcome.Completed, result.Outcome);
+            Assert.Equal(1, result.Record.Generation);
+            Assert.Equal(TimeSpan.FromSeconds(2), result.Record.Span);
         }
 
         [Fact]

@@ -80,6 +80,30 @@ namespace Cordyceps.Tests
             Assert.Equal(SolveState.SolverDisabled, SolvePolicy.Refusal(documentEnabled: false, solutionsEnabled: true));
         }
 
+        [Fact]
+        public void Refusal_SwitchesOnButNotWatched_IsNotWatched()
+        {
+            // A solve whose end cannot be seen is not scheduled: a waiter could only ever report a
+            // spent budget about it.
+            Assert.Equal(SolveState.NotWatched, SolvePolicy.Refusal(true, true, watching: () => false));
+            Assert.Null(SolvePolicy.Refusal(true, true, watching: () => true));
+        }
+
+        [Theory]
+        [InlineData(true, false)]
+        [InlineData(false, true)]
+        [InlineData(false, false)]
+        public void Refusal_ASwitchOff_NeverAsksAboutWatching(bool documentEnabled, bool solutionsEnabled)
+        {
+            // Asking can start watching (adopting) a document, which a refused solve must not do.
+            var asked = 0;
+            var refusal = SolvePolicy.Refusal(documentEnabled, solutionsEnabled, watching: () => { asked++; return false; });
+
+            Assert.NotNull(refusal);
+            Assert.NotEqual(SolveState.NotWatched, refusal);
+            Assert.Equal(0, asked);
+        }
+
         // ---------------------------------------------------------------- wait outcomes
 
         [Theory]
@@ -87,6 +111,7 @@ namespace Cordyceps.Tests
         [InlineData(SolveWaitOutcome.Completed, true, SolveState.Aborted)]
         [InlineData(SolveWaitOutcome.OverBudget, false, SolveState.OverBudget)]
         [InlineData(SolveWaitOutcome.OverBudget, true, SolveState.OverBudget)]
+        [InlineData(SolveWaitOutcome.NotStarted, false, SolveState.NotStarted)]
         [InlineData(SolveWaitOutcome.Gone, false, SolveState.DocumentClosed)]
         public void FromWait_MapsEachOutcomeToOneState(SolveWaitOutcome outcome, bool aborted, SolveState expected)
         {
@@ -122,6 +147,8 @@ namespace Cordyceps.Tests
             Assert.Equal("solutions_locked", SolvePolicy.Name(SolveState.SolutionsLocked));
             Assert.Equal("document_closed", SolvePolicy.Name(SolveState.DocumentClosed));
             Assert.Equal("scheduled", SolvePolicy.Name(SolveState.Scheduled));
+            Assert.Equal("not_started", SolvePolicy.Name(SolveState.NotStarted));
+            Assert.Equal("not_watched", SolvePolicy.Name(SolveState.NotWatched));
         }
 
         [Fact]
@@ -145,6 +172,25 @@ namespace Cordyceps.Tests
             Assert.Contains("cannot cancel", remedy);
             Assert.Contains("gh_inspect(action='connection')", remedy);
             Assert.Contains("gh_inspect(action='status')", remedy);
+        }
+
+        [Fact]
+        public void Remedy_NotStarted_SaysTheSolveNeverRan_AndHowToCheck()
+        {
+            var remedy = SolvePolicy.Remedy(SolveState.NotStarted);
+            Assert.Contains("never ran", remedy);
+            Assert.Contains("Lock Solver", remedy);
+            Assert.Contains("gh_inspect(action='connection')", remedy);
+            Assert.Contains("retry", remedy);
+            Assert.DoesNotContain("still running", remedy);
+        }
+
+        [Fact]
+        public void Remedy_NotWatched_PointsAtTheBridgeComponent()
+        {
+            var remedy = SolvePolicy.Remedy(SolveState.NotWatched);
+            Assert.Contains("Cordyceps component", remedy);
+            Assert.Contains("scheduled none", remedy);
         }
 
         [Fact]
@@ -189,6 +235,8 @@ namespace Cordyceps.Tests
         [InlineData(SolveState.SolverDisabled)]
         [InlineData(SolveState.SolutionsLocked)]
         [InlineData(SolveState.DocumentClosed)]
+        [InlineData(SolveState.NotStarted)]
+        [InlineData(SolveState.NotWatched)]
         public void RecomputeReply_AnythingButCompleted_IsAFailureCarryingTheStateAndRemedy(SolveState state)
         {
             var reply = JObject.Parse(SolvePolicy.RecomputeReply(state, 5000, null, null));
@@ -226,6 +274,10 @@ namespace Cordyceps.Tests
 
             var disabled = SolvePolicy.ScheduledField(SolveState.SolverDisabled);
             Assert.Equal("solver_disabled", disabled.Value<string>("state"));
+
+            var unwatched = SolvePolicy.ScheduledField(SolveState.NotWatched);
+            Assert.Equal("not_watched", unwatched.Value<string>("state"));
+            Assert.Equal(SolvePolicy.Remedy(SolveState.NotWatched), unwatched.Value<string>("remedy"));
         }
     }
 }

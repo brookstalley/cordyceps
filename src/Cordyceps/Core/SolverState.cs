@@ -23,19 +23,27 @@ namespace Cordyceps.Core
         Blocked,
     }
 
-    /// <summary>An in-progress solution: which document, and when it started.</summary>
+    /// <summary>An in-progress solution: which document, when it started, and how deeply nested.</summary>
     public sealed class DocumentSolve
     {
-        public DocumentSolve(Guid documentId, string documentName, DateTime startedUtc)
+        public DocumentSolve(Guid documentId, string documentName, DateTime startedUtc, int depth = 1)
         {
             DocumentId = documentId;
             DocumentName = documentName;
             StartedUtc = startedUtc;
+            Depth = depth;
         }
 
         public Guid DocumentId { get; }
         public string DocumentName { get; }
         public DateTime StartedUtc { get; }
+
+        /// <summary>
+        /// How many solution starts are open. More than one when a solution starts inside another
+        /// (a component calling <c>NewSolution</c> from its own solve); the document is solving
+        /// until every one of them has ended.
+        /// </summary>
+        public int Depth { get; }
     }
 
     /// <summary>
@@ -270,6 +278,10 @@ namespace Cordyceps.Core
         private readonly ConcurrentDictionary<Guid, SolveRecord> _lastSolve =
             new ConcurrentDictionary<Guid, SolveRecord>();
 
+        // Serialises the begin/end/forget writes, which read a document's depth and write it back.
+        // Readers never take it: they read the dictionaries, whose entries are immutable.
+        private readonly object _solveWriteGate = new object();
+
         // 0 means "never stamped". Written by the UI thread, read by HTTP worker threads.
         private long _lastHeartbeatTicks;
 
@@ -358,45 +370,59 @@ namespace Cordyceps.Core
         public int SolvingCount => _solving.Count;
 
         /// <summary>
-        /// Record that <paramref name="documentId"/> began solving. Re-entering while that document
-        /// is already marked solving keeps the ORIGINAL start time, so <c>solving_since</c> reports
-        /// how long the caller has actually been waiting rather than restarting the clock on a
-        /// nested or re-raised event.
+        /// Record that <paramref name="documentId"/> began solving. A start while that document is
+        /// already solving is a nested solution: it deepens the solve and keeps the ORIGINAL start
+        /// time, so <c>solving_since</c> reports how long the caller has actually been waiting
+        /// rather than restarting the clock.
         /// </summary>
         public void BeginSolution(Guid documentId, string documentName)
         {
             var started = _clock();
-            _solving.AddOrUpdate(
-                documentId,
-                _ => new DocumentSolve(documentId, documentName, started),
-                (_, existing) => new DocumentSolve(documentId, documentName ?? existing.DocumentName, existing.StartedUtc));
+            lock (_solveWriteGate)
+            {
+                _solving[documentId] = _solving.TryGetValue(documentId, out var existing)
+                    ? new DocumentSolve(documentId, documentName ?? existing.DocumentName, existing.StartedUtc, existing.Depth + 1)
+                    : new DocumentSolve(documentId, documentName, started);
+            }
         }
 
         /// <summary>
-        /// Record that <paramref name="documentId"/> finished solving, and how. Ending a document
-        /// that was never marked solving must not throw: the state is self-correcting, because a
-        /// missed start event must not make a later end fail, and a stuck "solving" flag would
-        /// report a healthy bridge as permanently busy.
+        /// Record that one of <paramref name="documentId"/>'s solution starts ended, and how.
         ///
-        /// <para>Every call advances the document's generation, whether or not its start was seen.
-        /// Grasshopper raised the end, so a solve did finish, and a waiter must not miss it because
-        /// the matching start went unrecorded.</para>
+        /// <para>Inside a nested solve, an end only makes the solve shallower: the document is
+        /// still solving and nothing is published, so a waiter cannot take the inner solve's end
+        /// for the outer one's. The end that brings the depth to zero clears "solving" and
+        /// advances the generation, carrying that (outermost) solve's span and aborted flag.</para>
+        ///
+        /// <para>An end with no open start must not throw, and it still advances the generation:
+        /// Grasshopper raised it, so a solve did finish whose start went unseen. That happens when
+        /// the watcher attaches mid-solve, as it does from inside the bridge component's own first
+        /// solve. A second, unmatched end of the same solve is not something Grasshopper raises:
+        /// each solution raises one start and one end.</para>
         /// </summary>
         /// <param name="documentId">The document whose solve ended.</param>
         /// <param name="span">How long Grasshopper says the solve took, when known.</param>
         /// <param name="aborted">True when the solve was stopped before it finished.</param>
         public void EndSolution(Guid documentId, TimeSpan? span = null, bool aborted = false)
         {
-            // Clear "solving" before publishing the new generation, the reverse of the order
-            // Observe reads them in: a waiter that sees the new generation and then reads "not
-            // solving" is looking at a finished solve, never at the gap between the two writes.
-            _solving.TryRemove(documentId, out _);
-
             var ended = _clock();
-            _lastSolve.AddOrUpdate(
-                documentId,
-                _ => new SolveRecord(1, ended, span, aborted),
-                (_, existing) => new SolveRecord(existing.Generation + 1, ended, span, aborted));
+            lock (_solveWriteGate)
+            {
+                if (_solving.TryGetValue(documentId, out var open) && open.Depth > 1)
+                {
+                    _solving[documentId] = new DocumentSolve(documentId, open.DocumentName, open.StartedUtc, open.Depth - 1);
+                    return;
+                }
+
+                // Clear "solving" before publishing the new generation, the reverse of the order
+                // Observe reads them in: a waiter that sees the new generation and then reads "not
+                // solving" is looking at a finished solve, never at the gap between the two writes.
+                _solving.TryRemove(documentId, out _);
+                _lastSolve.AddOrUpdate(
+                    documentId,
+                    _ => new SolveRecord(1, ended, span, aborted),
+                    (_, existing) => new SolveRecord(existing.Generation + 1, ended, span, aborted));
+            }
         }
 
         /// <summary>
@@ -426,9 +452,12 @@ namespace Cordyceps.Core
         /// </summary>
         public SolveTicket TakeTicket(Guid documentId)
         {
-            var record = _lastSolve.GetOrAdd(documentId, _ => new SolveRecord(0, null, null, false));
-            var generation = IsSolving(documentId) ? record.Generation + 1 : record.Generation;
-            return new SolveTicket(documentId, generation);
+            lock (_solveWriteGate)
+            {
+                var record = _lastSolve.GetOrAdd(documentId, _ => new SolveRecord(0, null, null, false));
+                var generation = IsSolving(documentId) ? record.Generation + 1 : record.Generation;
+                return new SolveTicket(documentId, generation);
+            }
         }
 
         /// <summary>
@@ -451,8 +480,11 @@ namespace Cordyceps.Core
         /// </summary>
         public void ForgetDocument(Guid documentId)
         {
-            _solving.TryRemove(documentId, out _);
-            _lastSolve.TryRemove(documentId, out _);
+            lock (_solveWriteGate)
+            {
+                _solving.TryRemove(documentId, out _);
+                _lastSolve.TryRemove(documentId, out _);
+            }
             var active = Volatile.Read(ref _activeDocument);
             if (active != null && active.DocumentId == documentId)
                 Volatile.Write(ref _activeDocument, null);
