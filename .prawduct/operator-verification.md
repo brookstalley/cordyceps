@@ -774,3 +774,68 @@ outline does need real files and real runtime messages.
 21. Clear a slider's and a panel's nickname in Grasshopper (rename to nothing), then run
     `gh_inspect(action='status')`: each entry's `name` is its type name (`Number Slider`, `Panel`),
     never an empty string. Note what nickname a freshly placed slider and panel actually carry.
+
+## VRF-022 — script-rebuild Chunks 01–03 — reshaping a script's ports rebuilds it; removing a port refuses a default nickname
+
+**Status:** pending
+**Added:** 2026-11-11 (script-rebuild)
+**Where to verify:** Rhino 8 + Grasshopper with the Cordyceps component placed and an MCP client connected.
+
+**Why this needs a human:** the decisions are unit-tested host-free (`Core/ScriptConfigurePlan`,
+`Core/PortRemoval`, `Core/ScriptSignature`, and the `ScriptProgram` vocabulary), but the rebuild is
+a conversation with a live script component (`Core/ScriptComponents.RebuildForChange`), and whether
+a reshaped Python or C# script really runs a program built for its new ports after a `zoomable`
+call is a fact of the running host. The refusal re-resolves the id against the live document and
+reads which nicknames Grasshopper treats as default for script components and Merge.
+
+**Canvas for the checks:** a fresh C# Script, a fresh Python 3 Script and a fresh Merge, each left
+at its default nickname and each the only object of its type (note the nicknames the canvas shows;
+use them below as `<cs>`, `<py>` and `<merge>`). Wire a Number Slider into every input of each.
+Note each component's GUID; the GUID steps re-run a refused call by id.
+
+**Verify:**
+
+1. **configure, parameters only, rebuilds (C#):** `gh_script(action='set', id='<cs GUID>')` with a
+   body that reads `x` and writes `a`, then `gh_script(action='configure', id='<cs GUID>',
+   inputs='[{"name":"x","type":"double"},{"name":"y","type":"double"},{"name":"z","type":"double"}]')`
+   with no `code`. The response carries `rebuilt: true` and a `verified` (or `verificationSkipped`
+   with a reason); `codeSet` is absent; a Panel on `a` shows values from the new program on the
+   next solve. A follow-up `gh_script(action='get')` shows the running program's signature carries
+   `z`.
+2. **configure that changes nothing:** `configure` on a component that cannot vary its parameters
+   (any non-script, non-variable component, by GUID) with `inputs` returns `success: false`,
+   `parametersApplied: false`, a `parametersError`, `rebuilt: false` and `rebuildSkipped` saying
+   nothing changed.
+3. **zoomable on a Python script rebuilds:** `gh_canvas(action='zoomable', id='<py>', operation='add')`
+   adds an input and the reply carries `rebuilt` and `verified`/`verificationSkipped`. Write code
+   that reads the new input (`gh_script set` by GUID) and confirm on the canvas that it runs with
+   the new port; then, without writing code, `zoomable add` once more and confirm the next solve
+   does not error about the program's ports.
+4. **zoomable on a C# script rebuilds:** `zoomable add` with `id='<cs>'` replies with `rebuilt`;
+   `gh_script(action='get')` shows the running signature includes the new input.
+   `zoomable set_count` to the current count (by GUID) replies `rebuilt: false` with
+   `rebuildSkipped` saying nothing changed.
+5. **zoomable on Merge is unchanged:** `zoomable add` with `id='<merge>'` succeeds by the default
+   nickname and the reply has the same fields as before this branch (`success`, `id`, `operation`,
+   `side`, `index`, `parameterName`, `newCount`) and no `rebuilt`/`verified`/`rebuildSkipped`.
+6. **Refusals — zoomable:** `zoomable operation='remove'` with `id='<merge>'` fails with an error
+   starting `This call removes input '…', and every wire on it, so nothing was changed.` followed by
+   the default-nickname teaching text and the id to pass; the Merge keeps every input and wire.
+   The same call by GUID removes the port. `zoomable operation='set_count', count=1` by
+   `<merge>` is refused the same way (naming every port past the first); by GUID it succeeds.
+7. **Refusals — gh_script:** `configure` with `id='<cs>'` and `inputs` that drop `y` (or rename it)
+   is refused with `This call removes input 'y', …` and the component, its ports and its wires are
+   untouched (`gh_script info`). `gh_script(action='set', id='<cs>')` with code whose `RunScript`
+   signature omits an input it has today is refused the same way; by GUID it applies and returns
+   `lostConnections`. `configure` with `inputs='[]'` by `<cs>` is refused naming every input.
+8. **Non-refusals:** by default nickname, each of these succeeds: `zoomable add` on `<merge>` and
+   `<py>`; `zoomable set_count` upward on `<merge>`; `configure` on `<cs>` whose `inputs` keep every
+   existing name and add one; `configure` on `<cs>` with only `code` whose signature keeps the
+   ports; `set` on `<py>` (Python ports are not derived from code); `set` on `<cs>` with top-level
+   statements and no `RunScript`. A `zoomable remove` with an out-of-range `index` by `<merge>`
+   fails on the index (`Invalid index …`), not on the nickname.
+9. **Port changes the refusal does not predict:** after step 7's `set` by GUID, and after a
+   code-only `configure`, note whether Rhino itself added or removed a port while storing or
+   building the source (the code-only `configure` route also calls the component's own
+   `SyncParameters`). The refusal predicts only the ports Cordyceps' own sync removes; a port Rhino
+   removes is outside it. Record what you see.

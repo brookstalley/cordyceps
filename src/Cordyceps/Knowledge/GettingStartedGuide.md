@@ -50,7 +50,9 @@ gh_inspect(action='status')
 
 **Updating script code**: `gh_script(action='set')` preserves connections for params whose names survive unchanged. If params are renamed or removed, the response includes `lostConnections` — an array directly usable with `gh_wire(action='connect')` to restore wiring.
 
-**Configuring params**: `gh_script(action='configure')` preserves wires the same way — params matching by name keep their connections, and removed/renamed params come back in `lostConnections`. It's a partial update: omit a side (don't pass `inputs` or `outputs`) to leave it untouched, or pass `[]` to explicitly clear that side. So configuring only `inputs` no longer wipes your outputs.
+**Configuring params**: `gh_script(action='configure')` preserves wires the same way — params matching by name keep their connections, and removed/renamed params come back in `lostConnections`. It's a partial update: omit a side (don't pass `inputs` or `outputs`) to leave it untouched, or pass `[]` to explicitly clear that side. So configuring only `inputs` no longer wipes your outputs. A parameter-only `configure` still rebuilds the component's program — the build reads the parameters to shape the program's ports — and every `configure` response says whether that happened, via `rebuilt`/`rebuildSkipped`.
+
+**Removing a port is destructive**: a `set` or `configure` that drops or renames an existing port cuts that port's wires, so it never selects the component by its default nickname, even a unique one. Pass the id the error prints. Calls that only add or keep ports are unaffected.
 
 ## Groups
 
@@ -64,6 +66,10 @@ gh_inspect(action='status')
 - `gh_canvas(action='zoomable', id='...', operation='set_count', side='input', count=4)` — set total param count
 
 Operations: `add`, `remove`, `set_count`. Params: `side` ('input'/'output', default 'input'), `index`, `count`. Use `gh_canvas(action='info')` to list current params.
+
+`remove`, and a `set_count` below the current count, cut the wires on the ports they remove, so they never select the component by a default nickname (`Merge`), even a unique one; `add` and a growing `set_count` still accept it.
+
+On a C# or Python script component, `zoomable` rebuilds the program after reshaping its ports (the program is compiled against them) and the reply carries `rebuilt`/`verified` exactly as `gh_script(action='configure')` does.
 
 ## Data Modifiers (Flatten / Graft / Simplify / Reverse)
 
@@ -111,7 +117,9 @@ the call, and nothing is created or wired.
   nicknames such as `Circle` count too, so they work while only one Circle is on the canvas,
   except on the actions that remove something: `delete`, `group_delete`, `gh_wire disconnect` and
   `gh_wire clear` refuse a default nickname (and the default group name `Group`) even when it is
-  unique. The error prints the id to pass, or rename the object first and pass the new name
+  unique, and so does any call that removes an existing port (`zoomable` remove or a shrinking
+  `set_count`; `gh_script set`/`configure` dropping or renaming a port). The error prints the id to
+  pass, or rename the object first and pass the new name
 
 A nickname two objects share acts on nothing: the error lists both ids
 (`'Pt' is the nickname of 2 objects: 1a2b3c4d Point, 5e6f7a8b Point; name one by its id`). A near miss gets `Did you mean`.

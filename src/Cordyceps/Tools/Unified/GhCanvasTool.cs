@@ -304,7 +304,9 @@ namespace Cordyceps.Tools.Unified
                         "side: 'input' or 'output' (default: 'input')",
                         "operation: 'add', 'remove', 'set_count'",
                         "count: target number for 'set_count'",
-                        "index: specific position for 'add'/'remove'"
+                        "index: specific position for 'add'/'remove'",
+                        "remove, and a set_count below the current count, cut the wires on the ports they remove, so they never select the component by a default nickname (one every new object of the type gets, like 'Merge'), even a unique one: pass the id the error prints. add and a growing set_count accept it",
+                        "On a C# or Python script component the program is compiled against its ports, so a reshape rebuilds it before the call returns and the reply carries rebuilt/rebuildSkipped/rebuildFailed and verified/verificationSkipped, meaning exactly what they do for gh_script(action='configure'). Other components (Merge, Entwine, Gate) have no program and get no rebuild fields"
                     }
                 },
                 ["modifier"] = new ActionInfo
@@ -346,7 +348,7 @@ namespace Cordyceps.Tools.Unified
             [Description("Component type for 'add' (exact name, 'Category/Name', 'Category/Subcategory/Name', or GUID; never matched partially), search query for 'search', or type filter for 'list'")] string type = null,
             [Description("X position")] double x = double.NaN,
             [Description("Y position")] double y = double.NaN,
-            [Description("Object: GUID, 8+ hex GUID prefix, or unique nickname; on group_* actions: a group name or id. delete and group_delete never take a default nickname or the default group name 'Group'")] string id = null,
+            [Description("Object: GUID, 8+ hex GUID prefix, or unique nickname; on group_* actions: a group name or id. delete, group_delete and a zoomable call that removes a port never take a default nickname or the default group name 'Group'")] string id = null,
             [Description("JSON array of objects, each a GUID, 8+ hex GUID prefix, or unique nickname (for delete, not a default nickname)")] string ids = null,
             [Description("JSON array of moves: [{id,x,y},...]; each id is an object: GUID, 8+ hex GUID prefix, or unique nickname")] string moves = null,
             [Description("Nickname for rename/find/add")] string nickname = null,
