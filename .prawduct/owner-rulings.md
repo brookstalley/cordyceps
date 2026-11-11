@@ -33,7 +33,9 @@ cannot block the release. Please get to as high confidence as you can, but we wi
 that." On agent-callable `gh_document undo`/`redo`: "yes leave undo/redo off for agents for now."
 On moving `.prawduct/change-log.md` onto change fragments: "yes move to fragments." Landed in #91
 (the Windows acceptance box becomes non-blocking) and in the edit-transaction plan's Goals once
-drafted; the fragment move rides its own chore branch.
+drafted. The fragment move needed no work: c5710df had already moved every pending entry, and
+`prawduct-hook migrate-change-log` (dry run, 2026-11-11) reports nothing to do; `change-log.md`
+holds shipped history only.
 
 **2026-11-11 (later).** On the script-rebuild plan's inferences: "agreed" — `zoomable` on a
 script component rebuilds and reports rather than refusing (#84), and the default-nickname refusal
