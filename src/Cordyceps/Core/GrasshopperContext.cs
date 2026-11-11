@@ -122,6 +122,19 @@ namespace Cordyceps.Core
         }
 
         /// <summary>
+        /// Run <paramref name="body"/> on the UI thread as one edit of <paramref name="doc"/>: every
+        /// change it records becomes one Grasshopper undo step named <paramref name="name"/>, and a
+        /// body that throws is rolled back so the canvas is left as it was. Returns the body's JSON
+        /// reply plus <c>undo</c> (the record's name) when a record was pushed, and <c>solve</c> when
+        /// a solver switch refused the solve; or, after a rollback, an error with <c>rolledBack</c>.
+        /// Callable from inside <see cref="ExecuteOnUiThread{T}(Func{T})"/>, where it runs inline;
+        /// an edit reached from inside another edit of the same document joins it.
+        /// See <see cref="Edits.EditTransaction"/> for the rules a body follows.
+        /// </summary>
+        internal string Edit(GH_Document doc, string name, Func<Edits.EditTransaction, string> body)
+            => ExecuteOnUiThread(() => Edits.EditTransaction.Run(doc, name, body));
+
+        /// <summary>
         /// Get the active Grasshopper document
         /// Must be called from UI thread
         /// </summary>
