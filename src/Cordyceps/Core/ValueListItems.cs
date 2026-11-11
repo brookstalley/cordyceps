@@ -152,6 +152,26 @@ namespace Cordyceps.Core
             return kept;
         }
 
+        /// <summary>
+        /// The index of the item a value list reports as its value, read from each item's
+        /// <c>Selected</c> flag: the first selected item; with none selected, item 0 in a dropdown,
+        /// sequence or cycle (which outputs item 0), and none (-1) in a check list (which outputs
+        /// nothing) or an empty list.
+        ///
+        /// <para>Callers pass the flags rather than reading <c>GH_ValueList.SelectedItems</c>, because
+        /// that getter selects item 0 itself when a dropdown has nothing selected: a read would make
+        /// a document change that no undo record holds.</para>
+        /// </summary>
+        /// <param name="selected">Each item's <c>Selected</c> flag, in list order.</param>
+        /// <param name="checkList">True for a check list.</param>
+        public static int ReportedIndex(IReadOnlyList<bool> selected, bool checkList)
+        {
+            if (selected == null) throw new ArgumentNullException(nameof(selected));
+            for (int i = 0; i < selected.Count; i++)
+                if (selected[i]) return i;
+            return checkList || selected.Count == 0 ? -1 : 0;
+        }
+
         private static bool TryField(JObject obj, string key, string fallback, int index, out string text, out string error)
         {
             text = null;

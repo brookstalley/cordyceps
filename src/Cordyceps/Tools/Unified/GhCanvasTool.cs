@@ -531,16 +531,16 @@ namespace Cordyceps.Tools.Unified
 
                 component.Attributes.Pivot = new PointF((float)x, (float)y);
 
-                // Validate slider configuration BEFORE adding to the document so an
-                // unparseable value never leaves a half-configured slider on the canvas.
-                // Parity with action='config': an invalid value is an explicit error,
-                // never a silent success with the value ignored.
+                // Validate slider configuration BEFORE adding to the document, so a setting the
+                // slider cannot hold refuses the call and never leaves a half-configured slider on
+                // the canvas. A lone min or max is checked against the new slider's own range.
                 SliderConfigPlan sliderPlan = null;
-                if (component is GH_NumberSlider)
+                if (component is GH_NumberSlider newSlider)
                 {
-                    sliderPlan = SliderConfig.Plan(min, max, value, decimals);
-                    if (sliderPlan.ValueInvalid)
-                        return ToolHelpers.ErrorResponse($"Invalid number: {value}");
+                    sliderPlan = SliderConfig.Plan(min, max, value, decimals,
+                        newSlider.Slider.Minimum, newSlider.Slider.Maximum);
+                    if (sliderPlan.Error != null)
+                        return ToolHelpers.ErrorResponse(sliderPlan.Error);
                 }
 
                 return _context.Edit(doc, EditReplies.RecordName("gh_canvas", "add"), tx =>
@@ -1041,7 +1041,11 @@ namespace Cordyceps.Tools.Unified
                 var panel = new GH_Panel();
                 panel.CreateAttributes();
                 panel.Attributes.Pivot = new PointF((float)x, (float)y);
-                panel.SetUserText(value);
+                // UserText, not SetUserText: SetUserText also calls ExpireSolution(true), which
+                // would solve outside the edit. The rest of what it does, expiring the layout so
+                // the panel draws the new text, is done here; the commit's solve fills its data.
+                panel.UserText = value;
+                panel.Attributes.ExpireLayout();
                 panel.NickName = nickname ?? "";
 
                 // The panel is new, so its text is set before the add and needs no record; the

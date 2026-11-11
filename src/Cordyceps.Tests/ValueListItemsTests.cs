@@ -150,5 +150,34 @@ namespace Cordyceps.Tests
         {
             Assert.Empty(ValueListItems.SelectionAfterReplace(new[] { "A" }, new string[0], multiSelect: false));
         }
+
+        [Theory]
+        [InlineData(false)]
+        [InlineData(true)]
+        public void Reported_IsTheFirstSelectedItem(bool checkList)
+        {
+            Assert.Equal(1, ValueListItems.ReportedIndex(new[] { false, true, true }, checkList));
+        }
+
+        [Fact]
+        public void Reported_DropdownWithNothingSelected_IsItemZero()
+        {
+            // A dropdown, sequence or cycle with nothing selected outputs item 0, so that is its value.
+            Assert.Equal(0, ValueListItems.ReportedIndex(new[] { false, false }, checkList: false));
+        }
+
+        [Fact]
+        public void Reported_CheckListWithNothingChecked_IsNone()
+        {
+            Assert.Equal(-1, ValueListItems.ReportedIndex(new[] { false, false }, checkList: true));
+        }
+
+        [Theory]
+        [InlineData(false)]
+        [InlineData(true)]
+        public void Reported_EmptyList_IsNone(bool checkList)
+        {
+            Assert.Equal(-1, ValueListItems.ReportedIndex(new bool[0], checkList));
+        }
     }
 }

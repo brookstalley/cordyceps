@@ -41,14 +41,12 @@ namespace Cordyceps.Tools.Unified
                 }
                 else if (component is GH_ValueList valueList)
                 {
-                    // Read without SelectedItems, which selects item 0 itself when a dropdown has
-                    // nothing selected: a read must not change the document. A dropdown, sequence
-                    // or cycle with nothing selected outputs item 0, so that is what it reports;
-                    // a check list with nothing checked outputs nothing.
-                    var selected = valueList.ListMode == GH_ValueListMode.CheckList
-                        ? valueList.ListItems.FirstOrDefault(i => i.Selected)
-                        : valueList.FirstSelectedItem;
-                    currentValue = selected?.Name ?? "(none)";
+                    // Read from the items' flags: SelectedItems selects item 0 itself when a
+                    // dropdown has nothing selected, and a read must not change the document.
+                    int shown = ValueListItems.ReportedIndex(
+                        valueList.ListItems.Select(i => i.Selected).ToList(),
+                        checkList: valueList.ListMode == GH_ValueListMode.CheckList);
+                    currentValue = shown < 0 ? "(none)" : valueList.ListItems[shown].Name;
                     valueType = "value_list";
                 }
 
@@ -155,24 +153,13 @@ namespace Cordyceps.Tools.Unified
                 if (component is GH_NumberSlider slider)
                 {
                     // Shares Core.SliderConfig with the 'add' action so both configure a slider
-                    // identically (GHC-7X4B). Range is applied before value because SetSliderValue
-                    // clamps to the current range.
-                    SliderConfigPlan plan;
-                    try
-                    {
-                        plan = SliderConfig.Plan(min, max, value, decimals);
-                    }
-                    catch (OverflowException)
-                    {
-                        // A slider holds decimals: a min, max or value beyond decimal's range, or
-                        // not a finite number, cannot be stored, and is refused before any change.
-                        return ToolHelpers.ErrorResponse($"min, max and value must be finite numbers within ±{decimal.MaxValue.ToString("E2", CultureInfo.InvariantCulture)}");
-                    }
-
-                    // Parity with action='set': an unparseable value is an explicit error, applied
-                    // before any mutation — never a silent success with the value ignored.
-                    if (plan.ValueInvalid)
-                        return ToolHelpers.ErrorResponse($"Invalid number: {value}");
+                    // identically. The plan refuses, before any change, whatever the slider cannot
+                    // hold, checking the range against the bounds the call leaves as they are. Range
+                    // is applied before value because SetSliderValue clamps to the current range.
+                    var plan = SliderConfig.Plan(min, max, value, decimals,
+                        slider.Slider.Minimum, slider.Slider.Maximum);
+                    if (plan.Error != null)
+                        return ToolHelpers.ErrorResponse(plan.Error);
 
                     // A setting equal to the current one changes nothing; when none differs, the
                     // call records nothing and pushes no undo step.
