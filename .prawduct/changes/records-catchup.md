@@ -4,6 +4,7 @@ type: governance
 scope: records-catchup
 date: 2026-11-11
 title: mark shipped work released, archive finished plans, trim CLAUDE.md
+closes: [brookstalley/cordyceps#79]
 ---
 **Why:** the owner ruled on 2026-11-11 (`.prawduct/owner-rulings.md`) to mark released the 13
 change fragments whose work shipped in v1.4.10 through v1.5.0 but never carried a release tag, and to
@@ -24,6 +25,5 @@ bring CLAUDE.md under its ~150-line guideline.
   `docs/architecture.md`, and the binding rules it carried stay in CLAUDE.md as a short list.
 - `.prawduct/owner-rulings.md` is new and records the 2026-11-11 rulings.
 
-**Consumer note:**
-
+## Consumer note
 none: governance records only; no product behaviour changed.
