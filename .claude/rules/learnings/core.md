@@ -28,7 +28,7 @@ strategy from the spec's *shape* (`Core/ParamSpecLookup.IsAsciiInteger`), not fr
 particular parse succeeded. Pin invariant culture while you are there; a machine-facing contract
 must not read differently under a `tr-TR` Rhino.
 
-- Build-plan `## Status` boxes are hand-ticked (`regen-views` is inert): tick each after its chunk's review passes, the last only after a `cumulative-final` review; a box is only as true as whoever last touched it.
+- Build-plan `## Status` boxes are hand-ticked (`regen-views` is inert): tick each after its chunk's review passes; on a `cumulative-final` plan hold the last until that review passes. A box is only as true as whoever last touched it.
 
 ### Refresh stale `.test-evidence.json` via the hook, not by hand
 

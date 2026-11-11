@@ -19,7 +19,7 @@ bring CLAUDE.md under its ~150-line guideline.
   `strict-inputs`, `canvas-read`, and this one.
 - Two plans that shipped in v1.5.0 were archived by `plan-backfill`. `build-plan-reliability.md` had six
   status boxes nobody ticked after PR #26 merged. `build-plan-janitor-2026-07-02.md` had no `scope:`
-  frontmatter and no `## Status` section (backlog #79). Both were ticked, with a note that the live
+  frontmatter and no `## Status` section (backlog #79). Both were ticked; the reliability plan notes that its live
   checks VRF-009 and VRF-010 stay pending in the operator queue.
 - CLAUDE.md drops from 204 to under 150 lines: the component and tool inventory moved to
   `docs/architecture.md`, and the binding rules it carried stay in CLAUDE.md as a short list. The
@@ -27,6 +27,8 @@ bring CLAUDE.md under its ~150-line guideline.
 - `.prawduct/owner-rulings.md` is new and records the 2026-11-11 rulings.
 - The learnings rule about hand-ticked Status boxes, which cited the reliability plan as still unticked,
   is rewritten as one line in the format the learnings files now require; its rule is unchanged.
+- The `active_build_plan` comment in `.prawduct/project-state.yaml` no longer describes plans that
+  were archived or never existed; it says how a checkout's plan is found.
 
 ## Consumer note
 none: governance records only; no product behaviour changed.
