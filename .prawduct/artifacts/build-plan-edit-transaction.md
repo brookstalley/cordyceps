@@ -104,6 +104,10 @@ Chunk 06 is `cumulative-final`).
 - **Not in scope:** agent-callable undo/redo (owner); batch (#96); sweep (#97); Rhino-side undo
   (#60); a fallback that restores a pre-apply archive when rollback cannot finish (reported
   instead; revisit if VRF-024 finds a family whose rollback fails).
+- **Edit commits and the solve:** `SolveCoordinator.Schedule(doc, expireAll: false)` returns a
+  refusal state when a solver switch is off. An edit reports that as an informational `solve`
+  field and never fails because of it: the edit happened, and the human may have switched the
+  solver off on purpose.
 - **Decisions made mid-build:** *(one line each, naming what settled it)*
 - **Level:** Medium. The design is proven on macOS through Hyperceps and is said to be tested on
   Windows. The per-family undo choices, lossy third-party serialization, and the pause's visible
@@ -182,6 +186,9 @@ Chunk 06 is `cumulative-final`).
   - `move` records `CreatePivotEvent`.
   - `rename` records `CreateNickNameEvent`.
   - `add` no longer leaves an object on the canvas when a step after `AddObject` throws.
+  - Carried from solve-policy's verify pass (observation): `GhDocumentTool.WaitsForSolve`, which
+    decides which actions read `timeout`, moves into `src/Cordyceps/Core/SolvePolicy.cs` with a
+    test, because this chunk edits `GhDocumentTool.cs` anyway.
 - **Deliverables:** `src/Cordyceps/Tools/Unified/GhCanvasTool.cs`,
   `src/Cordyceps/Tools/Unified/GhDocumentTool.cs` (`clear` only).
 - **Tests:** any new decision logic is host-free and tested; host glue is covered by VRF-024.
