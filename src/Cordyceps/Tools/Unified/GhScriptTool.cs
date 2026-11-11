@@ -150,7 +150,7 @@ namespace Cordyceps.Tools.Unified
                 if (!ToolHelpers.TryGetUnprotectedComponent(_context, id, out var component, out var error))
                     return ToolHelpers.ErrorResponse(error);
 
-                string source = TryGetScriptSource(component);
+                string source = ScriptComponents.ReadSource(component);
                 if (source == null)
                 {
                     return JsonConvert.SerializeObject(new
@@ -174,7 +174,7 @@ namespace Cordyceps.Tools.Unified
                 // built code, which Rhino keeps separately — so a clean round-trip of 'source' is
                 // not on its own evidence that a write took effect (issue #33).
                 var comparison = ScriptProgram.CompareRunning(component, source);
-                LogProbes(comparison.Probes);
+                ScriptComponents.LogProbes(comparison.Probes);
                 if (!comparison.Readable)
                     DebugLog.Info($"[ActionGet] running program unreadable on {component.GetType().Name} — {comparison.Reason}");
 
@@ -192,7 +192,7 @@ namespace Cordyceps.Tools.Unified
                 if (!ToolHelpers.TryGetUnprotectedComponentWithDoc(_context, id, out var doc, out var component, out var error))
                     return ToolHelpers.ErrorResponse(error);
 
-                if (!IsScriptComponent(component))
+                if (!ScriptComponents.IsScriptComponent(component))
                 {
                     return JsonConvert.SerializeObject(new
                     {
@@ -225,7 +225,7 @@ namespace Cordyceps.Tools.Unified
                     // component executing its previous program (issue #33). Ask for the rebuild
                     // after the params are settled — the rebuild reads them — and verify the write
                     // landed by reading the running program back.
-                    var rebuildFields = RebuildAndVerify(component, finalSource);
+                    var rebuildFields = ScriptComponents.RebuildAndVerify(component, finalSource);
 
                     // Only expire — don't trigger a full document solution.
                     // Inside clusters, ExpireSolution(true) or NewSolution(true) on the
@@ -376,7 +376,7 @@ namespace Cordyceps.Tools.Unified
                         // and the rebuild reads the params to shape the code's inputs and outputs —
                         // which is why reshaping those params needs the rebuild every bit as much
                         // as writing new code does, even when this call wrote none.
-                        rebuildFields = RebuildForConfigure(component, parametersChanged, writtenSource, codeSet == false);
+                        rebuildFields = ScriptComponents.RebuildForChange(component, parametersChanged, writtenSource, codeSet == false);
 
                         ghComponent.ExpireSolution(false);
 
@@ -417,7 +417,7 @@ namespace Cordyceps.Tools.Unified
 
                             // See the parameter branch above: the write alone leaves the previous
                             // program running, so ask for the rebuild once the params are final.
-                            rebuildFields = RebuildForConfigure(component, parametersChanged, finalSource, sourceWriteFailed: false);
+                            rebuildFields = ScriptComponents.RebuildForChange(component, parametersChanged, finalSource, sourceWriteFailed: false);
 
                             ghComponent.ExpireSolution(false);
                             configured = true;
@@ -464,7 +464,7 @@ namespace Cordyceps.Tools.Unified
                 // returning nothing, so a caller never has to read an absent rebuild field as an
                 // answer.
                 if (rebuildFields == null)
-                    rebuildFields = RebuildForConfigure(component, parametersChanged, writtenSource, codeSet == false);
+                    rebuildFields = ScriptComponents.RebuildForChange(component, parametersChanged, writtenSource, codeSet == false);
 
                 var finalInputs = new List<object>();
                 var finalOutputs = new List<object>();
@@ -524,7 +524,7 @@ namespace Cordyceps.Tools.Unified
                 if (!(component is IGH_Component ghComponent))
                     return ToolHelpers.ErrorResponse("Not a component");
 
-                string source = TryGetScriptSource(component);
+                string source = ScriptComponents.ReadSource(component);
 
                 var inputs = new List<object>();
                 foreach (var param in ghComponent.Params.Input)
@@ -805,19 +805,6 @@ namespace Cordyceps.Tools.Unified
             return result;
         }
 
-        private bool IsScriptComponent(IGH_DocumentObject component)
-        {
-            if (component == null) return false;
-            var typeName = component.GetType().Name;
-            if (typeName.Contains("Script") || typeName.Contains("Python") || typeName.Contains("CSharp"))
-                return true;
-            // Last resort: anything Cordyceps can actually write source to counts. This probes the
-            // Code-property fallback as well as SetSource, so a script component that exposes only
-            // Code (and whose type name gives nothing away) isn't rejected here before the write
-            // cascade ever gets a chance to run.
-            return ScriptSourceWriter.CanWrite(component);
-        }
-
         /// <summary>
         /// Write <paramref name="finalSource"/> to a script component through
         /// <see cref="ScriptSourceWriter"/>'s probe cascade, logging the probe trace and throwing
@@ -843,156 +830,6 @@ namespace Cordyceps.Tools.Unified
         }
 
         /// <summary>
-        /// The rebuild half of a <c>configure</c> response: rebuild when the call changed something,
-        /// and name the reason when it did not. Returns the fields to merge into the response.
-        /// </summary>
-        /// <remarks>
-        /// The single gate for every <c>configure</c> path, so a way of changing a component that
-        /// nobody thought to re-check cannot slip past unrebuilt <em>and</em> unreported — which is
-        /// what a gate reading "was source written?" let a parameter-only call do. The decision
-        /// itself lives in <see cref="ScriptConfigurePlan"/>, where it is unit-testable.
-        /// </remarks>
-        /// <param name="writtenSource">
-        /// The source this call wrote, or <c>null</c> when it wrote none. A parameter-only rebuild
-        /// is checked against the text the component already stores instead: after a rebuild the
-        /// two must agree, so it is the right expectation to hold the running program to.
-        /// </param>
-        private Dictionary<string, object> RebuildForConfigure(
-            IGH_DocumentObject component, bool parametersChanged, string writtenSource, bool sourceWriteFailed)
-        {
-            var plan = ScriptConfigurePlan.For(parametersChanged, writtenSource != null);
-            if (!plan.RebuildRequired)
-                return ScriptProgram.DescribeUnchanged(plan.SkipReason);
-
-            if (writtenSource != null)
-                return RebuildAndVerify(component, writtenSource);
-
-            // The params moved but the source write threw, so the component was rebuilt from the
-            // text it held BEFORE the failed write. Report no verification rather than a 'verified'
-            // about source the caller never sent — that field is read as "the new code is what will
-            // run", which is the false confirmation this whole path exists to remove.
-            if (sourceWriteFailed)
-            {
-                return RebuildAndVerify(component, expectedSource: null, noExpectationReason:
-                    "The source write failed, so the component was rebuilt from the text it already "
-                    + "held. Verifying against that would say nothing about the code you sent — see "
-                    + "codeSet and sourceError.");
-            }
-
-            return RebuildAndVerify(component, TryGetScriptSource(component));
-        }
-
-        /// <summary>
-        /// Ask <paramref name="component"/> to rebuild its program, then check the result by reading
-        /// back the program it will actually run and comparing it with
-        /// <paramref name="expectedSource"/>. Returns the fields to merge into the tool response.
-        /// </summary>
-        /// <remarks>
-        /// <para>Writing source stores text; it does not recompile. Rhino builds a <c>Code</c> from
-        /// the script and keeps running that one, so a component whose source was replaced goes on
-        /// executing its previous program until something invalidates the build (issue #33). Every
-        /// source-changing path inside Rhino pairs the store with a rebuild; this is ours. The build
-        /// also reads the component's parameters to shape the program's inputs and outputs, so a
-        /// call that only reshaped those parameters needs this just as much.</para>
-        /// <para>A component with no rebuild hooks is reported, not failed — Rhino 7's GhPython and
-        /// other <c>Code</c>-property components rebuild from their own source member instead. A
-        /// hook that <em>threw</em> is the opposite fact and gets its own key and a warning in the
-        /// log, because such a component is probably still running its previous program.</para>
-        /// </remarks>
-        /// <param name="expectedSource">
-        /// The text the running program should be built from; <c>null</c> when the caller has none
-        /// to offer, which is reported rather than compared against.
-        /// </param>
-        /// <param name="noExpectationReason">
-        /// What to report when <paramref name="expectedSource"/> is <c>null</c> and the caller knows
-        /// why better than this does. Omitted, the reason is that the component has no readable
-        /// stored source.
-        /// </param>
-        private static Dictionary<string, object> RebuildAndVerify(
-            IGH_DocumentObject component, string expectedSource, string noExpectationReason = null)
-        {
-            var typeName = component.GetType().Name;
-
-            var rebuild = ScriptProgram.Rebuild(component);
-            LogProbes(rebuild.Probes);
-            if (rebuild.Failed)
-                DebugLog.Warn($"[RebuildAndVerify] rebuild hook failed on {typeName} — {rebuild.Reason}");
-            else if (!rebuild.Rebuilt)
-                DebugLog.Info($"[RebuildAndVerify] no rebuild hook on {typeName} — {rebuild.Reason}");
-
-            // A null expectation still reads the program — it just does not judge it.
-            var comparison = ScriptProgram.CompareRunning(component, expectedSource);
-            LogProbes(comparison.Probes);
-
-            if (expectedSource == null)
-            {
-                // Nothing to hold the program against, so no verdict is reported. The program
-                // itself is a separate fact and the most useful one such a response can carry, so
-                // hand it over unjudged rather than dropping it with the verdict.
-                var uncomparable = ScriptProgram.NotCompared(noExpectationReason
-                    ?? $"'{typeName}' has no readable stored source to compare its running program against.");
-                DebugLog.Info($"[RebuildAndVerify] nothing to verify the rebuild against on {typeName} — {uncomparable.Reason}");
-
-                var fields = ScriptProgram.DescribeWrite(rebuild, uncomparable);
-                if (comparison.Readable)
-                    fields["runningSource"] = comparison.RunningSource;
-                return fields;
-            }
-
-            if (!comparison.Readable)
-                DebugLog.Info($"[RebuildAndVerify] could not verify the write on {typeName} — {comparison.Reason}");
-
-            return ScriptProgram.DescribeWrite(rebuild, comparison);
-        }
-
-        /// <summary>
-        /// Send a probe trace to the debug log. The reflection cascades cannot log themselves —
-        /// they are linked into the unit-test project, where the Rhino logging host does not exist.
-        /// </summary>
-        private static void LogProbes(IReadOnlyList<string> probes)
-        {
-            foreach (var probe in probes)
-                DebugLog.Debug($"ScriptProgram: {probe}");
-        }
-
-        private string TryGetScriptSource(IGH_DocumentObject component)
-        {
-            var tryGetSourceMethod = component.GetType().GetMethod("TryGetSource");
-            if (tryGetSourceMethod != null)
-            {
-                try
-                {
-                    var parameters = new object[] { null };
-                    var result = tryGetSourceMethod.Invoke(component, parameters);
-                    if (result is bool success && success)
-                        return parameters[0] as string;
-                }
-                catch (Exception ex) { DebugLog.Debug($"TryGetScriptSource: TryGetSource() invoke failed: {ex.Message}"); }
-            }
-
-            // Best-effort probe cascade: try each known source-access member and fall through to the
-            // next when it's absent/throws. Debug-logged (off by default) so a probe miss is traceable
-            // without normal-run noise.
-            try { dynamic sc = component; return sc.Source; }
-            catch (Exception ex) { DebugLog.Debug($"TryGetScriptSource: dynamic .Source unavailable: {ex.Message}"); }
-            try { dynamic sc = component; return sc.ScriptSource; }
-            catch (Exception ex) { DebugLog.Debug($"TryGetScriptSource: dynamic .ScriptSource unavailable: {ex.Message}"); }
-            try { dynamic sc = component; return sc.Code; }
-            catch (Exception ex) { DebugLog.Debug($"TryGetScriptSource: dynamic .Code unavailable: {ex.Message}"); }
-
-            var sourceProp = component.GetType().GetProperty("Source")
-                ?? component.GetType().GetProperty("ScriptSource")
-                ?? component.GetType().GetProperty("Code");
-            if (sourceProp != null)
-            {
-                try { return sourceProp.GetValue(component) as string; }
-                catch (Exception ex) { DebugLog.Debug($"TryGetScriptSource: {sourceProp.Name} getter failed: {ex.Message}"); }
-            }
-
-            return null;
-        }
-
-        /// <summary>
         /// Preserve the script component's Rhino 8 language directive (e.g. "#! python 3",
         /// "// #! csharp") when <paramref name="code"/> omits it. SetSource() replaces the whole
         /// body, so a directive-less body would otherwise strip the component's language and
@@ -1000,7 +837,7 @@ namespace Cordyceps.Tools.Unified
         /// present in <paramref name="code"/> is respected as-is.
         /// </summary>
         private string PreserveLanguageDirective(IGH_DocumentObject component, string code)
-            => ScriptDirective.Preserve(TryGetScriptSource(component), code);
+            => ScriptDirective.Preserve(ScriptComponents.ReadSource(component), code);
 
         /// <summary>
         /// Configure-path parameter sync. Reshapes only the <em>provided</em> sides (a null def list

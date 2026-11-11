@@ -304,7 +304,8 @@ namespace Cordyceps.Tools.Unified
                         "side: 'input' or 'output' (default: 'input')",
                         "operation: 'add', 'remove', 'set_count'",
                         "count: target number for 'set_count'",
-                        "index: specific position for 'add'/'remove'"
+                        "index: specific position for 'add'/'remove'",
+                        "On a C# or Python script component the program is compiled against its ports, so a reshape rebuilds it before the call returns and the reply carries rebuilt/rebuildSkipped/rebuildFailed and verified/verificationSkipped, meaning exactly what they do for gh_script(action='configure'). Other components (Merge, Entwine, Gate) have no program and get no rebuild fields"
                     }
                 },
                 ["modifier"] = new ActionInfo
