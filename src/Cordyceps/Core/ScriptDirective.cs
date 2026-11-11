@@ -46,6 +46,16 @@ namespace Cordyceps.Core
         /// <summary>True when the first line of <paramref name="code"/> is a language directive.</summary>
         public static bool HasDirective(string code) => ExtractDirective(code) != null;
 
+        /// <summary>
+        /// True when the first line of <paramref name="code"/> is a Python directive: <c>#!</c>
+        /// itself, not C#'s <c>// #!</c> form.
+        /// </summary>
+        public static bool HasPythonDirective(string code)
+        {
+            var directive = ExtractDirective(code);
+            return directive != null && directive.TrimStart(Bom, ' ', '\t').StartsWith("#!", StringComparison.Ordinal);
+        }
+
         /// <summary>The component type name of Rhino 8's unified "Script" component.</summary>
         private const string UnifiedScriptComponentTypeName = "ScriptComponent";
 

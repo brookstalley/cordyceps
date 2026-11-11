@@ -54,6 +54,8 @@ Critic mode: one `cumulative` review at the end (a three-chunk plan; Chunk 03 is
 - **Constraints:** validate-then-mutate (learnings, core): resolve and decide everything before
   the first document mutation. Decision logic goes in a host-free `Core/` file, linked into the
   test project, with tests. All document access through `ExecuteOnUiThread`.
+- **Merge order:** `chore/records-catchup` (which adds `.prawduct/owner-rulings.md`, cited above)
+  merges to develop before this branch, so the citation resolves on develop.
 - **Release:** the refusals in Chunk 03 are a breaking change for callers that remove ports by a
   default nickname. It ships in the next major, which the owner ruled waits for the transaction wave.
 - **Not in scope:** the outline/tree naming questions (owner, open); `group_remove`; #92 (python

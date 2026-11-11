@@ -83,9 +83,10 @@ namespace Cordyceps.Core
         /// not. Returns the fields to merge into the response.
         /// </summary>
         /// <remarks>
-        /// The single gate for every route that reshapes a script component, so a way of changing
-        /// one cannot slip past unrebuilt <em>and</em> unreported, as a gate reading "was source
-        /// written?" lets a parameter-only change do. The decision itself lives in
+        /// The gate for every route that reshapes a script's ports (<c>configure</c> and
+        /// <c>zoomable</c>), so a way of changing one cannot slip past unrebuilt <em>and</em>
+        /// unreported, as a gate reading "was source written?" lets a parameter-only change do.
+        /// <c>set</c> always writes source, so it calls <see cref="RebuildAndVerify"/> directly. The decision itself lives in
         /// <see cref="ScriptConfigurePlan"/>, where it is unit-testable.
         /// </remarks>
         /// <param name="parametersChanged">True when the call actually reshaped the component's ports.</param>

@@ -75,10 +75,7 @@ namespace Cordyceps.Core
         {
             if (string.IsNullOrEmpty(code))
                 return false;
-            var directive = ScriptDirective.ExtractDirective(code);
-            if (directive != null && directive.TrimStart('﻿', ' ', '\t').StartsWith("#!", StringComparison.Ordinal))
-                return true;
-            return PythonRunScript.IsMatch(code);
+            return ScriptDirective.HasPythonDirective(code) || PythonRunScript.IsMatch(code);
         }
 
         /// <summary>

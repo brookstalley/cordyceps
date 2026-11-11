@@ -4,7 +4,7 @@ type: feature
 scope: script-rebuild
 date: 2026-11-11
 title: a script component never keeps running a program its ports no longer match
-closes: [brookstalley/cordyceps#84]
+closes: [brookstalley/cordyceps#84, brookstalley/cordyceps#107]
 ---
 **Why:** a Rhino 8 script component compiles its program from its source and its ports together:
 the `RunScript` signature is shaped by the parameters. Storing new source or reshaping the ports
@@ -42,7 +42,14 @@ fallback: the ports Cordyceps' sync removes are computable from the code and the
 names. What it cannot predict is a port Rhino changes on its own while storing or building source
 (the code-only `configure` route also calls the component's `SyncParameters`); VRF-022 step 9 asks
 the operator to record whether that happens. `group_remove` stays outside the rule (Inference 3,
-put back to the owner).
+put back to the owner); #107 asked only about ports, so this work closes it.
+
+**Found at integration:** two older defects. The signature reader recognised Python only by type
+name, so Python source in the language-neutral Script component read as a C# signature with no
+inputs and the sync removed every input. Python is now recognised from the source as it will be
+stored (with the component's kept language line), in the removal check and in both syncs.
+`configure` reshaped any variable-parameter component as if it were a script; it now refuses
+non-script components as `set` does.
 
 **Verification:** host-free decisions unit-tested (`ScriptConfigurePlanTests`, the `ScriptProgram`
 additions, `PortRemovalTests`, `ScriptSignatureTests`); Release build clean. The rebuild after a
@@ -50,4 +57,4 @@ additions, `PortRemovalTests`, `ScriptSignatureTests`); Release build clean. The
 VRF-022.
 
 ## Consumer note
-breaking: a call that removes an existing port no longer selects its component by a default nickname, even a unique one: `gh_canvas zoomable` with `operation='remove'` or a `set_count` below the current count, and `gh_script set`/`configure` whose `RunScript` signature or `inputs`/`outputs` drop or rename a port. The error starts `This call removes …` and prints the id to pass; nothing is changed. Calls that only add or keep ports are unaffected. Also: `gh_script configure` with only `inputs`/`outputs` now rebuilds and every `configure` response carries `rebuilt`/`rebuildSkipped`; a refused parameter side reports `parametersApplied:false` and `success:false`; `gh_canvas zoomable` on a script component rebuilds and carries the same rebuild fields.
+breaking: a call that removes an existing port no longer selects its component by a default nickname, even a unique one: `gh_canvas zoomable` with `operation='remove'` or a `set_count` below the current count, and `gh_script set`/`configure` whose `RunScript` signature or `inputs`/`outputs` drop or rename a port. The error starts `This call removes …` and prints the id to pass; nothing is changed. Calls that only add or keep ports on a script are unaffected. breaking: `gh_script configure` on a component that is not a script (a Merge, an Entwine) is refused with `is not a script component`; use `gh_canvas zoomable` for those. Also: `gh_script configure` with only `inputs`/`outputs` now rebuilds and every `configure` response carries `rebuilt`/`rebuildSkipped`; a refused parameter side reports `parametersApplied:false` and `success:false`; `gh_canvas zoomable` on a script component rebuilds and carries the same rebuild fields.

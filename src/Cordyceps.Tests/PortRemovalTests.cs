@@ -242,6 +242,17 @@ namespace Cordyceps.Tests
         }
 
         [Fact]
+        public void ForSourceSync_PythonDirectiveWithoutDef_RemovesNothing()
+        {
+            // The source as it will be stored keeps the component's language line, so a Python body
+            // that calls RunScript without defining it is still Python, not an untyped C# signature.
+            const string code = "#! python 3\nresult = RunScript(x, y)";
+            var r = PortRemoval.ForSourceSync("ScriptComponent", code, new[] { "x", "y" }, new[] { "a" });
+
+            Assert.True(r.IsEmpty);
+        }
+
+        [Fact]
         public void ForSourceSync_NoSignature_RemovesNothing()
         {
             // Top-level statements declare no ports, so the sync leaves them alone.

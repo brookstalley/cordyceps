@@ -1,8 +1,9 @@
 namespace Cordyceps.Core
 {
     /// <summary>
-    /// Host-free decision for <c>gh_script(action='configure')</c>: given what the call actually
-    /// changed on a script component, must its program be rebuilt — and when it must not, why not.
+    /// Host-free decision for any call that may reshape a script component
+    /// (<c>gh_script(action='configure')</c>, <c>gh_canvas(action='zoomable')</c>): given what the call actually
+    /// changed on it, must its program be rebuilt — and when it must not, why not.
     ///
     /// <para>Storing source does not recompile, and a rebuild reads the component's parameters to
     /// shape the program's inputs and outputs (see <see cref="ScriptProgram"/>). So <em>either</em>

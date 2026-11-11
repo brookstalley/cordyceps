@@ -207,13 +207,14 @@ namespace Cordyceps.Tools.Unified
 
                 // The ports a C# RunScript signature declares replace the current ones by name, so
                 // a signature that drops or renames a port cuts its wires. Decided before the write,
-                // so a refused call changes nothing.
-                if (!ToolHelpers.TryConfirmPortRemoval(doc, id, component, SourceSyncRemoval(component, code), out var refusal))
+                // so a refused call changes nothing. Both read the source as it will be stored, with
+                // the component's language line kept, so Python is never read as a C# signature.
+                var finalSource = PreserveLanguageDirective(component, code);
+                if (!ToolHelpers.TryConfirmPortRemoval(doc, id, component, SourceSyncRemoval(component, finalSource), out var refusal))
                     return ToolHelpers.ErrorResponse(refusal);
 
                 try
                 {
-                    var finalSource = PreserveLanguageDirective(component, code);
                     WriteScriptSource(component, finalSource);
 
                     // Surgically sync params instead of SetParametersFromScript(),
@@ -221,7 +222,7 @@ namespace Cordyceps.Tools.Unified
                     List<object> lostConnections = null;
                     try
                     {
-                        SyncScriptParams(component, code, out var lost);
+                        SyncScriptParams(component, finalSource, out var lost);
                         if (lost.Count > 0) lostConnections = lost;
                     }
                     catch (Exception paramEx)
@@ -330,7 +331,8 @@ namespace Cordyceps.Tools.Unified
                 // A configure that drops or renames an existing port cuts its wires, so it is decided
                 // here, before the first mutation, from the same plan each route below executes.
                 if (!ToolHelpers.TryConfirmPortRemoval(doc, id, component,
-                        ConfigureRemoval(ghComponent, inputDefs, outputDefs, code), out var refusal))
+                        ConfigureRemoval(ghComponent, inputDefs, outputDefs,
+                            string.IsNullOrEmpty(code) ? code : PreserveLanguageDirective(component, code)), out var refusal))
                     return ToolHelpers.ErrorResponse(refusal);
 
                 bool configured = false;
@@ -431,7 +433,7 @@ namespace Cordyceps.Tools.Unified
                             languageWarning = ScriptDirective.LanguageWarning(component.GetType().Name, finalSource);
                             // Best-effort param sync after SetSource: not all script-component types
                             // expose every hook, so a failure here is non-fatal — log at Debug and continue.
-                            try { SyncScriptParams(component, code, out _); }
+                            try { SyncScriptParams(component, finalSource, out _); }
                             catch (Exception syncEx) { DebugLog.Debug($"SyncScriptParams skipped: {syncEx.Message}"); }
                             try { scriptComp.SyncParameters(); }
                             catch (Exception syncEx) { DebugLog.Debug($"SyncParameters skipped: {syncEx.Message}"); }
