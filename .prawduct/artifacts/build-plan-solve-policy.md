@@ -1,0 +1,173 @@
+---
+artifact: build-plan
+version: 2
+scope: solve-policy
+branch: feature/solve-policy
+base: develop
+working-branches: []
+last_validated: 2026-11-11
+depends_on: []
+governed_by: [.prawduct/artifacts/project-preferences.md, .prawduct/artifacts/boundary-patterns.md]
+partition: serial, delegated — one Opus delegate in an isolated worktree builds 01 then 02, because 02's wait reads the per-document solve record 01 adds to `SolverState`; the coordinator owns integration, the full suite, the review and the records
+---
+
+# Build Plan — one solve policy: every Cordyceps solve is scheduled, bounded, and honest about aborts
+
+Branch: `feature/solve-policy` (off `develop` at 89c3f2c). One PR.
+Critic mode: one `cumulative` review at the end (a two-chunk plan; Chunk 02 is `cumulative-final`).
+
+## Goals
+
+- **Response taken:** proceed, citing #95 and the owner's ruling of 2026-11-11 (release after the
+  transaction wave, `.prawduct/owner-rulings.md`). This is the first plan of that wave. The edit
+  transaction (#91) is the next plan, and its commit hands its solve to the coordinator built
+  here.
+- **Product:** an agent that asks Cordyceps to solve gets an answer that is true. A solve that
+  finished reports `completed`. A solve the human stopped with Escape reports `aborted`, not a
+  result. A solve still running at the deadline reports `over_budget`. A disabled solver reports
+  which switch is off and who can turn it back on. No Cordyceps call holds the document lock or the
+  UI-work bracket while Grasshopper solves.
+- **Architecture:** one `SolveCoordinator` owns every solve Cordyceps starts. Batch (#96), sweep
+  (#97) and the edit transaction (#91) use it rather than calling `NewSolution` themselves.
+- **Facts this plan rests on** (read in the decompiled Grasshopper SDK, 2026-11-11; Chunk 02's
+  verify-api step re-checks them against the shipped assembly):
+  1. `GH_Document.NewSolution` sets `SolutionState = Aborted` inside `SolveAllObjects`, then
+     overwrites it with `PostProcess` before raising `SolutionEnd`. So `SolutionState == Aborted`
+     is never true after a solve returns. `AbortRequested` (set from `IsEscapeKeyDown()` and
+     during the solve) survives until the next solution starts. **Consequence:** the shipped
+     `LastSolutionAborted` flag (`src/Cordyceps/Core/Canvas/CanvasReader.cs`, and the `tree`
+     solver-off text in `src/Cordyceps/Tools/Unified/GhInspectTool.Tree.cs`) can never be true.
+     That is a defect, and Chunk 01 fixes it.
+  2. When the global `GH_Document.EnableSolutions` is off (the canvas's "Lock solver"),
+     `NewSolution` returns before raising `SolutionStart`/`SolutionEnd`. A wait for completion
+     would never end, so the coordinator reports it up front. When only `doc.Enabled` is off, the
+     events fire and nothing is solved.
+  3. `ScheduleSolution(delay)` arms a timer whose tick marshals through
+     `Instances.DocumentEditor.BeginInvoke` and runs `NewSolution(false)` on the UI thread, unless
+     a solve is already in process. A scheduled solve is erased by any solution that starts first,
+     and that solution solves whatever we expired.
+  4. Public `GH_Document.ExpireSolution()` expires every object. It expires cluster hooks too, so
+     the cluster path keeps `ClusterSafeRecompute`'s source-object expiry.
+- **Inferences** (made on the owner's behalf; the boundary review shows them to the owner):
+  1. **Schedule, never solve synchronously.** The coordinator expires (cluster-safe) and calls
+     `ScheduleSolution` inside a short `ExecuteOnUiThread`, then returns. Any waiting happens off
+     the UI thread, outside the document lock. Why: a synchronous `NewSolution` inside
+     `InvokeAndWait` holds the lock for the whole solve, blocking every other request for up to
+     its 120 s timeout. It also makes a solver-exception modal read as "Cordyceps is working"
+     rather than "fetch a human", because `UiWorkInProgress` suppresses modal inference (Hyperceps
+     review, batch-execution §3).
+  2. **`recompute` waits; nothing else does yet.** `recompute` waits up to `timeout` seconds
+     (default 30, range 1–300, out of range refused per strict inputs) and reports
+     `solve: { state, elapsedMs, errors, warnings }` with state
+     `completed | aborted | over_budget | solver_disabled | solutions_locked`. `over_budget` means
+     the solve is still running. The reply says Cordyceps cannot cancel it and points to
+     `gh_inspect(action='status')`. `recomputed` stays, true only when `completed`. `solver`
+     (enable), `clear` and `revert` schedule through the coordinator and report
+     `solve: { state: "scheduled" }` without waiting. Single-step edits keep today's path (expire,
+     then the bridge component's scheduled refresh); the edit-transaction plan moves them onto the
+     coordinator.
+  3. **Abort truth lives in `SolverState`.** `SolutionWatcher` records, at `SolutionEnd`, a
+     per-document last-solve record: a generation counter, end time, span, and `AbortRequested`.
+     `outline` and `tree` read the aborted flag from that record. The wait detects completion as
+     "the generation advanced past the ticket and the document is not solving".
+  4. **No cancel action.** `GH_Document.RequestAbortSolution()` exists, but an agent cancelling a
+     human's solve is a new capability nobody asked for. Not built here.
+- **Constraints:** all document access through `ExecuteOnUiThread`. New decision logic goes in
+  host-free `Core/` files linked into the tests, with tests in the same chunk. A test named for a
+  timing contract drives real concurrency (learnings, tests). Validate before mutate.
+- **Norm dispositions:** `project-preferences.md`: conforms (few tools, many actions: no new tool;
+  strict inputs: `timeout` validated and refused when out of range). `boundary-patterns.md`: the
+  MCP action contract changes additively for `recompute`, `solver`, `clear` and `revert` (new
+  `solve` field, `recomputed` kept), conforms; the embedded docs contract is audited in Chunk 02;
+  the host API is foreign and gets a verify-api step.
+- **Release:** additive; ships in the next major with the transaction wave (owner, 2026-11-11).
+- **Not in scope:** the edit transaction and undo (#91); batch (#96); sweep (#97); cancelling a
+  solve; the bridge component's own refresh scheduling (`src/Cordyceps/CordycepsComponent.cs`).
+- **Decisions made mid-build:** *(one line each, naming what settled it)*
+- **Level:** Medium. The SDK facts come from decompiled source, not a live run. A scheduled solve
+  depends on `Instances.DocumentEditor` existing, which holds whenever the canvas is open. The
+  cluster-editor path is code-read only. Raised by VRF-023, which runs in live Rhino.
+
+## Today's behaviour this plan changes (verified in source on develop at 89c3f2c)
+
+- `GhDocumentTool.ActionRecompute`: refuses while solving or modal (kept), then calls
+  `ToolHelpers.ClusterSafeRecompute`, which runs `NewSolution` synchronously inside
+  `ExecuteOnUiThread`. Reply: `{ success, recomputed: true }`, with no outcome.
+- `ActionSolver(true)`, `ActionClear` and `ActionRevert` each call `NewSolution` directly and
+  synchronously.
+- `GrasshopperContext.RecomputeSolution` and `ScheduleRecompute` have no callers.
+- `CanvasReader` sets `LastSolutionAborted = doc.SolutionState == GH_ProcessStep.Aborted`, which
+  Fact 1 says is never true after a solve.
+
+## Build Chunks
+
+### Chunk 01: a true per-document solve record (generation, span, aborted) and a bounded wait
+
+- **Description:** Inference 3. `SolverState` keeps, per document, the last completed solve:
+  generation (increments on each `EndSolution`), end time, span, and aborted. `SolutionWatcher`'s
+  `SolutionEnd` handler passes `document.AbortRequested` and the event's span. A host-free
+  `SolveWait` waits for a ticket (document id plus the generation at scheduling) to complete within
+  a budget, polling an injected probe on an injected clock. It returns `Completed(record)`,
+  `OverBudget(elapsed)` or `Gone` (the document was forgotten). `CanvasReader` and the `tree`
+  solver text read the aborted flag from the record, not from `SolutionState`.
+- **Deliverables:**
+  - `src/Cordyceps/Core/SolverState.cs` (the record; `EndSolution` takes span and aborted;
+    `ForgetDocument` drops the record).
+  - `src/Cordyceps/Core/SolutionWatcher.cs` (passes `AbortRequested` and the span).
+  - new `src/Cordyceps/Core/SolveWait.cs`, linked into `src/Cordyceps.Tests/Cordyceps.Tests.csproj`.
+  - `src/Cordyceps/Core/Canvas/CanvasReader.cs`, `src/Cordyceps/Tools/Unified/GhInspectTool.Tree.cs`.
+  - tests: new `src/Cordyceps.Tests/SolveWaitTests.cs`; additions to the existing `SolverState`
+    tests.
+- **Tests:** the generation advances once per end; nested begin/end keeps today's start-time rule;
+  the aborted flag round-trips; `ForgetDocument` clears the record and a waiter reports `Gone`.
+  `SolveWait` completes when the generation passes the ticket, not before. It reports over budget
+  with a solve that never ends (a background solve simulated with a never-completing signal, per
+  the tests learning), and treats a generation that advanced while the document is still marked
+  solving as not done.
+- **Acceptance criteria:** an aborted solve is recorded as aborted, and outline and tree say so;
+  the wait is bounded and tested under real concurrency; the suite is green.
+
+### Chunk 02: SolveCoordinator; recompute waits and reports; solver, clear and revert schedule
+
+- **Foreign API:** Grasshopper `GH_Document` solve and schedule surface.
+- **Description:** Inferences 1, 2. A host-free `SolvePolicy` maps the solver flags
+  (`doc.Enabled`, `GH_Document.EnableSolutions`) and the wait outcome to a reported state, a
+  remedy and the reply's `solve` object. The host `SolveCoordinator.Schedule(doc)` runs on the UI
+  thread: refuse-or-report the locked or disabled solver; otherwise expire (the main canvas
+  through `doc.ExpireSolution()`, a cluster through the existing source-object expiry), take the
+  ticket, and call `ScheduleSolution`. `recompute` validates `timeout`, keeps its busy refusal,
+  schedules in one short UI call, waits off-thread through `SolveWait` (no lock held), then makes
+  one short UI call to count error and warning runtime messages. Fold
+  `ToolHelpers.ClusterSafeRecompute` into the coordinator. Delete the dead
+  `GrasshopperContext.RecomputeSolution` and `ScheduleRecompute`.
+- **Deliverables:**
+  - new `src/Cordyceps/Core/SolvePolicy.cs` (host-free, linked).
+  - new `src/Cordyceps/Core/SolveCoordinator.cs` (host).
+  - `src/Cordyceps/Tools/Unified/GhDocumentTool.cs` (`recompute` gains `timeout`; `solver`,
+    `clear` and `revert` go through the coordinator), `src/Cordyceps/Core/ToolHelpers.cs`,
+    `src/Cordyceps/Core/GrasshopperContext.cs`.
+  - tests: new `src/Cordyceps.Tests/SolvePolicyTests.cs`; strict-input tests for `timeout`.
+- **Done when:**
+  0. verify-api: re-read the facts in Goals against the Grasshopper assembly the project builds
+     with (decompile or reflect `GH_Document.NewSolution`, `ScheduleSolution`,
+     `ScheduleTimerTick`, `ExpireSolution()`, `AbortRequested`). Record any difference in
+     Decisions made mid-build before writing the coordinator.
+  1. Committed, then `/prawduct:critic cumulative` run and blocking findings resolved.
+- **Tests:** the policy table: each flag combination and wait outcome gives one state, one remedy
+  and one reply shape. `solutions_locked` never waits. `recomputed` is true only for
+  `completed`. `timeout` 0, 301 and non-numeric are refused before any document access.
+- **Documentation (whole plan, done in this chunk):** `ActionInfo` for `recompute` (the `timeout`
+  param, states, over-budget guidance), `solver`, `clear` and `revert` (the `solve` field);
+  `GetServerInstructions()` where it describes recompute and solver; `src/Cordyceps/Knowledge/CommonErrorsGuide.md`
+  (aborted, over budget, the two solver switches and who can flip each); `CHANGELOG.md` under
+  `## [Unreleased]` (Added: recompute outcome and timeout; Fixed: the last-solution-aborted flag
+  was never true; Changed: solver, clear and revert schedule their solve);
+  `.prawduct/operator-verification.md` new VRF-023 (live: Escape mid-solve reports aborted, a
+  slow definition reports over budget and the status probe stays live, Lock solver reports
+  locked, recompute inside a cluster editor); `.prawduct/changes/solve-policy.md` narrative and
+  consumer note.
+- **Type:** cumulative-final
+- **Acceptance criteria:** #95's three boxes hold: `recompute` solves through the helper and stays
+  cluster-safe; an over-budget solve is reported as over budget; an Escape-aborted solve is
+  reported as aborted. No production call to `NewSolution` remains outside the coordinator except
+  the bridge component's own refresh (grep evidence in the report). The suite is green.
