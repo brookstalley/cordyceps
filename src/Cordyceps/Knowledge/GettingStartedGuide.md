@@ -41,6 +41,10 @@ gh_document(action='solver', enabled=true)
 gh_inspect(action='status')
 ```
 
+Turning the solver on solves the definition and waits for it: read `solve.state` in its reply.
+`completed` means the `status` that follows is current; `over_budget` means the solve is still
+running, so poll `gh_inspect(action='connection')` until `solving` is false before reading `status`.
+
 ## Values
 
 - `gh_canvas(action='set', id='...', value='...')` — slider/panel/toggle
@@ -162,8 +166,9 @@ even when everything else is stuck. `ui: "blocked"` with `solving: true` means *
 
 `gh_document(action='recompute')` refuses (with `solving: true`) while a solution is already
 running, rather than queueing silently. Otherwise it waits for the solve (up to `timeout` seconds,
-default 30) and reports how it ended in `solve.state` (`completed`, `aborted`, `over_budget`, ...);
-`solver`, `clear` and `revert` schedule their solve and return at once. See `gh://docs/common-errors`.
+default 30) and reports how it ended in `solve.state` (`completed`, `aborted`, `over_budget`, ...).
+`solver` with `enabled=true` and `revert` wait and report the same way; `clear` only schedules its
+solve. See `gh://docs/common-errors`.
 
 ## Clusters
 

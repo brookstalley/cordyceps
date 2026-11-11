@@ -199,7 +199,6 @@ namespace Cordyceps.Tests
             clock.Advance(TimeSpan.FromSeconds(2));
             state.EndSolution(doc, TimeSpan.FromSeconds(2));
             Assert.Equal(1, state.LastSolve(doc).Generation);
-            Assert.Equal(T0.AddSeconds(2), state.LastSolve(doc).EndedUtc);
             Assert.Equal(TimeSpan.FromSeconds(2), state.LastSolve(doc).Span);
 
             state.BeginSolution(doc, "a.gh");

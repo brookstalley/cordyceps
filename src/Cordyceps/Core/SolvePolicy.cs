@@ -41,6 +41,44 @@ namespace Cordyceps.Core
         NotWatched,
     }
 
+    /// <summary>What one waited-for solve came to, as a reply reports it.</summary>
+    public sealed class SolveOutcome
+    {
+        public SolveOutcome(SolveState state, long? elapsedMs = null, long? solveMs = null, int? errors = null, int? warnings = null, bool documentEnabled = true)
+        {
+            State = state;
+            ElapsedMs = elapsedMs;
+            SolveMs = solveMs;
+            Errors = errors;
+            Warnings = warnings;
+            DocumentEnabled = documentEnabled;
+        }
+
+        public SolveState State { get; }
+
+        /// <summary>How long Cordyceps waited, schedule delay included.</summary>
+        public long? ElapsedMs { get; }
+
+        /// <summary>How long Grasshopper says the solve took; null when no solve ended or none was timed.</summary>
+        public long? SolveMs { get; }
+
+        /// <summary>Objects at error level after the solve; null when they were not counted.</summary>
+        public int? Errors { get; }
+
+        /// <summary>Objects at warning level after the solve; null when they were not counted.</summary>
+        public int? Warnings { get; }
+
+        /// <summary>The document's own solver switch, for the locked-solver remedy.</summary>
+        public bool DocumentEnabled { get; }
+
+        /// <summary>This outcome with the runtime-message counts added.</summary>
+        public SolveOutcome WithCounts(int? errors, int? warnings)
+            => new SolveOutcome(State, ElapsedMs, SolveMs, errors, warnings, DocumentEnabled);
+
+        /// <summary>The reply's <c>solve</c> object.</summary>
+        public JObject ToField() => SolvePolicy.SolveField(State, ElapsedMs, Errors, Warnings, DocumentEnabled, SolveMs);
+    }
+
     /// <summary>
     /// The decisions behind every solve Cordyceps starts: whether the solver switches allow one,
     /// what a wait's outcome means, what the caller should do about it, and the <c>solve</c> object
@@ -54,10 +92,16 @@ namespace Cordyceps.Core
         public const int MaxTimeoutSeconds = 300;
 
         /// <summary>
-        /// Parse <c>recompute</c>'s <c>timeout</c>: absent means the default; anything else must be a
-        /// whole number of seconds within range. The decision is made from the text's shape, not from
-        /// whether an Int32 parse succeeds, so <c>99999999999</c> is refused as out of range rather
-        /// than as "not a number", and nothing outside the range is silently clamped.
+        /// Parse the <c>timeout</c> of an action that waits for its solve (<c>recompute</c>,
+        /// <c>solver</c> with <c>enabled=true</c>, <c>revert</c>): absent means the default; anything
+        /// else must be a whole number of seconds within range.
+        ///
+        /// <para>The text arrives raw: a JSON number reaches a string parameter as its literal, so
+        /// <c>120</c>, <c>120.0</c> and <c>1.2e2</c> are all possible. Whatever is written as a JSON
+        /// number and has a whole value is accepted, as the int parameters accept a whole-valued
+        /// double. Whether it is a number is decided from its shape, not from whether a parse
+        /// succeeds, so an overflowing <c>99999999999</c> is refused as out of range rather than as
+        /// "not a number", and nothing outside the range is silently clamped.</para>
         /// </summary>
         public static bool TryParseTimeout(string raw, out int seconds, out string error)
         {
@@ -66,20 +110,22 @@ namespace Cordyceps.Core
             if (raw == null || raw.Length == 0) return true;
 
             var range = $"{MinTimeoutSeconds.ToString(CultureInfo.InvariantCulture)}-{MaxTimeoutSeconds.ToString(CultureInfo.InvariantCulture)}";
-            if (!IsAsciiInteger(raw))
+            var fallback = $"omit it for the default of {DefaultTimeoutSeconds.ToString(CultureInfo.InvariantCulture)}";
+            if (!IsJsonNumberShape(raw)
+                || !double.TryParse(raw, NumberStyles.Float, CultureInfo.InvariantCulture, out var value)
+                || double.IsNaN(value) || double.IsInfinity(value) || value != Math.Floor(value))
             {
-                error = $"timeout must be a whole number of seconds, {range} (got '{raw}'); omit it for the default of {DefaultTimeoutSeconds.ToString(CultureInfo.InvariantCulture)}";
+                error = $"timeout must be a whole number of seconds, {range} (got '{raw}'); {fallback}";
                 return false;
             }
 
-            if (!int.TryParse(raw, NumberStyles.AllowLeadingSign, CultureInfo.InvariantCulture, out var parsed)
-                || parsed < MinTimeoutSeconds || parsed > MaxTimeoutSeconds)
+            if (value < MinTimeoutSeconds || value > MaxTimeoutSeconds)
             {
-                error = $"timeout must be {range} seconds (got {raw}); omit it for the default of {DefaultTimeoutSeconds.ToString(CultureInfo.InvariantCulture)}";
+                error = $"timeout must be {range} seconds (got {raw}); {fallback}";
                 return false;
             }
 
-            seconds = parsed;
+            seconds = (int)value;
             return true;
         }
 
@@ -167,7 +213,7 @@ namespace Cordyceps.Core
                          + MaxTimeoutSeconds.ToString(CultureInfo.InvariantCulture) + " seconds) to wait longer next time.";
                 case SolveState.SolverDisabled:
                     return "This document's solver is off, so nothing was computed. "
-                         + "Turn it on with gh_document(action='solver', enabled=true), which schedules a solve.";
+                         + "Turn it on with gh_document(action='solver', enabled=true), which solves the document and waits for it.";
                 case SolveState.SolutionsLocked:
                     return "Grasshopper's global solver switch is off, so no document solves. Either the solver is locked in Grasshopper "
                          + "(the 'Lock Solver' toggle), which Cordyceps does not change: ask a human to unlock it; "
@@ -190,14 +236,16 @@ namespace Cordyceps.Core
         }
 
         /// <summary>
-        /// The <c>solve</c> object for a reply: <c>state</c>, then whichever of <c>elapsedMs</c>,
+        /// The <c>solve</c> object for a reply: <c>state</c>, then whichever of <c>elapsedMs</c> (how
+        /// long Cordyceps waited), <c>solveMs</c> (how long Grasshopper says the solve took),
         /// <c>errors</c>, <c>warnings</c> and <c>remedy</c> apply. Null members are left out so a
         /// reply carries only what is known.
         /// </summary>
-        public static JObject SolveField(SolveState state, long? elapsedMs = null, int? errors = null, int? warnings = null, bool documentEnabled = true)
+        public static JObject SolveField(SolveState state, long? elapsedMs = null, int? errors = null, int? warnings = null, bool documentEnabled = true, long? solveMs = null)
         {
             var solve = new JObject { ["state"] = Name(state) };
             if (elapsedMs.HasValue) solve["elapsedMs"] = elapsedMs.Value;
+            if (solveMs.HasValue) solve["solveMs"] = solveMs.Value;
             if (errors.HasValue) solve["errors"] = errors.Value;
             if (warnings.HasValue) solve["warnings"] = warnings.Value;
             var remedy = Remedy(state, documentEnabled);
@@ -206,41 +254,83 @@ namespace Cordyceps.Core
         }
 
         /// <summary>
-        /// The <c>solve</c> object for an action that schedules and does not wait (solver, clear,
-        /// revert): <c>scheduled</c>, or the switch that stopped it.
+        /// The <c>solve</c> object for an action that schedules and does not wait (<c>clear</c>):
+        /// <c>scheduled</c>, or what stopped it.
         /// </summary>
         public static JObject ScheduledField(SolveState? refusal, bool documentEnabled = true)
             => SolveField(refusal ?? SolveState.Scheduled, documentEnabled: documentEnabled);
 
         /// <summary>
-        /// The whole <c>recompute</c> reply. <c>success</c> and <c>recomputed</c> are true only for a
-        /// completed solve; every other state is a failure the caller must act on, and says how in
-        /// <c>solve.remedy</c>.
+        /// The outcome of a wait for a scheduled solve, before the runtime messages are counted:
+        /// the state, how long Cordyceps waited, and Grasshopper's own solve time when a solve
+        /// ended (completed or aborted) and reported one.
         /// </summary>
-        public static string RecomputeReply(SolveState state, long? elapsedMs, int? errors, int? warnings, bool documentEnabled = true)
+        public static SolveOutcome FromWaitResult(SolveWaitResult result)
         {
-            var completed = Recomputed(state);
-            var reply = new JObject
-            {
-                ["success"] = completed,
-                ["recomputed"] = completed,
-            };
+            if (result == null) throw new ArgumentNullException(nameof(result));
+            var state = FromWait(result.Outcome, result.Record?.Aborted ?? false);
+            long? solveMs = result.Outcome == SolveWaitOutcome.Completed && result.Record?.Span is TimeSpan span
+                ? (long)span.TotalMilliseconds
+                : (long?)null;
+            return new SolveOutcome(state, (long)result.Elapsed.TotalMilliseconds, solveMs);
+        }
+
+        /// <summary>
+        /// The reply of an action that waits for its solve (<c>recompute</c>, <c>solver</c> with
+        /// <c>enabled=true</c>, <c>revert</c>): <c>success</c>, the action's own fields, an
+        /// <c>error</c> unless the solve completed, then <c>solve</c>. <c>success</c> is true only
+        /// for a completed solve; every other state is a failure the caller must act on, and says
+        /// how in <c>solve.remedy</c>, even when the action's own change (the switch, the revert)
+        /// was made.
+        /// </summary>
+        public static string WaitedReply(SolveOutcome outcome, JObject actionFields = null)
+        {
+            if (outcome == null) throw new ArgumentNullException(nameof(outcome));
+            var completed = outcome.State == SolveState.Completed;
+            var reply = new JObject { ["success"] = completed };
+            if (actionFields != null)
+                foreach (var field in actionFields.Properties())
+                    reply[field.Name] = field.Value.DeepClone();
             if (!completed)
-                reply["error"] = $"Recompute did not complete: the solve is {Name(state)}. See solve.remedy.";
-            reply["solve"] = SolveField(state, elapsedMs, errors, warnings, documentEnabled);
+                reply["error"] = $"The solve did not complete: it is {Name(outcome.State)}. See solve.remedy.";
+            reply["solve"] = outcome.ToField();
             return reply.ToString(Formatting.None);
         }
 
-        // Digits with an optional leading sign: the shape of a number, whatever its size.
-        private static bool IsAsciiInteger(string text)
+        /// <summary>The <c>recompute</c> reply: <see cref="WaitedReply"/> plus <c>recomputed</c>.</summary>
+        public static string RecomputeReply(SolveOutcome outcome)
+            => WaitedReply(outcome, new JObject { ["recomputed"] = Recomputed(outcome.State) });
+
+        /// <summary>The <c>recompute</c> reply for a bare state; see <see cref="RecomputeReply(SolveOutcome)"/>.</summary>
+        public static string RecomputeReply(SolveState state, long? elapsedMs, int? errors, int? warnings, bool documentEnabled = true, long? solveMs = null)
+            => RecomputeReply(new SolveOutcome(state, elapsedMs, solveMs, errors, warnings, documentEnabled));
+
+        // A JSON number's literal (an optional leading '+' allowed as well): sign, digits, an
+        // optional fraction, an optional exponent. ASCII digits only, whatever the culture.
+        private static bool IsJsonNumberShape(string text)
         {
-            int start = text[0] == '+' || text[0] == '-' ? 1 : 0;
-            if (start >= text.Length) return false;
-            for (int i = start; i < text.Length; i++)
+            int i = 0, n = text.Length;
+            if (i < n && (text[i] == '+' || text[i] == '-')) i++;
+            if (SkipDigits(text, ref i) == 0) return false;
+            if (i < n && text[i] == '.')
             {
-                if (text[i] < '0' || text[i] > '9') return false;
+                i++;
+                if (SkipDigits(text, ref i) == 0) return false;
             }
-            return true;
+            if (i < n && (text[i] == 'e' || text[i] == 'E'))
+            {
+                i++;
+                if (i < n && (text[i] == '+' || text[i] == '-')) i++;
+                if (SkipDigits(text, ref i) == 0) return false;
+            }
+            return i == n;
+        }
+
+        private static int SkipDigits(string text, ref int i)
+        {
+            int start = i;
+            while (i < text.Length && text[i] >= '0' && text[i] <= '9') i++;
+            return i - start;
         }
     }
 }

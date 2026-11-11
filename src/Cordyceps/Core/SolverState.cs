@@ -53,10 +53,9 @@ namespace Cordyceps.Core
     /// </summary>
     public sealed class SolveRecord
     {
-        public SolveRecord(long generation, DateTime? endedUtc, TimeSpan? span, bool aborted)
+        public SolveRecord(long generation, TimeSpan? span, bool aborted)
         {
             Generation = generation;
-            EndedUtc = endedUtc;
             Span = span;
             Aborted = aborted;
         }
@@ -68,10 +67,10 @@ namespace Cordyceps.Core
         /// </summary>
         public long Generation { get; }
 
-        /// <summary>When the last solve ended; null while no solve has ended since tracking began.</summary>
-        public DateTime? EndedUtc { get; }
-
-        /// <summary>How long Grasshopper says the last solve took, when it said.</summary>
+        /// <summary>
+        /// How long Grasshopper says the last solve took, when it said; reported as
+        /// <c>solve.solveMs</c>, beside the time Cordyceps itself waited.
+        /// </summary>
         public TimeSpan? Span { get; }
 
         /// <summary>
@@ -405,7 +404,6 @@ namespace Cordyceps.Core
         /// <param name="aborted">True when the solve was stopped before it finished.</param>
         public void EndSolution(Guid documentId, TimeSpan? span = null, bool aborted = false)
         {
-            var ended = _clock();
             lock (_solveWriteGate)
             {
                 if (_solving.TryGetValue(documentId, out var open) && open.Depth > 1)
@@ -420,8 +418,8 @@ namespace Cordyceps.Core
                 _solving.TryRemove(documentId, out _);
                 _lastSolve.AddOrUpdate(
                     documentId,
-                    _ => new SolveRecord(1, ended, span, aborted),
-                    (_, existing) => new SolveRecord(existing.Generation + 1, ended, span, aborted));
+                    _ => new SolveRecord(1, span, aborted),
+                    (_, existing) => new SolveRecord(existing.Generation + 1, span, aborted));
             }
         }
 
@@ -454,7 +452,7 @@ namespace Cordyceps.Core
         {
             lock (_solveWriteGate)
             {
-                var record = _lastSolve.GetOrAdd(documentId, _ => new SolveRecord(0, null, null, false));
+                var record = _lastSolve.GetOrAdd(documentId, _ => new SolveRecord(0, null, false));
                 var generation = IsSolving(documentId) ? record.Generation + 1 : record.Generation;
                 return new SolveTicket(documentId, generation);
             }

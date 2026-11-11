@@ -33,7 +33,7 @@ namespace Cordyceps.Tests
         }
 
         private static SolveObservation Reading(long generation, bool solving, bool aborted = false)
-            => new SolveObservation(true, new SolveRecord(generation, T0, TimeSpan.FromSeconds(1), aborted), solving);
+            => new SolveObservation(true, new SolveRecord(generation, TimeSpan.FromSeconds(1), aborted), solving);
 
         // ---------------------------------------------------------------- the answered rule
 

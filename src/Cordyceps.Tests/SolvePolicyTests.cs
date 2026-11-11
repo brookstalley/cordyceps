@@ -24,6 +24,11 @@ namespace Cordyceps.Tests
         [InlineData("30", 30)]
         [InlineData("300", 300)]
         [InlineData("+45", 45)]
+        [InlineData("120.0", 120)]
+        [InlineData("300.00", 300)]
+        [InlineData("1.0", 1)]
+        [InlineData("1.2e2", 120)]
+        [InlineData("6E1", 60)]
         public void TryParseTimeout_AcceptsAbsentOrInRange(string raw, int expected)
         {
             Assert.True(SolvePolicy.TryParseTimeout(raw, out var seconds, out var error));
@@ -36,6 +41,9 @@ namespace Cordyceps.Tests
         [InlineData("301")]
         [InlineData("-5")]
         [InlineData("99999999999999999999")]
+        [InlineData("0.0")]
+        [InlineData("301.0")]
+        [InlineData("1e9")]
         public void TryParseTimeout_RefusesOutOfRange_AsOutOfRange(string raw)
         {
             Assert.False(SolvePolicy.TryParseTimeout(raw, out _, out var error));
@@ -50,6 +58,14 @@ namespace Cordyceps.Tests
         [InlineData(" 30")]
         [InlineData("-")]
         [InlineData("٣٠")] // Arabic-Indic digits: a number to a culture-aware parser, not to this contract
+        [InlineData("120.5")]
+        [InlineData("1.25e1")]
+        [InlineData("120.")]
+        [InlineData(".5")]
+        [InlineData("1e")]
+        [InlineData("NaN")]
+        [InlineData("Infinity")]
+        [InlineData("1,000")]
         public void TryParseTimeout_RefusesNonNumeric_AsNotAWholeNumber(string raw)
         {
             Assert.False(SolvePolicy.TryParseTimeout(raw, out _, out var error));
@@ -258,6 +274,89 @@ namespace Cordyceps.Tests
             Assert.Null(solve["errors"]);
             Assert.Null(solve["warnings"]);
             Assert.Equal(30000, solve.Value<long>("elapsedMs"));
+        }
+
+        [Fact]
+        public void FromWaitResult_ReportsTheWaitAndGrasshoppersOwnSolveTime()
+        {
+            var completed = SolvePolicy.FromWaitResult(new SolveWaitResult(SolveWaitOutcome.Completed,
+                new SolveRecord(3, TimeSpan.FromMilliseconds(1500), aborted: false), TimeSpan.FromMilliseconds(1620)));
+            Assert.Equal(SolveState.Completed, completed.State);
+            Assert.Equal(1620, completed.ElapsedMs);
+            Assert.Equal(1500, completed.SolveMs);
+
+            var aborted = SolvePolicy.FromWaitResult(new SolveWaitResult(SolveWaitOutcome.Completed,
+                new SolveRecord(3, TimeSpan.FromMilliseconds(400), aborted: true), TimeSpan.FromMilliseconds(450)));
+            Assert.Equal(SolveState.Aborted, aborted.State);
+            Assert.Equal(400, aborted.SolveMs);
+        }
+
+        [Theory]
+        [InlineData(SolveWaitOutcome.OverBudget)]
+        [InlineData(SolveWaitOutcome.NotStarted)]
+        [InlineData(SolveWaitOutcome.Gone)]
+        public void FromWaitResult_WithoutAFinishedSolve_HasNoSolveTime(SolveWaitOutcome outcome)
+        {
+            var result = SolvePolicy.FromWaitResult(new SolveWaitResult(outcome, null, TimeSpan.FromSeconds(30)));
+
+            Assert.Null(result.SolveMs);
+            Assert.Equal(30000, result.ElapsedMs);
+            Assert.Null(JObject.Parse(SolvePolicy.RecomputeReply(result))["solve"]["solveMs"]);
+        }
+
+        [Fact]
+        public void FromWaitResult_ASolveGrasshopperDidNotTime_HasNoSolveTime()
+        {
+            // A disabled document's end carries no span of its own, so none is reported.
+            var result = SolvePolicy.FromWaitResult(new SolveWaitResult(SolveWaitOutcome.Completed,
+                new SolveRecord(1, null, aborted: false), TimeSpan.FromMilliseconds(40)));
+
+            Assert.Null(result.SolveMs);
+        }
+
+        [Fact]
+        public void RecomputeReply_CarriesSolveMsBesideElapsedMs()
+        {
+            var solve = (JObject)JObject.Parse(SolvePolicy.RecomputeReply(
+                new SolveOutcome(SolveState.Completed, elapsedMs: 1620, solveMs: 1500, errors: 0, warnings: 0)))["solve"];
+
+            Assert.Equal(1620, solve.Value<long>("elapsedMs"));
+            Assert.Equal(1500, solve.Value<long>("solveMs"));
+        }
+
+        [Fact]
+        public void WaitedReply_CarriesTheActionsFields_AndFailsOnAnythingButCompleted()
+        {
+            // solver enabled=true and revert wait like recompute: their own fields stay, success
+            // follows the solve.
+            var ok = JObject.Parse(SolvePolicy.WaitedReply(
+                new SolveOutcome(SolveState.Completed, 900, 850, 0, 1), new JObject { ["solverEnabled"] = true }));
+            Assert.True(ok.Value<bool>("success"));
+            Assert.True(ok.Value<bool>("solverEnabled"));
+            Assert.Null(ok["error"]);
+            Assert.Null(ok["recomputed"]);
+            Assert.Equal("completed", ok["solve"].Value<string>("state"));
+            Assert.Equal(1, ok["solve"].Value<int>("warnings"));
+
+            var late = JObject.Parse(SolvePolicy.WaitedReply(
+                new SolveOutcome(SolveState.OverBudget, 30000), new JObject { ["revertedTo"] = "before" }));
+            Assert.False(late.Value<bool>("success"));
+            Assert.Equal("before", late.Value<string>("revertedTo"));
+            Assert.Contains("over_budget", late.Value<string>("error"));
+            Assert.Equal(SolvePolicy.Remedy(SolveState.OverBudget), late["solve"].Value<string>("remedy"));
+        }
+
+        [Fact]
+        public void WithCounts_KeepsTheRestOfTheOutcome()
+        {
+            var counted = new SolveOutcome(SolveState.Aborted, 10, 8, documentEnabled: false).WithCounts(2, 3);
+
+            Assert.Equal(SolveState.Aborted, counted.State);
+            Assert.Equal(10, counted.ElapsedMs);
+            Assert.Equal(8, counted.SolveMs);
+            Assert.Equal(2, counted.Errors);
+            Assert.Equal(3, counted.Warnings);
+            Assert.False(counted.DocumentEnabled);
         }
 
         [Fact]

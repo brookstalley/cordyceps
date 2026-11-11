@@ -844,7 +844,7 @@ Note each component's GUID; the GUID steps re-run a refused call by id.
    `lostConnections`, both inputs and both wires remain, and the same call by its default nickname
    is not refused.
 
-## VRF-023 — solve-policy Chunks 01–02 — recompute waits and reports how the solve ended; solver, clear and revert schedule
+## VRF-023 — solve-policy Chunks 01–02 — recompute, solver and revert wait and report how the solve ended; clear schedules
 
 **Status:** pending
 **Added:** 2026-11-11 (solve-policy)
@@ -865,8 +865,9 @@ ready for the liveness checks.
 **Verify:**
 
 1. **completed:** with the slider at 1, `gh_document(action='recompute')` replies `success: true`,
-   `recomputed: true`, `solve.state: "completed"`, an `elapsedMs` of about a second or more, and
-   `errors`/`warnings` equal to the counts in `gh_inspect(action='status')`'s summary.
+   `recomputed: true`, `solve.state: "completed"`, an `elapsedMs` of about a second or more, a
+   `solveMs` a little below it (Grasshopper's own time), and `errors`/`warnings` equal to the ERROR
+   and WARNING counts in `gh_inspect(action='status')`'s summary.
 2. **Escape reports aborted:** slider at 20, call `recompute` with `timeout=60`, then press Escape
    in Grasshopper while it solves. The reply is `success: false`, `solve.state: "aborted"` with a
    `remedy` that says a human stopped it. `gh_canvas(action='outline')` then shows
@@ -883,7 +884,8 @@ ready for the liveness checks.
    the recompute call).
 5. **Lock solver reports locked:** turn on Grasshopper's "Lock Solver". `recompute` replies at once
    (no wait) with `solve.state: "solutions_locked"` and a remedy naming a human. `solver
-   enabled=true` replies `success: true` with `solve.state: "solutions_locked"`, and
+   enabled=true` replies at once with `success: false`, `solverEnabled: true` and
+   `solve.state: "solutions_locked"`, and
    `gh_document(action='info')` shows `solutionsLocked: true`. Unlock the solver; `info` shows
    `solutionsLocked: false`.
 5a. **over_budget only while solving:** `not_started` (a scheduled solve that never ran) is hard to
@@ -891,12 +893,15 @@ ready for the liveness checks.
    `gh_inspect(action='connection')` shows `solving: true` at that moment; an idle document at the
    deadline must read `not_started`, never `over_budget`.
 6. **Document solver off:** `gh_document(action='solver', enabled=false)`, then `recompute`:
-   `solve.state: "solver_disabled"`, remedy naming `solver enabled=true`. Then `solver enabled=true`
-   replies `solve.state: "scheduled"` at once and the canvas solves on its own.
-7. **clear and revert schedule:** `snapshot name='v'`, `clear`, then `revert name='v'`. Each reply
-   carries `solve: {state: "scheduled"}` and returns before the definition finishes solving; the
-   reverted definition solves on its own. Then `recompute` on the reverted document completes (it is
-   watched although it never passed through the document server).
+   `solve.state: "solver_disabled"`, remedy naming `solver enabled=true`. Then, with the slider at
+   2, `solver enabled=true` replies only after the solve, with `success: true`,
+   `solve.state: "completed"` and an `elapsedMs` of about 2 s; `solver enabled=true, timeout=1`
+   after `solver enabled=false` replies `over_budget` with `solverEnabled: true`.
+7. **clear schedules, revert waits:** `snapshot name='v'`, then `clear`: the reply carries
+   `solve: {state: "scheduled"}` and returns before the definition finishes solving. Then
+   `revert name='v'` (slider at 2) replies after the reverted definition has solved, with
+   `revertedTo: "v"` and `solve.state: "completed"` (the reverted document is watched although it
+   never passed through the document server). Revert twice more and confirm each reply completes.
 8. **Inside a cluster editor:** open a cluster whose inputs are fed from the parent, then
    `recompute`. The reply is `completed`, and the cluster's input hooks still carry the parent's
    data (no null inputs); outputs downstream of the hooks recompute.

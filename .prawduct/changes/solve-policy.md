@@ -19,7 +19,7 @@ the transaction wave; it is that wave's first plan, and batch (#96), sweep (#97)
 transaction (#91) will start their solves through the coordinator built here.
 
 **What changed:** `SolverState` keeps a per-document last-solve record (a generation that advances
-on every `SolutionEnd`, end time, span, aborted), fed by `SolutionWatcher` from
+on the outermost `SolutionEnd`, span, aborted), fed by `SolutionWatcher` from
 `GH_Document.AbortRequested` and the event's span. `outline` and `tree` read the aborted flag from
 it. New host-free `Core/SolveWait` waits for a ticket (document id + generation at scheduling)
 within a budget, on the caller's thread and without a lock: done is "the generation passed the
@@ -31,9 +31,11 @@ shape and the strict `timeout` input. New `Core/SolveCoordinator` is the only pl
 starts a solve: inside a short UI call it refuses or reports an off switch, expires (main canvas:
 `ExpireSolution()` plus `ClearReferenceTable()`, the expire-all `NewSolution(true)` performs;
 cluster editor: the source-object expiry that used to be `ToolHelpers.ClusterSafeRecompute`),
-takes the ticket and calls `ScheduleSolution(10)`. `recompute` gains `timeout` (1-300, default 30),
-schedules, waits off-thread, then counts error and warning objects in a second short UI call.
-`solver` (enable), `clear` and `revert` schedule and reply with `solve: {state: "scheduled"}`.
+takes the ticket and calls `ScheduleSolution(10)`. `recompute`, `solver` (enable) and `revert`
+gain `timeout` (1-300, default 30): each schedules, waits off-thread through one shared path, then
+counts error and warning objects by `status`'s own health rule in a second short UI call, and
+replies with `solve: {state, elapsedMs, solveMs, errors, warnings, remedy}`. `clear` schedules and
+replies with `solve: {state: "scheduled"}`.
 `ToolHelpers.ClusterSafeRecompute` and the dead `GrasshopperContext.RecomputeSolution` /
 `ScheduleRecompute` are gone; no production `NewSolution` call remains outside the bridge
 component's own refresh.
@@ -44,7 +46,10 @@ of the replies meets: `tree` keeps "solver appears only when off" and names an a
 (`document_closed`) rather than a fake over-budget; every state but `completed` is
 `success: false`; over-budget points at `gh_inspect(action='connection')` (it answers while the
 solve holds the UI thread) and then `status`; `elapsedMs` is the time Cordyceps waited, schedule
-delay included; `errors`/`warnings` count objects at that level, matching `status`'s summary. A
+delay included, and `solveMs` is Grasshopper's own solve time; `errors`/`warnings` are counted by
+the health rule `status` uses. The cumulative review settled that `solver` (enable) and `revert`
+wait like `recompute`: they solved synchronously before this change, and the taught workflows
+read results straight after them. A
 document put on the canvas without passing through the document server (snapshot revert) is
 watched explicitly, since its solves would otherwise never be recorded; such adopted documents
 are released once they are neither being scheduled nor on the canvas, so at most two are held.
@@ -61,4 +66,4 @@ re-read in the 8.0.23304.9001 assembly the project builds against. The live beha
 over budget with the probe live, Lock Solver, cluster editor, revert) is enqueued as VRF-023.
 
 ## Consumer note
-`gh_document(action='recompute')` now waits for the solve (new optional `timeout`, 1-300 s, default 30; out of range or non-numeric is refused) and returns `solve: {state, elapsedMs, errors, warnings, remedy}`; `success` and `recomputed` are true only when `solve.state` is `completed`, and `aborted`, `over_budget`, `not_started`, `solver_disabled`, `solutions_locked`, `not_watched` and `document_closed` are `success: false` with a remedy (previously every run reported `recomputed: true`). `solver` with `enabled=true`, `clear` and `revert` no longer solve before replying: they return at once with a new `solve` field (`scheduled`, or `solver_disabled`/`solutions_locked` with a remedy), so read results after the solve rather than straight from their reply. `gh_document info` gains `solutionsLocked`. `outline`'s `the last solution was aborted` can now actually appear, and `tree` notes an aborted solve on owners it did not reach.
+breaking: `gh_document(action='recompute')` answers `success: true` only when its solve completed; `aborted`, `over_budget`, `not_started`, `solver_disabled`, `solutions_locked`, `not_watched` and `document_closed` are `success: false` with `solve.remedy` (previously every run reported `success: true, recomputed: true`, including a disabled solver and a solve of any length). It waits at most `timeout` seconds (new, 1-300, default 30; a whole-valued number is accepted, anything else refused) and returns `solve: {state, elapsedMs, solveMs, errors, warnings, remedy}`. breaking: `solver` with `enabled=true` and `revert` take the same `timeout`, reply with the same `solve` object, and are `success: false` when the solve did not complete (a solve longer than the timeout is `over_budget` where it used to block until done); the switch or revert has happened either way. breaking: `clear` returns before its solve runs (`solve: {state: "scheduled"}`); call `recompute` before reading results after it. `gh_document info` gains `solutionsLocked`. `outline`'s `the last solution was aborted` can now actually appear, and `tree` notes an aborted solve on owners it did not reach.

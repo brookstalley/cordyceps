@@ -2,7 +2,9 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using Grasshopper;
+using Cordyceps.Core.Canvas;
 using Grasshopper.Kernel;
+using Grasshopper.Kernel.Special;
 using Rhino;
 
 namespace Cordyceps.Core
@@ -125,10 +127,12 @@ namespace Cordyceps.Core
         }
 
         /// <summary>
-        /// Count objects in <paramref name="documentId"/> whose runtime messages are at error and at
-        /// warning level, over the same population <c>gh_inspect(action='status')</c> reports (the
-        /// Cordyceps component and phantoms left out), so the numbers match its summary. Null when
-        /// the document is no longer open. Must be called on the UI thread.
+        /// Count the objects in <paramref name="documentId"/> that <c>gh_inspect(action='status')</c>
+        /// would report as ERROR and as WARNING. It walks the same population (infrastructure and
+        /// phantoms left out, then <see cref="ObjectHealth.IsSubject(bool, bool)"/>) and classifies
+        /// each object with the same rule (<see cref="CanvasReader.Health"/>), so a change to that
+        /// rule moves these counts with status and outline. Null when the document is no longer
+        /// open. Must be called on the UI thread.
         /// </summary>
         public static (int Errors, int Warnings)? CountRuntimeMessages(Guid documentId)
         {
@@ -139,11 +143,11 @@ namespace Cordyceps.Core
             int errors = 0, warnings = 0;
             foreach (var obj in ToolHelpers.GetActiveObjects(doc, infraIds))
             {
-                if (!(obj is IGH_ActiveObject active)) continue;
-                switch (active.RuntimeMessageLevel)
+                if (!ObjectHealth.IsSubject(obj is GH_Group, obj is IGH_ActiveObject)) continue;
+                switch (CanvasReader.Health((IGH_ActiveObject)obj).Status)
                 {
-                    case GH_RuntimeMessageLevel.Error: errors++; break;
-                    case GH_RuntimeMessageLevel.Warning: warnings++; break;
+                    case HealthStatus.Error: errors++; break;
+                    case HealthStatus.Warning: warnings++; break;
                 }
             }
             return (errors, warnings);

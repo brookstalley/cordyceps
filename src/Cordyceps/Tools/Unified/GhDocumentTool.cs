@@ -10,6 +10,7 @@ using Grasshopper;
 using Grasshopper.GUI.Canvas;
 using Grasshopper.Kernel;
 using Newtonsoft.Json;
+using Newtonsoft.Json.Linq;
 using Rhino;
 using Rhino.Display;
 
@@ -65,19 +66,21 @@ namespace Cordyceps.Tools.Unified
                     Tips = new[]
                     {
                         "Inside a cluster editor, cluster input/output hooks are preserved (reported as preservedClusterHooks) so the cluster interface stays intact",
-                        "The follow-up solve is scheduled, not waited for: the reply carries solve.state='scheduled', or solver_disabled / solutions_locked / not_watched with solve.remedy when it could not be scheduled"
+                        "The follow-up solve is scheduled, not waited for: the reply carries solve.state='scheduled' (or solver_disabled / solutions_locked / not_watched with solve.remedy when it could not be scheduled) and returns before the solve runs. Call action='recompute' before reading results if you need them settled"
                     }
                 },
                 ["solver"] = new ActionInfo
                 {
                     Name = "solver",
-                    Description = "Enable or disable this document's solver. Enabling schedules a solve and returns at once",
+                    Description = "Enable or disable this document's solver. Enabling solves the document and waits for it like recompute, reporting how the solve ended",
                     Required = new[] { "enabled" },
-                    Example = "action='solver', enabled=false",
+                    Optional = new[] { "timeout" },
+                    Example = "action='solver', enabled=false OR action='solver', enabled=true, timeout=120",
                     Tips = new[] {
                         "Disable before bulk operations for performance",
                         "enabled accepts true/false, 1/0, yes/no (case-insensitive); anything else is a validation error",
-                        "enabled=true replies with solve.state='scheduled' and does not wait; call action='recompute' when you need the outcome. solve.state='solutions_locked' means Grasshopper's global solver lock is on, which only a human can clear (solve.remedy says so)"
+                        "enabled=true waits up to timeout seconds (1-300, default 30) and replies with solverEnabled=true and the same solve object and states as recompute; success is true only when solve.state is completed. The switch is on whatever the solve did: on over_budget, poll gh_inspect(action='connection') before reading results",
+                        "solve.state='solutions_locked' means Grasshopper's global solver lock is on, which only a human can clear (solve.remedy says so)"
                     }
                 },
                 ["recompute"] = new ActionInfo
@@ -88,8 +91,8 @@ namespace Cordyceps.Tools.Unified
                     Example = "action='recompute' OR action='recompute', timeout=120",
                     Tips = new[]
                     {
-                        "timeout: whole seconds to wait, 1-300, default 30. Out of range or not a whole number is refused before anything is touched.",
-                        "The reply has solve: {state, elapsedMs, errors, warnings, remedy}. state is completed | aborted | over_budget | not_started | solver_disabled | solutions_locked | not_watched | document_closed; success and recomputed are true only for completed. errors/warnings count objects at that runtime-message level, as gh_inspect(action='status') does.",
+                        "timeout: whole seconds to wait, 1-300, default 30 (a whole-valued number such as 120.0 is accepted). Out of range or not a whole number is refused before anything is touched.",
+                        "The reply has solve: {state, elapsedMs, solveMs, errors, warnings, remedy}. elapsedMs is how long Cordyceps waited; solveMs is Grasshopper's own solve time, present when a solve ended. state is completed | aborted | over_budget | not_started | solver_disabled | solutions_locked | not_watched | document_closed; success and recomputed are true only for completed. errors/warnings count objects at that runtime-message level, as gh_inspect(action='status') does.",
                         "aborted: someone pressed Escape in Grasshopper (or asked for an abort), so outputs may be partial. A human usually does that on purpose: ask before recomputing again.",
                         "over_budget: the solve is STILL RUNNING and Cordyceps cannot cancel it. Poll gh_inspect(action='connection') until grasshopper.solving is false, then gh_inspect(action='status'). Pass a larger timeout next time.",
                         "not_started: the wait ran out with nothing solving and no solve finished, so the scheduled solve never ran (the solver was locked meanwhile, the Grasshopper editor was unavailable, or the document raises no solution events). Check gh_inspect(action='connection') and status, then retry.",
@@ -121,10 +124,11 @@ namespace Cordyceps.Tools.Unified
                 ["revert"] = new ActionInfo
                 {
                     Name = "revert",
-                    Description = "Revert to a named snapshot. The reverted document's solve is scheduled, not waited for (solve.state='scheduled')",
+                    Description = "Revert to a named snapshot, then solve the reverted document and wait for it like recompute, reporting how the solve ended",
                     Required = new[] { "name" },
+                    Optional = new[] { "timeout" },
                     Example = "action='revert', name='before_changes'",
-                    Tips = new[] { "Call action='recompute' afterwards when you need to know the reverted definition solved cleanly" }
+                    Tips = new[] { "Waits up to timeout seconds (1-300, default 30) and replies with revertedTo and the same solve object and states as recompute; success is true only when solve.state is completed. The revert itself has happened whatever the solve did" }
                 },
                 ["snapshots"] = new ActionInfo
                 {
@@ -206,7 +210,7 @@ namespace Cordyceps.Tools.Unified
             [Description("Region yMin")] double yMin = double.NaN,
             [Description("Region xMax")] double xMax = double.NaN,
             [Description("Region yMax")] double yMax = double.NaN,
-            [Description("recompute only: seconds to wait for the solve, 1-300 (default 30)")] string timeout = null)
+            [Description("recompute, solver (enabled=true) and revert: seconds to wait for the solve, 1-300 (default 30)")] string timeout = null)
         {
             if (string.Equals(action, "help", StringComparison.OrdinalIgnoreCase))
                 return UnifiedToolHelpers.GenerateHelp(ToolInfo);
@@ -248,7 +252,7 @@ namespace Cordyceps.Tools.Unified
             // Validated before anything touches the document: an out-of-range or non-numeric
             // timeout is refused, never clamped or defaulted.
             int timeoutSeconds = SolvePolicy.DefaultTimeoutSeconds;
-            if (string.Equals(action, "recompute", StringComparison.OrdinalIgnoreCase))
+            if (WaitsForSolve(action, enabledBool))
             {
                 if (!SolvePolicy.TryParseTimeout(timeout, out timeoutSeconds, out var timeoutError))
                     return ToolHelpers.ErrorResponse(timeoutError);
@@ -259,12 +263,12 @@ namespace Cordyceps.Tools.Unified
                 "info" => ActionInfo(),
                 "save" => ActionSave(path),
                 "clear" => ActionClear(),
-                "solver" => ActionSolver(enabledBool),
+                "solver" => ActionSolver(enabledBool, timeoutSeconds),
                 "recompute" => ActionRecompute(timeoutSeconds),
                 "undo" => ActionUndo(),
                 "redo" => ActionRedo(),
                 "snapshot" => ActionSnapshot(name),
-                "revert" => ActionRevert(name),
+                "revert" => ActionRevert(name, timeoutSeconds),
                 "snapshots" => ActionListSnapshots(),
                 "snapshot_delete" => ActionSnapshotDelete(name),
                 // Capture actions
@@ -399,9 +403,16 @@ namespace Cordyceps.Tools.Unified
             });
         }
 
-        private string ActionSolver(bool enabled)
+        // The actions that wait for the solve they start, and so read timeout.
+        private static bool WaitsForSolve(string action, bool enabled)
+            => string.Equals(action, "recompute", StringComparison.OrdinalIgnoreCase)
+               || string.Equals(action, "revert", StringComparison.OrdinalIgnoreCase)
+               || (enabled && string.Equals(action, "solver", StringComparison.OrdinalIgnoreCase));
+
+        private string ActionSolver(bool enabled, int timeoutSeconds)
         {
-            return _context.ExecuteOnUiThread(() =>
+            SolveScheduling scheduling = null;
+            var early = _context.ExecuteOnUiThread(() =>
             {
                 if (!ToolHelpers.TryGetActiveDocument(_context, out var doc, out var error))
                     return ToolHelpers.ErrorResponse(error);
@@ -420,16 +431,17 @@ namespace Cordyceps.Tools.Unified
                 // Changes made while the solver was off already expired what they touched (and
                 // cascaded downstream). On a main canvas everything is recomputed; in a cluster
                 // editor only those expired objects, so the input hooks keep the data the parent
-                // cluster gave them. Scheduled, not solved here, so this call returns at once.
-                var solve = SolveCoordinator.Schedule(doc, expireAll: doc.Owner == null).ToField();
-
-                return JsonConvert.SerializeObject(new
-                {
-                    success = true,
-                    solverEnabled = true,
-                    solve
-                });
+                // cluster gave them.
+                scheduling = SolveCoordinator.Schedule(doc, expireAll: doc.Owner == null);
+                return null;
             });
+            if (early != null)
+                return early;
+
+            // Waits like recompute, so a caller that reads results after turning the solver on
+            // reads a solved document.
+            return SolvePolicy.WaitedReply(AwaitSolve(scheduling, timeoutSeconds),
+                new JObject { ["solverEnabled"] = true });
         }
 
         private string ActionRecompute(int timeoutSeconds)
@@ -442,8 +454,6 @@ namespace Cordyceps.Tools.Unified
             if (liveness.Solving || liveness.ModalInferred)
                 return StatusEnvelope.BusyResult(liveness);
 
-            // 1. A short UI call: expire and schedule. The solve runs after this call returns, so
-            //    the document lock and the UI-work bracket are released before it starts.
             SolveScheduling scheduling = null;
             var failure = _context.ExecuteOnUiThread(() =>
             {
@@ -456,28 +466,28 @@ namespace Cordyceps.Tools.Unified
             if (failure != null)
                 return failure;
 
+            return SolvePolicy.RecomputeReply(AwaitSolve(scheduling, timeoutSeconds));
+        }
+
+        /// <summary>
+        /// The wait every solve-waiting action shares (recompute, solver on, revert). Called after
+        /// the short UI call that scheduled the solve has returned, so the document lock and the
+        /// UI-work bracket are released while Grasshopper solves: this thread waits holding
+        /// nothing, then makes one more short UI call to count what the solve left behind.
+        /// </summary>
+        private SolveOutcome AwaitSolve(SolveScheduling scheduling, int timeoutSeconds)
+        {
             if (scheduling.Refusal != null)
-                return SolvePolicy.RecomputeReply(scheduling.Refusal.Value, 0, null, null, scheduling.DocumentEnabled);
+                return new SolveOutcome(scheduling.Refusal.Value, elapsedMs: 0, documentEnabled: scheduling.DocumentEnabled);
 
-            // 2. Wait on this worker thread, holding nothing, while the UI thread solves.
             var ticket = scheduling.Ticket.Value;
-            var waited = SolveCoordinator.Wait(ticket, TimeSpan.FromSeconds(timeoutSeconds));
-            var state = SolvePolicy.FromWait(waited.Outcome, waited.Record?.Aborted ?? false);
-            var elapsedMs = (long)waited.Elapsed.TotalMilliseconds;
+            var outcome = SolvePolicy.FromWaitResult(SolveCoordinator.Wait(ticket, TimeSpan.FromSeconds(timeoutSeconds)));
 
-            // 3. Once the solve has ended, a second short UI call counts what it left behind.
-            int? errors = null, warnings = null;
-            if (SolvePolicy.ReadsMessages(state))
-            {
-                var counts = _context.ExecuteOnUiThread(() => SolveCoordinator.CountRuntimeMessages(ticket.DocumentId));
-                if (counts != null)
-                {
-                    errors = counts.Value.Errors;
-                    warnings = counts.Value.Warnings;
-                }
-            }
+            if (!SolvePolicy.ReadsMessages(outcome.State))
+                return outcome;
 
-            return SolvePolicy.RecomputeReply(state, elapsedMs, errors, warnings);
+            var counts = _context.ExecuteOnUiThread(() => SolveCoordinator.CountRuntimeMessages(ticket.DocumentId));
+            return counts == null ? outcome : outcome.WithCounts(counts.Value.Errors, counts.Value.Warnings);
         }
 
         private string ActionUndo()
@@ -539,9 +549,10 @@ namespace Cordyceps.Tools.Unified
             });
         }
 
-        private string ActionRevert(string name)
+        private string ActionRevert(string name, int timeoutSeconds)
         {
-            return _context.ExecuteOnUiThread(() =>
+            SolveScheduling scheduling = null;
+            var early = _context.ExecuteOnUiThread(() =>
             {
                 if (string.IsNullOrEmpty(name))
                     return ToolHelpers.ErrorResponse("Snapshot name is required");
@@ -564,24 +575,25 @@ namespace Cordyceps.Tools.Unified
                     if (!archive.ExtractObject(newDoc, "Definition"))
                         return ToolHelpers.ErrorResponse("Failed to extract document from snapshot");
 
-                    // Replace the canvas's document, then schedule a full solve of it rather than
-                    // solving here, so this call returns before the solve starts.
+                    // Replace the canvas's document and schedule a full solve of it; the wait
+                    // happens below, outside this UI call and the document lock.
                     var canvas = Instances.ActiveCanvas;
                     canvas.Document = newDoc;
-                    var solve = SolveCoordinator.Schedule(newDoc, expireAll: true).ToField();
-
-                    return JsonConvert.SerializeObject(new
-                    {
-                        success = true,
-                        revertedTo = name,
-                        solve
-                    });
+                    scheduling = SolveCoordinator.Schedule(newDoc, expireAll: true);
+                    return null;
                 }
                 catch (Exception ex)
                 {
                     return ToolHelpers.ErrorResponse($"Revert failed: {ex.Message}");
                 }
             });
+            if (early != null)
+                return early;
+
+            // Waits like recompute, so a caller that reads results after reverting reads the
+            // reverted definition solved.
+            return SolvePolicy.WaitedReply(AwaitSolve(scheduling, timeoutSeconds),
+                new JObject { ["revertedTo"] = name });
         }
 
         private string ActionListSnapshots()
