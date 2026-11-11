@@ -103,37 +103,135 @@ namespace Cordyceps.Core.Edits
         void ScheduleSolve();
     }
 
-    /// <summary>One change a rollback could not undo.</summary>
-    internal sealed class RollbackFailure
+    /// <summary>The steps of an edit's end that can fail, as replies name them.</summary>
+    internal static class EditStep
     {
-        public RollbackFailure(EditKind kind, Guid id, string error)
-        {
-            Kind = kind;
-            Id = id;
-            Error = error;
-        }
+        /// <summary>Undoing one recorded change during a rollback.</summary>
+        public const string Undo = "undo";
 
-        public EditKind Kind { get; }
-        public Guid Id { get; }
-        public string Error { get; }
+        /// <summary>Removing, at commit, an object whose add never finished.</summary>
+        public const string DiscardUnfinishedAdd = "discardUnfinishedAdd";
+
+        /// <summary>Pushing the undo record.</summary>
+        public const string Push = "push";
+
+        /// <summary>Restoring the solver switch (and, after a rollback, the modified flag).</summary>
+        public const string Restore = "restore";
+
+        /// <summary>Marking a changed object for recompute.</summary>
+        public const string Expire = "expire";
+
+        /// <summary>Scheduling the solve.</summary>
+        public const string Schedule = "schedule";
+
+        /// <summary>The host's own work after a rollback (logging, redrawing the canvas).</summary>
+        public const string AfterRollback = "afterRollback";
+
+        /// <summary>The host's own work after a commit (logging).</summary>
+        public const string AfterCommit = "afterCommit";
     }
 
-    /// <summary>What a rollback did: how many changes it undid and which it could not.</summary>
+    /// <summary>
+    /// One step of an edit's end that threw: an undo action that could not be undone (with the
+    /// change's kind and object), or a restore, expire or schedule step (without them).
+    /// </summary>
+    internal sealed class EditFailure
+    {
+        public EditFailure(string step, string error, EditKind? kind = null, Guid? id = null)
+        {
+            Step = step ?? throw new ArgumentNullException(nameof(step));
+            Error = error;
+            Kind = kind;
+            Id = id;
+        }
+
+        public string Step { get; }
+        public string Error { get; }
+        public EditKind? Kind { get; }
+        public Guid? Id { get; }
+    }
+
+    /// <summary>What a rollback did: how many changes it undid and what failed along the way.</summary>
     internal sealed class RollbackReport
     {
-        public RollbackReport(int undone, IReadOnlyList<RollbackFailure> failures)
+        public RollbackReport(int undone, IReadOnlyList<EditFailure> failures)
         {
             Undone = undone;
-            Failures = failures;
+            Failures = failures ?? throw new ArgumentNullException(nameof(failures));
         }
 
         /// <summary>Changes undone successfully.</summary>
         public int Undone { get; }
 
-        public IReadOnlyList<RollbackFailure> Failures { get; }
+        /// <summary>Every step that threw, in the order it happened: undo actions first, then the steps after them.</summary>
+        public IReadOnlyList<EditFailure> Failures { get; }
 
-        /// <summary>True when every change was undone, so the document is as it was before the edit.</summary>
-        public bool Complete => Failures.Count == 0;
+        /// <summary>
+        /// True when every recorded change was undone, so the canvas content is as it was before
+        /// the edit. A step after the undo that failed (restoring the solver, scheduling the solve)
+        /// is still listed in <see cref="Failures"/>, but leaves the content restored.
+        /// </summary>
+        public bool Complete
+        {
+            get
+            {
+                foreach (var f in Failures)
+                    if (f.Step == EditStep.Undo) return false;
+                return true;
+            }
+        }
+
+        /// <summary>This report with one more failure appended.</summary>
+        public RollbackReport With(EditFailure failure)
+            => new RollbackReport(Undone, new List<EditFailure>(Failures) { failure });
+    }
+
+    /// <summary>
+    /// What a commit did. Either the edit stands (a record was pushed, or there was nothing to
+    /// push), perhaps with <see cref="Warnings"/> from the steps after the push; or a step up to and
+    /// including the push failed and the edit was rolled back instead (<see cref="Rollback"/> set).
+    /// </summary>
+    internal sealed class CommitOutcome
+    {
+        private CommitOutcome(bool pushed, bool scheduled, IReadOnlyList<EditFailure> warnings, EditFailure failure, RollbackReport rollback)
+        {
+            Pushed = pushed;
+            Scheduled = scheduled;
+            Warnings = warnings;
+            Failure = failure;
+            Rollback = rollback;
+        }
+
+        public static CommitOutcome Committed(bool pushed, bool scheduled, IReadOnlyList<EditFailure> warnings)
+            => new CommitOutcome(pushed, scheduled, warnings ?? Array.Empty<EditFailure>(), null, null);
+
+        public static CommitOutcome RolledBack(EditFailure failure, RollbackReport rollback)
+            => new CommitOutcome(false, false, Array.Empty<EditFailure>(),
+                failure ?? throw new ArgumentNullException(nameof(failure)),
+                rollback ?? throw new ArgumentNullException(nameof(rollback)));
+
+        /// <summary>True when one undo record was pushed. Decided here and nowhere else.</summary>
+        public bool Pushed { get; }
+
+        /// <summary>True when a solve was asked for and the request did not throw.</summary>
+        public bool Scheduled { get; }
+
+        /// <summary>Steps after the push that threw. The edit stands; these say what to check.</summary>
+        public IReadOnlyList<EditFailure> Warnings { get; }
+
+        /// <summary>The step that threw before the record was pushed; null when the edit stands.</summary>
+        public EditFailure Failure { get; }
+
+        /// <summary>The rollback that a failed commit ran instead; null when the edit stands.</summary>
+        public RollbackReport Rollback { get; }
+    }
+
+    /// <summary>The lifecycle of one transaction, as <see cref="EditScope{TSession}"/> drives it.</summary>
+    internal interface IEditJournal
+    {
+        void Begin();
+        CommitOutcome Commit();
+        RollbackReport Rollback();
     }
 
     /// <summary>
@@ -145,12 +243,12 @@ namespace Cordyceps.Core.Edits
     /// <item>no action for a change to an object added in the same transaction, since undoing the add removes it;</item>
     /// <item>an add is tracked before it starts, so a rollback removes an object whose add threw partway;</item>
     /// <item>a rebuilt or removed object's wires are recorded before the object, so undo restores them after it;</item>
-    /// <item>commit pushes one record and skips an empty one, and expires each object once;</item>
-    /// <item>rollback undoes in reverse, carries on past an action that fails, and reports every failure.</item>
+    /// <item>commit pushes one record and skips an empty one, and expires each object once; a failure up to the push rolls back, one after it is a warning;</item>
+    /// <item>rollback undoes in reverse, carries on past a step that fails, and reports every failure.</item>
     /// </list>
     /// Single-threaded: a transaction lives inside one UI-thread call.
     /// </summary>
-    internal sealed class EditJournal<TTarget, TAction> where TTarget : class
+    internal sealed class EditJournal<TTarget, TAction> : IEditJournal where TTarget : class
     {
         private enum Phase { NotStarted, Applying, Committed, RolledBack }
 
@@ -176,17 +274,6 @@ namespace Cordyceps.Core.Edits
         public EditJournal(IUndoSink<TTarget, TAction> sink)
         {
             _sink = sink ?? throw new ArgumentNullException(nameof(sink));
-        }
-
-        /// <summary>True when the transaction has recorded at least one undoable change.</summary>
-        public bool HasChanges
-        {
-            get
-            {
-                foreach (var e in _entries)
-                    if (!e.Pending) return true;
-                return false;
-            }
         }
 
         /// <summary>Start applying: the sink pauses the solver. Called once, before the first change.</summary>
@@ -230,9 +317,12 @@ namespace Cordyceps.Core.Edits
         /// <summary>
         /// Add an object: track it, run <paramref name="add"/>, then record the add. Tracking first
         /// means an <paramref name="add"/> that throws after inserting the object still leaves it
-        /// known to the rollback, which removes it.
+        /// known to the rollback, which removes it. An <paramref name="add"/> that returns false
+        /// (the document refused the object) inserted nothing, so nothing is recorded and the object
+        /// is forgotten: its id may be a pre-existing object's, which must not be mistaken for one
+        /// this edit added. Returns whether the object was added.
         /// </summary>
-        public void Add(TTarget target, Action add)
+        public bool Add(TTarget target, Func<bool> add)
         {
             if (target == null) throw new ArgumentNullException(nameof(target));
             if (add == null) throw new ArgumentNullException(nameof(add));
@@ -245,13 +335,20 @@ namespace Cordyceps.Core.Edits
             var entry = new Entry { Kind = EditKind.Add, Target = target, Id = id, Pending = true };
             _entries.Add(entry);
             _added.Add(id);
-            _removed.Remove(id);
+            bool wasRemoved = _removed.Remove(id);
 
-            add();
+            if (!add())
+            {
+                _entries.Remove(entry);
+                _added.Remove(id);
+                if (wasRemoved) _removed.Add(id);
+                return false;
+            }
 
             entry.Action = _sink.Capture(EditKind.Add, target);
             entry.Pending = false;
             Expire(target);
+            return true;
         }
 
         /// <summary>
@@ -277,8 +374,7 @@ namespace Cordyceps.Core.Edits
                 Take(EditKind.Remove, target);
 
             _removed.Add(id);
-            if (_expireIds.Remove(id))
-                _expire.RemoveAll(t => _sink.IdOf(t) == id);
+            DropExpire(id);
         }
 
         /// <summary>
@@ -297,76 +393,117 @@ namespace Cordyceps.Core.Edits
         }
 
         /// <summary>
-        /// Finish the edit: restore the solver, push one record holding every action (none when
-        /// nothing was recorded), expire each object once, then schedule one solve. An add whose
-        /// action was never recorded (its add threw and the caller carried on) is removed first, as
-        /// a rollback would: it never becomes part of the record.
+        /// Finish the edit. Up to and including the push, a step that throws rolls the edit back
+        /// and the outcome says so: a change left in place without its undo record is exactly the
+        /// unrecorded edit that breaks Ctrl+Z for every recorded one. First, an add whose action was
+        /// never recorded (its add threw and the caller carried on) is removed, as a rollback would;
+        /// then one record holding every action is pushed (none when nothing was recorded). Once
+        /// pushed, the edit stands: restoring the solver, expiring each changed object once, and
+        /// scheduling one solve each run even when an earlier one throws, and a step that throws
+        /// becomes a warning rather than a failure.
         /// </summary>
-        public void Commit()
+        public CommitOutcome Commit()
         {
             EnsureApplying();
 
-            foreach (var pending in _entries.FindAll(e => e.Pending))
+            var step = EditStep.DiscardUnfinishedAdd;
+            List<TAction> actions;
+            try
             {
-                _sink.RemoveAdded(pending.Target);
-                _entries.Remove(pending);
-                _added.Remove(pending.Id);
-                if (_expireIds.Remove(pending.Id))
-                    _expire.RemoveAll(t => _sink.IdOf(t) == pending.Id);
+                foreach (var pending in _entries.FindAll(e => e.Pending))
+                {
+                    _sink.RemoveAdded(pending.Target);
+                    _entries.Remove(pending);
+                    _added.Remove(pending.Id);
+                    DropExpire(pending.Id);
+                }
+
+                actions = new List<TAction>(_entries.Count);
+                foreach (var e in _entries) actions.Add(e.Action);
+
+                step = EditStep.Push;
+                if (actions.Count > 0)
+                    _sink.Push(actions);
+            }
+            catch (Exception ex) // prawduct:allow prawduct/broad-except -- commit boundary: nothing is recorded for undo until the push succeeds, so whatever threw before it rolls the edit back
+            {
+                return CommitOutcome.RolledBack(new EditFailure(step, ex.Message), Rollback());
             }
 
             _phase = Phase.Committed;
-            _sink.EndApply(rolledBack: false);
+            bool pushed = actions.Count > 0;
+            var warnings = new List<EditFailure>();
 
-            var actions = new List<TAction>(_entries.Count);
-            foreach (var e in _entries) actions.Add(e.Action);
-            if (actions.Count > 0)
-                _sink.Push(actions);
-
+            Attempt(warnings, EditStep.Restore, () => _sink.EndApply(rolledBack: false));
             foreach (var target in _expire)
-                _sink.Expire(target);
+                Attempt(warnings, EditStep.Expire, () => _sink.Expire(target), _sink.IdOf(target));
+            bool scheduled = (pushed || _expire.Count > 0)
+                && Attempt(warnings, EditStep.Schedule, () => _sink.ScheduleSolve());
 
-            if (actions.Count > 0 || _expire.Count > 0)
-                _sink.ScheduleSolve();
+            return CommitOutcome.Committed(pushed, scheduled, warnings);
         }
 
         /// <summary>
         /// Undo everything this transaction did, newest first, carrying on past a change that
-        /// cannot be undone; then restore the solver and the modified flag, and recompute what
-        /// survived. Nothing is pushed, so the undo and redo stacks are untouched.
+        /// cannot be undone; then restore the solver and the modified flag, recompute what survived,
+        /// and schedule one solve when anything was undone or expired. Nothing is pushed, so the
+        /// undo and redo stacks are untouched. Every step that throws is in the report, and the
+        /// steps after it still run: the report is never lost to a late failure.
         /// </summary>
         public RollbackReport Rollback()
         {
             EnsureApplying();
             _phase = Phase.RolledBack;
 
-            var failures = new List<RollbackFailure>();
+            var failures = new List<EditFailure>();
             int undone = 0;
             for (int i = _entries.Count - 1; i >= 0; i--)
             {
                 var e = _entries[i];
-                try
+                if (Attempt(failures, EditStep.Undo, () =>
+                    {
+                        if (e.Pending) _sink.RemoveAdded(e.Target);
+                        else _sink.Undo(e.Action);
+                    }, e.Id, e.Kind))
                 {
-                    if (e.Pending) _sink.RemoveAdded(e.Target);
-                    else _sink.Undo(e.Action);
                     undone++;
-                }
-                catch (Exception ex) // prawduct:allow prawduct/broad-except -- rollback boundary: an action that cannot be undone is reported, and the rest are still undone
-                {
-                    failures.Add(new RollbackFailure(e.Kind, e.Id, ex.Message));
                 }
             }
 
-            _sink.EndApply(rolledBack: true);
+            Attempt(failures, EditStep.Restore, () => _sink.EndApply(rolledBack: true));
 
             // Undoing a change leaves its object needing a solve; objects this edit added are gone.
             var survivors = _expire.FindAll(t => !_added.Contains(_sink.IdOf(t)));
             foreach (var target in survivors)
-                _sink.Expire(target);
-            if (_entries.Count > 0)
-                _sink.ScheduleSolve();
+                Attempt(failures, EditStep.Expire, () => _sink.Expire(target), _sink.IdOf(target));
+            if (undone > 0 || survivors.Count > 0)
+                Attempt(failures, EditStep.Schedule, () => _sink.ScheduleSolve());
 
             return new RollbackReport(undone, failures);
+        }
+
+        /// <summary>
+        /// Run one step of an edit's end; when it throws, note the failure and return false so the
+        /// steps after it still run.
+        /// </summary>
+        private static bool Attempt(List<EditFailure> failures, string step, Action run, Guid? id = null, EditKind? kind = null)
+        {
+            try
+            {
+                run();
+                return true;
+            }
+            catch (Exception ex) // prawduct:allow prawduct/broad-except -- edit-end boundary: a step that throws is reported, and the remaining restore, expire and schedule steps still run
+            {
+                failures.Add(new EditFailure(step, ex.Message, kind, id));
+                return false;
+            }
+        }
+
+        private void DropExpire(Guid id)
+        {
+            if (_expireIds.Remove(id))
+                _expire.RemoveAll(t => _sink.IdOf(t) == id);
         }
 
         /// <summary>Whether changing <paramref name="kind"/> makes the object's outputs stale.</summary>

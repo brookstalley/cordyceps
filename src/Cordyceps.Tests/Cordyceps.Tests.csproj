@@ -69,6 +69,7 @@
     <Compile Include="..\Cordyceps\Core\SolvePolicy.cs" Link="SolvePolicy.cs" />
     <Compile Include="..\Cordyceps\Core\Edits\EditJournal.cs" Link="Edits\EditJournal.cs" />
     <Compile Include="..\Cordyceps\Core\Edits\EditReplies.cs" Link="Edits\EditReplies.cs" />
+    <Compile Include="..\Cordyceps\Core\Edits\EditScope.cs" Link="Edits\EditScope.cs" />
     <Compile Include="..\Cordyceps\Core\WatchAdoption.cs" Link="WatchAdoption.cs" />
     <Compile Include="..\Cordyceps\Core\StatusEnvelope.cs" Link="StatusEnvelope.cs" />
     <Compile Include="..\Cordyceps\Core\ToolArgumentBinder.cs" Link="ToolArgumentBinder.cs" />

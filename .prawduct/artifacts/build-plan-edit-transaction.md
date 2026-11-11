@@ -122,10 +122,15 @@ Chunk 06 is `cumulative-final`).
   - A commit with nothing recorded but an explicit `Expire` pushes nothing and still expires and schedules; one with neither does nothing. Settled by reading "an empty record schedules nothing" as "a call that changed nothing solves nothing".
   - Removing an object added in the same transaction drops its add (the net change is nothing); records on an object removed earlier in the transaction, or on its ports, are skipped. Settled by batch (#96), which will meet both.
   - An add whose `AddObject` threw and whose body carried on is removed at commit, never committed. Settled by "track before add".
-  - A rollback expires the surviving objects it touched and schedules one solve when it undid anything, after restoring the solver. Settled by undo actions leaving their objects expired.
-  - An `Edit` reached from inside an open edit of the same document joins it (one call, one undo step); of another document, it throws. Settled by "one call, one undo step".
+  - A rollback restores the solver first, then expires the surviving objects it touched, then schedules one solve when it undid anything or expired anything (the same shape as commit, which schedules when it pushed or expired anything). Settled by undo actions leaving their objects expired, and by a body that expires without recording and then throws.
+  - An `Edit` reached from inside an open edit of the same document joins it (one call, one undo step); of another document, it throws, which rolls the outer edit back. Settled by "one call, one undo step".
+  - Every decision `EditTransaction.Run` made (join or refuse a nested edit, refused versus unexpected rollback, when `undo`, `solve` and `warning` are added) lives in host-free `src/Cordyceps/Core/Edits/EditScope.cs`, tested with a fake session; the host only opens a session and does its logging and redraw. Whether a record was pushed is decided once, by `CommitOutcome.Pushed`. Settled by "new decision logic goes in a host-free Core file with tests".
+  - A failure at commit has a defined result. Up to and including the push (removing an unfinished add, pushing the record), it rolls the edit back and answers as an apply failure ("recording it for undo failed"): changes left in place without their record would be the unrecorded edit that breaks Ctrl+Z. After the push, the edit stands: restoring the solver, expiring and scheduling each still run when one throws, and the reply keeps the body's `success` and `undo` and gains a `warning` naming the failed steps. The record is pushed while the solver is still paused, so a push failure rolls back paused. Settled by the plan's Product goal (never half-edited) and by the reply contract (the edit happened, so it is not a failure).
+  - Every step of a rollback (each undo, restoring the solver and the modified flag, each expire, the schedule) runs even when an earlier one throws, and each failure is in the report with its `step`; a throw in the host's follow-up (logging, redraw) is added to the report, never replaces it. `rolledBack` stays true when only a step after the undo failed, since the content is restored. Settled by "rollback reports what it could not undo".
+  - A refused add (`AddObject` returned false) records nothing and forgets the object: the journal's `Add` takes a `Func<bool>`. Recording the add anyway would make the rollback undo an add that never happened, which finds its object by id and so would remove the pre-existing object whose id collided. Settled by reading `GH_AddObjectAction.Internal_Undo` (`FindObject(id, topLevelOnly: true)`).
   - Record name `Cordyceps: <tool> <action>` (`EditReplies.RecordName`), shown in Grasshopper's undo list and returned as `undo`. Settled by "named for the call".
-  - Rollback reply: `success:false`, `error`, `rolledBack` (true only when every change was undone), and `rollbackFailures: [{kind, id, error}]` when not. `solve` is added on commit only when the solve was refused. Settled by the plan's `undo`/`solve` rules.
+  - Rollback reply: `success:false`, `error`, `rolledBack` (true only when every change was undone), and `rollbackFailures: [{step, kind?, id?, error}]` whenever any step failed. `solve` is added on commit only when a solve was asked for and refused. Settled by the plan's `undo`/`solve` rules.
+  - Edit replies are parsed with `ParseHelpers.ParseJsonKeepingText`, so a date-shaped string in a body (a nickname such as `2026-01-01`) re-serializes exactly. Settled by the repo's existing text-preserving parse and its date-reinterpretation bug class.
   - Reply shapes are host-free in a second linked file, `src/Cordyceps/Core/Edits/EditReplies.cs`, with `src/Cordyceps.Tests/EditRepliesTests.cs`. `EditKind` is public because xUnit theory parameters must be. Settled by "new decision logic goes in a host-free Core file with tests".
   - `CreateLayoutEvent` is not wrapped: no action in the inventory changes layout alone. `tx.RemoveObject` refuses an object of another document, because the record lives on the transaction's document.
   - `gh_wire connect` of a wire that already exists, or of a param to itself, records nothing and still reports success as today: `AddSource` ignores both (verify-api), so an all-existing call pushes no `undo`. Settled by "absent when nothing changed".
@@ -147,7 +152,9 @@ Chunk 06 is `cumulative-final`).
   - "track before add" (an object added but not yet recorded is removed by hand on rollback);
   - the expire set;
   - commit skips an empty record;
-  - rollback undoes in reverse, continues past a failed action, and returns the failures.
+  - rollback undoes in reverse, continues past a failed step, and returns the failures;
+  - rollback schedules one solve when it undid or expired anything;
+  - a failure at commit before the push rolls back; one after it is a warning on a successful reply.
 
   The host `EditTransaction` implements the sink over `GH_UndoUtil` and does the following:
   - pauses the solver and captures `IsModified`;
@@ -207,6 +214,9 @@ Chunk 06 is `cumulative-final`).
   - `move` records `CreatePivotEvent`.
   - `rename` records `CreateNickNameEvent`.
   - `add` no longer leaves an object on the canvas when a step after `AddObject` throws.
+  - Settle first (Chunk 01 review, observation): `EditJournal.Add` can't record an add that
+    Grasshopper refused. Decide what rollback does then, given an id that might collide with an
+    existing object, and test it.
   - Carried from solve-policy's verify pass (observation): `GhDocumentTool.WaitsForSolve`, which
     decides which actions read `timeout`, moves into `src/Cordyceps/Core/SolvePolicy.cs` with a
     test, because this chunk edits `GhDocumentTool.cs` anyway.
@@ -252,7 +262,13 @@ Chunk 06 is `cumulative-final`).
   - `.prawduct/operator-verification.md` new VRF-024 (for each family on macOS: archive
     comparison before, after forced rollback, after Ctrl+Z and after Ctrl+Shift+Z; redo; the
     pause's preview flicker; a cluster editor; Ctrl+Z after an unrelated human edit);
-  - `.prawduct/changes/edit-transaction.md`.
+  - `.prawduct/changes/edit-transaction.md`;
+  - `CLAUDE.md`'s "Adding or modifying tools" template and rules, and `docs/architecture.md`:
+    a document mutation goes through `_context.Edit`, not bare `ExecuteOnUiThread`. Without this
+    a tool written from the template after the merge records no undo and reopens the
+    interleaving hazard (Chunk 01 review, observation);
+  - VRF-024's forced rollback uses a real partial failure, `zoomable set_count` stopping partway
+    (Chunk 05 rolls it back), since nothing else can force a failure by hand.
 - **Deliverables:** the files named above.
 - **Type:** cumulative-final
 - **Done when:** committed, then `/prawduct:critic cumulative` run and blocking findings resolved.

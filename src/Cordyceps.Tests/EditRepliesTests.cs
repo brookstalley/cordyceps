@@ -90,7 +90,7 @@ namespace Cordyceps.Tests
         [Fact]
         public void RolledBack_Complete_SaysNothingChanged()
         {
-            var report = new RollbackReport(3, new List<RollbackFailure>());
+            var report = new RollbackReport(3, new List<EditFailure>());
 
             var reply = JObject.Parse(EditReplies.RolledBack("Cordyceps: gh_wire connect", "Object reference not set", refused: false, report));
 
@@ -105,7 +105,7 @@ namespace Cordyceps.Tests
         [Fact]
         public void RolledBack_Refused_UsesTheReasonAsTheWholeError()
         {
-            var report = new RollbackReport(0, new List<RollbackFailure>());
+            var report = new RollbackReport(0, new List<EditFailure>());
 
             var reply = JObject.Parse(EditReplies.RolledBack("Cordyceps: gh_canvas zoomable", "Could not add port 3 of 5", refused: true, report));
 
@@ -118,10 +118,10 @@ namespace Cordyceps.Tests
         {
             var a = Guid.NewGuid();
             var b = Guid.NewGuid();
-            var report = new RollbackReport(2, new List<RollbackFailure>
+            var report = new RollbackReport(2, new List<EditFailure>
             {
-                new RollbackFailure(EditKind.Wires, a, "Parameter could not be found"),
-                new RollbackFailure(EditKind.PersistentData, b, "Parameter is of a wrong type"),
+                new EditFailure(EditStep.Undo, "Parameter could not be found", EditKind.Wires, a),
+                new EditFailure(EditStep.Undo, "Parameter is of a wrong type", EditKind.PersistentData, b),
             });
 
             var reply = JObject.Parse(EditReplies.RolledBack("Cordyceps: gh_wire clear", "boom", refused: false, report));
@@ -133,10 +133,76 @@ namespace Cordyceps.Tests
             Assert.Contains("Ctrl+Z does not cover this call", error);
             var failures = (JArray)reply["rollbackFailures"];
             Assert.Equal(2, failures.Count);
+            Assert.Equal("undo", (string)failures[0]["step"]);
             Assert.Equal("wires", (string)failures[0]["kind"]);
             Assert.Equal(a.ToString(), (string)failures[0]["id"]);
             Assert.Equal("Parameter could not be found", (string)failures[0]["error"]);
             Assert.Equal("persistentData", (string)failures[1]["kind"]);
+        }
+
+        [Fact]
+        public void ParseBody_KeepsDateShapedStringsExactly()
+        {
+            // A nickname can look like a date; Json.NET's default parse would turn it into a date
+            // and write it back in another form. Asserted on the emitted text, not on a re-parse.
+            const string body = "{\"success\":true,\"name\":\"2026-01-01\",\"at\":\"2026-08-21T12:00:00.1234567+02:00\"}";
+
+            var reply = EditReplies.Committed(EditReplies.ParseBody(body), null, null);
+
+            Assert.Equal(body, reply);
+        }
+
+        [Fact]
+        public void Committed_WithAWarning_SaysTheEditStands_AndNamesEveryFailedStep()
+        {
+            var body = EditReplies.ParseBody("{\"success\":true}");
+            var warnings = new List<EditFailure>
+            {
+                new EditFailure(EditStep.Expire, "x", id: Guid.NewGuid()),
+                new EditFailure(EditStep.Schedule, "y"),
+            };
+
+            var reply = JObject.Parse(EditReplies.Committed(body, "Cordyceps: gh_wire connect", null, warnings));
+
+            Assert.True((bool)reply["success"]);
+            Assert.Equal("Cordyceps: gh_wire connect", (string)reply["undo"]);
+            var warning = (string)reply["warning"];
+            Assert.StartsWith("The edit was made and Ctrl+Z undoes it, but marking the changed objects for recompute and scheduling the solve failed (x; y).", warning);
+            Assert.Contains("gh_document(action='recompute')", warning);
+        }
+
+        [Fact]
+        public void Committed_WithoutWarnings_HasNoWarningField()
+        {
+            var reply = JObject.Parse(EditReplies.Committed(EditReplies.ParseBody("{\"success\":true}"), "x", null, new List<EditFailure>()));
+
+            Assert.Null(reply["warning"]);
+        }
+
+        [Fact]
+        public void CommitFailureReason_NamesWhatFailed()
+        {
+            Assert.Equal("recording it for undo failed (boom)", EditReplies.CommitFailureReason(new EditFailure(EditStep.Push, "boom")));
+            Assert.Equal("removing an object whose add did not finish failed (boom)",
+                EditReplies.CommitFailureReason(new EditFailure(EditStep.DiscardUnfinishedAdd, "boom")));
+        }
+
+        [Fact]
+        public void RolledBack_CompleteButWithAFailedStepAfterTheUndo_SaysNothingChanged_AndListsTheStep()
+        {
+            var report = new RollbackReport(1, new List<EditFailure> { new EditFailure(EditStep.Schedule, "cannot schedule") });
+
+            var reply = JObject.Parse(EditReplies.RolledBack("edit", "boom", refused: false, report));
+
+            Assert.True((bool)reply["rolledBack"]);
+            var error = (string)reply["error"];
+            Assert.Contains("every change this call had made was rolled back", error);
+            Assert.Contains("After the rollback, scheduling the solve failed", error);
+            Assert.DoesNotContain("Ctrl+Z does not cover", error);
+            var failure = (JObject)Assert.Single((JArray)reply["rollbackFailures"]);
+            Assert.Equal("schedule", (string)failure["step"]);
+            Assert.Null(failure["kind"]);
+            Assert.Null(failure["id"]);
         }
 
         private static IEnumerable<string> PropertyNames(JObject obj)

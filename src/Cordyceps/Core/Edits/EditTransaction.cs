@@ -51,12 +51,11 @@ namespace Cordyceps.Core.Edits
     /// <para>The ordering rules live in host-free <see cref="EditJournal{TTarget, TAction}"/>;
     /// this class is the Grasshopper side of them.</para>
     /// </summary>
-    internal sealed class EditTransaction : IUndoSink<IGH_DocumentObject, IGH_UndoAction>
+    internal sealed class EditTransaction : IUndoSink<IGH_DocumentObject, IGH_UndoAction>, IEditSession
     {
-        // Every transaction runs on the Rhino UI thread, one at a time, so the open one can be
-        // found without locking. A body that reaches another edit on the same document joins it:
-        // one call stays one undo step.
-        private static EditTransaction _current;
+        // Every transaction runs on the Rhino UI thread, one at a time, so one scope serves the
+        // whole host without locking. It decides joining, rollback and every reply.
+        private static readonly EditScope<EditTransaction> Scope = new EditScope<EditTransaction>();
 
         private readonly EditJournal<IGH_DocumentObject, IGH_UndoAction> _journal;
         private bool _paused;
@@ -123,9 +122,7 @@ namespace Cordyceps.Core.Edits
         public void AddObject(IGH_DocumentObject obj)
         {
             if (obj == null) throw new ArgumentNullException(nameof(obj));
-            bool added = false;
-            _journal.Add(obj, () => added = Document.AddObject(obj, false));
-            if (!added)
+            if (!_journal.Add(obj, () => Document.AddObject(obj, false)))
                 throw new EditRollbackException($"Grasshopper refused to add '{obj.NickName}' to the document (an object with its id may already be there).");
         }
 
@@ -157,72 +154,41 @@ namespace Cordyceps.Core.Edits
         /// Run <paramref name="body"/> as one edit of <paramref name="doc"/>. Must be called on the
         /// UI thread (<see cref="GrasshopperContext.Edit"/> sees to it). The body returns its reply
         /// as a JSON object; the edit returns that reply plus <c>undo</c> when a record was pushed,
-        /// and <c>solve</c> when the solve was refused. A body that throws is rolled back and
-        /// answered with an error and <c>rolledBack</c>.
+        /// <c>solve</c> when the solve was refused, and <c>warning</c> when a step after the push
+        /// failed. A body that throws, or a commit that fails before its push, is rolled back and
+        /// answered with an error and <c>rolledBack</c>. Every one of those decisions is made by
+        /// host-free <see cref="EditScope{TSession}"/>.
         /// </summary>
         internal static string Run(GH_Document doc, string name, Func<EditTransaction, string> body)
         {
             if (doc == null) throw new ArgumentNullException(nameof(doc));
-            if (string.IsNullOrEmpty(name)) throw new ArgumentException("An edit needs a name for its undo record.", nameof(name));
-            if (body == null) throw new ArgumentNullException(nameof(body));
-
-            if (_current != null)
-            {
-                if (!ReferenceEquals(_current.Document, doc))
-                    throw new InvalidOperationException($"An edit of another document ('{_current.Name}') is already open.");
-                return body(_current);
-            }
-
-            var tx = new EditTransaction(doc, name);
-            _current = tx;
-            try
-            {
-                tx._journal.Begin();
-
-                JObject reply;
-                try
-                {
-                    reply = EditReplies.ParseBody(body(tx));
-                }
-                catch (EditRollbackException ex)
-                {
-                    var report = tx._journal.Rollback();
-                    tx.AfterRollback(report, ex.Message);
-                    return EditReplies.RolledBack(name, ex.Message, refused: true, report);
-                }
-                catch (Exception ex) // prawduct:allow prawduct/broad-except -- apply boundary: whatever the body threw, its recorded changes are undone so the canvas is left as it was, and the call answers with the error
-                {
-                    DebugLog.Error($"Edit '{name}' failed and is rolled back: {ex}");
-                    var report = tx._journal.Rollback();
-                    tx.AfterRollback(report, ex.Message);
-                    return EditReplies.RolledBack(name, ex.Message, refused: false, report);
-                }
-
-                tx._journal.Commit();
-                var refusedSolve = tx._scheduling?.Refusal != null ? tx._scheduling.ToField() : null;
-                return EditReplies.Committed(reply, tx._journal.HasChanges ? name : null, refusedSolve);
-            }
-            finally
-            {
-                _current = null;
-                // A commit or rollback restores the solver itself; this covers one that threw first.
-                tx.EndApply(rolledBack: false);
-            }
+            return Scope.Run(doc, name, () => new EditTransaction(doc, name), body);
         }
 
-        private void AfterRollback(RollbackReport report, string reason)
+        // ------------------------------------------------------------------ IEditSession (called by the scope)
+
+        IEditJournal IEditSession.Journal => _journal;
+
+        JObject IEditSession.SolveRefusal => _scheduling?.Refusal != null ? _scheduling.ToField() : null;
+
+        void IEditSession.AfterRollback(RollbackReport report, string reason, Exception cause)
         {
-            if (!report.Complete)
-            {
-                foreach (var f in report.Failures)
-                    DebugLog.Error($"Edit '{Name}' rollback could not undo {EditReplies.KindName(f.Kind)} on {f.Id}: {f.Error}");
-            }
-            else if (report.Undone > 0)
-            {
-                DebugLog.Info($"Edit '{Name}' rolled back {report.Undone} change(s): {reason}");
-            }
+            if (cause != null)
+                DebugLog.Error($"Edit '{Name}' failed and is rolled back: {cause}");
+            else
+                DebugLog.Info($"Edit '{Name}' rolled back: {reason}");
+            foreach (var f in report.Failures)
+                DebugLog.Error($"Edit '{Name}' rollback: {f.Step} failed{(f.Kind.HasValue ? $" for {EditReplies.KindName(f.Kind.Value)}" : "")}{(f.Id.HasValue ? $" on {f.Id}" : "")}: {f.Error}");
             Instances.ActiveCanvas?.Invalidate();
         }
+
+        void IEditSession.AfterCommit(CommitOutcome outcome)
+        {
+            foreach (var w in outcome.Warnings)
+                DebugLog.Warn($"Edit '{Name}' stands, but {w.Step} failed{(w.Id.HasValue ? $" on {w.Id}" : "")}: {w.Error}");
+        }
+
+        void IEditSession.EnsureEnded() => EndApply(rolledBack: false);
 
         // ------------------------------------------------------------------ IUndoSink (called by the journal)
 
@@ -262,10 +228,13 @@ namespace Cordyceps.Core.Edits
 
         private void EndApply(bool rolledBack)
         {
-            if (!_paused) return;
+            // Unpaused before the document is touched: a restore that throws is reported once by
+            // the journal, not retried by EnsureEnded.
+            bool wasPaused = _paused;
             _paused = false;
-            Document.Enabled = _wasEnabled;
-            if (rolledBack)
+            if (wasPaused)
+                Document.Enabled = _wasEnabled;
+            if (rolledBack && wasPaused)
                 Document.IsModified = _wasModified;
         }
 
