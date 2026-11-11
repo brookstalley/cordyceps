@@ -6,6 +6,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Cordyceps is a Grasshopper plugin that exposes Grasshopper and Rhino functionality via the Model Context Protocol (MCP). It allows AI assistants to programmatically control Grasshopper (adding components, creating connections, configuring scripts) and Rhino (managing objects, layers, materials, rendering).
 
+Where things live — the server, the canvas model, the resolvers, the seven tool classes and the
+documentation layers agents read — is in [`docs/architecture.md`](docs/architecture.md).
+
 ## Build Commands
 
 ```bash
@@ -15,7 +18,7 @@ dotnet build src/Cordyceps/Cordyceps.csproj -c Release
 # The built .gha file is automatically copied to releases/ (gitignored - a build output)
 ```
 
-The project targets .NET 8.0 and outputs a Grasshopper plugin (`.gha` file). Debug builds are blocked—always use `-c Release`.
+The project targets .NET 8.0 (Grasshopper 8.0+ / Rhino 8, Newtonsoft.Json) and outputs a Grasshopper plugin (`.gha` file). Debug builds are blocked—always use `-c Release`.
 
 ## Running tests
 
@@ -25,56 +28,19 @@ to running here when no coordinator answers). Before ending work, record evidenc
 `dotnet test src/Cordyceps.Tests/Cordyceps.Tests.csproj -c Release`. How to read testament's
 output, and what differs from its pytest-shaped instructions: read `docs/testing.md` when you need them.
 
-## Architecture
+## Rules for code changes
 
-### Core Components
+- All Grasshopper document access goes through `_context.ExecuteOnUiThread()`; Grasshopper must be
+  touched on the UI thread.
+- Component-type names resolve in `Core/Naming/TypeNameRule.cs` (never a partial match). Change
+  resolution or aliases there, not in the `ComponentRegistry` adapter.
+- Object and group ids resolve in `Core/Canvas/ObjectResolver.cs`. Change name resolution there,
+  not at a call site.
+- New decision logic goes in a host-free `Core/` file linked into `Cordyceps.Tests`, with tests.
+- Tool methods return JSON strings with a `success` field (Newtonsoft.Json); log with
+  `Core.DebugLog`. Component parameters can be referenced by name or 0-based index.
 
-**McpServer.cs** - HTTP/SSE server implementing the MCP protocol. Listens on a configurable port (default 26929), handles JSON-RPC requests, and manages SSE sessions for streaming responses. Discovers tools via reflection using `[McpServerToolType]` and `[McpServerTool]` attributes.
-
-**CordycepsComponent.cs** - The Grasshopper component that users drop on the canvas. Manages the MCP server lifecycle - starts the server when placed, stops when removed. Outputs server status and last command received.
-
-**Core/GrasshopperContext.cs** - Thread-safe wrapper for Grasshopper document access. All Grasshopper operations must run on the UI thread; this class provides `ExecuteOnUiThread()` methods that marshal calls correctly.
-
-**Core/Naming/TypeNameRule.cs** + **Core/ComponentRegistry.cs** - The rule that turns a component-type name into one type (GUID, exact aliases such as "python", pinned built-ins, exact name or `Category/Name`; never a partial match) lives host-free in `Core/Naming/TypeNameRule.cs`, with "did you mean" helpers in `Core/Naming/NameSuggestions.cs`. `ComponentRegistry` is only the Grasshopper adapter: it builds the installed-type catalog the rule reads, creates the resolved type, and runs `search`. Change resolution or aliases in the rule, not the adapter.
-
-**Core/Canvas/** - The host-free canvas model. `CanvasReader.cs` is the only Grasshopper adapter: it reads the document once into a `CanvasSnapshot` that outline and the id lookups read. `ObjectResolver.cs` is the one resolver for object and group ids (GUID, 8+ hex prefix, unique case-sensitive nickname; group names in the Groups scope). Change name resolution in the resolver, not at a call site. `Core/DataTrees/` holds the `gh_inspect(action='tree')` summaries.
-
-**Core/UnifiedToolHelpers.cs** - Shared utilities for the unified tool architecture including action dispatch, help generation, and standardized response formatting.
-
-**Core/ToolHelpers.cs** - Shared document/component utilities used across every tool: active-document and component resolution (by GUID or name), protected/infrastructure-id checks, cluster-safe recompute, component-info builders, JSON (de)serialization helpers, and `SuccessResponse`/`ErrorResponse` formatting.
-
-**Core/DebugLog.cs** - Centralized logging with Info, Warn, Error, Debug levels. Logs are retrievable via `gh_inspect(action='log')`.
-
-### User-Facing Documentation System
-
-AI agents discover Cordyceps through a layered documentation system. All of these are user-facing and must be kept in sync with code changes:
-
-**McpServer.cs `GetServerInstructions()`** - The first thing agents see on MCP initialize. Lists all tools with their actions, key points, and resource links. Must be updated when actions are added/removed/renamed.
-
-**Knowledge/ (Embedded Guides)** - Markdown guides served as MCP resources (`gh://docs/*`, `gh://patterns/*`). Covers getting started, data trees, type system, best practices, component patterns, canvas layout, geometry orientation, rendering, common errors, and MCP testing. Registered in `Resources/ResourceRegistry.cs`.
-
-**Tool Help Metadata (ActionInfo)** - Each tool class defines a `UnifiedToolInfo` with per-action metadata (description, required/optional params, example, tips). Accessed via `action='help'` on any tool. Must be updated when action signatures change.
-
-**Resources/ResourceRegistry.cs** - Maps `gh://` URIs to Knowledge/ files and provides dynamic `gh://component/{name}` documentation. Update when adding new guides.
-
-**Prompts/PromptRegistry.cs** - Workflow templates for multi-step operations (parametric geometry, debugging, script setup, optimization, planning). Update when workflows change.
-
-### Tool Classes (in Tools/Unified/)
-
-Each tool class is marked with `[McpServerToolType]` and contains a single method marked with `[McpServerTool]`. The method name is converted to snake_case for the MCP tool name (e.g., `GhCanvas` -> `gh_canvas`). Each tool uses an `action` parameter to dispatch to different operations.
-
-**Grasshopper Tools (5):**
-- **GhCanvasTool** (`gh_canvas`) - Components, values, groups: add, delete, move, find, search, list, outline (compact read of the whole definition), bake, get/set values, group management, zoomable parameter management, per-parameter data modifiers (flatten/graft/simplify/reverse)
-- **GhWireTool** (`gh_wire`) - Connect/disconnect components, bulk wiring, validate connections
-- **GhDocumentTool** (`gh_document`) - Save, clear documents; snapshots; solver control; capture canvas/viewport
-- **GhScriptTool** (`gh_script`) - Configure C#/Python script components
-- **GhInspectTool** (`gh_inspect`) - Non-blocking connection/liveness probe, component status, data-tree shape (`tree`), trace data flow, retrieve debug output
-
-**Rhino Tools (2):**
-- **RhinoSceneTool** (`rhino_scene`) - Object management, selection, layers (full CRUD), visibility
-- **RhinoRenderTool** (`rhino_render`) - Display modes, camera, render settings, materials, environments
-
-### Adding or Modifying Tools
+### Adding or modifying tools
 
 1. Create a method in an existing tool class (or create a new class with `[McpServerToolType]`)
 2. Add `[McpServerTool]` attribute to the method
@@ -82,7 +48,6 @@ Each tool class is marked with `[McpServerToolType]` and contains a single metho
 4. All parameters should be primitive types (string, int, double, bool)
 5. Return a JSON-serialized string with `success` field
 
-Example:
 ```csharp
 [McpServerTool, Description("Brief description of what this tool does")]
 public string MyNewTool(
@@ -113,19 +78,6 @@ After any code change, check each of these and update as needed:
 | **Common errors guide** | `Knowledge/CommonErrorsGuide.md` | New failure modes discovered or fixed |
 | **CHANGELOG.md** | Root | Every user-visible change |
 
-## Key Patterns
-
-- All Grasshopper document access must go through `_context.ExecuteOnUiThread()`
-- Tool methods return JSON strings (use Newtonsoft.Json for serialization)
-- Component parameters can be referenced by name or index (0-based)
-- Use `Core.DebugLog` for logging (Info, Warn, Error, Debug levels)
-
-## Dependencies
-
-- Grasshopper 8.0+ (Rhino 8)
-- Newtonsoft.Json for JSON serialization
-- .NET 8.0
-
 ## Branch model & Publishing
 
 **gitflow**: `develop` is the default/integration branch (features merge back via `/prawduct:pr`);
@@ -145,7 +97,6 @@ git checkout main && git pull
 
 Prerequisites, the post-release Prawduct bookkeeping (`prawduct-hook cut-change-log --release vX.Y.Z`,
 then `prawduct-hook plan-backfill --apply`) and the full flow are in [`docs/release-process.md`](docs/release-process.md).
-
 
 <!-- PRAWDUCT:ANCHOR — static governance pointer managed by the prawduct plugin. Keep it small and version-free: principles, methodology, and the active version live in the plugin and are injected at session start. -->
 
@@ -174,31 +125,16 @@ stays version-free.
 
 ## Backlog — GitHub Issues, not a file
 
-**There is no `.prawduct/backlog.md`.** The backlog cut over to **GitHub Issues on
-`brookstalley/cordyceps`** on 2026-08-29 and the source markdown was deleted; if you
-are looking for that file, this section is the answer. Use `/prawduct:backlog`, which
-routes to the service automatically — the plugin owns the item shape, the labels, and
-the commands, and this repo does not restate them.
+**There is no `.prawduct/backlog.md`.** The backlog lives in **GitHub Issues on
+`brookstalley/cordyceps`** (cut over 2026-08-29). Use `/prawduct:backlog`, which routes there;
+the plugin owns the item shape, labels and commands. Reading or filing needs network access and
+an authenticated `gh` (`gh auth status`); there is no offline copy, and a fresh clone has no
+backlog content until the cache is built. An auth or network error is about your environment, not
+the backlog.
 
-**This makes the backlog an external dependency.** Reading or filing needs network
-access plus an authenticated `gh` (`gh auth status`); there is no offline copy, and a
-fresh clone carries no backlog content until the cache is built. A read that fails with
-an auth or network error is telling you about your environment, not about the backlog.
-
-**`PFX-XXXX` ids still work and still resolve.** Every item kept its hand-minted id as
-an `id:PFX` alias, so citations like `RSC-2H9K` in `docs/place-image-action.md` and
-`REL-6H4X` in `docs/release-process.md` still resolve. Pass `--repo brookstalley/cordyceps`
-when resolving a bare id — the hook cannot infer the target repo from the id alone.
-PFX ids are the durable handle for the **migrated corpus only** — `backlog file` mints
-no PFX, so items filed after the cutover (such as #76) are cited by issue number.
-
-The pre-cutover markdown is recoverable from git history. The deletion commit does not
-contain the file, so read it from that commit's parent:
-
-```bash
-git show "$(git rev-list -1 HEAD -- .prawduct/backlog.md)^:.prawduct/backlog.md"
-```
-
-The migration's target, scope, accepted costs, the plugin build that ran it, and the
-full `PFX -> issue` mapping are recorded in
+Migrated items kept their `PFX-XXXX` ids as `id:PFX` aliases, so citations like `RSC-2H9K` still
+resolve (pass `--repo brookstalley/cordyceps` with a bare id). Items filed after the cutover are
+cited by issue number. The pre-cutover file is recoverable with
+`git show "$(git rev-list -1 HEAD -- .prawduct/backlog.md)^:.prawduct/backlog.md"`; the mapping
+and the migration's decisions are in
 [`.prawduct/artifacts/migration-scrub-decisions.md`](.prawduct/artifacts/migration-scrub-decisions.md).
