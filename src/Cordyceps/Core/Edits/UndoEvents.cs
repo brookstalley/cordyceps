@@ -1,6 +1,5 @@
 // Portions of this file are adapted from Hyperceps (src/Cordyceps/Tools/Batch/BatchOps.cs,
-// ApplyContext; BatchValues.cs, StoredType and PersistentDataEvent; BatchCanvas.cs, LiveInputs and
-// LiveOutputs), under the MIT License:
+// ApplyContext; BatchCanvas.cs, LiveInputs and LiveOutputs), under the MIT License:
 //
 //   Copyright (c) 2026 Brooks Talley
 //   Copyright (c) 2026 Yibin Yang
@@ -23,7 +22,6 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
-using System.Reflection;
 using Grasshopper.Kernel;
 using Grasshopper.Kernel.Undo;
 using Grasshopper.Kernel.Undo.Actions;
@@ -38,11 +36,6 @@ namespace Cordyceps.Core.Edits
     /// </summary>
     internal static class UndoEvents
     {
-        private static readonly MethodInfo PersistentDataEventDefinition =
-            typeof(GH_Document.GH_UndoUtil)
-                .GetMethods(BindingFlags.Public | BindingFlags.Instance)
-                .Single(m => m.Name == nameof(GH_Document.GH_UndoUtil.CreatePersistentDataEvent) && m.IsGenericMethodDefinition);
-
         /// <summary>Capture the undo action of <paramref name="kind"/> for <paramref name="target"/> as it is now.</summary>
         public static IGH_UndoAction Create(GH_Document doc, EditKind kind, IGH_DocumentObject target)
         {
@@ -69,8 +62,6 @@ namespace Cordyceps.Core.Edits
                     // UndoUtil has no event for these; this is the action Grasshopper's own param
                     // menu records for flatten, graft, reverse and simplify.
                     return new GH_DataModificationAction(AsParam(target, kind));
-                case EditKind.PersistentData:
-                    return Single(PersistentDataEvent(doc, AsParam(target, kind), name));
                 case EditKind.Add:
                     return Single(util.CreateAddObjectEvent(name, target));
                 case EditKind.Remove:
@@ -78,20 +69,6 @@ namespace Cordyceps.Core.Edits
                 default:
                     throw new ArgumentOutOfRangeException(nameof(kind), kind, "No undo event for this kind.");
             }
-        }
-
-        /// <summary>
-        /// The type a param stores internally: the <c>T</c> of its <c>GH_PersistentParam&lt;T&gt;</c>
-        /// base, or null when it stores nothing (a component output, a param with no persistent data).
-        /// </summary>
-        public static Type StoredType(IGH_Param param)
-        {
-            for (var t = param?.GetType(); t != null; t = t.BaseType)
-            {
-                if (t.IsGenericType && t.GetGenericTypeDefinition() == typeof(GH_PersistentParam<>))
-                    return t.GetGenericArguments()[0];
-            }
-            return null;
         }
 
         /// <summary>The inputs of an object: a component's input ports, or a free-floating param itself.</summary>
@@ -108,24 +85,6 @@ namespace Cordyceps.Core.Edits
             if (obj is IGH_Component component) return component.Params.Output.ToList();
             if (obj is IGH_Param param) return new[] { param };
             return Array.Empty<IGH_Param>();
-        }
-
-        // CreatePersistentDataEvent<T> is generic over the stored type, which is known only at run
-        // time, so it is called through reflection.
-        private static GH_UndoRecord PersistentDataEvent(GH_Document doc, IGH_Param param, string name)
-        {
-            var stored = StoredType(param)
-                ?? throw new InvalidOperationException($"'{param.NickName}' stores no values of its own, so there is nothing to record.");
-            try
-            {
-                return (GH_UndoRecord)PersistentDataEventDefinition.MakeGenericMethod(stored)
-                    .Invoke(doc.UndoUtil, new object[] { name, param });
-            }
-            catch (TargetInvocationException ex) when (ex.InnerException != null)
-            {
-                System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(ex.InnerException).Throw();
-                throw;
-            }
         }
 
         private static IGH_UndoAction Single(GH_UndoRecord record)

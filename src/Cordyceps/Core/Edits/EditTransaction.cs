@@ -104,13 +104,6 @@ namespace Cordyceps.Core.Edits
         /// <summary>Before setting a param's <c>DataMapping</c>, <c>Reverse</c> or <c>Simplify</c>.</summary>
         public void RecordDataModifiers(IGH_Param param) => _journal.Record(EditKind.DataModifiers, param);
 
-        /// <summary>
-        /// Before changing a param's internally stored values (<c>PersistentData</c>,
-        /// <c>SetPersistentData</c>). Throws when the param stores none; check
-        /// <see cref="UndoEvents.StoredType"/> while validating.
-        /// </summary>
-        public void RecordPersistentData(IGH_Param param) => _journal.Record(EditKind.PersistentData, param);
-
         // ------------------------------------------------------------------ structural changes (record themselves)
 
         /// <summary>
@@ -141,28 +134,22 @@ namespace Cordyceps.Core.Edits
             Document.RemoveObject(obj, false);
         }
 
-        /// <summary>
-        /// Recompute <paramref name="obj"/> when the edit commits. The recorders for wires, generic
-        /// changes, enabled, data modifiers and stored values, and <see cref="AddObject"/>, already
-        /// do this for the object they change; call it for anything else that must recompute.
-        /// </summary>
-        public void Expire(IGH_DocumentObject obj) => _journal.Expire(obj);
-
         // ------------------------------------------------------------------ running a transaction
 
         /// <summary>
         /// Run <paramref name="body"/> as one edit of <paramref name="doc"/>. Must be called on the
         /// UI thread (<see cref="GrasshopperContext.Edit"/> sees to it). The body returns its reply
         /// as a JSON object; the edit returns that reply plus <c>undo</c> when a record was pushed,
-        /// <c>solve</c> when the solve was refused, and <c>warning</c> when a step after the push
-        /// failed. A body that throws, or a commit that fails before its push, is rolled back and
-        /// answered with an error and <c>rolledBack</c>. Every one of those decisions is made by
-        /// host-free <see cref="EditScope{TSession}"/>.
+        /// <c>solve</c> when the solve was refused (or, with <paramref name="reportScheduledSolve"/>,
+        /// scheduled), and <c>warning</c> when a step after the push failed. A body that throws, or
+        /// a commit that fails before its push, is rolled back and answered with an error and
+        /// <c>rolledBack</c>. Every one of those decisions is made by host-free
+        /// <see cref="EditScope{TSession}"/>.
         /// </summary>
-        internal static string Run(GH_Document doc, string name, Func<EditTransaction, string> body)
+        internal static string Run(GH_Document doc, string name, Func<EditTransaction, string> body, bool reportScheduledSolve = false)
         {
             if (doc == null) throw new ArgumentNullException(nameof(doc));
-            return Scope.Run(doc, name, () => new EditTransaction(doc, name), body);
+            return Scope.Run(doc, name, () => new EditTransaction(doc, name), body, reportScheduledSolve);
         }
 
         // ------------------------------------------------------------------ IEditSession (called by the scope)

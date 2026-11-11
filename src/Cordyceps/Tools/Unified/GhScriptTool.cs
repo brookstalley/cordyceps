@@ -59,7 +59,8 @@ namespace Cordyceps.Tools.Unified
                         "If the program could not be read there is no verified field at all, and verificationSkipped says why — never read an absent verified as a match",
                         "Code that fails to compile still reports success here — the write and the rebuild both succeeded. Build errors surface on the component; after setting code, check gh_inspect(action='status') (it takes no id and lists every component's status and messages) or gh_inspect(action='tree', id=...) (each tree carries its owner's error or warning)",
                         "The compile happens inside this call rather than at the next solve, so the first script write of a session can take noticeably longer",
-                        "One undo step: Ctrl+Z restores the previous source and ports, with their wires. A source write or port sync that fails rolls the whole call back (success=false, rolledBack=true): nothing is changed"
+                        "One undo step: Ctrl+Z restores the previous source and ports, with their wires. A source write or port sync that fails rolls the whole call back (success=false, rolledBack=true): nothing is changed",
+                        "Code the component already stores, with ports that already match its RunScript signature, writes nothing and records no undo step, but the program is still rebuilt (rebuilt=true): re-sending the same code is how to force a recompile"
                     }
                 },
                 ["configure"] = new ActionInfo
@@ -86,7 +87,8 @@ namespace Cordyceps.Tools.Unified
                         "Changing inputs/outputs alone rebuilds too: the build reads the parameters to shape the program's ports, so a program compiled against the old ones is stale. Its verified/sourceDiverged compares the running program against the source already stored on the component",
                         "A call that changed nothing (no code and no inputs/outputs, or one refused up front) returns rebuilt=false with rebuildSkipped and verificationSkipped saying so — every response answers the rebuild question, so an absent rebuilt field is never the answer",
                         "runningSource can arrive WITHOUT a verified field: whenever nothing was verified, the program the component will run is still read and handed back unjudged. Present with verified=false it is the divergence; present with verificationSkipped it is simply what runs",
-                        "One undo step: Ctrl+Z restores the source and ports, with their wires. A call that changes nothing records nothing and returns no undo"
+                        "One undo step: Ctrl+Z restores the source and ports, with their wires. A call that changes nothing records nothing and returns no undo",
+                        "A call changes nothing when its code is already stored and every side it gives already has those port names in that order, with the access it gives: success=true, message 'Nothing to change', codeSet/parametersApplied=true when given, and no undo. Code that was given is still rebuilt (rebuilt=true), as in set; a sides-only call rebuilds nothing (rebuilt=false, rebuildSkipped). A 'type' in any input or output always counts as a change (the current type hint cannot be compared), so that call is recorded"
                     }
                 },
                 ["info"] = new ActionInfo
@@ -218,6 +220,13 @@ namespace Cordyceps.Tools.Unified
                 if (!ToolHelpers.TryConfirmPortRemoval(doc, id, component, SourceSyncRemoval(component, finalSource), out var refusal))
                     return ToolHelpers.ErrorResponse(refusal);
 
+                // The same source, with ports the sync would leave as they are, changes nothing in
+                // the document: no edit opens, so no undo step is pushed. The program is still
+                // rebuilt, because re-sending the same code is how a caller forces a recompile
+                // (after a referenced library changes, say), and a rebuild is not document content.
+                if (SourceSyncChangesNothing(component, finalSource))
+                    return SetReply(component, finalSource, RebuildUnchanged(doc, component, finalSource), null);
+
                 return _context.Edit(doc, EditReplies.RecordName("gh_script", "set"), tx =>
                 {
                     // One generic record, before the write, covers the source and every port the
@@ -248,46 +257,85 @@ namespace Cordyceps.Tools.Unified
                     // ExpireSolution(true) or NewSolution, which inside a cluster make the parent
                     // recreate it, orphaning the editor and breaking its input hooks.
 
-                    var inputs = new List<object>();
-                    var outputs = new List<object>();
-
-                    if (component is IGH_Component ghComp)
-                    {
-                        foreach (var param in ghComp.Params.Input)
-                            inputs.Add(new { name = param.Name, type = param.TypeName });
-                        foreach (var param in ghComp.Params.Output)
-                            outputs.Add(new { name = param.Name, type = param.TypeName });
-                    }
-
-                    var response = new Dictionary<string, object>
-                    {
-                        ["success"] = true,
-                        ["id"] = component.InstanceGuid.ToString(),
-                        ["codeSet"] = true,
-                        ["inputs"] = inputs,
-                        ["outputs"] = outputs
-                    };
-
-                    foreach (var field in rebuildFields)
-                        response[field.Key] = field.Value;
-
-                    // The source is stored, but a unified Script component with no language directive
-                    // compiles to nothing ("Can not determine input code language") — and SetSource
-                    // reports no error. The failure only surfaces at solve time, which we can't observe
-                    // here without forcing a (cluster-unsafe) recompute, so flag it up front.
-                    var languageWarning = ScriptDirective.LanguageWarning(component.GetType().Name, finalSource);
-                    if (languageWarning != null)
-                        response["languageWarning"] = languageWarning;
-
-                    if (lostConnections != null)
-                    {
-                        response["lostConnections"] = lostConnections;
-                        response["reconnectHint"] = ReconnectHint;
-                    }
-
-                    return JsonConvert.SerializeObject(response);
+                    return SetReply(component, finalSource, rebuildFields, lostConnections);
                 });
             });
+        }
+
+        /// <summary>
+        /// Rebuild a script whose stored source and ports already match the call, outside any edit:
+        /// the rebuild changes no document content, so it records no undo step. The component is
+        /// expired and a solve scheduled so the rebuilt program runs, as an edit's commit would do.
+        /// </summary>
+        private static Dictionary<string, object> RebuildUnchanged(GH_Document doc, IGH_DocumentObject component, string finalSource)
+        {
+            var rebuildFields = ScriptComponents.RebuildAndVerify(component, finalSource);
+            if (component is IGH_ActiveObject active)
+                active.ExpireSolution(false);
+            SolveCoordinator.Schedule(doc, expireAll: false);
+            return rebuildFields;
+        }
+
+        /// <summary>
+        /// Whether <c>set</c> (or <c>configure</c> with only code) would change nothing: the component
+        /// already stores <paramref name="finalSource"/>, and the port sync <see cref="SyncScriptParams"/>
+        /// runs after the write would leave its ports as they are. Read before the edit opens.
+        /// </summary>
+        private static bool SourceSyncChangesNothing(IGH_DocumentObject component, string finalSource)
+        {
+            var ghComponent = component as IGH_Component;
+            bool syncsPorts = ghComponent != null && component is IGH_VariableParameterComponent;
+            return NoChange.ScriptSourceSync(component.GetType().Name, ScriptComponents.ReadSource(component), finalSource, syncsPorts,
+                syncsPorts ? ghComponent.Params.Input.Select(p => p.NickName).ToList() : new List<string>(),
+                syncsPorts ? ghComponent.Params.Output.Skip(1).Select(p => p.NickName).ToList() : new List<string>());
+        }
+
+        /// <summary>
+        /// The reply of a <c>set</c> that stands: the component's ports, the rebuild outcome, and the
+        /// wires the port sync cut. The same shape whether the call wrote the source or found it
+        /// already stored; the rebuild fields say which.
+        /// </summary>
+        private static string SetReply(IGH_DocumentObject component, string finalSource,
+            Dictionary<string, object> rebuildFields, List<object> lostConnections)
+        {
+            var inputs = new List<object>();
+            var outputs = new List<object>();
+
+            if (component is IGH_Component ghComp)
+            {
+                foreach (var param in ghComp.Params.Input)
+                    inputs.Add(new { name = param.Name, type = param.TypeName });
+                foreach (var param in ghComp.Params.Output)
+                    outputs.Add(new { name = param.Name, type = param.TypeName });
+            }
+
+            var response = new Dictionary<string, object>
+            {
+                ["success"] = true,
+                ["id"] = component.InstanceGuid.ToString(),
+                ["codeSet"] = true,
+                ["inputs"] = inputs,
+                ["outputs"] = outputs
+            };
+
+            foreach (var field in rebuildFields)
+                response[field.Key] = field.Value;
+
+            // The source is stored, but a unified Script component with no language directive
+            // compiles to nothing ("Can not determine input code language") — and SetSource
+            // reports no error. The failure only surfaces at solve time, which we can't observe
+            // here without forcing a (cluster-unsafe) recompute, so flag it up front.
+            var languageWarning = ScriptDirective.LanguageWarning(component.GetType().Name, finalSource);
+            if (languageWarning != null)
+                response["languageWarning"] = languageWarning;
+
+            if (lostConnections != null)
+            {
+                response["lostConnections"] = lostConnections;
+                response["reconnectHint"] = ReconnectHint;
+            }
+
+            return JsonConvert.SerializeObject(response);
         }
 
         private string ActionConfigure(string id, string inputs, string outputs, string code)
@@ -334,17 +382,87 @@ namespace Cordyceps.Tools.Unified
                             string.IsNullOrEmpty(code) ? code : PreserveLanguageDirective(component, code)), out var refusal))
                     return ToolHelpers.ErrorResponse(refusal);
 
+                // A configure whose code is already stored and whose ports already have the names
+                // and access it asks for changes nothing: no edit opens, so no undo step is pushed.
+                var unchanged = ConfigureUnchangedReply(doc, ghComponent, inputDefs, outputDefs, code);
+                if (unchanged != null)
+                    return unchanged;
+
                 return _context.Edit(doc, EditReplies.RecordName("gh_script", "configure"), tx =>
                     ApplyConfigure(tx, ghComponent, inputDefs, outputDefs, code));
             });
         }
 
         /// <summary>
+        /// The reply of a <c>configure</c> that would change nothing, or null when it would change
+        /// something (or asks for nothing, which <see cref="ApplyConfigure"/> answers). Mirrors the
+        /// route <see cref="ApplyConfigure"/> would take: the parameter route when a side is given,
+        /// the code route otherwise. The reply has the shape of an applied one, with the rebuild
+        /// fields saying nothing was written.
+        /// </summary>
+        private string ConfigureUnchangedReply(GH_Document doc, IGH_Component ghComponent,
+            List<ScriptParamDef> inputDefs, List<ScriptParamDef> outputDefs, string code)
+        {
+            bool codeGiven = !string.IsNullOrEmpty(code);
+            bool anyParamSide = inputDefs != null || outputDefs != null;
+            string finalSource = codeGiven ? PreserveLanguageDirective(ghComponent, code) : null;
+
+            bool nothing;
+            if (anyParamSide)
+            {
+                // A side on a component that cannot vary its parameters is refused before this.
+                nothing = NoChange.ScriptParameters(
+                    ghComponent.Params.Input.Select(p => (p.NickName, p.Access.ToString())).ToList(),
+                    ghComponent.Params.Output.Skip(1).Select(p => p.NickName).ToList(),
+                    inputDefs, outputDefs, ScriptComponents.ReadSource(ghComponent), finalSource);
+            }
+            else if (codeGiven)
+            {
+                nothing = SourceSyncChangesNothing(ghComponent, finalSource);
+            }
+            else
+            {
+                return null;
+            }
+
+            if (!nothing)
+                return null;
+
+            var response = new Dictionary<string, object>
+            {
+                ["success"] = true,
+                ["id"] = ghComponent.InstanceGuid.ToString(),
+                ["message"] = "Nothing to change: the component already has this configuration",
+                ["inputs"] = DescribeInputs(ghComponent),
+                ["outputs"] = DescribeOutputs(ghComponent)
+            };
+            // Code that is already stored is still rebuilt, as in set: re-sending it is how a caller
+            // forces a recompile. A parameter-only call that changes nothing has nothing to rebuild.
+            var rebuildFields = codeGiven
+                ? RebuildUnchanged(doc, ghComponent, finalSource)
+                : ScriptProgram.DescribeUnchanged(NoChange.ScriptAlreadyAppliedReason);
+            foreach (var field in rebuildFields)
+                response[field.Key] = field.Value;
+            if (codeGiven)
+            {
+                response["codeSet"] = true;
+                var languageWarning = ScriptDirective.LanguageWarning(ghComponent.GetType().Name, finalSource);
+                if (languageWarning != null)
+                    response["languageWarning"] = languageWarning;
+            }
+            if (anyParamSide)
+                response["parametersApplied"] = true;
+            return JsonConvert.SerializeObject(response);
+        }
+
+        /// <summary>
         /// The changing half of <c>configure</c>, run inside its edit once every input has been
         /// checked. Each route records the component before its first change, so the ports, their
-        /// wires and the source come back together on undo; a route that changes nothing records
-        /// nothing and the call pushes no undo step. A step that throws, the source write among
-        /// them, rolls the whole call back: a configure never leaves new ports around old code.
+        /// wires and the source come back together on undo. A call that would change nothing is
+        /// answered before the edit opens (<see cref="ConfigureUnchangedReply"/>), and one that asks
+        /// for nothing takes no route and records nothing, so neither pushes an undo step. A step
+        /// that throws, the source write among them, rolls the whole call back: a configure never
+        /// leaves new ports around old code.
         /// </summary>
         private string ApplyConfigure(EditTransaction tx, IGH_Component ghComponent,
             List<ScriptParamDef> inputDefs, List<ScriptParamDef> outputDefs, string code)

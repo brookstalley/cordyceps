@@ -261,6 +261,18 @@ namespace Cordyceps.Core
         public static readonly TimeSpan DefaultHeartbeatStaleAfter = TimeSpan.FromSeconds(5);
 
         /// <summary>
+        /// How long the UI thread may stay blocked while Cordyceps holds it before the hint says a
+        /// dialog may be waiting for a human. Holding the UI thread hides a dialog from
+        /// <see cref="HostStatus.ModalInferred"/>: one Grasshopper raises inside our own call (an
+        /// "undo failed" assert during a rollback) or one a human already had open while our call
+        /// waits to run. The work Cordyceps does on the UI thread (a bake, a viewport capture, a
+        /// save, a script compile) finishes in seconds, tens of seconds for a large one, so past a
+        /// minute a dialog is the likelier cause; it is still well inside the document lock's
+        /// two-minute wait, so the caller hears it before queued calls start failing.
+        /// </summary>
+        public static readonly TimeSpan UiWorkDialogSuspectedAfter = TimeSpan.FromSeconds(60);
+
+        /// <summary>
         /// The instance the host wires up. Static because the solution events, the heartbeat tick,
         /// and every reader live in different objects but describe one Rhino process.
         /// </summary>
@@ -624,6 +636,17 @@ namespace Cordyceps.Core
                     return $"Grasshopper is solving {solvingDoc} and the UI thread is busy with it. "
                          + "Wait and retry — this is a busy bridge, not a dead one. "
                          + "If it persists far beyond the expected solve time, ask a human to check Rhino for an open dialog.";
+
+                // Measured by the heartbeat's age, how long the UI thread has been unavailable, not by
+                // when our call began: a call queued behind a dialog a human already had open has
+                // only just begun, but the thread has been held all along.
+                case UiLiveness.Blocked when status.UiWorkInProgress
+                                             && status.HeartbeatAgeMs > UiWorkDialogSuspectedAfter.TotalMilliseconds:
+                    return $"A Cordyceps operation is on the Rhino UI thread, which has not responded for "
+                         + $"{FormatAge(status.HeartbeatAgeMs)}: longer than our own work normally takes. "
+                         + "A Grasshopper or Rhino dialog may be open and waiting for a human (an 'undo failed' "
+                         + "dialog during a rollback is one). modal_inferred stays false while Cordyceps holds "
+                         + "the UI thread, so it cannot confirm this: ask a human to check Rhino for an open dialog.";
 
                 case UiLiveness.Blocked when status.UiWorkInProgress:
                     return $"A Cordyceps operation is running on the Rhino UI thread and has held it for "

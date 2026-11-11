@@ -125,6 +125,30 @@ namespace Cordyceps.Tools.Unified
                         return ToolHelpers.ErrorResponse($"Nothing was changed: ids[{self.Index}] '{self.Text}' is the group itself; a group cannot contain itself");
                 }
 
+                bool colourGiven = ToolHelpers.TryParseColor(color, out var parsedColor);
+
+                string Reply()
+                {
+                    var bounds = group.Attributes?.Bounds ?? RectangleF.Empty;
+                    var result = new Dictionary<string, object>
+                    {
+                        ["success"] = true,
+                        ["groupId"] = group.InstanceGuid.ToString(),
+                        ["groupName"] = group.NickName,
+                        ["addedCount"] = objects.Count,
+                        ["addedIds"] = objects.Select(o => o.InstanceGuid.ToString()).ToList(),
+                        ["bounds"] = new { x = bounds.X, y = bounds.Y, width = bounds.Width, height = bounds.Height }
+                    };
+                    AddDuplicateNotes(result, outcomes);
+                    return JsonConvert.SerializeObject(result);
+                }
+
+                // Every id already a member, and no new colour, changes nothing: no edit opens, so
+                // no undo step is pushed. The ids are still reported as added, as they always were.
+                if (group != null && NoChange.GroupAdd(group.ObjectIDs, objects.Select(o => o.InstanceGuid),
+                        group.Colour.ToArgb(), colourGiven ? parsedColor.ToArgb() : (int?)null))
+                    return Reply();
+
                 return _context.Edit(doc, EditReplies.RecordName("gh_canvas", "group_add"), tx =>
                 {
                     if (group == null)
@@ -140,7 +164,7 @@ namespace Cordyceps.Tools.Unified
                         tx.RecordGeneric(group);
                     }
 
-                    if (ToolHelpers.TryParseColor(color, out var parsedColor))
+                    if (colourGiven)
                         group.Colour = parsedColor;
 
                     foreach (var obj in objects)
@@ -149,19 +173,7 @@ namespace Cordyceps.Tools.Unified
                     group.ExpireCaches();
                     Instances.ActiveCanvas?.Invalidate();
 
-                    var bounds = group.Attributes?.Bounds ?? RectangleF.Empty;
-
-                    var result = new Dictionary<string, object>
-                    {
-                        ["success"] = true,
-                        ["groupId"] = group.InstanceGuid.ToString(),
-                        ["groupName"] = group.NickName,
-                        ["addedCount"] = objects.Count,
-                        ["addedIds"] = objects.Select(o => o.InstanceGuid.ToString()).ToList(),
-                        ["bounds"] = new { x = bounds.X, y = bounds.Y, width = bounds.Width, height = bounds.Height }
-                    };
-                    AddDuplicateNotes(result, outcomes);
-                    return JsonConvert.SerializeObject(result);
+                    return Reply();
                 });
             });
         }

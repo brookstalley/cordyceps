@@ -50,9 +50,6 @@ namespace Cordyceps.Core.Edits
         /// <summary>A param's data mapping (flatten, graft), reverse and simplify.</summary>
         DataModifiers,
 
-        /// <summary>A param's internally stored (persistent) values.</summary>
-        PersistentData,
-
         /// <summary>An object added to the document.</summary>
         Add,
 
@@ -379,8 +376,8 @@ namespace Cordyceps.Core.Edits
 
         /// <summary>
         /// Recompute <paramref name="target"/> when the edit commits. Recording a change that affects
-        /// the solution (wires, a generic change, enabled, data modifiers, stored values, an add)
-        /// already expires the changed object; call this for anything else that must recompute.
+        /// the solution (wires, a generic change, enabled, data modifiers, an add) expires the
+        /// changed object through this; the host offers no other caller until a change needs one.
         /// </summary>
         public void Expire(TTarget target)
         {
@@ -515,7 +512,6 @@ namespace Cordyceps.Core.Edits
                 case EditKind.Generic:
                 case EditKind.Enabled:
                 case EditKind.DataModifiers:
-                case EditKind.PersistentData:
                 case EditKind.Add:
                     return true;
                 default:

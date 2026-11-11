@@ -55,18 +55,36 @@ namespace Cordyceps.Core.Edits
         }
 
         /// <summary>
+        /// The <c>solve</c> object a committed edit reports, from what its commit did:
+        /// <list type="bullet">
+        /// <item>none when the commit asked for no solve (nothing changed) or the request threw (the reply's <c>warning</c> says so);</item>
+        /// <item>the refusal when a solver switch stopped the solve, for every edit: the change was made, but nothing computes until the switch is on;</item>
+        /// <item><c>scheduled</c> when the solve was scheduled, only for an edit that asks for it (<paramref name="reportScheduled"/>). Scheduling is what every edit does, so most leave it out; <c>gh_document clear</c> reports it because it used to solve before replying.</item>
+        /// </list>
+        /// </summary>
+        /// <param name="scheduled">The commit's own answer, <see cref="CommitOutcome.Scheduled"/>: a solve was asked for and the request did not throw.</param>
+        /// <param name="refusal">The <c>solve</c> object of a refused request; null when the request was scheduled.</param>
+        /// <param name="reportScheduled">True for an edit whose reply names a scheduled solve.</param>
+        public static JObject CommitSolve(bool scheduled, JObject refusal, bool reportScheduled)
+        {
+            if (!scheduled) return null;
+            if (refusal != null) return refusal;
+            return reportScheduled ? SolvePolicy.ScheduledField(null) : null;
+        }
+
+        /// <summary>
         /// A committed edit's reply: the body's fields, then
         /// <list type="bullet">
         /// <item><c>undo</c> naming the record, when one was pushed (<paramref name="pushedRecord"/>);</item>
-        /// <item><c>solve</c>, when the solve was refused (a solver switch is off). A refused solve never fails the edit: the change was made, and a human may have switched the solver off on purpose. A body that reports its own <c>solve</c> keeps it;</item>
+        /// <item><c>solve</c>, as <see cref="CommitSolve"/> decided it. A refused solve never fails the edit: the change was made, and a human may have switched the solver off on purpose. A body that reports its own <c>solve</c> keeps it;</item>
         /// <item><c>warning</c>, when a step after the push threw. The edit stands, so <c>success</c> is the body's; the warning names the step and what to check. A body's own <c>warning</c> comes first.</item>
         /// </list>
         /// </summary>
-        public static string Committed(JObject body, string pushedRecord, JObject refusedSolve, IReadOnlyList<EditFailure> warnings = null)
+        public static string Committed(JObject body, string pushedRecord, JObject solve, IReadOnlyList<EditFailure> warnings = null)
         {
             if (body == null) throw new ArgumentNullException(nameof(body));
             if (pushedRecord != null) body["undo"] = pushedRecord;
-            if (refusedSolve != null && body["solve"] == null) body["solve"] = refusedSolve;
+            if (solve != null && body["solve"] == null) body["solve"] = solve;
 
             if (warnings != null && warnings.Count > 0)
             {
@@ -132,7 +150,7 @@ namespace Cordyceps.Core.Edits
             return reply.ToString(Formatting.None);
         }
 
-        /// <summary>The kind as a reply names it: <c>wires</c>, <c>nickName</c>, <c>persistentData</c>.</summary>
+        /// <summary>The kind as a reply names it: <c>wires</c>, <c>nickName</c>, <c>dataModifiers</c>.</summary>
         public static string KindName(EditKind kind)
         {
             var name = kind.ToString();

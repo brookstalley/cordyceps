@@ -8,7 +8,7 @@ working-branches: []
 last_validated: 2026-11-11
 depends_on: [.prawduct/artifacts/build-plan-solve-policy.md]
 governed_by: [.prawduct/artifacts/project-preferences.md, .prawduct/artifacts/boundary-patterns.md]
-partition: 01 serial first (the keystone every other chunk builds on); then 02, 03, 04 and 05 delegated in parallel to four isolated worktrees, because each owns disjoint files (02 `GhCanvasTool.Values.cs` + `GhCanvasTool.Modifiers.cs`; 03 `GhCanvasTool.cs` + `GhDocumentTool.cs`; 04 `GhCanvasTool.Groups.cs`; 05 `GhCanvasTool.Zoomable.cs` + `GhScriptTool.cs`); 06 (documentation) is the coordinator's, who alone edits `McpServer.cs`, `CHANGELOG.md`, the Knowledge guides and every `ActionInfo` block
+partition: 01 serial first (the keystone every other chunk builds on); then 02, 03, 04 and 05 delegated in parallel to four isolated worktrees, because each owns disjoint files (02 `GhCanvasTool.Values.cs` + `GhCanvasTool.Modifiers.cs`; 03 `src/Cordyceps/Tools/Unified/GhCanvasTool.cs` + `GhDocumentTool.cs`; 04 `src/Cordyceps/Tools/Unified/GhCanvasTool.Groups.cs`; 05 `GhCanvasTool.Zoomable.cs` + `src/Cordyceps/Tools/Unified/GhScriptTool.cs`); 06 (documentation) is the coordinator's, who alone edits `McpServer.cs`, `CHANGELOG.md`, the Knowledge guides and every `ActionInfo` block
 ---
 
 # Build Plan — every Cordyceps edit is one Grasshopper undo step, and a failed call rolls back
@@ -60,7 +60,7 @@ Chunk 06 is `cumulative-final`).
   - `GH_UndoRecord.Undo` runs its actions in reverse and stops at the first throw. Each
     `IGH_UndoAction.Undo(doc)` is public, so rollback can carry on past a failed action.
   - `PushUndoRecord` clears the redo stack, as every Grasshopper edit does.
-- **Inferences** (made on the owner's behalf; the boundary review shows them to the owner):
+- **Inferences** (made on the owner's behalf; all confirmed by the owner on 2026-11-11, `.prawduct/owner-rulings.md`):
   1. **Per-id actions keep their contract.** `delete`, `move`, `preview`, `enable`,
      `connect` (bulk), the group membership actions and `gh_document clear` still report per-id
      results. Ids that fail to resolve are refused before the first mutation, as today. The ids
@@ -95,11 +95,23 @@ Chunk 06 is `cumulative-final`).
   except at the one apply boundary, which carries a waiver. Lifted Hyperceps code (MIT; the owner
   is a copyright holder) keeps its licence attribution in a file header.
 - **Norm dispositions:** `project-preferences.md`: conforms. No new tool or action. Response shapes
-  are kept and gain only an `undo` field naming the record (inference: `"undo": "<record name>"`
-  when one was pushed, absent when nothing changed). `boundary-patterns.md`: the MCP action
-  contract changes additively, plus the `delete` solve change (Inference 4), named in the
-  changelog. The embedded docs contract is audited in Chunk 06. The host API is foreign, so
-  Chunk 01 runs verify-api.
+  change as follows, each recorded in Decisions made mid-build and labelled in `CHANGELOG.md`:
+  - added to edit replies: `undo` naming the record (inference: `"undo": "<record name>"` when one
+    was pushed, absent when nothing changed), `rolledBack`, `rollbackFailures`, and `warning`;
+  - removed: `configure`'s `sourceError`, and `codeSet: false`'s old meaning (a failed write; it
+    now means only "refused before anything changed"), and `componentType` from `gh_script set`'s
+    failure reply (CHANGELOG "Breaking: a failed `gh_script` source write or port sync fails the
+    whole call");
+  - per-action behaviour, each labelled Breaking in the CHANGELOG: `delete` and `group_delete`
+    schedule one solve (Inference 4); toggle `set` parsing; value-list `config` `items`; slider
+    `add`/`config` refusals; `zoomable set_count` rolls back; a failed `gh_script` write or sync
+    fails the whole call; `configure` refuses `inputs`/`outputs` on a fixed-parameter component;
+    `gh_script set`/`configure` that send what the component already has write nothing.
+
+  `boundary-patterns.md`: it forbids silent renames and removals; none of these is silent. Each is
+  named Breaking in the changelog, and the owner ruled that this ships in the next major
+  (2026-11-11, Release below). The embedded docs contract is audited in Chunk 06. The host API is
+  foreign, so Chunk 01 runs verify-api.
 - **Release:** ships in the next major, with solve-policy (owner, 2026-11-11).
 - **Not in scope:** agent-callable undo/redo (owner); batch (#96); sweep (#97); Rhino-side undo
   (#60); a fallback that restores a pre-apply archive when rollback cannot finish (reported
@@ -164,6 +176,11 @@ Chunk 06 is `cumulative-final`).
   - (integration) Removed as dead after a grep of `src/` found no caller: `ToolHelpers.GetOwnerDocument` and `GhScriptTool.CreateTypedParameter`. Settled by the brief.
   - (coordinator) Chunks 02-05 were built in parallel and integrated together (merges 874d4d1, 1d68068, d41c5a2, d8dcd4d), so their review is Chunk 06's cumulative review over the one combined diff, not four `chunk` reviews of interleaved merges; settled by the boundary review running everything (rigor is stage-keyed).
   - (coordinator) `group_rename`, `group_color` and `group_move` record nothing when the call changes nothing (same name, same colour, zero offset), matching every other action; settled by the docs audit, which found the inconsistency.
+  - (review) `group_add` on an existing group, `gh_script set`, and `gh_script configure` decide "changes nothing" before the edit opens, in host-free `src/Cordyceps/Core/NoChange.cs` (tested), and answer with their usual success reply without `undo`: `group_add` when every id is already a member (Grasshopper's `GH_Group.AddObject` skips a held id, ilspycmd) and no new colour is given; `set` and `configure`'s code route when the stored source is the same text and the signature sync would leave the ports as they are; `configure`'s parameter route when every given side already has those names in order and the given input access, and the code (if any) is stored. A no-op `set`/`configure` writes nothing; code it was given is still rebuilt outside the edit (no undo step; the component is expired and a solve scheduled), because re-sending the same code is how a caller forces a recompile (coordinator, at integration: the delegate's no-rebuild version would have broken that, and a rebuild is not document content). A sides-only no-op rebuilds nothing (`rebuildSkipped` = `NoChange.ScriptAlreadyAppliedReason`). A def with a `type` always counts as a change, because the current type hint lives in a converter that cannot be compared with a type name without setting it; that call is recorded and the tip says so. Every other migrated action already decided before the edit or guarded its recorder (set, config, modifier, preview, enable, move, rename, wire connect/disconnect/clear, group_remove/rename/colour/move); add, constant, delete, group_create, group_delete and zoomable add/remove always change something. Settled by "absent when nothing changed".
+  - (review) `gh_document clear`'s `solve` comes from the commit: `EditReplies.CommitSolve(CommitOutcome.Scheduled, refusal, reportScheduled)` reports a refusal for every edit and `scheduled` only for an edit run with `reportScheduledSolve: true`, which only `clear` passes. `SolvePolicy.WithScheduledEditSolve` and its tests are gone, replaced by `EditScopeTests`/`EditRepliesTests` cases on the new path. The documented contract is kept: only `clear` names a scheduled solve. One reply changes: a `clear` whose warning is about a step other than the schedule now carries `solve: scheduled`. Settled by "the transaction knows it" and the existing `clear` contract.
+  - (review) `CLAUDE.md` and `docs/architecture.md` say canvas content (objects, wires, values) goes through `_context.Edit`, and reads, the `solver` switch and `revert` use `ExecuteOnUiThread` by design, naming why `solver` inside an edit would be silently reverted (`EndApply` restores `Document.Enabled`). Settled by the review: the old wording, followed, breaks `solver`.
+  - (review) `gh_inspect(action='connection')`'s hint for a blocked UI thread held by Cordyceps says a dialog may be waiting for a human once the heartbeat is older than `SolverState.UiWorkDialogSuspectedAfter` (60 s). Measured by the heartbeat's age, not the call's, so a call queued behind a human's open dialog is covered too. 60 s because Cordyceps' own UI work (bakes, captures, saves, script compiles) finishes in seconds to tens of seconds, and it is half the document lock's 120 s wait. `modal_inferred` is unchanged (it cannot tell our work from a dialog inside it). Settled by "a signal is only as trustworthy as what the rest of the system does to it" (learnings, core).
+  - (review) Removed as unconsumed (grep of `src/` found no caller): `EditTransaction.RecordPersistentData`, `EditTransaction.Expire`, `UndoEvents`' persistent-data case, its `CreatePersistentDataEvent<T>` reflection helper and `StoredType`, and `EditKind.PersistentData`. The journal's own `Expire` stays: `Record` and `Add` use it for every kind that expires. Batch (#96) re-adds and proves what it needs. Settled by "no unexercised reflection beside verified recorders".
 - **Level:** Medium. The design is proven on macOS through Hyperceps and is said to be tested on
   Windows. The per-family undo choices, lossy third-party serialization, and the pause's visible
   side effects are host behaviour that tests cannot reach. Raised by VRF-024.
@@ -303,3 +320,26 @@ Chunk 06 is `cumulative-final`).
 - **Acceptance criteria:** #91's "After an agent edit, Ctrl+Z in Grasshopper reverts it" is met
   for every action in the inventory. A grep for document mutations in the tool classes finds
   none outside a transaction (evidence in the record). The suite is green.
+- **Mutation-grep evidence (review):** `grep -rnE` over `src/Cordyceps/Tools/` for `doc.AddObject`,
+  `doc.RemoveObject`, `.ExpireSolution(`, `NewSolution`, `AddSource(`, `RemoveSource(`,
+  `RemoveAllSources(`, `NickName =` and `Pivot =` has 18 hits, none a mutation outside a
+  transaction:
+  - inside a transaction body, after its recorder: `src/Cordyceps/Tools/Unified/GhWireTool.cs` `AddSource` (connect),
+    `RemoveSource` (disconnect), `RemoveAllSources` (clear), after `RecordWires`;
+    `src/Cordyceps/Tools/Unified/GhCanvasTool.Groups.cs` `group.NickName = newName` (group_rename, after `RecordGeneric`) and
+    `member.Attributes.Pivot` (group_move, after `RecordPivot`); `src/Cordyceps/Tools/Unified/GhCanvasTool.cs`
+    `obj.Attributes.Pivot = pivot` (move, after `RecordPivot`) and `component.NickName = nickname`
+    (rename, after `RecordNickName`);
+  - on a new object, before or inside the edit that adds it: `src/Cordyceps/Tools/Unified/GhCanvasTool.cs` `add`'s nickname
+    and pivot and `constant`'s panel pivot and nickname (before `tx.AddObject`);
+    `src/Cordyceps/Tools/Unified/GhCanvasTool.Groups.cs` `group_create`'s and `group_add`'s new group's nickname;
+    `src/Cordyceps/Tools/Unified/GhScriptTool.cs` `newParam.NickName` in the port sync, a port just created inside a
+    `set`/`configure` edit after `RecordGeneric` on its component;
+  - out of scope: a comment in `src/Cordyceps/Tools/Unified/GhScriptTool.cs` naming `NewSolution`, and three comparisons
+    (`==`), not assignments, in `src/Cordyceps/Tools/Unified/GhCanvasTool.Groups.cs` (group_rename's unchanged check),
+    `src/Cordyceps/Tools/Unified/GhCanvasTool.cs` (find) and `src/Cordyceps/Tools/Unified/GhInspectTool.Tree.cs` (a port label).
+
+  No code hit for `doc.AddObject`, `doc.RemoveObject`, `.ExpireSolution(` or `NewSolution` in a tool
+  class: adds and removes go through `tx.AddObject`/`tx.RemoveObject`, and solves through the
+  commit. The by-nature exceptions (Inference 5) do not match the pattern: `solver`'s
+  `doc.Enabled` and `revert`'s `canvas.Document`.

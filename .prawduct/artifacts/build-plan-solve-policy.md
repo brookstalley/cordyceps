@@ -48,7 +48,7 @@ Critic mode: one `cumulative` review at the end (a two-chunk plan; Chunk 02 is `
      and that solution solves whatever we expired.
   4. Public `GH_Document.ExpireSolution()` expires every object. It expires cluster hooks too, so
      the cluster path keeps `ClusterSafeRecompute`'s source-object expiry.
-- **Inferences** (made on the owner's behalf; the boundary review shows them to the owner):
+- **Inferences** (made on the owner's behalf; all confirmed by the owner on 2026-11-11, `.prawduct/owner-rulings.md`):
   1. **Schedule, never solve synchronously.** The coordinator expires (cluster-safe) and calls
      `ScheduleSolution` inside a short `ExecuteOnUiThread`, then returns. Any waiting happens off
      the UI thread, outside the document lock. Why: a synchronous `NewSolution` inside

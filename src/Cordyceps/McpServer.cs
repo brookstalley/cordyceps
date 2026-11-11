@@ -665,6 +665,9 @@ cached state and never touches the document, so it replies even when everything 
 - ui='blocked' + solving=true  -> Grasshopper is mid-solve. WAIT and retry; heavy solves take minutes.
 - modal_inferred=true          -> a modal dialog is open in Rhino. Only a HUMAN can clear it. Stop
                                   retrying and tell the user what to dismiss.
+- ui='blocked', solving=false, no modal_inferred -> a Cordyceps call holds the UI thread; wait. Past
+                                  a minute the hint says a dialog may be open: modal_inferred cannot
+                                  see one while Cordyceps holds the thread, so ask a human to check.
 - ui='responsive'              -> the host is fine; treat any error as a real tool error.
 
 Key points:

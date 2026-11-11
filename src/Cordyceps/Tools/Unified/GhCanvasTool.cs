@@ -270,7 +270,7 @@ namespace Cordyceps.Tools.Unified
                     Required = new[] { "ids" },
                     Optional = new[] { "id", "name", "color" },
                     Example = "action='group_add', ids='[\"a\",\"b\"]', name='MyGroup'",
-                    Tips = new[] { "If 'id' is provided it must resolve to an existing group (error otherwise); omit 'id' to create a new group", GroupIdTip, MembersTip }
+                    Tips = new[] { "If 'id' is provided it must resolve to an existing group (error otherwise); omit 'id' to create a new group", GroupIdTip, MembersTip, "Ids already in the group are reported as added. A call where every id is already a member and no new color is given changes nothing and returns no undo" }
                 },
                 ["group_remove"] = new ActionInfo
                 {

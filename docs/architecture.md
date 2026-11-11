@@ -16,10 +16,15 @@ last command received.
 **Core/GrasshopperContext.cs** - Thread-safe wrapper for Grasshopper document access. All
 Grasshopper operations must run on the UI thread; this class provides `ExecuteOnUiThread()` methods
 that marshal calls correctly, and `Edit(doc, name, tx => …)`, the one entry point for a call that
-changes a document. Reads use bare `ExecuteOnUiThread`; mutations never do.
+changes a document's canvas content: its objects, wires and values. Reads use bare
+`ExecuteOnUiThread`, and so, by design, do two document-level changes that are not canvas content:
+the solver switch (`gh_document solver`, a switch like Grasshopper's own Lock Solver; `Edit` saves
+`Document.Enabled` and restores it at commit, so a toggle made inside an edit would be silently
+undone) and document replacement (`revert`, which installs a new document whose undo stack starts
+empty).
 
-**Core/Edits/** - The edit layer: every Cordyceps call that changes a Grasshopper document runs as
-one `EditTransaction`, so it is one Grasshopper undo step a human can Ctrl+Z, and a call that
+**Core/Edits/** - The edit layer: every Cordyceps call that changes a Grasshopper document's canvas
+content runs as one `EditTransaction`, so it is one Grasshopper undo step a human can Ctrl+Z, and a call that
 throws partway is rolled back. The body records each change before making it (`tx.Record*`, the
 per-kind Grasshopper undo actions in `UndoEvents.cs`) and adds or removes objects through
 `tx.AddObject`/`tx.RemoveObject`. While it runs, the document's solver is paused. On commit the

@@ -13,8 +13,9 @@ namespace Cordyceps.Core.Edits
         IEditJournal Journal { get; }
 
         /// <summary>
-        /// The <c>solve</c> object to report after the commit's solve request, when a solver switch
-        /// refused it; null when it was scheduled or none was asked for.
+        /// The <c>solve</c> object of the commit's solve request when a solver switch refused it;
+        /// null when it was scheduled or none was asked for. Whether one was asked for and did not
+        /// throw is the commit's own answer, <see cref="CommitOutcome.Scheduled"/>.
         /// </summary>
         JObject SolveRefusal { get; }
 
@@ -53,9 +54,14 @@ namespace Cordyceps.Core.Edits
         /// <summary>
         /// Run <paramref name="body"/> as one edit of <paramref name="document"/>, opening a session
         /// with <paramref name="open"/> unless an edit of the same document is already running, in
-        /// which case the body joins it and its reply is returned as the body wrote it.
+        /// which case the body joins it and its reply is returned as the body wrote it (the open
+        /// edit's <paramref name="reportScheduledSolve"/> governs the one reply that carries a solve).
         /// </summary>
-        public string Run(object document, string name, Func<TSession> open, Func<TSession, string> body)
+        /// <param name="reportScheduledSolve">
+        /// True when the reply names a scheduled solve (<c>solve: {state: "scheduled"}</c>) as well
+        /// as a refused one; see <see cref="EditReplies.CommitSolve"/>.
+        /// </param>
+        public string Run(object document, string name, Func<TSession> open, Func<TSession, string> body, bool reportScheduledSolve = false)
         {
             if (document == null) throw new ArgumentNullException(nameof(document));
             if (string.IsNullOrEmpty(name)) throw new ArgumentException("An edit needs a name for its undo record.", nameof(name));
@@ -108,7 +114,7 @@ namespace Cordyceps.Core.Edits
                 return EditReplies.Committed(
                     reply,
                     outcome.Pushed ? name : null,
-                    outcome.Scheduled ? session.SolveRefusal : null,
+                    EditReplies.CommitSolve(outcome.Scheduled, session.SolveRefusal, reportScheduledSolve),
                     warnings);
             }
             finally

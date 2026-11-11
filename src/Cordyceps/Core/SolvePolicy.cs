@@ -271,34 +271,6 @@ namespace Cordyceps.Core
                || (enabled && string.Equals(action, "solver", StringComparison.OrdinalIgnoreCase));
 
         /// <summary>
-        /// The reply of an edit that schedules its solve and does not wait (<c>clear</c>), with its
-        /// <c>solve</c> object. The edit transaction adds <c>solve</c> only when a solver switch
-        /// refused the solve, so the scheduled case is filled in here:
-        /// <list type="bullet">
-        /// <item>a successful reply that pushed a record (<c>undo</c>) with no <c>solve</c> and no
-        /// <c>warning</c> scheduled one, and gets <c>scheduled</c>;</item>
-        /// <item>one that already has <c>solve</c> (the refusal) keeps it;</item>
-        /// <item>one with no record changed nothing and scheduled nothing, so it gets none;</item>
-        /// <item>one with a <c>warning</c> may be warning that scheduling failed, so it is not
-        /// claimed as scheduled;</item>
-        /// <item>a failed or rolled-back reply is left as it is.</item>
-        /// </list>
-        /// Text is kept as written (a nickname can look like a date).
-        /// </summary>
-        public static string WithScheduledEditSolve(string reply)
-        {
-            if (reply == null) throw new ArgumentNullException(nameof(reply));
-            if (!(ParseHelpers.ParseJsonKeepingText(reply) is JObject body)) return reply;
-
-            var success = body["success"];
-            if (success == null || success.Type != JTokenType.Boolean || !(bool)success) return reply;
-            if (body["undo"] == null || body["solve"] != null || body["warning"] != null) return reply;
-
-            body["solve"] = ScheduledField(null);
-            return body.ToString(Formatting.None);
-        }
-
-        /// <summary>
         /// The outcome of a wait for a scheduled solve, before the runtime messages are counted:
         /// the state, how long Cordyceps waited, and Grasshopper's own solve time when a solve
         /// ended (completed or aborted) and reported one.

@@ -85,6 +85,116 @@ namespace Cordyceps.Tests
             Assert.Null(scheduled["solve"]);
         }
 
+        // ---------------------------------------------------------------- an edit that names its scheduled solve (clear)
+
+        private string RunReportingSolve(Func<FakeSession, string> body)
+            => _scope.Run(_doc, "Cordyceps: gh_document clear", Open, body, reportScheduledSolve: true);
+
+        [Fact]
+        public void Run_ReportingTheSolve_NamesAScheduledSolve_FromTheCommit()
+        {
+            var reply = JObject.Parse(RunReportingSolve(s =>
+            {
+                s.Edits.Record(EditKind.Wires, new FakeObj("A"));
+                return "{\"success\":true,\"removedCount\":3}";
+            }));
+
+            Assert.Equal(1, _sink.Schedules);
+            Assert.Equal("scheduled", (string)reply["solve"]["state"]);
+            Assert.Equal(3, (int)reply["removedCount"]);
+            Assert.Equal("Cordyceps: gh_document clear", (string)reply["undo"]);
+        }
+
+        [Fact]
+        public void Run_ReportingTheSolve_KeepsTheRefusal()
+        {
+            var refused = SolvePolicy.ScheduledField(SolveState.SolverDisabled, documentEnabled: false);
+
+            var reply = JObject.Parse(RunReportingSolve(s =>
+            {
+                s.SolveRefusal = refused;
+                s.Edits.Record(EditKind.Wires, new FakeObj("A"));
+                return Ok;
+            }));
+
+            Assert.Equal("solver_disabled", (string)reply["solve"]["state"]);
+            Assert.Equal((string)refused["remedy"], (string)reply["solve"]["remedy"]);
+        }
+
+        [Fact]
+        public void Run_ReportingTheSolve_NamesNoneWhenNothingChanged()
+        {
+            var reply = JObject.Parse(RunReportingSolve(s => Ok));
+
+            Assert.Equal(0, _sink.Schedules);
+            Assert.Null(reply["solve"]);
+            Assert.Null(reply["undo"]);
+        }
+
+        [Fact]
+        public void Run_ReportingTheSolve_NamesNoneWhenSchedulingThrew_AndWarns()
+        {
+            _sink.FailSteps.Add("schedule");
+
+            var reply = JObject.Parse(RunReportingSolve(s =>
+            {
+                s.Edits.Record(EditKind.Wires, new FakeObj("A"));
+                return Ok;
+            }));
+
+            Assert.True((bool)reply["success"]);
+            Assert.Null(reply["solve"]);
+            Assert.Contains("scheduling the solve", (string)reply["warning"]);
+        }
+
+        /// <summary>
+        /// A warning from a step other than the schedule leaves the scheduled solve standing: the
+        /// commit says the solve was scheduled, and the reply says so beside the warning.
+        /// </summary>
+        [Fact]
+        public void Run_ReportingTheSolve_StillNamesTheSolve_WhenAnotherStepWarns()
+        {
+            var obj = new FakeObj("A");
+            _sink.FailExpireOf.Add(obj);
+
+            var reply = JObject.Parse(RunReportingSolve(s =>
+            {
+                s.Edits.Record(EditKind.Wires, obj);
+                return Ok;
+            }));
+
+            Assert.Equal(1, _sink.Schedules);
+            Assert.Equal("scheduled", (string)reply["solve"]["state"]);
+            Assert.Contains("marking the changed objects for recompute", (string)reply["warning"]);
+        }
+
+        [Fact]
+        public void Run_ReportingTheSolve_KeepsDateShapedTextAsWritten()
+        {
+            var reply = RunReportingSolve(s =>
+            {
+                s.Edits.Record(EditKind.Wires, new FakeObj("A"));
+                return "{\"success\":true,\"note\":\"2026-01-01T00:00:00\"}";
+            });
+
+            Assert.Contains("\"note\":\"2026-01-01T00:00:00\"", reply);
+            Assert.Contains("\"solve\":{\"state\":\"scheduled\"}", reply);
+        }
+
+        [Fact]
+        public void Run_ReportingTheSolve_AnswersARollbackWithoutASolve()
+        {
+            var reply = JObject.Parse(RunReportingSolve(s =>
+            {
+                s.Edits.Record(EditKind.Wires, new FakeObj("A"));
+                throw new EditRollbackException("stopped");
+            }));
+
+            Assert.False((bool)reply["success"]);
+            Assert.True((bool)reply["rolledBack"]);
+            Assert.Null(reply["solve"]);
+        }
+
         // ---------------------------------------------------------------- rollback: refused vs unexpected
 
         [Fact]

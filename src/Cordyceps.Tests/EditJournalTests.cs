@@ -24,7 +24,7 @@ namespace Cordyceps.Tests
         public static IEnumerable<object[]> RecordedKinds => new[]
         {
             EditKind.Wires, EditKind.Generic, EditKind.NickName, EditKind.Pivot, EditKind.Preview,
-            EditKind.Enabled, EditKind.DataModifiers, EditKind.PersistentData,
+            EditKind.Enabled, EditKind.DataModifiers,
         }.Select(k => new object[] { k });
 
         // ---------------------------------------------------------------- record before mutate
@@ -144,13 +144,13 @@ namespace Cordyceps.Tests
             journal.Record(EditKind.NickName, added);
             journal.Record(EditKind.Generic, added);
             journal.Record(EditKind.Wires, port);
-            journal.Record(EditKind.PersistentData, port);
+            journal.Record(EditKind.DataModifiers, port);
             journal.Commit();
 
             var record = Assert.Single(sink.Pushed);
             var only = Assert.Single(record);
             Assert.Equal(EditKind.Add, only.Kind);
-            Assert.DoesNotContain(sink.Log, l => l.StartsWith("capture NickName") || l.StartsWith("capture Wires") || l.StartsWith("capture PersistentData"));
+            Assert.DoesNotContain(sink.Log, l => l.StartsWith("capture NickName") || l.StartsWith("capture Wires") || l.StartsWith("capture DataModifiers"));
         }
 
         [Fact]
@@ -538,13 +538,13 @@ namespace Cordyceps.Tests
             journal.Record(EditKind.Wires, in1);
             journal.Record(EditKind.Wires, in0);
             journal.Expire(comp);
-            journal.Record(EditKind.PersistentData, other);
+            journal.Record(EditKind.DataModifiers, other);
             var outcome = journal.Commit();
 
             Assert.True(outcome.Pushed);
             Assert.True(outcome.Scheduled);
             Assert.Empty(outcome.Warnings);
-            Assert.Equal(new[] { "push Wires:C.in0,Wires:C.in1,PersistentData:P", "end rolledBack=False", "expire C", "expire P", "schedule" },
+            Assert.Equal(new[] { "push Wires:C.in0,Wires:C.in1,DataModifiers:P", "end rolledBack=False", "expire C", "expire P", "schedule" },
                 sink.Log.SkipWhile(l => !l.StartsWith("push")));
         }
 

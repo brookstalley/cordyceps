@@ -67,7 +67,7 @@ namespace Cordyceps.Tools.Unified
                     {
                         "Inside a cluster editor, cluster input/output hooks are preserved (reported as preservedClusterHooks) so the cluster interface stays intact",
                         "The follow-up solve is scheduled, not waited for: the reply carries solve.state='scheduled' (or solver_disabled / solutions_locked / not_watched with solve.remedy when it could not be scheduled) and returns before the solve runs. Call action='recompute' before reading results if you need them settled",
-                        "One undo step: Ctrl+Z brings the whole canvas back, wired. A clear with nothing to remove has no solve and no undo; a reply with a warning has no solve (check action='info', then recompute)",
+                        "One undo step: Ctrl+Z brings the whole canvas back, wired. A clear with nothing to remove has no solve and no undo. If scheduling the solve itself failed, the reply has no solve and a warning saying so (check action='info', then recompute)",
                         "Refused before anything is removed when an object does not report itself as in this document, since its removal could not be recorded for undo"
                     }
                 },
@@ -412,16 +412,15 @@ namespace Cordyceps.Tools.Unified
 
                 // One undo step: each removal records the object's wires and then the object, so
                 // Ctrl+Z brings the whole canvas back, wired. The commit schedules one solve rather
-                // than solving here, which would hold the document lock for the whole solve; the
-                // transaction reports a solve only when a solver switch refused it, so the scheduled
-                // case is named here.
-                var reply = _context.Edit(doc, EditReplies.RecordName("gh_document", "clear"), tx =>
+                // than solving here, which would hold the document lock for the whole solve. clear
+                // used to solve before replying, so its reply names the scheduled solve as well as
+                // a refused one.
+                return _context.Edit(doc, EditReplies.RecordName("gh_document", "clear"), tx =>
                 {
                     foreach (var obj in toRemove)
                         tx.RemoveObject(obj);
                     return Reply();
-                });
-                return SolvePolicy.WithScheduledEditSolve(reply);
+                }, reportScheduledSolve: true);
             });
         }
 

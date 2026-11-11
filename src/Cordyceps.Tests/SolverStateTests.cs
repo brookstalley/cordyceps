@@ -600,6 +600,69 @@ namespace Cordyceps.Tests
             Assert.Contains("Cordyceps operation", status.Hint);
         }
 
+        /// <summary>
+        /// Our own work holding the UI thread past the bound may be a dialog Grasshopper raised
+        /// inside it (an "undo failed" assert during a rollback), which modal inference cannot see
+        /// while we hold the thread. The hint says so, and still does not claim a modal.
+        /// </summary>
+        [Fact]
+        public void Derive_OwnUiWork_PastTheBound_SaysADialogMayBeWaitingForAHuman()
+        {
+            var clock = new FakeClock();
+            var state = NewState(clock);
+            state.Heartbeat();
+
+            state.BeginUiWork();
+            clock.Advance(SolverState.UiWorkDialogSuspectedAfter + TimeSpan.FromSeconds(1));
+
+            var status = state.Derive(new StatusInputs());
+
+            Assert.True(status.UiWorkInProgress);
+            Assert.False(status.ModalInferred);
+            Assert.Contains("dialog may be open", status.Hint);
+            Assert.Contains("human", status.Hint);
+            Assert.DoesNotContain("Wait for it to finish", status.Hint);
+        }
+
+        /// <summary>At the bound itself the hold is still read as our own work.</summary>
+        [Fact]
+        public void Derive_OwnUiWork_AtTheBound_IsStillOurOwnWork()
+        {
+            var clock = new FakeClock();
+            var state = NewState(clock);
+            state.Heartbeat();
+
+            state.BeginUiWork();
+            clock.Advance(SolverState.UiWorkDialogSuspectedAfter);
+
+            var status = state.Derive(new StatusInputs());
+
+            Assert.Contains("Wait for it to finish", status.Hint);
+            Assert.DoesNotContain("dialog", status.Hint);
+        }
+
+        /// <summary>
+        /// A call that has only just begun, queued behind a dialog that has held the UI thread for
+        /// minutes: the bound is the thread's silence, not the call's age, so the hint names the
+        /// dialog at once instead of telling the caller to wait out another minute.
+        /// </summary>
+        [Fact]
+        public void Derive_OwnUiWork_QueuedBehindALongSilence_SaysADialogMayBeWaiting()
+        {
+            var clock = new FakeClock();
+            var state = NewState(clock);
+            state.Heartbeat();
+            clock.Advance(TimeSpan.FromMinutes(5));
+
+            state.BeginUiWork();
+            clock.Advance(TimeSpan.FromSeconds(1));
+
+            var status = state.Derive(new StatusInputs());
+
+            Assert.False(status.ModalInferred);
+            Assert.Contains("dialog may be open", status.Hint);
+        }
+
         /// <summary>Once our own work finishes, a still-stale heartbeat does mean a dialog again.</summary>
         [Fact]
         public void Derive_ModalInference_ResumesAfterOwnUiWorkEnds()

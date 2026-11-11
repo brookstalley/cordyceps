@@ -77,6 +77,26 @@ namespace Cordyceps.Tests
         }
 
         [Theory]
+        // No solve asked for, or the request threw: nothing to report, whatever the edit wants.
+        [InlineData(false, false, false, null)]
+        [InlineData(false, false, true, null)]
+        [InlineData(false, true, true, null)]
+        // A refusal is reported by every edit.
+        [InlineData(true, true, false, "solver_disabled")]
+        [InlineData(true, true, true, "solver_disabled")]
+        // A scheduled solve only by an edit that names it.
+        [InlineData(true, false, false, null)]
+        [InlineData(true, false, true, "scheduled")]
+        public void CommitSolve_ReportsARefusalAlways_AndASchedule_OnlyWhenAsked(bool scheduled, bool refused, bool reportScheduled, string expectedState)
+        {
+            var refusal = refused ? SolvePolicy.ScheduledField(SolveState.SolverDisabled) : null;
+
+            var solve = EditReplies.CommitSolve(scheduled, refusal, reportScheduled);
+
+            Assert.Equal(expectedState, (string)solve?["state"]);
+        }
+
+        [Theory]
         [InlineData(null)]
         [InlineData("")]
         [InlineData("not json")]
@@ -121,7 +141,7 @@ namespace Cordyceps.Tests
             var report = new RollbackReport(2, new List<EditFailure>
             {
                 new EditFailure(EditStep.Undo, "Parameter could not be found", EditKind.Wires, a),
-                new EditFailure(EditStep.Undo, "Parameter is of a wrong type", EditKind.PersistentData, b),
+                new EditFailure(EditStep.Undo, "Parameter is of a wrong type", EditKind.DataModifiers, b),
             });
 
             var reply = JObject.Parse(EditReplies.RolledBack("Cordyceps: gh_wire clear", "boom", refused: false, report));
@@ -137,7 +157,7 @@ namespace Cordyceps.Tests
             Assert.Equal("wires", (string)failures[0]["kind"]);
             Assert.Equal(a.ToString(), (string)failures[0]["id"]);
             Assert.Equal("Parameter could not be found", (string)failures[0]["error"]);
-            Assert.Equal("persistentData", (string)failures[1]["kind"]);
+            Assert.Equal("dataModifiers", (string)failures[1]["kind"]);
         }
 
         [Fact]

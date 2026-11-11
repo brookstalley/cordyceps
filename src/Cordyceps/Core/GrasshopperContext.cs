@@ -126,13 +126,14 @@ namespace Cordyceps.Core
         /// change it records becomes one Grasshopper undo step named <paramref name="name"/>, and a
         /// body that throws is rolled back so the canvas is left as it was. Returns the body's JSON
         /// reply plus <c>undo</c> (the record's name) when a record was pushed, and <c>solve</c> when
-        /// a solver switch refused the solve; or, after a rollback, an error with <c>rolledBack</c>.
+        /// a solver switch refused the solve (and, with <paramref name="reportScheduledSolve"/>, when
+        /// it was scheduled); or, after a rollback, an error with <c>rolledBack</c>.
         /// Callable from inside <see cref="ExecuteOnUiThread{T}(Func{T})"/>, where it runs inline;
         /// an edit reached from inside another edit of the same document joins it.
         /// See <see cref="Edits.EditTransaction"/> for the rules a body follows.
         /// </summary>
-        internal string Edit(GH_Document doc, string name, Func<Edits.EditTransaction, string> body)
-            => ExecuteOnUiThread(() => Edits.EditTransaction.Run(doc, name, body));
+        internal string Edit(GH_Document doc, string name, Func<Edits.EditTransaction, string> body, bool reportScheduledSolve = false)
+            => ExecuteOnUiThread(() => Edits.EditTransaction.Run(doc, name, body, reportScheduledSolve));
 
         /// <summary>
         /// Get the active Grasshopper document
