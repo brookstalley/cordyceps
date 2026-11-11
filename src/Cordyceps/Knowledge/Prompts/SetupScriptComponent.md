@@ -24,6 +24,10 @@ gh_script(
 )
 ```
 
+> `configure` rebuilds the component's program whenever it changed anything — the parameters count, because the build reads them to shape the program's ports. The response reports `rebuilt` and `verified` for a parameter-only call exactly as it does for a code write.
+>
+> Replacing a new component's default ports (such as `x` and `y`) removes them, which cuts their wires, so pass the id `add` returned: a call that removes a port never selects the component by its default nickname, even a unique one.
+
 ### Common Type Names:
 - Primitives: `int`, `double`, `bool`, `string`
 - Geometry: `Point3d`, `Vector3d`, `Plane`, `Line`, `Circle`, `Curve`, `Surface`, `Brep`, `Mesh`

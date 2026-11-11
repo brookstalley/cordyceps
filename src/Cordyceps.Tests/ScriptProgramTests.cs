@@ -401,6 +401,50 @@ namespace Cordyceps.Tests
         }
 
         [Fact]
+        public void DescribeWrite_NothingToCompareAgainst_SaysSoRatherThanComparingAgainstNull()
+        {
+            // A parameter-only configure writes no source, and a component whose stored source
+            // can't be read back leaves nothing to hold the running program to. Comparing against
+            // null would report a divergence that means nothing.
+            var fields = ScriptProgram.DescribeWrite(
+                ScriptProgram.Rebuild(new ScriptComponent(new FakeCode(RunningSource))),
+                ScriptProgram.NotCompared("'X' has no readable stored source."));
+
+            Assert.Equal(true, fields["rebuilt"]);
+            Assert.False(fields.ContainsKey("verified"));
+            Assert.False(fields.ContainsKey("sourceDiverged"));
+            Assert.Equal("'X' has no readable stored source.", fields["verificationSkipped"]);
+        }
+
+        [Fact]
+        public void CompareRunning_NoExpectation_ReadsTheProgramWithoutJudgingIt()
+        {
+            // A caller holding no text still wants the running program — it is the most useful
+            // thing a "nothing to verify against" response can carry. Reporting it as diverged
+            // from nothing would be a verdict nobody asked for.
+            var comparison = ScriptProgram.CompareRunning(
+                new ScriptComponent(new FakeCode(RunningSource)), expected: null);
+
+            Assert.True(comparison.Readable);
+            Assert.False(comparison.Diverged);
+            Assert.Equal(RunningSource, comparison.RunningSource);
+        }
+
+        [Fact]
+        public void DescribeUnchanged_ReportsTheSkipInTheSameVocabularyAsAWrite()
+        {
+            // A call that changed nothing still has to answer
+            // "did the program rebuild?", and it answers with the words a write already uses.
+            var fields = ScriptProgram.DescribeUnchanged(ScriptConfigurePlan.NothingChangedReason);
+
+            Assert.Equal(false, fields["rebuilt"]);
+            Assert.Equal(ScriptConfigurePlan.NothingChangedReason, fields["rebuildSkipped"]);
+            Assert.Equal(ScriptProgram.NothingToVerifyNote, fields["verificationSkipped"]);
+            Assert.False(fields.ContainsKey("rebuildFailed"));
+            Assert.False(fields.ContainsKey("verified"));
+        }
+
+        [Fact]
         public void DescribeRead_Matching_StatesTheAgreementRatherThanImplyingIt()
         {
             var fields = ScriptProgram.DescribeRead(Matching());

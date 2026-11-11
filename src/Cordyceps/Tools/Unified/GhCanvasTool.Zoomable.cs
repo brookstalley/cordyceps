@@ -56,12 +56,12 @@ namespace Cordyceps.Tools.Unified
                             return AddParameter(ghComponent, varParamComp, paramSide, index, doc);
 
                         case "remove":
-                            return RemoveParameter(ghComponent, varParamComp, paramSide, index, doc);
+                            return RemoveParameter(ghComponent, varParamComp, paramSide, index, doc, id);
 
                         case "set_count":
                             if (count < 0)
                                 return ToolHelpers.ErrorResponse("'count' parameter required for set_count operation");
-                            return SetParameterCount(ghComponent, varParamComp, paramSide, count, doc);
+                            return SetParameterCount(ghComponent, varParamComp, paramSide, count, doc, id);
 
                         default:
                             return ToolHelpers.ErrorResponse($"Invalid operation: {operation}. Use 'add', 'remove', or 'set_count'");
@@ -107,23 +107,22 @@ namespace Cordyceps.Tools.Unified
             else
                 ghComponent.Params.RegisterOutputParam(newParam, insertIndex);
 
-            varParamComp.VariableParameterMaintenance();
-            ghComponent.ExpireSolution(false);
+            var rebuildFields = FinishReshape(ghComponent, varParamComp, parametersChanged: true);
 
-            return JsonConvert.SerializeObject(new
+            return ZoomableReply(new Dictionary<string, object>
             {
-                success = true,
-                id = ghComponent.InstanceGuid.ToString(),
-                operation = "add",
-                side = side.ToString().ToLower(),
-                index = insertIndex,
-                parameterName = newParam.Name,
-                newCount = paramList.Count
-            });
+                ["success"] = true,
+                ["id"] = ghComponent.InstanceGuid.ToString(),
+                ["operation"] = "add",
+                ["side"] = side.ToString().ToLower(),
+                ["index"] = insertIndex,
+                ["parameterName"] = newParam.Name,
+                ["newCount"] = paramList.Count
+            }, rebuildFields);
         }
 
         private string RemoveParameter(IGH_Component ghComponent, IGH_VariableParameterComponent varParamComp,
-            GH_ParameterSide side, int index, GH_Document doc)
+            GH_ParameterSide side, int index, GH_Document doc, string id)
         {
             var paramList = side == GH_ParameterSide.Input ? ghComponent.Params.Input : ghComponent.Params.Output;
 
@@ -152,6 +151,13 @@ namespace Cordyceps.Tools.Unified
                 });
             }
 
+            // Removing a port cuts its wires, so the id must pass destructive resolution before
+            // anything changes: a default nickname never selects the component that loses them.
+            var removal = PortRemoval.ForRemove(PortNames(paramList), side == GH_ParameterSide.Input, removeIndex,
+                i => varParamComp.CanRemoveParameter(side, i));
+            if (!ToolHelpers.TryConfirmPortRemoval(doc, id, ghComponent, removal, out var refusal))
+                return ToolHelpers.ErrorResponse(refusal);
+
             var param = paramList[removeIndex];
             string paramName = param.Name;
 
@@ -160,23 +166,22 @@ namespace Cordyceps.Tools.Unified
             else
                 ghComponent.Params.UnregisterOutputParameter(param);
 
-            varParamComp.VariableParameterMaintenance();
-            ghComponent.ExpireSolution(false);
+            var rebuildFields = FinishReshape(ghComponent, varParamComp, parametersChanged: true);
 
-            return JsonConvert.SerializeObject(new
+            return ZoomableReply(new Dictionary<string, object>
             {
-                success = true,
-                id = ghComponent.InstanceGuid.ToString(),
-                operation = "remove",
-                side = side.ToString().ToLower(),
-                index = removeIndex,
-                removedParameterName = paramName,
-                newCount = paramList.Count
-            });
+                ["success"] = true,
+                ["id"] = ghComponent.InstanceGuid.ToString(),
+                ["operation"] = "remove",
+                ["side"] = side.ToString().ToLower(),
+                ["index"] = removeIndex,
+                ["removedParameterName"] = paramName,
+                ["newCount"] = paramList.Count
+            }, rebuildFields);
         }
 
         private string SetParameterCount(IGH_Component ghComponent, IGH_VariableParameterComponent varParamComp,
-            GH_ParameterSide side, int targetCount, GH_Document doc)
+            GH_ParameterSide side, int targetCount, GH_Document doc, string id)
         {
             var paramList = side == GH_ParameterSide.Input ? ghComponent.Params.Input : ghComponent.Params.Output;
             int currentCount = paramList.Count;
@@ -188,16 +193,27 @@ namespace Cordyceps.Tools.Unified
 
             if (targetCount == currentCount)
             {
-                return JsonConvert.SerializeObject(new
+                // Nothing moved, so nothing is rebuilt; a script component still gets the answer.
+                var unchanged = ScriptComponents.IsScriptComponent(ghComponent)
+                    ? ScriptComponents.RebuildForChange(ghComponent, parametersChanged: false, writtenSource: null)
+                    : null;
+                return ZoomableReply(new Dictionary<string, object>
                 {
-                    success = true,
-                    id = ghComponent.InstanceGuid.ToString(),
-                    operation = "set_count",
-                    side = side.ToString().ToLower(),
-                    count = currentCount,
-                    message = "Already at target count"
-                });
+                    ["success"] = true,
+                    ["id"] = ghComponent.InstanceGuid.ToString(),
+                    ["operation"] = "set_count",
+                    ["side"] = side.ToString().ToLower(),
+                    ["count"] = currentCount,
+                    ["message"] = "Already at target count"
+                }, unchanged);
             }
+
+            // Shrinking removes ports from the end and cuts their wires; growing removes nothing
+            // and still accepts any id that resolves.
+            var removal = PortRemoval.ForSetCount(PortNames(paramList), side == GH_ParameterSide.Input, targetCount,
+                i => varParamComp.CanRemoveParameter(side, i));
+            if (!ToolHelpers.TryConfirmPortRemoval(doc, id, ghComponent, removal, out var refusal))
+                return ToolHelpers.ErrorResponse(refusal);
 
             int added = 0, removed = 0;
             var errors = new List<string>();
@@ -246,27 +262,73 @@ namespace Cordyceps.Tools.Unified
                     added++;
                 }
 
-                varParamComp.VariableParameterMaintenance();
-                ghComponent.ExpireSolution(false);
+                // A set_count that stopped partway still moved the ports it got to, and those
+                // need the rebuild as much as a complete one does.
+                var rebuildFields = FinishReshape(ghComponent, varParamComp, parametersChanged: added + removed > 0);
 
                 bool success = paramList.Count == targetCount;
-                return JsonConvert.SerializeObject(new
+                return ZoomableReply(new Dictionary<string, object>
                 {
-                    success,
-                    id = ghComponent.InstanceGuid.ToString(),
-                    operation = "set_count",
-                    side = side.ToString().ToLower(),
-                    targetCount,
-                    actualCount = paramList.Count,
-                    added,
-                    removed,
-                    errors = errors.Count > 0 ? errors : null
-                });
+                    ["success"] = success,
+                    ["id"] = ghComponent.InstanceGuid.ToString(),
+                    ["operation"] = "set_count",
+                    ["side"] = side.ToString().ToLower(),
+                    ["targetCount"] = targetCount,
+                    ["actualCount"] = paramList.Count,
+                    ["added"] = added,
+                    ["removed"] = removed,
+                    ["errors"] = errors.Count > 0 ? errors : null
+                }, rebuildFields);
             }
             catch (Exception ex)
             {
                 return ToolHelpers.ErrorResponse($"Failed during set_count: {ex.Message}");
             }
+        }
+
+        /// <summary>
+        /// Settle a component whose ports this call reshaped, and on a script component rebuild its
+        /// program before the solution is expired. Returns the rebuild fields for a script
+        /// component, <c>null</c> for any other.
+        /// </summary>
+        /// <remarks>
+        /// A script component's program is compiled against its ports, so a reshape leaves it
+        /// running a program built for ports it no longer has until it is rebuilt. This goes
+        /// through the same gate as <c>gh_script(action='configure')</c>, so both tools answer the
+        /// rebuild question in the same words. Other variable-parameter components (Merge, Entwine,
+        /// Gate) have no program and get no rebuild fields.
+        /// </remarks>
+        private static Dictionary<string, object> FinishReshape(IGH_Component ghComponent,
+            IGH_VariableParameterComponent varParamComp, bool parametersChanged)
+        {
+            varParamComp.VariableParameterMaintenance();
+
+            Dictionary<string, object> rebuildFields = null;
+            if (ScriptComponents.IsScriptComponent(ghComponent))
+                rebuildFields = ScriptComponents.RebuildForChange(ghComponent, parametersChanged, writtenSource: null);
+
+            ghComponent.ExpireSolution(false);
+            return rebuildFields;
+        }
+
+        /// <summary>The nicknames of a side's ports, in order: the names the removal rule reports.</summary>
+        private static List<string> PortNames(List<IGH_Param> ports)
+        {
+            var names = new List<string>(ports.Count);
+            foreach (var p in ports)
+                names.Add(p.NickName);
+            return names;
+        }
+
+        /// <summary>Serialize a zoomable reply, with the rebuild fields merged in when there are any.</summary>
+        private static string ZoomableReply(Dictionary<string, object> reply, Dictionary<string, object> rebuildFields)
+        {
+            if (rebuildFields != null)
+            {
+                foreach (var field in rebuildFields)
+                    reply[field.Key] = field.Value;
+            }
+            return JsonConvert.SerializeObject(reply);
         }
 
         #endregion
