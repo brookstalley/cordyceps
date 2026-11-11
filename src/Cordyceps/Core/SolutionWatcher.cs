@@ -84,6 +84,26 @@ namespace Cordyceps.Core
             }
         }
 
+        /// <summary>
+        /// Make sure <paramref name="document"/>'s solves are recorded, starting the watcher if it
+        /// is not running. A document can reach the canvas without passing through the document
+        /// server (assigning <c>GH_Canvas.Document</c> directly, as snapshot revert does), and a
+        /// solve scheduled on an unwatched document never reports its end, so a waiter on it
+        /// would always run out its budget. Returns false when the watcher cannot run yet
+        /// (no document server), in which case the solve's end will not be seen.
+        /// </summary>
+        public static bool EnsureWatched(GH_Document document)
+        {
+            if (document == null) return false;
+            Start();
+            lock (_gate)
+            {
+                if (!_started) return false;
+                Watch(document);
+                return true;
+            }
+        }
+
         private static void OnDocumentAdded(GH_DocumentServer sender, GH_Document doc)
         {
             lock (_gate) Watch(doc);

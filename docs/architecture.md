@@ -34,9 +34,17 @@ case-sensitive nickname; group names in the Groups scope). `Core/DataTrees/` hol
 action dispatch, help generation, and standardized response formatting.
 
 **Core/ToolHelpers.cs** - Shared document/component utilities used across every tool:
-active-document and component resolution, protected/infrastructure-id checks, cluster-safe
-recompute, component-info builders, JSON (de)serialization helpers, and
+active-document and component resolution, protected/infrastructure-id checks,
+component-info builders, JSON (de)serialization helpers, and
 `SuccessResponse`/`ErrorResponse` formatting.
+
+**Core/SolveCoordinator.cs** - The one place Cordyceps starts a Grasshopper solve. It expires
+(cluster-safe) and calls `ScheduleSolution` inside a short UI call, never `NewSolution`, so no call
+holds the document lock while Grasshopper solves. A caller that needs the outcome waits off the UI
+thread on a ticket (document id + solve generation) through host-free `Core/SolveWait.cs`;
+host-free `Core/SolvePolicy.cs` maps the solver switches and the wait outcome to the reported
+`solve.state` and its remedy. Per-document solve state (solving, last finished solve, aborted) is
+kept by `Core/SolverState.cs`, fed from Grasshopper's solution events by `Core/SolutionWatcher.cs`.
 
 **Core/DebugLog.cs** - Centralized logging with Info, Warn, Error, Debug levels. Logs are
 retrievable via `gh_inspect(action='log')`.

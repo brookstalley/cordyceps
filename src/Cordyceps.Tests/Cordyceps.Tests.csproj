@@ -66,6 +66,7 @@
     <Compile Include="..\Cordyceps\Core\DataTrees\TreeRequest.cs" Link="DataTrees\TreeRequest.cs" />
     <Compile Include="..\Cordyceps\Core\SolverState.cs" Link="SolverState.cs" />
     <Compile Include="..\Cordyceps\Core\SolveWait.cs" Link="SolveWait.cs" />
+    <Compile Include="..\Cordyceps\Core\SolvePolicy.cs" Link="SolvePolicy.cs" />
     <Compile Include="..\Cordyceps\Core\StatusEnvelope.cs" Link="StatusEnvelope.cs" />
     <Compile Include="..\Cordyceps\Core\ToolArgumentBinder.cs" Link="ToolArgumentBinder.cs" />
     <Compile Include="..\Cordyceps\Core\Canvas\OutlineView.cs" Link="Canvas\OutlineView.cs" />
