@@ -36,6 +36,7 @@
     <Compile Include="..\Cordyceps\Core\BuildVersion.cs" Link="BuildVersion.cs" />
     <Compile Include="..\Cordyceps\Core\GhArchiveSave.cs" Link="GhArchiveSave.cs" />
     <Compile Include="..\Cordyceps\Core\SliderConfig.cs" Link="SliderConfig.cs" />
+    <Compile Include="..\Cordyceps\Core\ValueListItems.cs" Link="ValueListItems.cs" />
     <Compile Include="..\Cordyceps\Core\DataModifiers.cs" Link="DataModifiers.cs" />
     <Compile Include="..\Cordyceps\Core\ParamSyncPlan.cs" Link="ParamSyncPlan.cs" />
     <Compile Include="..\Cordyceps\Core\InfrastructureIds.cs" Link="InfrastructureIds.cs" />

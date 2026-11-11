@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using Cordyceps.Core;
+using Cordyceps.Core.Edits;
 using Grasshopper.Kernel;
 using Newtonsoft.Json;
 
@@ -39,7 +40,7 @@ namespace Cordyceps.Tools.Unified
 
             return _context.ExecuteOnUiThread(() =>
             {
-                if (!ToolHelpers.TryGetUnprotectedComponentWithDoc(_context, id, out _, out var obj, out var error))
+                if (!ToolHelpers.TryGetUnprotectedComponentWithDoc(_context, id, out var doc, out var obj, out var error))
                     return ToolHelpers.ErrorResponse(error);
 
                 var target = ResolveModifierParam(obj, param, isInput, out var resolveError);
@@ -67,43 +68,32 @@ namespace Cordyceps.Tools.Unified
                     return JsonConvert.SerializeObject(response);
                 }
 
+                // Which modifiers differ is worked out before the edit opens; one that already has
+                // the requested setting is left alone, and a call that changes none records nothing.
+                var requestedMapping = plan.SetMapping ? ToolHelpers.ToGhDataMapping(plan.Mapping) : target.DataMapping;
                 var changed = new List<string>();
+                if (plan.SetMapping && target.DataMapping != requestedMapping) changed.Add("mapping");
+                if (plan.SetSimplify && target.Simplify != plan.Simplify) changed.Add("simplify");
+                if (plan.SetReverse && target.Reverse != plan.Reverse) changed.Add("reverse");
 
-                if (plan.SetMapping)
+                // Recording the modifiers expires the param's owning object, so downstream
+                // recomputes with the new structure at commit.
+                return _context.Edit(doc, EditReplies.RecordName("gh_canvas", "modifier"), tx =>
                 {
-                    var requested = ToolHelpers.ToGhDataMapping(plan.Mapping);
-                    if (target.DataMapping != requested)
+                    if (changed.Count > 0)
                     {
-                        target.DataMapping = requested;
-                        changed.Add("mapping");
+                        tx.RecordDataModifiers(target);
+                        if (changed.Contains("mapping")) target.DataMapping = requestedMapping;
+                        if (changed.Contains("simplify")) target.Simplify = plan.Simplify;
+                        if (changed.Contains("reverse")) target.Reverse = plan.Reverse;
                     }
-                }
 
-                if (plan.SetSimplify && target.Simplify != plan.Simplify)
-                {
-                    target.Simplify = plan.Simplify;
-                    changed.Add("simplify");
-                }
-
-                if (plan.SetReverse && target.Reverse != plan.Reverse)
-                {
-                    target.Reverse = plan.Reverse;
-                    changed.Add("reverse");
-                }
-
-                if (changed.Count > 0)
-                {
-                    // ExpireSolution(false) — never (true), which breaks cluster editing. The
-                    // owning object is expired so downstream recomputes with the new structure.
-                    var owner = (obj as IGH_ActiveObject) ?? (target as IGH_ActiveObject);
-                    owner?.ExpireSolution(false);
-                }
-
-                response["mode"] = "write";
-                response["changed"] = changed;
-                response["previous"] = before;
-                response["modifiers"] = ToolHelpers.BuildModifierInfo(target);
-                return JsonConvert.SerializeObject(response);
+                    response["mode"] = "write";
+                    response["changed"] = changed;
+                    response["previous"] = before;
+                    response["modifiers"] = ToolHelpers.BuildModifierInfo(target);
+                    return JsonConvert.SerializeObject(response);
+                });
             });
         }
 
