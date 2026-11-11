@@ -60,12 +60,14 @@ namespace Cordyceps.Tools.Unified
                     if (read != null) reads.Add(read);
                 }
 
-                var solverOff = TreeStatusText.SolverOff(
-                    doc.Enabled, GH_Document.EnableSolutions, doc.SolutionState == GH_ProcessStep.Aborted);
+                // The aborted flag comes from the solve record: doc.SolutionState never reads
+                // Aborted after a solve, because Grasshopper overwrites it before the solve returns.
+                var lastAborted = SolverState.Shared.LastSolutionAborted(doc.DocumentID);
+                var solverOff = TreeStatusText.SolverOff(doc.Enabled, GH_Document.EnableSolutions, lastAborted);
 
                 var trees = new JArray();
                 foreach (var read in reads)
-                    foreach (var tree in DescribeTrees(read, request, solverOff?.Reason))
+                    foreach (var tree in DescribeTrees(read, request, solverOff?.Reason, lastAborted))
                         trees.Add(tree);
 
                 var result = new JObject { ["success"] = errors.Count == 0 };
@@ -117,7 +119,7 @@ namespace Cordyceps.Tools.Unified
             return null;
         }
 
-        private static IEnumerable<JObject> DescribeTrees(TreeRead read, TreeRequest request, string solverOffReason)
+        private static IEnumerable<JObject> DescribeTrees(TreeRead read, TreeRequest request, string solverOffReason, bool lastSolutionAborted)
         {
             var described = new List<(JObject Tree, LabeledTree Labeled)>();
             foreach (var port in read.Ports)
@@ -152,7 +154,7 @@ namespace Cordyceps.Tools.Unified
                     if (text != null) tree["message"] = text;
                 }
 
-                var note = TreeStatusText.OwnerNote(state, solverOffReason);
+                var note = TreeStatusText.OwnerNote(state, solverOffReason, lastSolutionAborted);
                 if (note != null) tree["note"] = note;
 
                 described.Add((tree, new LabeledTree(label, branches)));

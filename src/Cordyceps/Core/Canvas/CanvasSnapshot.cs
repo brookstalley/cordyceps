@@ -61,7 +61,10 @@ namespace Cordyceps.Core.Canvas
         /// <summary>Grasshopper's global switch (<c>GH_Document.EnableSolutions</c>).</summary>
         public bool SolutionsEnabled { get; init; } = true;
 
-        /// <summary>The document's last solution was aborted.</summary>
+        /// <summary>
+        /// The document's last solution was aborted (the human pressed Escape, or something asked
+        /// Grasshopper to abort), as the solve record captured it at <c>SolutionEnd</c>.
+        /// </summary>
         public bool LastSolutionAborted { get; init; }
 
         /// <summary>Both switches are on, so counts can be current.</summary>

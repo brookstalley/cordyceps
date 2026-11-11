@@ -174,6 +174,232 @@ namespace Cordyceps.Tests
             Assert.Equal("kept.gh", state.ActiveDocument.DocumentName);
         }
 
+        // ---------------------------------------------------------------- the last-solve record
+
+        [Fact]
+        public void LastSolve_BeforeAnyEnd_IsNull_AndNotAborted()
+        {
+            var state = NewState(new FakeClock());
+            var doc = Guid.NewGuid();
+
+            state.BeginSolution(doc, "a.gh");
+
+            Assert.Null(state.LastSolve(doc));
+            Assert.False(state.LastSolutionAborted(doc));
+        }
+
+        [Fact]
+        public void EndSolution_AdvancesTheGenerationOncePerEnd()
+        {
+            var clock = new FakeClock();
+            var state = NewState(clock);
+            var doc = Guid.NewGuid();
+
+            state.BeginSolution(doc, "a.gh");
+            clock.Advance(TimeSpan.FromSeconds(2));
+            state.EndSolution(doc, TimeSpan.FromSeconds(2));
+            Assert.Equal(1, state.LastSolve(doc).Generation);
+            Assert.Equal(TimeSpan.FromSeconds(2), state.LastSolve(doc).Span);
+
+            state.BeginSolution(doc, "a.gh");
+            state.EndSolution(doc);
+            Assert.Equal(2, state.LastSolve(doc).Generation);
+            Assert.Null(state.LastSolve(doc).Span);
+        }
+
+        [Fact]
+        public void EndSolution_WithoutASeenStart_StillAdvancesTheGeneration()
+        {
+            // Grasshopper raised the end, so a solve finished; a waiter must not miss it because the
+            // start went unrecorded.
+            var state = NewState(new FakeClock());
+            var doc = Guid.NewGuid();
+
+            state.EndSolution(doc);
+
+            Assert.Equal(1, state.LastSolve(doc).Generation);
+            Assert.False(state.IsSolving(doc));
+        }
+
+        [Fact]
+        public void NestedBeginEnd_KeepsTheStartTime_AndOnlyTheOutermostEndCounts()
+        {
+            // A solution started inside another deepens the solve; the inner end must neither
+            // clear "solving" nor publish a generation a waiter could take for the outer solve.
+            var clock = new FakeClock();
+            var state = NewState(clock);
+            var doc = Guid.NewGuid();
+
+            state.BeginSolution(doc, "a.gh");
+            clock.Advance(TimeSpan.FromSeconds(5));
+            state.BeginSolution(doc, "a.gh");
+            Assert.Equal(T0, state.ActiveSolve.StartedUtc);
+            Assert.Equal(2, state.ActiveSolve.Depth);
+
+            state.EndSolution(doc, TimeSpan.FromSeconds(1), aborted: true);
+            Assert.True(state.IsSolving(doc));
+            Assert.Equal(1, state.ActiveSolve.Depth);
+            Assert.Equal(T0, state.ActiveSolve.StartedUtc);
+            Assert.Null(state.LastSolve(doc));
+
+            state.EndSolution(doc, TimeSpan.FromSeconds(6), aborted: false);
+            Assert.False(state.IsSolving(doc));
+            Assert.Equal(1, state.LastSolve(doc).Generation);
+            // The record describes the outermost solve, not the inner one.
+            Assert.Equal(TimeSpan.FromSeconds(6), state.LastSolve(doc).Span);
+            Assert.False(state.LastSolve(doc).Aborted);
+        }
+
+        [Fact]
+        public void NestedSolve_DoesNotAnswerATicket_UntilTheOutermostEnd()
+        {
+            var state = NewState(new FakeClock());
+            var doc = Guid.NewGuid();
+            var ticket = state.TakeTicket(doc);
+
+            state.BeginSolution(doc, "a.gh");
+            state.BeginSolution(doc, "a.gh");
+            state.EndSolution(doc);
+            Assert.False(SolveWait.IsAnswered(ticket, state.Observe(doc)));
+
+            state.EndSolution(doc);
+            Assert.True(SolveWait.IsAnswered(ticket, state.Observe(doc)));
+        }
+
+        [Fact]
+        public void ExtraEndAfterTheDepthReachesZero_IsAnUnmatchedEnd_AndStillCounts()
+        {
+            // An end with no open start is a solve whose start went unseen (the watcher attached
+            // mid-solve); it never drives the depth negative or leaves the document solving.
+            var state = NewState(new FakeClock());
+            var doc = Guid.NewGuid();
+
+            state.BeginSolution(doc, "a.gh");
+            state.EndSolution(doc);
+            state.EndSolution(doc);
+            Assert.False(state.IsSolving(doc));
+            Assert.Equal(2, state.LastSolve(doc).Generation);
+
+            // A later solve starts from depth one again: a single end finishes it.
+            state.BeginSolution(doc, "a.gh");
+            Assert.Equal(1, state.ActiveSolve.Depth);
+            state.EndSolution(doc);
+            Assert.False(state.IsSolving(doc));
+            Assert.Equal(3, state.LastSolve(doc).Generation);
+        }
+
+        [Fact]
+        public void ForgetDocument_MidNestedSolve_ClearsTheWholeDepth()
+        {
+            var state = NewState(new FakeClock());
+            var doc = Guid.NewGuid();
+
+            state.BeginSolution(doc, "a.gh");
+            state.BeginSolution(doc, "a.gh");
+            state.ForgetDocument(doc);
+
+            Assert.False(state.IsSolving(doc));
+            state.BeginSolution(doc, "a.gh");
+            Assert.Equal(1, state.ActiveSolve.Depth);
+        }
+
+        [Fact]
+        public void AbortedFlag_RoundTrips_AndTheNextSolveReplacesIt()
+        {
+            var state = NewState(new FakeClock());
+            var doc = Guid.NewGuid();
+
+            state.BeginSolution(doc, "a.gh");
+            state.EndSolution(doc, TimeSpan.FromSeconds(1), aborted: true);
+            Assert.True(state.LastSolve(doc).Aborted);
+            Assert.True(state.LastSolutionAborted(doc));
+
+            state.BeginSolution(doc, "a.gh");
+            state.EndSolution(doc, TimeSpan.FromSeconds(1), aborted: false);
+            Assert.False(state.LastSolutionAborted(doc));
+        }
+
+        [Fact]
+        public void AbortedFlag_IsPerDocument()
+        {
+            var state = NewState(new FakeClock());
+            var aborted = Guid.NewGuid();
+            var finished = Guid.NewGuid();
+
+            state.EndSolution(aborted, aborted: true);
+            state.EndSolution(finished);
+
+            Assert.True(state.LastSolutionAborted(aborted));
+            Assert.False(state.LastSolutionAborted(finished));
+        }
+
+        [Fact]
+        public void ForgetDocument_ClearsTheRecord_AndObserveReportsUntracked()
+        {
+            var state = NewState(new FakeClock());
+            var doc = Guid.NewGuid();
+
+            state.EndSolution(doc, aborted: true);
+            state.ForgetDocument(doc);
+
+            Assert.Null(state.LastSolve(doc));
+            Assert.False(state.LastSolutionAborted(doc));
+            Assert.False(state.Observe(doc).Tracked);
+        }
+
+        [Fact]
+        public void TakeTicket_StartsTracking_AtTheCurrentGeneration()
+        {
+            var state = NewState(new FakeClock());
+            var fresh = Guid.NewGuid();
+            var solvedTwice = Guid.NewGuid();
+            state.EndSolution(solvedTwice);
+            state.EndSolution(solvedTwice);
+
+            var freshTicket = state.TakeTicket(fresh);
+            var solvedTicket = state.TakeTicket(solvedTwice);
+
+            Assert.Equal(fresh, freshTicket.DocumentId);
+            Assert.Equal(0, freshTicket.Generation);
+            Assert.True(state.Observe(fresh).Tracked);
+            Assert.Equal(2, solvedTicket.Generation);
+        }
+
+        [Fact]
+        public void TakeTicket_WhileSolving_IsNotAnsweredByTheSolveAlreadyRunning()
+        {
+            // The running solve began before the expiry the ticket stands for; only the solve after
+            // it answers.
+            var state = NewState(new FakeClock());
+            var doc = Guid.NewGuid();
+
+            state.BeginSolution(doc, "a.gh");
+            var ticket = state.TakeTicket(doc);
+            state.EndSolution(doc);
+
+            Assert.False(SolveWait.IsAnswered(ticket, state.Observe(doc)));
+
+            state.BeginSolution(doc, "a.gh");
+            state.EndSolution(doc);
+
+            Assert.True(SolveWait.IsAnswered(ticket, state.Observe(doc)));
+        }
+
+        [Fact]
+        public void Observe_ReportsRecordAndSolvingTogether()
+        {
+            var state = NewState(new FakeClock());
+            var doc = Guid.NewGuid();
+            state.EndSolution(doc);
+            state.BeginSolution(doc, "a.gh");
+
+            var reading = state.Observe(doc);
+
+            Assert.True(reading.Tracked);
+            Assert.Equal(1, reading.Record.Generation);
+            Assert.True(reading.Solving);
+        }
+
         // ---------------------------------------------------------------- heartbeat staleness
 
         [Fact]

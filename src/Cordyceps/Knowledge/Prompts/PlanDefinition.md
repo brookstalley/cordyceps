@@ -93,6 +93,9 @@ gh_document(action='solver', enabled='true')
 gh_inspect(action='status')
 ```
 
+The solver call waits for the solve: read `solve.state` in its reply before trusting `status`
+(`over_budget` means it is still running; poll `gh_inspect(action='connection')` first).
+
 ## Step 8: Validate and Organize
 
 ```

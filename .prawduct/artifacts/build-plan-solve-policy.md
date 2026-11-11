@@ -56,18 +56,22 @@ Critic mode: one `cumulative` review at the end (a two-chunk plan; Chunk 02 is `
      its 120 s timeout. It also makes a solver-exception modal read as "Cordyceps is working"
      rather than "fetch a human", because `UiWorkInProgress` suppresses modal inference (Hyperceps
      review, batch-execution §3).
-  2. **`recompute` waits; nothing else does yet.** `recompute` waits up to `timeout` seconds
-     (default 30, range 1–300, out of range refused per strict inputs) and reports
-     `solve: { state, elapsedMs, errors, warnings }` with state
-     `completed | aborted | over_budget | solver_disabled | solutions_locked`. `over_budget` means
-     the solve is still running. The reply says Cordyceps cannot cancel it and points to
-     `gh_inspect(action='status')`. `recomputed` stays, true only when `completed`. `solver`
-     (enable), `clear` and `revert` schedule through the coordinator and report
+  2. **`recompute`, `solver` (enable) and `revert` wait; `clear` schedules.** *(Amended after
+     the cumulative review: as first written only `recompute` waited, and `solver` and `revert`
+     scheduled and returned.)* Each waiting action waits up to `timeout` seconds (default 30,
+     range 1–300, out of range refused per strict inputs) through one shared path and reports
+     `solve: { state, elapsedMs, solveMs, errors, warnings, remedy }` with state
+     `completed | aborted | over_budget | not_started | solver_disabled | solutions_locked |
+     not_watched | document_closed`. `over_budget` means the solve is still running. The reply
+     says Cordyceps cannot cancel it and points to `gh_inspect(action='connection')`, then
+     `status`. `success` (and `recompute`'s `recomputed`) is true only when `completed`.
+     `solver` (enable) and `revert` used to solve before replying, so callers that read results
+     afterwards keep working. `clear` schedules through the coordinator and reports
      `solve: { state: "scheduled" }` without waiting. Single-step edits keep today's path (expire,
      then the bridge component's scheduled refresh); the edit-transaction plan moves them onto the
      coordinator.
   3. **Abort truth lives in `SolverState`.** `SolutionWatcher` records, at `SolutionEnd`, a
-     per-document last-solve record: a generation counter, end time, span, and `AbortRequested`.
+     per-document last-solve record: a generation counter, span, and `AbortRequested`.
      `outline` and `tree` read the aborted flag from that record. The wait detects completion as
      "the generation advanced past the ticket and the document is not solving".
   4. **No cancel action.** `GH_Document.RequestAbortSolution()` exists, but an agent cancelling a
@@ -77,13 +81,43 @@ Critic mode: one `cumulative` review at the end (a two-chunk plan; Chunk 02 is `
   timing contract drives real concurrency (learnings, tests). Validate before mutate.
 - **Norm dispositions:** `project-preferences.md`: conforms (few tools, many actions: no new tool;
   strict inputs: `timeout` validated and refused when out of range). `boundary-patterns.md`: the
-  MCP action contract changes additively for `recompute`, `solver`, `clear` and `revert` (new
-  `solve` field, `recomputed` kept), conforms; the embedded docs contract is audited in Chunk 02;
-  the host API is foreign and gets a verify-api step.
-- **Release:** additive; ships in the next major with the transaction wave (owner, 2026-11-11).
+  MCP action contract changes in a breaking way for `recompute`, `solver`, `clear` and `revert`
+  (`recompute` answers `success: false` unless its solve completed, including for a disabled
+  solver and a solve longer than the wait, which used to succeed; `solver` and `revert` gain
+  `solve` and can be `success: false`; `clear` returns before its solve), allowed because the
+  owner ruled the release a major and labelled `Breaking:` in `CHANGELOG.md`; the embedded docs
+  contract is audited in Chunk 02 and again after the review; the host API is foreign and gets a
+  verify-api step.
+- **Release:** breaking (see the norm dispositions); ships in the next major with the transaction wave (owner, 2026-11-11).
 - **Not in scope:** the edit transaction and undo (#91); batch (#96); sweep (#97); cancelling a
   solve; the bridge component's own refresh scheduling (`src/Cordyceps/CordycepsComponent.cs`).
 - **Decisions made mid-build:** *(one line each, naming what settled it)*
+  - Every `EndSolution` advances the generation, even with no recorded start: Grasshopper raised the end, so a solve finished, and a waiter must not miss it (01).
+  - `SolverState.TakeTicket` starts tracking the document (generation 0), so a missing record means "forgotten" (`Gone`), never "not solved yet"; a ticket taken while that document is solving asks for one generation more, because the running solve began before the expiry (01).
+  - `tree` keeps its documented contract that `solver` appears only when the solver is off (`DataTreesGuide.md`, a `TreeSummaryTests` assertion); with the solver on, an aborted last solve shows in the `note` of each owner that did not compute ("not computed: the last solution was aborted before it reached this object"). Settled by not weakening a test-pinned contract while still making tree say so (01).
+  - A disabled document's `SolutionEnd` carries the previous solve's span (the SDK skips the profiler when `Enabled` is off), so the watcher records no span for it (verify-api reading of `NewSolution`, 01).
+  - `SolveWait` measures its budget on a stopwatch-backed clock by default; a wall clock stepped backwards would stretch the wait past its budget (01).
+  - verify-api (02), against `~/.nuget/packages/grasshopper/8.0.23304.9001/lib/net48/Grasshopper.dll` decompiled with `ilspycmd`: Facts 1-3 confirmed as written. Additions: `EnableSolutions` reads `m_enableSolutions & RhinoApp.CanSave`, so "locked" also holds transiently while Rhino cannot save (mid-command), and the remedy says so; outside a running solution `ScheduleSolution(0)` never starts the timer (`StartSchedule` needs a delay > 0), so the coordinator uses 10 ms; the timer tick is dropped silently when `Instances.DocumentEditor` is null, disposed or has no handle.
+  - verify-api correction to Fact 4 (02): `NewSolution(true)`'s expire-all is `ExpireSolution()` plus `ClearReferenceTable()`; public `ExpireSolution()` alone leaves the Rhino reference table, so the coordinator calls both on a main canvas. `ExpireSolution()` is a no-op while the document is in `Process`.
+  - verify-api (02): a cluster opened with "Edit Cluster" is a duplicate document added to the document server (`GH_Cluster.EditClusterAsSeparateDocument`), so the watcher sees its solves; snapshot `revert` assigns `GH_Canvas.Document` directly, which never adds to the server, so `SolutionWatcher.EnsureWatched` watches the scheduled document explicitly.
+  - A document closed mid-wait is reported as its own state, `document_closed` (not in the plan's list), rather than mislabelled `over_budget`; settled by the wait's `Gone` outcome having no honest home among the planned states (02).
+  - Every `recompute` state but `completed` is `success: false` with `solve.remedy`; `error` is a one-line pointer to it. Settled by the plan's rule that `recomputed` is true only for `completed` and the codebase convention that a call that did not do what it says is `success: false` (02).
+  - Over budget points at `gh_inspect(action='connection')` first, then `status`: the plan named `status`, but `status` refuses while the UI thread is blocked by the very solve being waited on, and `connection` is the probe that answers then (02).
+  - `elapsedMs` is how long Cordyceps waited (schedule delay included), not Grasshopper's solve span; `errors`/`warnings` count objects at that runtime-message level over the population `status` reads, so the numbers match its summary (02). *(Superseded by the review-answer lines below.)*
+  - Per-action expiry keeps today's scope: `recompute` and `revert` expire everything; `solver enabled=true` expires everything on a main canvas and only already-expired objects in a cluster editor (as before); `clear` expires nothing more (02).
+  - Counting messages runs only for `completed` and `aborted`: during an over-budget solve that UI call would queue behind the solve, the wait the budget exists to bound (02).
+  - "Solving" is a per-document depth: a start inside an open solve deepens it (start time kept), an end only shallows it until the end that reaches zero, which alone clears solving and advances the generation with that outermost solve's span and aborted flag. The "end without a seen start advances the generation" rule stays: with depth, an end at zero can only be a solve whose start went unseen (the watcher attaches from inside the bridge component's own solve), since Grasshopper raises one start and one end per solution (02, fix round).
+  - At the deadline a wait reports `over_budget` only when the document is solving; idle with the generation not past the ticket is a new state `not_started` (the schedule never ran: lock switched on meanwhile, editor unavailable, or no solution events), `success: false` with a remedy to check `connection`/`status` and retry (02, fix round).
+  - A solve whose end cannot be watched is not scheduled: `SolvePolicy.Refusal` takes a `watching` callback, asked only after both switches allow a solve (so a refused solve adopts no document), and failure is the state `not_watched` with a remedy pointing at the Cordyceps component. Every action reports it, since scheduling an unobservable solve is what the state exists to prevent (02, fix round).
+  - Adopted documents (watched by `EnsureWatched` but unknown to the document server) are bounded by host-free `WatchAdoption`: each `EnsureWatched` releases every adopted document that is neither the one requested nor the active canvas document, so at most two are held and repeated reverts hold one; a document later added to the server stops being adopted. Releasing unwatches; it forgets the solve state only when no other watched document carries the same id, because state is keyed by id and a reverted document may share its id with the one it replaced (02, fix round).
+  - `gh_document info` reports `solutionsLocked` (`!GH_Document.EnableSolutions`) beside `solverEnabled` (02, fix round).
+  - `SolveCoordinator.Wait` keeps throwing on the UI thread rather than returning a state: tool bodies run on thread-pool threads (`McpServer.cs:310` `Task.Run(HandleRequestAsync)`, `:770` `tool.Method.Invoke`), and no code calls `GhDocument` directly, so the throw is a programming-error guard, not a reachable outcome (02, fix round).
+  - `solver` (enable) and `revert` wait for their solve exactly as `recompute` does (same `timeout`, `solve` object and states, one shared wait path in `GhDocumentTool.AwaitSolve`); `clear` stays schedule-only. Settled by the cumulative review's R-4/R-7: the taught workflows (and any caller) read results straight after `solver enabled=true`, which solved synchronously before this plan, and rewording them could not help while the only waiting call re-solves and is refused during the scheduled solve (02, review round).
+  - The breaking changes are labelled `Breaking:` in `CHANGELOG.md` (recompute's `success: false` for every non-completed state; `solver`/`revert` gaining `solve` and failing on a non-completed solve; `clear` returning before its solve), and the norm-disposition line no longer calls the contract change additive. Settled by the review's R-1/R-8 (02, review round).
+  - `solve.solveMs` reports Grasshopper's own solve time from the record's span when a solve ended (completed or aborted) and Grasshopper timed it; `elapsedMs` stays the wait. `SolveRecord.EndedUtc` had no reader and is removed. Settled by the review's R-2 (02, review round).
+  - `errors`/`warnings` are counted through `ObjectHealth.IsSubject` and `CanvasReader.Health`, the rule `status` uses, so the documented "matches status" holds by construction. Settled by the review's R-6 (02, review round).
+  - `timeout` accepts anything written as a JSON number with a whole value (`120.0`, `1.2e2`), matching the int parameters' acceptance of whole-valued doubles; fractions, `NaN`/`Infinity` and other shapes are refused as not a whole number (review observation, 02, review round).
+  - `timeout` is a string parameter parsed by shape (`SolvePolicy.TryParseTimeout`), so `0`, `301`, `-5`, an Int32 overflow and non-numbers are all refused with a message that says which; it is read only for `recompute`, like the tool's other action-specific parameters (02). *(Superseded by the review-answer lines below.)*
 - **Level:** Medium. The SDK facts come from decompiled source, not a live run. A scheduled solve
   depends on `Instances.DocumentEditor` existing, which holds whenever the canvas is open. The
   cluster-editor path is code-read only. Raised by VRF-023, which runs in live Rhino.

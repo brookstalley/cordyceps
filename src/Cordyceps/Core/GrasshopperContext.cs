@@ -15,8 +15,6 @@ namespace Cordyceps.Core
     /// </summary>
     public class GrasshopperContext
     {
-        private const int DEFAULT_SOLUTION_DELAY_MS = 10;
-
         /// <summary>
         /// Maximum time to wait to acquire the document lock before failing fast with
         /// <see cref="DocumentBusyException"/>. Generous, so a legitimate long single
@@ -130,35 +128,6 @@ namespace Cordyceps.Core
         public GH_Document GetActiveDocument()
         {
             return Instances.ActiveCanvas?.Document;
-        }
-
-        /// <summary>
-        /// Recompute the solution after modifications
-        /// Must be called from UI thread
-        /// </summary>
-        public void RecomputeSolution()
-        {
-            var doc = GetActiveDocument();
-            if (doc != null)
-            {
-                doc.NewSolution(true);
-            }
-        }
-
-        /// <summary>
-        /// Schedule a solution recompute
-        /// Can be called from any thread
-        /// </summary>
-        public void ScheduleRecompute()
-        {
-            RhinoApp.InvokeOnUiThread(new Action(() =>
-            {
-                var doc = GetActiveDocument();
-                if (doc != null)
-                {
-                    doc.ScheduleSolution(DEFAULT_SOLUTION_DELAY_MS);
-                }
-            }));
         }
     }
 }
