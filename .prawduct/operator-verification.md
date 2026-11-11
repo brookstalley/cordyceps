@@ -912,3 +912,80 @@ ready for the liveness checks.
    to ask a human to check for a dialog if it persists) or `modal_inferred: true`, and confirm its
    `hint` never says a Cordyceps operation is holding the UI thread. The `recompute` call itself
    returns `over_budget` at its timeout rather than hanging.
+
+## VRF-024 — edit-transaction Chunks 01–06 — every edit is one Grasshopper undo step; a failed call rolls back
+
+**Status:** pending
+**Added:** 2026-11-11 (edit-transaction)
+**Where to verify:** macOS, Rhino 8 + Grasshopper with the Cordyceps component placed and an MCP client connected. (No Windows run is planned; record the platform in the result.)
+
+**Why this needs a human:** the ordering rules (record before mutate, track before add, rollback
+past a failed step, when a reply gains `undo`/`solve`/`warning`) are unit-tested host-free against a
+fake undo sink (`EditJournalTests`, `EditScopeTests`, `EditRepliesTests`). Whether the Grasshopper
+undo actions each family records actually restore it, whether Ctrl+Z and Redo replay them without
+Grasshopper's "undo failed" dialog, and what pausing the solver looks like, only a running host
+shows. The SDK facts were read from the decompiled 8.0.23304.9001 assembly, not run.
+
+**Method for each family:** a full archive comparison. Before the call, note `isModified` from
+`gh_document(action='info')` and the Edit menu's Undo/Redo entries, then
+`gh_document(action='save', path='/tmp/vrf024-before.ghx')` (a full `GH_Archive` of the document;
+it does not change `isModified`). Then make the call and confirm its reply carries
+`undo: "Cordyceps: <tool> <action>"` and the Edit menu's Undo entry has that name, one entry for
+the whole call. Press Cmd+Z and save `/tmp/vrf024-undone.ghx`; press Cmd+Shift+Z and save
+`/tmp/vrf024-redone.ghx`. Diff `before` against `undone` (identical apart from the document header's
+timestamps), and `redone` against a save taken right after the call (identical, same instance ids).
+Note any Grasshopper dialog.
+
+**Canvas for the checks:** two Number Sliders feeding a Circle (CNR) whose curve feeds a Divide
+Curve and a Panel, a Boolean Toggle, a Value List with three items and the second selected, a
+Merge with three wired inputs, a C# Script with inputs `x`, `y` wired from the sliders, one group
+around the sliders, and one third-party plugin component wired into the chain (any installed
+plugin object; name it in the result).
+
+**Verify:**
+
+1. **Wires:** `gh_wire connect` (one new wire and a bulk call that includes one existing wire),
+   `disconnect`, and `clear` on the Circle. Each: one undo step, archives match. A `connect` of
+   only existing wires and a `clear` of an unwired component return no `undo` and add no Edit-menu
+   entry.
+2. **Objects:** `gh_canvas add` (a slider with `min`/`max`/`value`), `constant`, `move` (bulk, one
+   entry at its current position), `rename`, and `delete ids=` of the Circle and the Divide Curve.
+   Cmd+Z after the delete brings back both objects and every wire, upstream (sliders → Circle) and
+   downstream (Circle → Panel). Then `gh_document clear`: one Cmd+Z restores the whole canvas,
+   wired; its reply carries `solve: {state: "scheduled"}`.
+3. **Values and state:** `set` on the slider, the toggle (`yes`), the panel and the value list;
+   `config` on the slider and on the value list (new items that keep the selected item's name);
+   `preview` and `enable` (bulk, one id already in the requested state); `modifier` (graft a
+   Circle input). Each is one Edit-menu entry. The value list's `set`/`config` add **no** extra
+   "Select: …" entry beside Cordyceps' own. `get` on a dropdown value list with nothing selected
+   reports item 0 and leaves the archive unchanged (no item becomes selected).
+4. **Groups:** `group_create`, `group_add`, `group_remove`, `group_rename`, `group_color`,
+   `group_move`, `group_delete`. Cmd+Z restores membership, name, colour and member positions.
+5. **Ports and scripts:** `zoomable add`/`remove` on the Merge, `gh_script set` with a signature
+   that adds a port, `gh_script configure` with `inputs`. Cmd+Z restores the ports, their wires and
+   the script source. Record whether the script component then runs the restored source
+   (`gh_script get` `sourceDiverged`, and its outputs after `recompute`), since the rebuild itself is
+   not recorded.
+6. **Forced rollback:** on the Merge with three wired inputs, `zoomable set_count` with `count=0`
+   (pass its GUID: shrinking refuses a default nickname). Merge refuses to remove its last input
+   partway, so the reply is `success: false`, `rolledBack: true`, an error starting
+   `set_count could not reach 0 input parameters`. Save and diff against the save taken before:
+   identical, wires included; `isModified` is what it was; the Edit menu gained no entry and its
+   Redo list is unchanged. If Merge accepts `count=0`, use another component that caps or floors its
+   port count and record which.
+7. **Redo:** after any Cmd+Z above, Cmd+Shift+Z restores the edit with the same instance ids, and
+   a following agent call clears the Redo list (as any Grasshopper edit does).
+8. **Solver pause:** with a visible preview (the Circle in Rhino), run `set` on a slider ten times
+   in a row. Record whether the Rhino preview flickers or blanks between calls. With the solver
+   off (`gh_document(action='solver', enabled=false)`), an edit's reply carries
+   `solve: {state: "solver_disabled", remedy}` and still `success: true`.
+9. **Inside a cluster editor:** open a cluster whose inputs are fed from the parent; `add`, `connect`
+   and `delete` inside it, then Cmd+Z each. The cluster's input hooks keep the parent's data, and
+   undo works inside the editor.
+10. **After an unrelated human edit:** make an agent call (`move`), then move a different object by
+    hand, then Cmd+Z twice. The first undoes the human's move, the second the agent's; no dialog.
+11. **Third-party object:** `delete` the plugin component, Cmd+Z, and diff its archive section.
+    Record any difference (a lossy object comes back with only what it saves); record any dialog.
+12. **Not recorded:** `solver`, `zoom`, `view` and `capture_canvas` add no Edit-menu entry; `bake`
+    adds a Rhino undo step, not a Grasshopper one; after `revert`, the Edit menu's Undo list is
+    empty.

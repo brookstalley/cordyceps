@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Text.RegularExpressions;
 
 namespace Cordyceps.Core
@@ -104,6 +105,72 @@ namespace Cordyceps.Core
                 result.Add(signature.Substring(start));
 
             return result;
+        }
+    }
+
+    /// <summary>
+    /// The port sync a source write runs on a component that can vary its parameters: the names
+    /// the code declares (<see cref="ScriptSignature.Parse"/>), the names the component has now,
+    /// and which sides the sync rewrites.
+    /// </summary>
+    /// <remarks>
+    /// One value read once per question and used by everything that asks it: the sync itself
+    /// (<c>gh_script</c>'s <c>SyncScriptParams</c>), the ports it would remove
+    /// (<see cref="PortRemoval.ForSourceSync"/>), and whether a call changes nothing
+    /// (<see cref="NoChange.ScriptSourceSync"/>). A prediction that read the code a second time
+    /// could disagree with the sync it predicts.
+    /// </remarks>
+    public sealed class SignatureSync
+    {
+        private SignatureSync(IReadOnlyList<string> existingInputs, IReadOnlyList<string> existingOutputs,
+            IReadOnlyList<string> inputs, IReadOnlyList<string> outputs)
+        {
+            ExistingInputs = existingInputs;
+            ExistingOutputs = existingOutputs;
+            Inputs = inputs;
+            Outputs = outputs;
+            InputsChange = !existingInputs.SequenceEqual(inputs, StringComparer.Ordinal);
+            OutputsChange = !existingOutputs.SequenceEqual(outputs, StringComparer.Ordinal);
+        }
+
+        /// <summary>The component's input names now.</summary>
+        public IReadOnlyList<string> ExistingInputs { get; }
+
+        /// <summary>The component's output names now, past the built-in leading output.</summary>
+        public IReadOnlyList<string> ExistingOutputs { get; }
+
+        /// <summary>The input names the code declares, which the sync writes.</summary>
+        public IReadOnlyList<string> Inputs { get; }
+
+        /// <summary>The output names the code declares, which the sync writes after the built-in output.</summary>
+        public IReadOnlyList<string> Outputs { get; }
+
+        /// <summary>True when the sync rewrites the input side.</summary>
+        public bool InputsChange { get; }
+
+        /// <summary>True when the sync rewrites the output side.</summary>
+        public bool OutputsChange { get; }
+
+        /// <summary>True when the sync changes any port.</summary>
+        public bool ChangesPorts => InputsChange || OutputsChange;
+
+        /// <summary>
+        /// The sync of a component with these ports to <paramref name="code"/>, or <c>null</c> when
+        /// the code declares no ports (<see cref="ScriptSignature.Parse"/>), so the sync leaves them alone.
+        /// </summary>
+        /// <param name="componentTypeName">The script component's .NET type name.</param>
+        /// <param name="code">The source as it will be stored, which is what the sync reads.</param>
+        /// <param name="existingInputs">Current input names.</param>
+        /// <param name="existingOutputs">Current output names past the built-in leading output.</param>
+        public static SignatureSync For(string componentTypeName, string code,
+            IReadOnlyList<string> existingInputs, IReadOnlyList<string> existingOutputs)
+        {
+            var declared = ScriptSignature.Parse(componentTypeName, code);
+            if (declared == null)
+                return null;
+            return new SignatureSync(
+                existingInputs ?? Array.Empty<string>(), existingOutputs ?? Array.Empty<string>(),
+                declared.Value.inputs, declared.Value.outputs);
         }
     }
 }

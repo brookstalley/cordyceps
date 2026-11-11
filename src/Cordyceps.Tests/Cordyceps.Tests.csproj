@@ -33,9 +33,11 @@
     <Compile Include="..\Cordyceps\Core\ScriptConfigurePlan.cs" Link="ScriptConfigurePlan.cs" />
     <Compile Include="..\Cordyceps\Core\ScriptSignature.cs" Link="ScriptSignature.cs" />
     <Compile Include="..\Cordyceps\Core\PortRemoval.cs" Link="PortRemoval.cs" />
+    <Compile Include="..\Cordyceps\Core\NoChange.cs" Link="NoChange.cs" />
     <Compile Include="..\Cordyceps\Core\BuildVersion.cs" Link="BuildVersion.cs" />
     <Compile Include="..\Cordyceps\Core\GhArchiveSave.cs" Link="GhArchiveSave.cs" />
     <Compile Include="..\Cordyceps\Core\SliderConfig.cs" Link="SliderConfig.cs" />
+    <Compile Include="..\Cordyceps\Core\ValueListItems.cs" Link="ValueListItems.cs" />
     <Compile Include="..\Cordyceps\Core\DataModifiers.cs" Link="DataModifiers.cs" />
     <Compile Include="..\Cordyceps\Core\ParamSyncPlan.cs" Link="ParamSyncPlan.cs" />
     <Compile Include="..\Cordyceps\Core\InfrastructureIds.cs" Link="InfrastructureIds.cs" />
@@ -67,6 +69,9 @@
     <Compile Include="..\Cordyceps\Core\SolverState.cs" Link="SolverState.cs" />
     <Compile Include="..\Cordyceps\Core\SolveWait.cs" Link="SolveWait.cs" />
     <Compile Include="..\Cordyceps\Core\SolvePolicy.cs" Link="SolvePolicy.cs" />
+    <Compile Include="..\Cordyceps\Core\Edits\EditJournal.cs" Link="Edits\EditJournal.cs" />
+    <Compile Include="..\Cordyceps\Core\Edits\EditReplies.cs" Link="Edits\EditReplies.cs" />
+    <Compile Include="..\Cordyceps\Core\Edits\EditScope.cs" Link="Edits\EditScope.cs" />
     <Compile Include="..\Cordyceps\Core\WatchAdoption.cs" Link="WatchAdoption.cs" />
     <Compile Include="..\Cordyceps\Core\StatusEnvelope.cs" Link="StatusEnvelope.cs" />
     <Compile Include="..\Cordyceps\Core\ToolArgumentBinder.cs" Link="ToolArgumentBinder.cs" />

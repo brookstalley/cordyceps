@@ -15,7 +15,26 @@ last command received.
 
 **Core/GrasshopperContext.cs** - Thread-safe wrapper for Grasshopper document access. All
 Grasshopper operations must run on the UI thread; this class provides `ExecuteOnUiThread()` methods
-that marshal calls correctly.
+that marshal calls correctly, and `Edit(doc, name, tx => …)`, the one entry point for a call that
+changes a document's canvas content: its objects, wires and values. Reads use bare
+`ExecuteOnUiThread`, and so, by design, do two document-level changes that are not canvas content:
+the solver switch (`gh_document solver`, a switch like Grasshopper's own Lock Solver; `Edit` saves
+`Document.Enabled` and restores it at commit, so a toggle made inside an edit would be silently
+undone) and document replacement (`revert`, which installs a new document whose undo stack starts
+empty).
+
+**Core/Edits/** - The edit layer: every Cordyceps call that changes a Grasshopper document's canvas
+content runs as one `EditTransaction`, so it is one Grasshopper undo step a human can Ctrl+Z, and a call that
+throws partway is rolled back. The body records each change before making it (`tx.Record*`, the
+per-kind Grasshopper undo actions in `UndoEvents.cs`) and adds or removes objects through
+`tx.AddObject`/`tx.RemoveObject`. While it runs, the document's solver is paused. On commit the
+transaction pushes one `GH_UndoRecord` named `Cordyceps: <tool> <action>` and hands the changed
+objects to `SolveCoordinator` for one scheduled solve; on a throw it undoes the recorded actions
+newest first and reports any it could not. The ordering rules (record before mutate, track before
+add, one record per change and object, rollback past a failed step) live host-free in
+`EditJournal.cs`; joining a nested edit, refused versus unexpected rollback, and when a reply gains
+`undo`, `solve` or `warning` are decided host-free in `EditScope.cs`; the reply shapes are in
+`EditReplies.cs`. All three are linked into the tests.
 
 **Core/Naming/TypeNameRule.cs** + **Core/ComponentRegistry.cs** - The rule that turns a
 component-type name into one type (GUID, exact aliases such as "python", pinned built-ins, exact
@@ -38,7 +57,8 @@ active-document and component resolution, protected/infrastructure-id checks,
 component-info builders, JSON (de)serialization helpers, and
 `SuccessResponse`/`ErrorResponse` formatting.
 
-**Core/SolveCoordinator.cs** - The one place Cordyceps starts a Grasshopper solve. It expires
+**Core/SolveCoordinator.cs** - The one place Cordyceps starts a Grasshopper solve, including the
+solve an edit schedules when it commits. It expires
 (cluster-safe) and calls `ScheduleSolution` inside a short UI call, never `NewSolution`, so no call
 holds the document lock while Grasshopper solves. A caller that needs the outcome waits off the UI
 thread on a ticket (document id + solve generation) through host-free `Core/SolveWait.cs`;

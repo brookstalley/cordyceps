@@ -2,10 +2,13 @@ using System;
 using System.Collections.Generic;
 using System.ComponentModel;
 using System.Linq;
+using System.Reflection;
 using Cordyceps.Core;
+using Cordyceps.Core.Edits;
 using Grasshopper;
 using Grasshopper.Kernel;
 using Grasshopper.Kernel.Parameters;
+using Microsoft.CSharp.RuntimeBinder;
 using Newtonsoft.Json;
 
 namespace Cordyceps.Tools.Unified
@@ -55,7 +58,9 @@ namespace Cordyceps.Tools.Unified
                         "verified=true means the running program was read back and matches what was written. verified=false adds sourceDiverged and runningSource — expected for C# SDK-mode scripts, whose RunScript signature Rhino rewrites as it builds",
                         "If the program could not be read there is no verified field at all, and verificationSkipped says why — never read an absent verified as a match",
                         "Code that fails to compile still reports success here — the write and the rebuild both succeeded. Build errors surface on the component; after setting code, check gh_inspect(action='status') (it takes no id and lists every component's status and messages) or gh_inspect(action='tree', id=...) (each tree carries its owner's error or warning)",
-                        "The compile happens inside this call rather than at the next solve, so the first script write of a session can take noticeably longer"
+                        "The compile happens inside this call rather than at the next solve, so the first script write of a session can take noticeably longer",
+                        "One undo step: Ctrl+Z restores the previous source and ports, with their wires. A source write or port sync that fails rolls the whole call back (success=false, rolledBack=true): nothing is changed",
+                        "Code the component already stores, with ports that already match its RunScript signature, writes nothing and records no undo step, but the program is still rebuilt (rebuilt=true): re-sending the same code is how to force a recompile"
                     }
                 },
                 ["configure"] = new ActionInfo
@@ -74,15 +79,16 @@ namespace Cordyceps.Tools.Unified
                         "A call that drops or renames an existing port (including inputs='[]' on a side that has ports) cuts its wires, so it never selects the component by its default nickname, even a unique one: pass the id the error prints. Nothing is changed when it is refused. A call that keeps or only adds ports accepts it",
                         "Script language is preserved automatically; start code with '#! python 3' or '// #! csharp' to set it explicitly",
                         "A bare unified 'Script' component (no language picked) returns a languageWarning until code starts with a directive — add '#! python 3' or '// #! csharp'",
-                        "When 'code' is provided the response includes codeSet (bool); if setting the source fails after params were applied, success is false, codeSet=false, and sourceError holds the reason — the params DID change",
-                        "The parameter half reports the same way: parametersApplied (bool) with parametersError when a component cannot vary its parameters and the requested inputs/outputs were refused. success is false whenever either half failed, so never read a written code as the whole request landing",
+                        "A failed source write or port sync rolls the whole call back, ports included (success=false, rolledBack=true): a configure never leaves new ports around old code. codeSet=true means the code was written",
+                        "inputs/outputs on a component that cannot vary its parameters refuse the whole call before anything changes, code included: success=false, an error starting 'No configuration applied', parametersApplied=false with parametersError, codeSet=false when code was passed, and no undo. To set only the source, call again without inputs/outputs",
                         "The inputs/outputs echoed back are the component's actual surface, not what you asked for — with parametersApplied=false they are unchanged, so check that field before wiring to a port you assume exists",
-                        "Components that expose their code as a visible input parameter can't be written directly — sourceError says so and the code is left unchanged",
+                        "Components that expose their code as a visible input parameter can't be written directly — the error says so and nothing is changed",
                         "Any call that changes something — new code, new parameters, or both — rebuilds the component's program and reads it back: rebuilt/rebuildSkipped and verified/runningSource mean exactly what they do for action='set'",
                         "Changing inputs/outputs alone rebuilds too: the build reads the parameters to shape the program's ports, so a program compiled against the old ones is stale. Its verified/sourceDiverged compares the running program against the source already stored on the component",
-                        "A call that changed nothing (no code, and no parameter change this component could apply) returns rebuilt=false with rebuildSkipped and verificationSkipped saying so — every response answers the rebuild question, so an absent rebuilt field is never the answer",
-                        "With codeSet=false the params still changed, so the rebuild still runs — but there is no verified field, and verificationSkipped says the component was rebuilt from the text it already held. Nothing here describes the code you sent; read codeSet and sourceError",
-                        "runningSource can arrive WITHOUT a verified field: whenever nothing was verified, the program the component will run is still read and handed back unjudged. Present with verified=false it is the divergence; present with verificationSkipped it is simply what runs"
+                        "A call that changed nothing (no code and no inputs/outputs, or one refused up front) returns rebuilt=false with rebuildSkipped and verificationSkipped saying so — every response answers the rebuild question, so an absent rebuilt field is never the answer",
+                        "runningSource can arrive WITHOUT a verified field: whenever nothing was verified, the program the component will run is still read and handed back unjudged. Present with verified=false it is the divergence; present with verificationSkipped it is simply what runs",
+                        "One undo step: Ctrl+Z restores the source and ports, with their wires. A call that changes nothing records nothing and returns no undo",
+                        "A code-only call whose code is already stored, with ports that already match it, changes nothing: success=true, message 'Nothing to change', codeSet=true and no undo, and the program is still rebuilt (rebuilt=true), as in set. A call with inputs or outputs is always applied and recorded, because every port it describes carries a type hint ('object' when none is given) and the current hint cannot be compared"
                     }
                 },
                 ["info"] = new ActionInfo
@@ -105,7 +111,8 @@ namespace Cordyceps.Tools.Unified
                 "Neither writing source nor reshaping parameters recompiles on its own — set/configure ask the component to rebuild whenever they changed something, then read the running program back, so 'success' means the new program is the one that will run",
                 "access values: 'item' (default), 'list', 'tree'",
                 "Ids: 'id' names the script component by its GUID, an 8+ hex GUID prefix, or its unique nickname (exact, case-sensitive); a name two objects share is refused with both ids. A set or configure that removes an existing port never takes a default nickname",
-                "gh_canvas(action='zoomable') also reshapes a script component's ports, and rebuilds and reports the same way configure does"
+                "gh_canvas(action='zoomable') also reshapes a script component's ports, and rebuilds and reports the same way configure does",
+                "Undo: set and configure are one Grasshopper undo step each, so a human's Ctrl+Z reverts the whole call; the reply's undo field names the step. Agents restore state with gh_document snapshot/revert"
             }
         };
 
@@ -213,88 +220,120 @@ namespace Cordyceps.Tools.Unified
                 if (!ToolHelpers.TryConfirmPortRemoval(doc, id, component, SourceSyncRemoval(component, finalSource), out var refusal))
                     return ToolHelpers.ErrorResponse(refusal);
 
-                try
+                // The same source, with ports the sync would leave as they are, changes nothing in
+                // the document: no edit opens, so no undo step is pushed. The program is still
+                // rebuilt, because re-sending the same code is how a caller forces a recompile
+                // (after a referenced library changes, say), and a rebuild is not document content.
+                if (SourceSyncChangesNothing(component, finalSource))
+                    return SetReply(component, finalSource, RebuildUnchanged(doc, component, finalSource), null);
+
+                return _context.Edit(doc, EditReplies.RecordName("gh_script", "set"), tx =>
                 {
+                    // One generic record, before the write, covers the source and every port the
+                    // sync below removes or adds, with the wires of each: undo puts the old source
+                    // and ports back, and the component rebuilds when it next solves.
+                    tx.RecordGeneric(component);
+
                     WriteScriptSource(component, finalSource);
 
-                    // Surgically sync params instead of SetParametersFromScript(),
-                    // which rebuilds all params and destroys cluster input hooks.
-                    List<object> lostConnections = null;
-                    try
-                    {
-                        SyncScriptParams(component, finalSource, out var lost);
-                        if (lost.Count > 0) lostConnections = lost;
-                    }
-                    catch (Exception paramEx)
-                    {
-                        DebugLog.Warn($"[ActionSet] SyncScriptParams failed: {paramEx.Message}");
-                    }
+                    // Surgically sync params instead of SetParametersFromScript(), which rebuilds
+                    // all params and destroys cluster input hooks. A sync that throws partway rolls
+                    // the whole call back, source included, rather than leaving ports half synced
+                    // to a source the reply calls set.
+                    SyncScriptParams(component, finalSource, out var lost);
+                    List<object> lostConnections = lost.Count > 0 ? lost : null;
 
                     // Storing source does not recompile: Rhino builds a Code from the script and
                     // keeps running that until something invalidates it, so a write alone leaves the
                     // component executing its previous program. Ask for the rebuild
                     // after the params are settled — the rebuild reads them — and verify the write
-                    // landed by reading the running program back.
+                    // landed by reading the running program back. The rebuild is not recorded:
+                    // it neither expires nor solves the document, and undo restores the source it
+                    // was built from.
                     var rebuildFields = ScriptComponents.RebuildAndVerify(component, finalSource);
 
-                    // Only expire — don't trigger a full document solution.
-                    // Inside clusters, ExpireSolution(true) or NewSolution(true) on the
-                    // internal document causes the parent to recreate the cluster,
-                    // orphaning the editor and breaking all cluster input hooks.
-                    if (component is IGH_ActiveObject activeObj)
-                        activeObj.ExpireSolution(false);
+                    // No expire or solve here: the generic record has the edit recompute the
+                    // component once at commit, as ExpireSolution(false) — never
+                    // ExpireSolution(true) or NewSolution, which inside a cluster make the parent
+                    // recreate it, orphaning the editor and breaking its input hooks.
 
-                    var inputs = new List<object>();
-                    var outputs = new List<object>();
-
-                    if (component is IGH_Component ghComp)
-                    {
-                        foreach (var param in ghComp.Params.Input)
-                            inputs.Add(new { name = param.Name, type = param.TypeName });
-                        foreach (var param in ghComp.Params.Output)
-                            outputs.Add(new { name = param.Name, type = param.TypeName });
-                    }
-
-                    var response = new Dictionary<string, object>
-                    {
-                        ["success"] = true,
-                        ["id"] = component.InstanceGuid.ToString(),
-                        ["codeSet"] = true,
-                        ["inputs"] = inputs,
-                        ["outputs"] = outputs
-                    };
-
-                    foreach (var field in rebuildFields)
-                        response[field.Key] = field.Value;
-
-                    // The source is stored, but a unified Script component with no language directive
-                    // compiles to nothing ("Can not determine input code language") — and SetSource
-                    // reports no error. The failure only surfaces at solve time, which we can't observe
-                    // here without forcing a (cluster-unsafe) recompute, so flag it up front.
-                    var languageWarning = ScriptDirective.LanguageWarning(component.GetType().Name, finalSource);
-                    if (languageWarning != null)
-                        response["languageWarning"] = languageWarning;
-
-                    if (lostConnections != null)
-                    {
-                        response["lostConnections"] = lostConnections;
-                        response["reconnectHint"] = "These connections were lost due to parameter changes. "
-                            + "To restore, pass the lostConnections array as 'connections' to gh_wire(action='connect'), "
-                            + "updating targetParam/sourceParam if params were renamed.";
-                    }
-
-                    return JsonConvert.SerializeObject(response);
-                }
-                catch (Exception ex)
-                {
-                    return JsonConvert.SerializeObject(new
-                    {
-                        success = false,
-                        error = $"Failed to set script code: {ex.Message}",
-                        componentType = component.GetType().Name
-                    });
-                }
+                    return SetReply(component, finalSource, rebuildFields, lostConnections);
+                });
             });
+        }
+
+        /// <summary>
+        /// Rebuild a script whose stored source and ports already match the call, outside any edit:
+        /// the rebuild changes no document content, so it records no undo step. The component is
+        /// expired and a solve scheduled so the rebuilt program runs, as an edit's commit would do.
+        /// </summary>
+        private static Dictionary<string, object> RebuildUnchanged(GH_Document doc, IGH_DocumentObject component, string finalSource)
+        {
+            var rebuildFields = ScriptComponents.RebuildAndVerify(component, finalSource);
+            if (component is IGH_ActiveObject active)
+                active.ExpireSolution(false);
+            // A solver switch that is off means the rebuilt program will not run until it is turned
+            // on; the reply says which switch, as an edit's reply does.
+            var scheduling = SolveCoordinator.Schedule(doc, expireAll: false);
+            if (scheduling.Refusal != null)
+                rebuildFields["solve"] = scheduling.ToField();
+            return rebuildFields;
+        }
+
+        /// <summary>
+        /// Whether <c>set</c> (or <c>configure</c> with only code) would change nothing: the component
+        /// already stores <paramref name="finalSource"/>, and the port sync <see cref="SyncScriptParams"/>
+        /// runs after the write would leave its ports as they are. Read before the edit opens.
+        /// </summary>
+        private static bool SourceSyncChangesNothing(IGH_DocumentObject component, string finalSource)
+            => NoChange.ScriptSourceSync(ScriptComponents.ReadSource(component), finalSource, SourceSyncFor(component, finalSource));
+
+        /// <summary>
+        /// The reply of a <c>set</c> that stands: the component's ports, the rebuild outcome, and the
+        /// wires the port sync cut. The same shape whether the call wrote the source or found it
+        /// already stored; the rebuild fields say which.
+        /// </summary>
+        private static string SetReply(IGH_DocumentObject component, string finalSource,
+            Dictionary<string, object> rebuildFields, List<object> lostConnections)
+        {
+            var inputs = new List<object>();
+            var outputs = new List<object>();
+
+            if (component is IGH_Component ghComp)
+            {
+                foreach (var param in ghComp.Params.Input)
+                    inputs.Add(new { name = param.Name, type = param.TypeName });
+                foreach (var param in ghComp.Params.Output)
+                    outputs.Add(new { name = param.Name, type = param.TypeName });
+            }
+
+            var response = new Dictionary<string, object>
+            {
+                ["success"] = true,
+                ["id"] = component.InstanceGuid.ToString(),
+                ["codeSet"] = true,
+                ["inputs"] = inputs,
+                ["outputs"] = outputs
+            };
+
+            foreach (var field in rebuildFields)
+                response[field.Key] = field.Value;
+
+            // The source is stored, but a unified Script component with no language directive
+            // compiles to nothing ("Can not determine input code language") — and SetSource
+            // reports no error. The failure only surfaces at solve time, which we can't observe
+            // here without forcing a (cluster-unsafe) recompute, so flag it up front.
+            var languageWarning = ScriptDirective.LanguageWarning(component.GetType().Name, finalSource);
+            if (languageWarning != null)
+                response["languageWarning"] = languageWarning;
+
+            if (lostConnections != null)
+            {
+                response["lostConnections"] = lostConnections;
+                response["reconnectHint"] = ReconnectHint;
+            }
+
+            return JsonConvert.SerializeObject(response);
         }
 
         private string ActionConfigure(string id, string inputs, string outputs, string code)
@@ -328,6 +367,12 @@ namespace Cordyceps.Tools.Unified
                 if (!ScriptParamDefs.TryParse(outputs, out var outputDefs, out var outputsError))
                     return ToolHelpers.ErrorResponse($"Invalid outputs JSON: {outputsError}");
 
+                // A parameter side on a component that cannot vary its parameters is refused whole,
+                // here, before the edit opens: writing the code and then answering success:false
+                // would leave half a request applied.
+                if ((inputDefs != null || outputDefs != null) && !(component is IGH_VariableParameterComponent))
+                    return RefuseFixedParameters(ghComponent, code);
+
                 // A configure that drops or renames an existing port cuts its wires, so it is decided
                 // here, before the first mutation, from the same plan each route below executes.
                 if (!ToolHelpers.TryConfirmPortRemoval(doc, id, component,
@@ -335,213 +380,273 @@ namespace Cordyceps.Tools.Unified
                             string.IsNullOrEmpty(code) ? code : PreserveLanguageDirective(component, code)), out var refusal))
                     return ToolHelpers.ErrorResponse(refusal);
 
-                bool configured = false;
-                string message = "";
-                string languageWarning = null;
-                List<object> lostConnections = null;
-                // Partial-apply detectability: when 'code' is provided, codeSet records whether
-                // SetSource succeeded and sourceError carries the failure, so a params-applied /
-                // code-failed outcome is machine-readable (and overall success is false).
-                bool? codeSet = null;
-                string sourceError = null;
-                // The mirror of codeSet/sourceError for the parameter half: null when no side was
-                // asked for, true when it was applied, false when the component refused it. A
-                // request half-dropped under success:true is the failure mode this pair exists to
-                // make machine-readable — see the codeSet note above.
-                bool? parametersApplied = null;
-                string parametersError = null;
-                // Set once the source lands, so the rebuild that follows the parameter work can
-                // check itself against the text that was actually written.
-                string writtenSource = null;
-                // Set once the parameter surface is actually reshaped — the other half of what
-                // decides the rebuild. Distinct from 'configured', which a source-only call also
-                // sets, and from "inputs/outputs were supplied", which a component that cannot
-                // vary its parameters leaves undone.
-                bool parametersChanged = false;
-                Dictionary<string, object> rebuildFields = null;
+                // A configure whose code is already stored and whose ports already have the names
+                // and access it asks for changes nothing: no edit opens, so no undo step is pushed.
+                var unchanged = ConfigureUnchangedReply(doc, ghComponent, inputDefs, outputDefs, code);
+                if (unchanged != null)
+                    return unchanged;
 
-                try
-                {
-                    dynamic scriptComp = component;
-
-                    bool anyParamSide = inputDefs != null || outputDefs != null;
-                    if (component is IGH_VariableParameterComponent varParamComp && anyParamSide)
-                    {
-                        // Sync only the provided sides via the same LCS helper 'set' uses, so
-                        // name-matched params keep their wires and removed-param wires surface in
-                        // lostConnections.
-                        SyncParamsForConfigure(ghComponent, varParamComp, inputDefs, outputDefs, out var lost);
-                        configured = true;
-                        parametersChanged = true;
-                        parametersApplied = true;
-                        message = $"Parameters configured ({ghComponent.Params.Input.Count} inputs, {ghComponent.Params.Output.Count} outputs)";
-
-                        if (!string.IsNullOrEmpty(code))
-                        {
-                            try
-                            {
-                                var finalSource = PreserveLanguageDirective(component, code);
-                                WriteScriptSource(component, finalSource);
-                                languageWarning = ScriptDirective.LanguageWarning(component.GetType().Name, finalSource);
-                                codeSet = true;
-                                writtenSource = finalSource;
-                                message += ", source set";
-                            }
-                            catch (Exception srcEx)
-                            {
-                                codeSet = false;
-                                sourceError = srcEx.Message;
-                                message += $", source failed: {srcEx.Message} (parameter changes WERE applied — the component's params reflect the new configuration but its code is unchanged)";
-                            }
-                        }
-
-                        // Re-apply type hints + access AFTER source is set, because SetSource may reset them.
-                        ApplyParamHints(ghComponent, inputDefs, outputDefs);
-
-                        // Call VariableParameterMaintenance to finalize parameter setup
-                        varParamComp.VariableParameterMaintenance();
-
-                        // Rebuild last, once the params are final: storing source doesn't recompile,
-                        // and the rebuild reads the params to shape the code's inputs and outputs —
-                        // which is why reshaping those params needs the rebuild every bit as much
-                        // as writing new code does, even when this call wrote none.
-                        rebuildFields = ScriptComponents.RebuildForChange(component, parametersChanged, writtenSource, codeSet == false);
-
-                        ghComponent.ExpireSolution(false);
-
-                        if (lost.Count > 0) lostConnections = lost;
-                    }
-
-                    // Reaching here with a parameter side requested means the branch above declined
-                    // it — the component cannot vary its parameters. Record the refusal before the
-                    // code write, so it is reported whether or not that write succeeds: writing the
-                    // source is not permission to drop the other half of the request silently.
-                    if (!configured && anyParamSide)
-                    {
-                        parametersApplied = false;
-                        parametersError = $"'{component.GetType().Name}' cannot vary its parameters, "
-                            + "so the requested inputs/outputs were not applied. The inputs/outputs "
-                            + "in this response are the component's unchanged surface.";
-                    }
-
-                    if (!configured && !string.IsNullOrEmpty(code))
-                    {
-                        try
-                        {
-                            var finalSource = PreserveLanguageDirective(component, code);
-                            WriteScriptSource(component, finalSource);
-                            languageWarning = ScriptDirective.LanguageWarning(component.GetType().Name, finalSource);
-                            // Best-effort param sync after SetSource: not all script-component types
-                            // expose every hook, so a failure here is non-fatal — log at Debug and continue.
-                            try { SyncScriptParams(component, finalSource, out _); }
-                            catch (Exception syncEx) { DebugLog.Debug($"SyncScriptParams skipped: {syncEx.Message}"); }
-                            try { scriptComp.SyncParameters(); }
-                            catch (Exception syncEx) { DebugLog.Debug($"SyncParameters skipped: {syncEx.Message}"); }
-
-                            if (component is IGH_VariableParameterComponent vpComp2)
-                            {
-                                try { vpComp2.VariableParameterMaintenance(); }
-                                catch (Exception vpmEx) { DebugLog.Debug($"VariableParameterMaintenance skipped: {vpmEx.Message}"); }
-                            }
-
-                            // See the parameter branch above: the write alone leaves the previous
-                            // program running, so ask for the rebuild once the params are final.
-                            rebuildFields = ScriptComponents.RebuildForChange(component, parametersChanged, finalSource, sourceWriteFailed: false);
-
-                            ghComponent.ExpireSolution(false);
-                            configured = true;
-                            codeSet = true;
-                            writtenSource = finalSource;
-                            // The port counts here are the component's own, not the requested ones —
-                            // say so when a parameter request was refused, or the numbers read as
-                            // confirmation that it was applied.
-                            message = $"Source set ({ghComponent.Params.Input.Count} inputs, {ghComponent.Params.Output.Count} outputs)";
-                            if (parametersError != null)
-                                message += $" — but {parametersError}";
-                        }
-                        catch (Exception ex)
-                        {
-                            codeSet = false;
-                            sourceError = ex.Message;
-                            // Both halves can fail at once; this message replaces the other's, so
-                            // carry the parameter refusal forward rather than letting the source
-                            // error be the only thing the prose reports.
-                            message = $"Configuration failed: {ex.Message}";
-                            if (parametersError != null)
-                                message += $" Also: {parametersError}";
-                        }
-                    }
-                    else if (!configured)
-                    {
-                        // Tell the two no-op cases apart. One message for both told a caller who
-                        // HAD passed inputs to pass inputs, which reads as though the request never
-                        // arrived — and it sits beside a rebuildSkipped that correctly reports
-                        // nothing changed, so the pair has to agree on why.
-                        message = parametersError != null
-                            ? $"No configuration applied: {parametersError} Pass 'code' to set its source instead."
-                            : "No configuration applied. Provide 'code' and/or 'inputs'/'outputs' parameters.";
-                    }
-                }
-                catch (Exception ex)
-                {
-                    return JsonConvert.SerializeObject(new { success = false, error = $"Configuration failed: {ex.Message}" });
-                }
-
-                // The paths above rebuild whenever they changed something; this covers the ones
-                // that changed nothing — a component that cannot vary its parameters, a source
-                // write that threw, a call that supplied neither side. They report why instead of
-                // returning nothing, so a caller never has to read an absent rebuild field as an
-                // answer.
-                if (rebuildFields == null)
-                    rebuildFields = ScriptComponents.RebuildForChange(component, parametersChanged, writtenSource, codeSet == false);
-
-                var finalInputs = new List<object>();
-                var finalOutputs = new List<object>();
-
-                foreach (var param in ghComponent.Params.Input)
-                    finalInputs.Add(new { name = param.Name, type = param.TypeName, access = param.Access.ToString() });
-                foreach (var param in ghComponent.Params.Output)
-                    finalOutputs.Add(new { name = param.Name, type = param.TypeName });
-
-                // Either half of the request failing makes the whole call a failure: a failed
-                // SetSource when the params were applied, and a refused parameter change when the
-                // source landed. A partial apply must be detectable, not reported as success:true.
-                var configureResponse = new Dictionary<string, object>
-                {
-                    ["success"] = configured && codeSet != false && parametersApplied != false,
-                    ["id"] = component.InstanceGuid.ToString(),
-                    ["message"] = message,
-                    ["inputs"] = finalInputs,
-                    ["outputs"] = finalOutputs
-                };
-                // Unconditional: every route to here has filled these, so the response always
-                // states whether the component's program was rebuilt.
-                foreach (var field in rebuildFields)
-                    configureResponse[field.Key] = field.Value;
-                if (codeSet.HasValue)
-                    configureResponse["codeSet"] = codeSet.Value;
-                if (sourceError != null)
-                    configureResponse["sourceError"] = sourceError;
-                if (parametersApplied.HasValue)
-                    configureResponse["parametersApplied"] = parametersApplied.Value;
-                if (parametersError != null)
-                    configureResponse["parametersError"] = parametersError;
-                if (languageWarning != null)
-                    configureResponse["languageWarning"] = languageWarning;
-
-                // Same lostConnections contract as 'set': removed-param wires are returned so the
-                // caller can restore them with gh_wire(action='connect').
-                if (lostConnections != null)
-                {
-                    configureResponse["lostConnections"] = lostConnections;
-                    configureResponse["reconnectHint"] = "These connections were lost due to parameter changes. "
-                        + "To restore, pass the lostConnections array as 'connections' to gh_wire(action='connect'), "
-                        + "updating targetParam/sourceParam if params were renamed.";
-                }
-
-                return JsonConvert.SerializeObject(configureResponse);
+                return _context.Edit(doc, EditReplies.RecordName("gh_script", "configure"), tx =>
+                    ApplyConfigure(tx, ghComponent, inputDefs, outputDefs, code));
             });
         }
+
+        /// <summary>
+        /// The reply of a <c>configure</c> that would change nothing, or null when it would change
+        /// something (or asks for nothing, which <see cref="ApplyConfigure"/> answers). Mirrors the
+        /// route <see cref="ApplyConfigure"/> would take: the parameter route when a side is given,
+        /// the code route otherwise. The reply has the shape of an applied one, with the rebuild
+        /// fields saying nothing was written.
+        /// </summary>
+        private string ConfigureUnchangedReply(GH_Document doc, IGH_Component ghComponent,
+            List<ScriptParamDef> inputDefs, List<ScriptParamDef> outputDefs, string code)
+        {
+            bool codeGiven = !string.IsNullOrEmpty(code);
+            bool anyParamSide = inputDefs != null || outputDefs != null;
+            string finalSource = codeGiven ? PreserveLanguageDirective(ghComponent, code) : null;
+
+            bool nothing;
+            if (anyParamSide)
+            {
+                // A side on a component that cannot vary its parameters is refused before this. Each
+                // input's access is its GH_ParamAccess member name, the form ApplyParamHints parses
+                // from ScriptParamDefs.AccessToWrite, so the two compare like for like.
+                nothing = NoChange.ScriptParameters(
+                    ghComponent.Params.Input.Select(p => (p.NickName, p.Access.ToString())).ToList(),
+                    ghComponent.Params.Output.Skip(1).Select(p => p.NickName).ToList(),
+                    inputDefs, outputDefs, ScriptComponents.ReadSource(ghComponent), finalSource);
+            }
+            else if (codeGiven)
+            {
+                nothing = SourceSyncChangesNothing(ghComponent, finalSource);
+            }
+            else
+            {
+                return null;
+            }
+
+            if (!nothing)
+                return null;
+
+            var response = new Dictionary<string, object>
+            {
+                ["success"] = true,
+                ["id"] = ghComponent.InstanceGuid.ToString(),
+                ["message"] = "Nothing to change: the component already has this configuration",
+                ["inputs"] = DescribeInputs(ghComponent),
+                ["outputs"] = DescribeOutputs(ghComponent)
+            };
+            // Code that is already stored is still rebuilt, as in set: re-sending it is how a caller
+            // forces a recompile. A parameter-only call that changes nothing has nothing to rebuild.
+            var rebuildFields = codeGiven
+                ? RebuildUnchanged(doc, ghComponent, finalSource)
+                : ScriptProgram.DescribeUnchanged(ScriptConfigurePlan.For(parametersChanged: false, sourceWritten: false).SkipReason);
+            foreach (var field in rebuildFields)
+                response[field.Key] = field.Value;
+            if (codeGiven)
+            {
+                response["codeSet"] = true;
+                var languageWarning = ScriptDirective.LanguageWarning(ghComponent.GetType().Name, finalSource);
+                if (languageWarning != null)
+                    response["languageWarning"] = languageWarning;
+            }
+            if (anyParamSide)
+                response["parametersApplied"] = true;
+            return JsonConvert.SerializeObject(response);
+        }
+
+        /// <summary>
+        /// The changing half of <c>configure</c>, run inside its edit once every input has been
+        /// checked. Each route records the component before its first change, so the ports, their
+        /// wires and the source come back together on undo. A call that would change nothing is
+        /// answered before the edit opens (<see cref="ConfigureUnchangedReply"/>), and one that asks
+        /// for nothing takes no route and records nothing, so neither pushes an undo step. A step
+        /// that throws, the source write among them, rolls the whole call back: a configure never
+        /// leaves new ports around old code.
+        /// </summary>
+        private string ApplyConfigure(EditTransaction tx, IGH_Component ghComponent,
+            List<ScriptParamDef> inputDefs, List<ScriptParamDef> outputDefs, string code)
+        {
+            IGH_DocumentObject component = ghComponent;
+            bool configured = false;
+            string message = "";
+            string languageWarning = null;
+            List<object> lostConnections = null;
+            // Whether this call wrote source: null when no 'code' was passed, true once written. A
+            // write that fails rolls the call back, so it is never false.
+            bool? codeSet = null;
+            // The parameter half: null when no side was asked for, true when it was applied. A
+            // component that cannot vary its parameters never gets here with a side asked for
+            // (RefuseFixedParameters answers before the edit), so it is never false.
+            bool? parametersApplied = null;
+            // Set once the source lands, so the rebuild that follows the parameter work can
+            // check itself against the text that was actually written.
+            string writtenSource = null;
+            // Set once the parameter surface is actually reshaped — the other half of what
+            // decides the rebuild. Distinct from 'configured', which a source-only call also
+            // sets, and from "inputs/outputs were supplied", which a component that cannot
+            // vary its parameters leaves undone.
+            bool parametersChanged = false;
+            Dictionary<string, object> rebuildFields = null;
+
+            dynamic scriptComp = component;
+
+            bool anyParamSide = inputDefs != null || outputDefs != null;
+            if (component is IGH_VariableParameterComponent varParamComp && anyParamSide)
+            {
+                tx.RecordGeneric(component);
+
+                // Sync only the provided sides via the same LCS helper 'set' uses, so
+                // name-matched params keep their wires and removed-param wires surface in
+                // lostConnections.
+                SyncParamsForConfigure(ghComponent, varParamComp, inputDefs, outputDefs, out var lost);
+                configured = true;
+                parametersChanged = true;
+                parametersApplied = true;
+                message = $"Parameters configured ({ghComponent.Params.Input.Count} inputs, {ghComponent.Params.Output.Count} outputs)";
+
+                if (!string.IsNullOrEmpty(code))
+                {
+                    var finalSource = PreserveLanguageDirective(component, code);
+                    WriteScriptSource(component, finalSource);
+                    languageWarning = ScriptDirective.LanguageWarning(component.GetType().Name, finalSource);
+                    codeSet = true;
+                    writtenSource = finalSource;
+                    message += ", source set";
+                }
+
+                // Re-apply type hints + access AFTER source is set, because SetSource may reset them.
+                ApplyParamHints(ghComponent, inputDefs, outputDefs);
+
+                // Call VariableParameterMaintenance to finalize parameter setup
+                varParamComp.VariableParameterMaintenance();
+
+                // Rebuild last, once the params are final: storing source doesn't recompile,
+                // and the rebuild reads the params to shape the code's inputs and outputs —
+                // which is why reshaping those params needs the rebuild every bit as much
+                // as writing new code does, even when this call wrote none.
+                rebuildFields = ScriptComponents.RebuildForChange(component, parametersChanged, writtenSource);
+
+                if (lost.Count > 0) lostConnections = lost;
+            }
+
+            if (!configured && !string.IsNullOrEmpty(code))
+            {
+                tx.RecordGeneric(component);
+
+                var finalSource = PreserveLanguageDirective(component, code);
+                WriteScriptSource(component, finalSource);
+                languageWarning = ScriptDirective.LanguageWarning(component.GetType().Name, finalSource);
+
+                SyncScriptParams(component, finalSource, out var lost);
+                if (lost.Count > 0) lostConnections = lost;
+
+                // Not every script-component type has SyncParameters; one that lacks it fails
+                // to bind before anything runs, which is no failure of this call.
+                try { scriptComp.SyncParameters(); }
+                catch (RuntimeBinderException syncEx) { DebugLog.Debug($"SyncParameters skipped: {syncEx.Message}"); }
+
+                if (component is IGH_VariableParameterComponent vpComp2)
+                    vpComp2.VariableParameterMaintenance();
+
+                // See the parameter branch above: the write alone leaves the previous
+                // program running, so ask for the rebuild once the params are final.
+                rebuildFields = ScriptComponents.RebuildForChange(component, parametersChanged, finalSource);
+
+                configured = true;
+                codeSet = true;
+                writtenSource = finalSource;
+                message = $"Source set ({ghComponent.Params.Input.Count} inputs, {ghComponent.Params.Output.Count} outputs)";
+            }
+            else if (!configured)
+            {
+                message = "No configuration applied. Provide 'code' and/or 'inputs'/'outputs' parameters.";
+            }
+
+            // The paths above rebuild whenever they changed something; this covers a call that
+            // supplied neither code nor a side. It reports why instead of returning nothing, so a
+            // caller never has to read an absent rebuild field as an answer.
+            if (rebuildFields == null)
+                rebuildFields = ScriptComponents.RebuildForChange(component, parametersChanged, writtenSource);
+
+            var configureResponse = new Dictionary<string, object>
+            {
+                ["success"] = configured,
+                ["id"] = component.InstanceGuid.ToString(),
+                ["message"] = message,
+                ["inputs"] = DescribeInputs(ghComponent),
+                ["outputs"] = DescribeOutputs(ghComponent)
+            };
+            // Unconditional: every route to here has filled these, so the response always
+            // states whether the component's program was rebuilt.
+            foreach (var field in rebuildFields)
+                configureResponse[field.Key] = field.Value;
+            if (codeSet.HasValue)
+                configureResponse["codeSet"] = codeSet.Value;
+            if (parametersApplied.HasValue)
+                configureResponse["parametersApplied"] = parametersApplied.Value;
+            if (languageWarning != null)
+                configureResponse["languageWarning"] = languageWarning;
+
+            // Same lostConnections contract as 'set': removed-param wires are returned so the
+            // caller can restore them with gh_wire(action='connect').
+            if (lostConnections != null)
+            {
+                configureResponse["lostConnections"] = lostConnections;
+                configureResponse["reconnectHint"] = ReconnectHint;
+            }
+
+            return JsonConvert.SerializeObject(configureResponse);
+        }
+
+        /// <summary>
+        /// The answer to <c>configure</c> asking for inputs or outputs on a component that cannot
+        /// vary its parameters. Nothing is changed, the code included: the call is refused whole,
+        /// before its edit opens. The reply keeps the fields a refused parameter half has always
+        /// carried, so a caller reads <c>parametersApplied</c>/<c>parametersError</c> as before,
+        /// and echoes the component's unchanged surface.
+        /// </summary>
+        private static string RefuseFixedParameters(IGH_Component ghComponent, string code)
+        {
+            string parametersError = $"'{ghComponent.GetType().Name}' cannot vary its parameters, "
+                + "so the requested inputs/outputs were not applied. The inputs/outputs "
+                + "in this response are the component's unchanged surface.";
+            bool codeGiven = !string.IsNullOrEmpty(code);
+
+            var response = new Dictionary<string, object>
+            {
+                ["success"] = false,
+                ["id"] = ghComponent.InstanceGuid.ToString(),
+                ["error"] = codeGiven
+                    ? $"No configuration applied: {parametersError} The code was not written either; to set only the source, call again without inputs/outputs."
+                    : $"No configuration applied: {parametersError} Pass 'code' to set its source instead.",
+                ["parametersApplied"] = false,
+                ["parametersError"] = parametersError,
+                ["inputs"] = DescribeInputs(ghComponent),
+                ["outputs"] = DescribeOutputs(ghComponent)
+            };
+            if (codeGiven)
+                response["codeSet"] = false;
+            // Nothing changed, so nothing is rebuilt (this reports why without touching the
+            // component); every configure reply answers the rebuild question.
+            foreach (var field in ScriptComponents.RebuildForChange(ghComponent, parametersChanged: false, writtenSource: null))
+                response[field.Key] = field.Value;
+            return JsonConvert.SerializeObject(response);
+        }
+
+        private static List<object> DescribeInputs(IGH_Component ghComponent) =>
+            ghComponent.Params.Input
+                .Select(p => (object)new { name = p.Name, type = p.TypeName, access = p.Access.ToString() })
+                .ToList();
+
+        private static List<object> DescribeOutputs(IGH_Component ghComponent) =>
+            ghComponent.Params.Output
+                .Select(p => (object)new { name = p.Name, type = p.TypeName })
+                .ToList();
+
+        private const string ReconnectHint = "These connections were lost due to parameter changes. "
+            + "To restore, pass the lostConnections array as 'connections' to gh_wire(action='connect'), "
+            + "updating targetParam/sourceParam if params were renamed.";
 
         private string ActionInfo(string id)
         {
@@ -615,11 +720,21 @@ namespace Cordyceps.Tools.Unified
         /// leading output is never touched.
         /// </summary>
         private static PortRemoval SourceSyncRemoval(IGH_DocumentObject component, string code)
+            => PortRemoval.ForSourceSync(SourceSyncFor(component, code));
+
+        /// <summary>
+        /// The port sync a write of <paramref name="code"/> runs on <paramref name="component"/> as it
+        /// is now, or null when it runs none: only a variable-parameter component whose ports the code
+        /// declares is synced, and the built-in leading output is never touched. The one reading of
+        /// the sync: <see cref="SyncScriptParams"/> executes it, and the removal check and the
+        /// no-change check read it.
+        /// </summary>
+        private static SignatureSync SourceSyncFor(IGH_DocumentObject component, string code)
         {
             if (!(component is IGH_Component ghComponent) || !(component is IGH_VariableParameterComponent))
-                return PortRemoval.None;
+                return null;
 
-            return PortRemoval.ForSourceSync(component.GetType().Name, code,
+            return SignatureSync.For(component.GetType().Name, code,
                 ghComponent.Params.Input.Select(p => p.NickName).ToList(),
                 ghComponent.Params.Output.Skip(1).Select(p => p.NickName).ToList());
         }
@@ -656,45 +771,32 @@ namespace Cordyceps.Tools.Unified
         {
             lostConnections = new List<object>();
 
-            var parsed = ScriptSignature.Parse(component.GetType().Name, code);
-            if (parsed == null)
-                return; // Can't parse or not applicable — leave params alone
-
-            if (!(component is IGH_Component ghComponent))
+            // Code that declares no ports, or a component that cannot vary them: leave the ports alone.
+            var sync = SourceSyncFor(component, code);
+            if (sync == null)
                 return;
 
-            if (!(component is IGH_VariableParameterComponent varParamComp))
-            {
-                DebugLog.Warn("[SyncScriptParams] Component is not IGH_VariableParameterComponent, cannot sync params");
-                return;
-            }
+            var ghComponent = (IGH_Component)component;
+            var varParamComp = (IGH_VariableParameterComponent)component;
 
-            var (codeInputs, codeOutputs) = parsed.Value;
-
-            var existingInputs = ghComponent.Params.Input.Select(p => p.NickName).ToList();
-            // C# scripts have a built-in "out" output at index 0
-            var existingOutputs = ghComponent.Params.Output.Skip(1).Select(p => p.NickName).ToList();
-
-            bool inputsMatch = existingInputs.SequenceEqual(codeInputs, StringComparer.Ordinal);
-            bool outputsMatch = existingOutputs.SequenceEqual(codeOutputs, StringComparer.Ordinal);
-
-            if (inputsMatch && outputsMatch)
+            if (!sync.ChangesPorts)
             {
                 DebugLog.Info("[SyncScriptParams] Params unchanged, no sync needed (cluster-safe)");
                 return;
             }
 
-            DebugLog.Info($"[SyncScriptParams] Syncing params — inputs: [{string.Join(",", existingInputs)}] -> [{string.Join(",", codeInputs)}], outputs: [{string.Join(",", existingOutputs)}] -> [{string.Join(",", codeOutputs)}]");
+            DebugLog.Info($"[SyncScriptParams] Syncing params — inputs: [{string.Join(",", sync.ExistingInputs)}] -> [{string.Join(",", sync.Inputs)}], outputs: [{string.Join(",", sync.ExistingOutputs)}] -> [{string.Join(",", sync.Outputs)}]");
 
-            if (!inputsMatch)
+            if (sync.InputsChange)
             {
-                SyncParamSide(ghComponent, varParamComp, GH_ParameterSide.Input, codeInputs, 0, out var inputLost);
+                SyncParamSide(ghComponent, varParamComp, GH_ParameterSide.Input, sync.Inputs, 0, out var inputLost);
                 lostConnections.AddRange(inputLost);
             }
 
-            if (!outputsMatch)
+            // C# scripts have a built-in "out" output at index 0, which the sync skips.
+            if (sync.OutputsChange)
             {
-                SyncParamSide(ghComponent, varParamComp, GH_ParameterSide.Output, codeOutputs, 1, out var outputLost);
+                SyncParamSide(ghComponent, varParamComp, GH_ParameterSide.Output, sync.Outputs, 1, out var outputLost);
                 lostConnections.AddRange(outputLost);
             }
 
@@ -705,12 +807,13 @@ namespace Cordyceps.Tools.Unified
         /// <summary>
         /// Sync one side (input or output) of a component's params to match target names.
         /// Uses LCS to maximize preserved connections: params whose names appear in both
-        /// the existing and target lists keep their connections intact.
+        /// the existing and target lists keep their connections intact. Runs inside an edit, after
+        /// the component's generic record, which brings back the ports it removes and their wires.
         /// </summary>
         /// <param name="skipCount">Number of built-in params to skip (e.g., 1 for C# outputs to skip "out")</param>
         /// <param name="lostConnections">Connections on removed params, directly usable with gh_wire(action='connect')</param>
         private void SyncParamSide(IGH_Component ghComponent, IGH_VariableParameterComponent varParamComp,
-            GH_ParameterSide side, List<string> targetNames, int skipCount, out List<object> lostConnections)
+            GH_ParameterSide side, IReadOnlyList<string> targetNames, int skipCount, out List<object> lostConnections)
         {
             lostConnections = new List<object>();
             var paramList = side == GH_ParameterSide.Input ? ghComponent.Params.Input : ghComponent.Params.Output;
@@ -771,22 +874,20 @@ namespace Cordyceps.Tools.Unified
             // After removal, the kept custom params (past skipCount) are the LCS elements in order.
             // Step 2: Insert new params at their target positions. Insertions are ascending, so
             // applying them left-to-right makes actualIdx = TargetIndex + skipCount land each
-            // correctly (earlier insertions account for the later ones automatically).
+            // correctly (earlier insertions account for the later ones automatically). A port the
+            // component will not take stops the sync and rolls the call back: skipping it would
+            // shift every later port off its target index and leave a surface the source does
+            // not declare, under a reply that calls it set.
+            var sideName = side.ToString().ToLowerInvariant();
             foreach (var insertion in plan.Insertions)
             {
                 int actualIdx = insertion.TargetIndex + skipCount;
                 if (!varParamComp.CanInsertParameter(side, actualIdx))
-                {
-                    DebugLog.Warn($"[SyncParamSide] Cannot insert {side} param at index {actualIdx}");
-                    continue;
-                }
+                    throw new EditRollbackException($"The component refused a new {sideName} parameter '{insertion.Name}' at index {actualIdx}");
 
                 var newParam = varParamComp.CreateParameter(side, actualIdx);
                 if (newParam == null)
-                {
-                    DebugLog.Warn($"[SyncParamSide] CreateParameter returned null for {side} at index {actualIdx}");
-                    continue;
-                }
+                    throw new EditRollbackException($"The component could not create the {sideName} parameter '{insertion.Name}' at index {actualIdx}");
 
                 newParam.Name = insertion.Name;
                 newParam.NickName = insertion.Name;
@@ -801,8 +902,11 @@ namespace Cordyceps.Tools.Unified
 
         /// <summary>
         /// Write <paramref name="finalSource"/> to a script component through
-        /// <see cref="ScriptSourceWriter"/>'s probe cascade, logging the probe trace and throwing
-        /// on failure so each call site's existing error reporting carries the actionable message.
+        /// <see cref="ScriptSourceWriter"/>'s probe cascade, logging the probe trace. Called inside
+        /// an edit, after the component is recorded: a failed write throws
+        /// <see cref="EditRollbackException"/> with the writer's actionable message, so the call is
+        /// rolled back and answered with it. The writer reports a failed host call as a failure
+        /// rather than throwing, and that call may have changed the component before it failed.
         /// </summary>
         /// <remarks>
         /// <paramref name="finalSource"/> must already have been through
@@ -818,7 +922,7 @@ namespace Cordyceps.Tools.Unified
                 DebugLog.Debug($"WriteScriptSource: {probe}");
 
             if (!result.Success)
-                throw new InvalidOperationException(result.Error);
+                throw new EditRollbackException($"Failed to set script code: {result.Error}");
 
             DebugLog.Info($"WriteScriptSource: source set on {component.GetType().Name} via {result.Method}");
         }
@@ -886,15 +990,11 @@ namespace Cordyceps.Tools.Unified
                     var param = ghComponent.Params.Input[i];
                     if (!string.IsNullOrEmpty(def.Type))
                         SetParameterTypeHint(param, def.Type);
-                    if (!string.IsNullOrEmpty(def.Access))
-                    {
-                        switch (def.Access.ToLowerInvariant())
-                        {
-                            case "list": param.Access = GH_ParamAccess.list; break;
-                            case "tree": param.Access = GH_ParamAccess.tree; break;
-                            default: param.Access = GH_ParamAccess.item; break;
-                        }
-                    }
+                    // The access comes from ScriptParamDefs.AccessToWrite, the mapping the no-change
+                    // check compares, so the check and this write cannot disagree about the value.
+                    var access = ScriptParamDefs.AccessToWrite(def.Access);
+                    if (access != null)
+                        param.Access = (GH_ParamAccess)Enum.Parse(typeof(GH_ParamAccess), access);
                 }
             }
 
@@ -990,7 +1090,12 @@ namespace Cordyceps.Tools.Unified
 
                 DebugLog.Warn($"Could not assign type hint for '{param.Name}'");
             }
-            catch (Exception ex)
+            // The reflection failures a TypeHints API of another shape produces. A missing hint
+            // is logged and the call goes on, as for an unknown type name; anything else
+            // propagates and rolls the edit back.
+            catch (Exception ex) when (ex is TargetInvocationException || ex is TargetException
+                || ex is ArgumentException || ex is AmbiguousMatchException
+                || ex is MethodAccessException || ex is TargetParameterCountException)
             {
                 DebugLog.Error($"SetParameterTypeHint failed for '{param.Name}': {ex.Message}");
             }
@@ -1027,121 +1132,6 @@ namespace Cordyceps.Tools.Unified
                 "geometry" or "geom" => typeof(Rhino.Geometry.GeometryBase),
                 _ => null
             };
-        }
-
-        /// <summary>
-        /// Create a typed parameter instance based on type name
-        /// </summary>
-        private IGH_Param CreateTypedParameter(string typeName)
-        {
-            if (string.IsNullOrEmpty(typeName))
-                return new Param_GenericObject();
-
-            // Normalize type name (case-insensitive, trim whitespace)
-            var normalized = typeName.Trim().ToLowerInvariant();
-
-            // Map common type names to Grasshopper parameter types
-            switch (normalized)
-            {
-                // Numeric types
-                case "double":
-                case "number":
-                case "float":
-                    return new Param_Number();
-
-                case "int":
-                case "integer":
-                    return new Param_Integer();
-
-                case "bool":
-                case "boolean":
-                    return new Param_Boolean();
-
-                // String types
-                case "string":
-                case "text":
-                    return new Param_String();
-
-                // Geometric types - Points and Vectors
-                case "point":
-                case "point3d":
-                case "pt":
-                    return new Param_Point();
-
-                case "vector":
-                case "vector3d":
-                case "vec":
-                    return new Param_Vector();
-
-                case "plane":
-                    return new Param_Plane();
-
-                // Curves
-                case "curve":
-                case "crv":
-                    return new Param_Curve();
-
-                case "line":
-                case "ln":
-                    return new Param_Line();
-
-                case "circle":
-                case "circ":
-                    return new Param_Circle();
-
-                case "arc":
-                    return new Param_Arc();
-
-                case "polyline":
-                    return new Param_Curve(); // Polyline uses Param_Curve
-
-                // Surfaces
-                case "surface":
-                case "srf":
-                    return new Param_Surface();
-
-                case "brep":
-                    return new Param_Brep();
-
-                // Mesh
-                case "mesh":
-                case "msh":
-                    return new Param_Mesh();
-
-                // Box and other shapes
-                case "box":
-                    return new Param_Box();
-
-                case "rectangle":
-                case "rect":
-                    return new Param_Rectangle();
-
-                // Geometry (generic)
-                case "geometry":
-                case "geom":
-                    return new Param_Geometry();
-
-                // Color
-                case "color":
-                case "colour":
-                    return new Param_Colour();
-
-                // Interval and Domain
-                case "interval":
-                case "domain":
-                    return new Param_Interval();
-
-                // Transform
-                case "transform":
-                case "xform":
-                    return new Param_Transform();
-
-                // Generic/Object (fallback)
-                case "object":
-                case "generic":
-                default:
-                    return new Param_GenericObject();
-            }
         }
 
         #endregion

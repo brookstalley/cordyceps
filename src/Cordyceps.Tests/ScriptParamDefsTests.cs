@@ -86,5 +86,17 @@ namespace Cordyceps.Tests
             Assert.Null(defs);
             Assert.StartsWith("not valid JSON", error);
         }
+
+        [Theory]
+        [InlineData("list", "list")]
+        [InlineData("TREE", "tree")]
+        [InlineData("item", "item")]
+        [InlineData("anything", "item")]
+        [InlineData("", null)]
+        [InlineData(null, null)]
+        public void AccessToWrite_IsWhatConfigureWrites(string requested, string expected)
+        {
+            Assert.Equal(expected, ScriptParamDefs.AccessToWrite(requested));
+        }
     }
 }

@@ -6,6 +6,7 @@ using System.Drawing.Imaging;
 using System.Linq;
 using System.Windows.Forms;
 using Cordyceps.Core;
+using Cordyceps.Core.Edits;
 using Grasshopper;
 using Grasshopper.GUI.Canvas;
 using Grasshopper.Kernel;
@@ -27,9 +28,8 @@ namespace Cordyceps.Tools.Unified
         private readonly GrasshopperContext _context;
 
         // Snapshot storage (GHD-6M2J): bounded with oldest-first eviction — snapshots are full
-        // document serializations, and with undo/redo disabled every documented mutation
-        // workflow funnels through this store, so it must not grow for the life of the Rhino
-        // session. Written under ExecuteOnUiThread (snapshot/revert/delete); the list path
+        // document serializations, and with undo/redo closed to agents every agent-side restore
+        // funnels through this store, so it must not grow for the life of the Rhino session. Written under ExecuteOnUiThread (snapshot/revert/delete); the list path
         // reads it off the HTTP worker thread (SnapshotStore is internally locked).
         private const int MaxSnapshots = 20;
         private static readonly SnapshotStore _snapshots = new SnapshotStore(MaxSnapshots);
@@ -66,7 +66,9 @@ namespace Cordyceps.Tools.Unified
                     Tips = new[]
                     {
                         "Inside a cluster editor, cluster input/output hooks are preserved (reported as preservedClusterHooks) so the cluster interface stays intact",
-                        "The follow-up solve is scheduled, not waited for: the reply carries solve.state='scheduled' (or solver_disabled / solutions_locked / not_watched with solve.remedy when it could not be scheduled) and returns before the solve runs. Call action='recompute' before reading results if you need them settled"
+                        "The follow-up solve is scheduled, not waited for: the reply carries solve.state='scheduled' (or solver_disabled / solutions_locked / not_watched with solve.remedy when it could not be scheduled) and returns before the solve runs. Call action='recompute' before reading results if you need them settled",
+                        "One undo step: Ctrl+Z brings the whole canvas back, wired. A clear with nothing to remove has no solve and no undo. If scheduling the solve itself failed, the reply has no solve and a warning saying so (check action='info', then recompute)",
+                        "Refused before anything is removed when an object does not report itself as in this document, since its removal could not be recorded for undo"
                     }
                 },
                 ["solver"] = new ActionInfo
@@ -105,13 +107,13 @@ namespace Cordyceps.Tools.Unified
                 ["undo"] = new ActionInfo
                 {
                     Name = "undo",
-                    Description = "DISABLED (threading issues) - always returns an error. Use action='snapshot' before changes and action='revert' to restore instead",
+                    Description = "Not available to agents - always returns an error. Each Cordyceps edit is one Grasshopper undo step that a human undoes with Ctrl+Z; to restore state yourself, take action='snapshot' before changes and action='revert' to restore",
                     Example = "action='snapshot', name='before_changes' (instead of undo)"
                 },
                 ["redo"] = new ActionInfo
                 {
                     Name = "redo",
-                    Description = "DISABLED (threading issues) - always returns an error. Use snapshots (action='snapshot'/'revert') instead",
+                    Description = "Not available to agents - always returns an error. A human redoes an undone Cordyceps edit with Grasshopper's Redo (Ctrl+Y on Windows, Cmd+Shift+Z on macOS); to restore state yourself, use snapshots (action='snapshot'/'revert')",
                     Example = "action='revert', name='before_changes' (instead of redo)"
                 },
                 ["snapshot"] = new ActionInfo
@@ -128,7 +130,10 @@ namespace Cordyceps.Tools.Unified
                     Required = new[] { "name" },
                     Optional = new[] { "timeout" },
                     Example = "action='revert', name='before_changes'",
-                    Tips = new[] { "Waits up to timeout seconds (1-300, default 30) and replies with revertedTo and the same solve object and states as recompute; success is true only when solve.state is completed. The revert itself has happened whatever the solve did" }
+                    Tips = new[] {
+                        "Waits up to timeout seconds (1-300, default 30) and replies with revertedTo and the same solve object and states as recompute; success is true only when solve.state is completed. The revert itself has happened whatever the solve did",
+                        "Not undoable with Ctrl+Z: revert installs a new document, whose undo history starts empty, so edits made before the revert can no longer be undone either"
+                    }
                 },
                 ["snapshots"] = new ActionInfo
                 {
@@ -184,7 +189,8 @@ namespace Cordyceps.Tools.Unified
             {
                 "IMPORTANT: Disable solver before bulk operations with action='solver', enabled=false",
                 "Re-enable solver when done with action='solver', enabled=true",
-                "Capture supports .png, .jpg, .bmp formats"
+                "Capture supports .png, .jpg, .bmp formats",
+                "Undo: clear is one Grasshopper undo step a human reverts with Ctrl+Z; solver, revert and the capture actions record none. undo and redo are not callable by agents: snapshot and revert are the agent-side restore"
             }
         };
 
@@ -252,7 +258,7 @@ namespace Cordyceps.Tools.Unified
             // Validated before anything touches the document: an out-of-range or non-numeric
             // timeout is refused, never clamped or defaulted.
             int timeoutSeconds = SolvePolicy.DefaultTimeoutSeconds;
-            if (WaitsForSolve(action, enabledBool))
+            if (SolvePolicy.WaitsForSolve(action, enabledBool))
             {
                 if (!SolvePolicy.TryParseTimeout(timeout, out timeoutSeconds, out var timeoutError))
                     return ToolHelpers.ErrorResponse(timeoutError);
@@ -373,41 +379,50 @@ namespace Cordyceps.Tools.Unified
                     .ToList();
 
                 int count = toRemove.Count;
-                foreach (var obj in toRemove)
-                {
-                    doc.RemoveObject(obj, false);
-                }
 
-                // Scheduled, not solved here: only what the removal expired needs recomputing, and
-                // solving inside this call would hold the document lock for the whole solve.
-                var solve = SolveCoordinator.Schedule(doc, expireAll: false).ToField();
-
-                if (hookIds != null)
+                string Reply()
                 {
-                    return JsonConvert.SerializeObject(new
+                    if (hookIds != null)
                     {
-                        success = true,
-                        removedCount = count,
-                        preservedClusterHooks = hookIds.Count,
-                        note = "Inside a cluster editor: cluster input/output hooks were preserved to keep the cluster interface intact",
-                        solve
-                    });
+                        return JsonConvert.SerializeObject(new
+                        {
+                            success = true,
+                            removedCount = count,
+                            preservedClusterHooks = hookIds.Count,
+                            note = "Inside a cluster editor: cluster input/output hooks were preserved to keep the cluster interface intact"
+                        });
+                    }
+
+                    return JsonConvert.SerializeObject(new { success = true, removedCount = count });
                 }
 
-                return JsonConvert.SerializeObject(new
+                // Nothing to remove changes nothing: no undo step and no solve.
+                if (count == 0)
+                    return Reply();
+
+                // A removal is recorded against this document, so an object that does not report
+                // itself as in it (an orphan) cannot be recorded; it is refused before anything is
+                // removed rather than discovered partway through.
+                var orphans = toRemove.Where(o => !EditTransaction.CanRemove(doc, o)).ToList();
+                if (orphans.Count > 0)
+                    return ToolHelpers.ErrorResponse(
+                        $"Nothing was cleared: {orphans.Count} object(s) on the canvas do not report themselves as in this document, so their removal cannot be recorded for undo: " +
+                        string.Join(", ", orphans.Take(5).Select(o => $"'{o.NickName}' ({o.InstanceGuid})")) +
+                        (orphans.Count > 5 ? ", ..." : ""));
+
+                // One undo step: each removal records the object's wires and then the object, so
+                // Ctrl+Z brings the whole canvas back, wired. The commit schedules one solve rather
+                // than solving here, which would hold the document lock for the whole solve. clear
+                // used to solve before replying, so its reply names the scheduled solve as well as
+                // a refused one.
+                return _context.Edit(doc, EditReplies.RecordName("gh_document", "clear"), tx =>
                 {
-                    success = true,
-                    removedCount = count,
-                    solve
-                });
+                    foreach (var obj in toRemove)
+                        tx.RemoveObject(obj);
+                    return Reply();
+                }, reportScheduledSolve: true);
             });
         }
-
-        // The actions that wait for the solve they start, and so read timeout.
-        private static bool WaitsForSolve(string action, bool enabled)
-            => string.Equals(action, "recompute", StringComparison.OrdinalIgnoreCase)
-               || string.Equals(action, "revert", StringComparison.OrdinalIgnoreCase)
-               || (enabled && string.Equals(action, "solver", StringComparison.OrdinalIgnoreCase));
 
         private string ActionSolver(bool enabled, int timeoutSeconds)
         {
@@ -492,17 +507,17 @@ namespace Cordyceps.Tools.Unified
 
         private string ActionUndo()
         {
-            // Undo is formally cut (2026-07-02 janitor close-out), not pending work: the
-            // Grasshopper undo system interacts with the UI thread in ways that cause the HTTP
-            // response to be disposed before it can be sent. Snapshots (action='snapshot'/
-            // 'revert') are the supported alternative.
-            return ToolHelpers.ErrorResponse("Undo is disabled (threading issues with the Grasshopper undo stack). Use snapshots instead: gh_document(action='snapshot', name='...') before changes, gh_document(action='revert', name='...') to restore.");
+            // Agents do not perform undo: running Grasshopper's undo from an HTTP call interacts
+            // with the UI thread in ways that dispose the response before it is sent. Every edit
+            // still records one undo step for the human's Ctrl+Z, and snapshots are the agent-side
+            // restore.
+            return ToolHelpers.ErrorResponse("Undo is not available to agents. Each Cordyceps call that changes the canvas is one Grasshopper undo step, which a human undoes with Ctrl+Z (Cmd+Z on macOS) in Grasshopper. To restore state yourself, use snapshots: gh_document(action='snapshot', name='...') before changes, gh_document(action='revert', name='...') to restore.");
         }
 
         private string ActionRedo()
         {
-            // Redo is formally cut alongside undo — see ActionUndo for details.
-            return ToolHelpers.ErrorResponse("Redo is disabled (threading issues with the Grasshopper undo stack). Use snapshots instead (action='snapshot'/'revert').");
+            // Redo is closed to agents for the same reason as undo — see ActionUndo.
+            return ToolHelpers.ErrorResponse("Redo is not available to agents. A human redoes an undone Cordyceps call with Grasshopper's Redo (Ctrl+Y on Windows, Cmd+Shift+Z on macOS). To restore state yourself, use snapshots (action='snapshot'/'revert').");
         }
 
         private string ActionSnapshot(string name)

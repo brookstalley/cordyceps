@@ -47,8 +47,9 @@ running, so poll `gh_inspect(action='connection')` until `solving` is false befo
 
 ## Values
 
-- `gh_canvas(action='set', id='...', value='...')` — slider/panel/toggle
+- `gh_canvas(action='set', id='...', value='...')` — slider/panel/toggle/value list (a toggle takes true/false, 1/0 or yes/no)
 - `gh_canvas(action='config', id='...', min=..., max=...)` — slider range
+- `gh_canvas(action='config', id='...', items='[{"name":"A","value":"1"}]')` — value-list items (one bad item refuses the whole list)
 
 ## Scripts
 
@@ -71,7 +72,8 @@ running, so poll `gh_inspect(action='connection')` until `solving` is false befo
 
 Operations: `add`, `remove`, `set_count`. Params: `side` ('input'/'output', default 'input'), `index`, `count`. Use `gh_canvas(action='info')` to list current params.
 
-`remove`, and a `set_count` below the current count, cut the wires on the ports they remove, so they never select the component by a default nickname (`Merge`), even a unique one; `add` and a growing `set_count` still accept it.
+`remove`, and a `set_count` below the current count, cut the wires on the ports they remove, so they never select the component by a default nickname (`Merge`), even a unique one; `add` and a growing `set_count` still accept it. A `set_count` the component refuses partway rolls
+back (`rolledBack: true`) and leaves the component unchanged.
 
 On a C# or Python script component, `zoomable` rebuilds the program after reshaping its ports (the program is compiled against them) and the reply carries `rebuilt`/`verified` exactly as `gh_script(action='configure')` does.
 
@@ -169,6 +171,16 @@ running, rather than queueing silently. Otherwise it waits for the solve (up to 
 default 30) and reports how it ended in `solve.state` (`completed`, `aborted`, `over_budget`, ...).
 `solver` with `enabled=true` and `revert` wait and report the same way; `clear` only schedules its
 solve. See `gh://docs/common-errors`.
+
+## Undo and failed calls
+
+Every call that changes the canvas is one Grasshopper undo step: a human presses Ctrl+Z in
+Grasshopper and gets the canvas back as it was before that call. The reply's `undo` field names the
+step (`"Cordyceps: gh_wire connect"`) and is absent when nothing changed. A call that fails partway
+rolls back: `success: false`, `rolledBack: true`, and the canvas is unchanged. You cannot call undo
+yourself (`gh_document` `undo`/`redo` return an error): take `gh_document(action='snapshot')` before
+a risky change and `revert` to restore. While the solver is off, an edit's reply carries
+`solve.state: "solver_disabled"`; that is expected, not a failure.
 
 ## Clusters
 

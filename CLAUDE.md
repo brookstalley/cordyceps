@@ -30,8 +30,12 @@ output, and what differs from its pytest-shaped instructions: read `docs/testing
 
 ## Rules for code changes
 
-- All Grasshopper document access goes through `_context.ExecuteOnUiThread()`; Grasshopper must be
-  touched on the UI thread.
+- Grasshopper is touched only on the UI thread. A change to canvas content (objects, wires,
+  values) goes through `_context.Edit(doc, EditReplies.RecordName(tool, action), tx => …)`: one
+  undo step, rolled back on a throw. Validate every input before it opens, record each change
+  (`tx.Record*`) before making it, add or remove objects with `tx.AddObject`/`tx.RemoveObject`
+  (rules: `Core/Edits/EditTransaction.cs`). Reads use `_context.ExecuteOnUiThread()`, and so, by
+  design, do the solver switch (`solver`; `Edit` restores it at commit) and `revert`.
 - Component-type names resolve in `Core/Naming/TypeNameRule.cs` (never a partial match). Change
   resolution or aliases there, not in the `ComponentRegistry` adapter.
 - Object and group ids resolve in `Core/Canvas/ObjectResolver.cs`. Change name resolution there,
@@ -43,21 +47,27 @@ output, and what differs from its pytest-shaped instructions: read `docs/testing
 ### Adding or modifying tools
 
 1. Create a method in an existing tool class (or create a new class with `[McpServerToolType]`)
-2. Add `[McpServerTool]` attribute to the method
-3. Add `[Description("...")]` attributes to the method and each parameter
-4. All parameters should be primitive types (string, int, double, bool)
-5. Return a JSON-serialized string with `success` field
+2. Add `[McpServerTool]` to the method and `[Description("...")]` to the method and each parameter
+3. All parameters should be primitive types (string, int, double, bool)
+4. Return a JSON-serialized string with `success` field; a canvas change runs inside `_context.Edit`
 
 ```csharp
 [McpServerTool, Description("Brief description of what this tool does")]
 public string MyNewTool(
-    [Description("Parameter description")] string param1,
-    [Description("Optional param description")] int param2 = 0)
+    [Description("Object: GUID, 8+ hex prefix, or unique nickname")] string id,
+    [Description("Optional param description")] string nickname = null)
 {
     return _context.ExecuteOnUiThread(() =>
     {
-        // Implementation
-        return JsonConvert.SerializeObject(new { success = true, ... });
+        // Resolve and validate first: a refusal returns before anything changes.
+        if (!ToolHelpers.TryGetUnprotectedComponentWithDoc(_context, id, out var doc, out var obj, out var error))
+            return ToolHelpers.ErrorResponse(error);
+        return _context.Edit(doc, EditReplies.RecordName("my_tool", "rename"), tx =>
+        {
+            tx.RecordNickName(obj);   // record, then mutate
+            obj.NickName = nickname;
+            return JsonConvert.SerializeObject(new { success = true, ... });
+        });
     });
 }
 ```

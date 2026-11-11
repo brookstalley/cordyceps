@@ -142,6 +142,38 @@ public class ParseHelpersColorTests
         Assert.False(ParseHelpers.TryParseColor(input, out _));
     }
 
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    public void OptionalColor_LeftOut_IsNotGiven(string input)
+    {
+        Assert.True(ParseHelpers.TryParseOptionalColor(input, out var color, out var error));
+        Assert.Null(color);
+        Assert.Null(error);
+    }
+
+    [Fact]
+    public void OptionalColor_ThatParses_IsTheColor()
+    {
+        Assert.True(ParseHelpers.TryParseOptionalColor("#FF8000", out var color, out var error));
+        Assert.Null(error);
+        Assert.NotNull(color);
+        Assert.Equal((255, 128, 0), ((int)color.Value.R, (int)color.Value.G, (int)color.Value.B));
+    }
+
+    /// <summary>A colour that does not parse is refused, never read as "not given".</summary>
+    [Theory]
+    [InlineData("teal-ish")]
+    [InlineData("#GGGGGG")]
+    [InlineData(" ")]
+    public void OptionalColor_ThatDoesNotParse_IsRefusedWithTheSharedError(string input)
+    {
+        Assert.False(ParseHelpers.TryParseOptionalColor(input, out var color, out var error));
+        Assert.Null(color);
+        Assert.Equal($"Invalid color: {input}", error);
+        Assert.Equal(ParseHelpers.InvalidColorError(input), error);
+    }
+
     [Fact]
     public void ColorToHex_FormatsAsHashRrGgBb()
     {

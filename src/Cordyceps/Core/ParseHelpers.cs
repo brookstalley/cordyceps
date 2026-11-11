@@ -260,6 +260,30 @@ namespace Cordyceps.Core
             return false;
         }
 
+        /// <summary>The refusal for a colour that does not parse, the same wherever a colour is set.</summary>
+        public static string InvalidColorError(string colorStr) => $"Invalid color: {colorStr}";
+
+        /// <summary>
+        /// Parse a colour argument that may be left out. Null or empty is "not given": true, with
+        /// <paramref name="color"/> null. A colour that parses (<see cref="TryParseColor"/>) is true
+        /// with the colour. Anything else is false with <paramref name="error"/> set, never read as
+        /// "not given", so a call refuses it before it changes anything.
+        /// </summary>
+        public static bool TryParseOptionalColor(string colorStr, out Color? color, out string error)
+        {
+            color = null;
+            error = null;
+            if (string.IsNullOrEmpty(colorStr))
+                return true;
+            if (TryParseColor(colorStr, out var parsed))
+            {
+                color = parsed;
+                return true;
+            }
+            error = InvalidColorError(colorStr);
+            return false;
+        }
+
         #endregion
 
         #region Boolean Parsing

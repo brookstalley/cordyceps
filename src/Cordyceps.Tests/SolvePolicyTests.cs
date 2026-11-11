@@ -378,5 +378,24 @@ namespace Cordyceps.Tests
             Assert.Equal("not_watched", unwatched.Value<string>("state"));
             Assert.Equal(SolvePolicy.Remedy(SolveState.NotWatched), unwatched.Value<string>("remedy"));
         }
+
+        // ---------------------------------------------------------------- which actions read timeout
+
+        [Theory]
+        [InlineData("recompute", false, true)]
+        [InlineData("recompute", true, true)]
+        [InlineData("REVERT", false, true)]
+        [InlineData("revert", true, true)]
+        [InlineData("solver", true, true)]
+        [InlineData("Solver", true, true)]
+        [InlineData("solver", false, false)]
+        [InlineData("clear", true, false)]
+        [InlineData("info", true, false)]
+        [InlineData("snapshot", true, false)]
+        [InlineData(null, true, false)]
+        public void WaitsForSolve_OnlyTheActionsThatWaitForTheirSolve(string action, bool enabled, bool expected)
+        {
+            Assert.Equal(expected, SolvePolicy.WaitsForSolve(action, enabled));
+        }
     }
 }

@@ -105,19 +105,16 @@ namespace Cordyceps.Core
         }
 
         /// <summary>
-        /// The sync <c>gh_script</c> runs from source: the ports <paramref name="code"/> declares
-        /// (<see cref="ScriptSignature"/>) replace the current ones by name. Code whose ports are
-        /// not derived from it removes nothing.
+        /// The sync <c>gh_script</c> runs from source: the ports the code declares replace the
+        /// current ones by name. A <paramref name="sync"/> of <c>null</c> (code that declares no
+        /// ports, or a component that cannot vary them) removes nothing.
         /// </summary>
-        /// <param name="componentTypeName">The script component's .NET type name.</param>
-        /// <param name="code">The source as the caller sent it, which is what the sync reads.</param>
-        public static PortRemoval ForSourceSync(string componentTypeName, string code,
-            IReadOnlyList<string> existingInputs, IReadOnlyList<string> existingOutputs)
+        /// <param name="sync">The sync the write would run, read once by the caller (<see cref="SignatureSync.For"/>).</param>
+        public static PortRemoval ForSourceSync(SignatureSync sync)
         {
-            var declared = ScriptSignature.Parse(componentTypeName, code);
-            if (declared == null)
+            if (sync == null)
                 return None;
-            return ForSync(existingInputs, declared.Value.inputs, existingOutputs, declared.Value.outputs);
+            return ForSync(sync.ExistingInputs, sync.Inputs, sync.ExistingOutputs, sync.Outputs);
         }
 
         /// <summary>

@@ -261,6 +261,16 @@ namespace Cordyceps.Core
             => SolveField(refusal ?? SolveState.Scheduled, documentEnabled: documentEnabled);
 
         /// <summary>
+        /// The <c>gh_document</c> actions that wait for the solve they start, and so read
+        /// <c>timeout</c>: <c>recompute</c>, <c>revert</c>, and <c>solver</c> when it switches the
+        /// solver on. Case is ignored, as the action switch ignores it.
+        /// </summary>
+        public static bool WaitsForSolve(string action, bool enabled)
+            => string.Equals(action, "recompute", StringComparison.OrdinalIgnoreCase)
+               || string.Equals(action, "revert", StringComparison.OrdinalIgnoreCase)
+               || (enabled && string.Equals(action, "solver", StringComparison.OrdinalIgnoreCase));
+
+        /// <summary>
         /// The outcome of a wait for a scheduled solve, before the runtime messages are counted:
         /// the state, how long Cordyceps waited, and Grasshopper's own solve time when a solve
         /// ended (completed or aborted) and reported one.

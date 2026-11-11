@@ -4,6 +4,7 @@ using System.ComponentModel;
 using System.Drawing;
 using System.Linq;
 using Cordyceps.Core;
+using Cordyceps.Core.Edits;
 using Cordyceps.Core.Naming;
 using Grasshopper;
 using Grasshopper.Kernel;
@@ -22,7 +23,8 @@ namespace Cordyceps.Tools.Unified
         private readonly GrasshopperContext _context;
 
         private const string GroupIdTip = "'id' names the group: its exact name (case-sensitive), its GUID, or an 8+ hex GUID prefix. A name two groups share acts on nothing and lists both ids";
-        private const string MembersTip = "Every entry of 'ids' is an object (GUID, 8+ hex GUID prefix, or unique nickname; a group by its id). If any entry does not resolve, the call fails naming it and nothing is changed; a repeated object is acted on once, with a note";
+        private const string InvalidColorTip = "A 'color' that does not parse (hex #RRGGBB, R,G,B, or a color name) is refused with 'Invalid color: …' and nothing is changed; an omitted 'color' sets no color";
+        private const string MembersTip ="Every entry of 'ids' is an object (GUID, 8+ hex GUID prefix, or unique nickname; a group by its id). If any entry does not resolve, the call fails naming it and nothing is changed; a repeated object is acted on once, with a note";
 
         private static readonly UnifiedToolInfo ToolInfo = new UnifiedToolInfo
         {
@@ -48,7 +50,9 @@ namespace Cordyceps.Tools.Unified
                         "Adding a slider: pass min/max/value/decimals to configure it in one call (e.g. type='slider', min=0, max=100, value=50, decimals=2). Non-slider components ignore these.",
                         "Set min/max before value: value is clamped to the range. Same slider config as action='config'.",
                         "A slider value that doesn't parse as a number is an error — the component is NOT added (parity with action='config').",
-                        "Leave 'nickname' unset during normal building — renamed components are hard to find on the canvas. Annotate with labeled groups (group_create) instead and track the returned id."
+                        "Also refused before anything is added: decimals outside 0-8, a min, max or value that is not finite or beyond ±7.92E+28, and min greater than max. A lone min or max is checked against the new slider's default 0-1 range, so pass both to move the range; min equal to max is allowed.",
+                        "Leave 'nickname' unset during normal building — renamed components are hard to find on the canvas. Annotate with labeled groups (group_create) instead and track the returned id.",
+                        "One undo step: Ctrl+Z removes the object. A failure after the object is placed rolls the call back, so nothing is left on the canvas."
                     }
                 },
                 ["delete"] = new ActionInfo
@@ -62,8 +66,10 @@ namespace Cordyceps.Tools.Unified
                         "Use 'id' for single, 'ids' (JSON array) for bulk",
                         "Each id may be a GUID, an 8+ hex GUID prefix, or a unique nickname you set. Every id is resolved before anything is deleted",
                         "A default nickname (the one every new object of the type gets, like 'Circle') never selects what delete removes, even when only one object has it: the error prints the id to pass, or rename the object first (action='rename') and pass the new name",
-                        "A name that fits two objects, a default nickname, or an id that fits nothing, deletes nothing for that entry (an ambiguous name's error lists the candidates by id); the other entries are still deleted (per-id results)",
-                        "A repeated object is deleted once; the later entry carries note 'same object as entry i'"
+                        "A name that fits two objects, a default nickname, an id that fits nothing, or an object that does not report itself as in this document (its removal cannot be recorded for undo), deletes nothing for that entry (an ambiguous name's error lists the candidates by id); the other entries are still deleted (per-id results)",
+                        "A repeated object is deleted once; the later entry carries note 'same object as entry i'",
+                        "Everything one call deletes is one undo step: Ctrl+Z brings back the objects and every wire, upstream and downstream. One solve is scheduled for the whole call",
+                        "Deleting a Relay drops its wires; unlike Grasshopper's own Delete, it does not reconnect the relay's source to its targets"
                     }
                 },
                 ["move"] = new ActionInfo
@@ -75,7 +81,8 @@ namespace Cordyceps.Tools.Unified
                     Example = "action='move', id='abc', x=100, y=200",
                     Tips = new[] {
                         "Use id/x/y for single, 'moves' JSON array for bulk",
-                        "Each id may be a GUID, an 8+ hex GUID prefix, or a unique nickname; every entry is resolved before anything moves, and failures are per-entry"
+                        "Each id may be a GUID, an 8+ hex GUID prefix, or a unique nickname; every entry is resolved before anything moves, and failures are per-entry",
+                        "The entries that move are one undo step. An object already at its target is reported as moved but records nothing; an object with no canvas attributes fails its entry. A call that moves nothing returns no undo"
                     }
                 },
                 ["rename"] = new ActionInfo
@@ -86,7 +93,8 @@ namespace Cordyceps.Tools.Unified
                     Example = "action='rename', id='abc-123', nickname='MyCircle'",
                     Tips = new[]
                     {
-                        "Avoid renaming components as part of normal building — renamed components are hard to find on the canvas and it is not the Grasshopper convention. Annotate with labeled groups (group_create), panels, or scribbles instead; only rename when the user explicitly asks for it"
+                        "Avoid renaming components as part of normal building — renamed components are hard to find on the canvas and it is not the Grasshopper convention. Annotate with labeled groups (group_create), panels, or scribbles instead; only rename when the user explicitly asks for it",
+                        "Renaming to the current nickname records nothing and returns no undo"
                     }
                 },
                 ["find"] = new ActionInfo
@@ -144,7 +152,8 @@ namespace Cordyceps.Tools.Unified
                     Description = "Add a pre-configured constant panel",
                     Required = new[] { "value", "x", "y" },
                     Optional = new[] { "nickname" },
-                    Example = "action='constant', value='3.14159', x=50, y=100"
+                    Example = "action='constant', value='3.14159', x=50, y=100",
+                    Tips = new[] { "One undo step: Ctrl+Z removes the panel. A failure after the panel is placed rolls the call back, so nothing is left on the canvas" }
                 },
                 ["bake"] = new ActionInfo
                 {
@@ -190,7 +199,12 @@ namespace Cordyceps.Tools.Unified
                     Description = "Set value on a component (slider, panel, toggle)",
                     Required = new[] { "id", "value" },
                     Example = "action='set', id='abc-123', value='42'",
-                    Tips = new[] { "For sliders, value must be within range", "For toggles, use 'true' or 'false'" }
+                    Tips = new[] {
+                        "For sliders, value must be a finite number within the slider's range",
+                        "For toggles, value is true/false, 1/0 or yes/no (case-insensitive); anything else is an error, never read as false",
+                        "For value lists, value is an item's name or value (case ignored); that item becomes the only one selected",
+                        "A value equal to the current one records nothing and returns no undo"
+                    }
                 },
                 ["config"] = new ActionInfo
                 {
@@ -200,8 +214,10 @@ namespace Cordyceps.Tools.Unified
                     Optional = new[] { "min", "max", "value", "decimals", "items" },
                     Example = "action='config', id='abc', min=0, max=100, value=50",
                     Tips = new[] {
-                        "For value lists: items='[{\"name\":\"A\",\"value\":\"0\"}]'",
-                        "A non-numeric 'value' is rejected with an error before anything is applied (parity with action='set')"
+                        "For value lists, items is required: items='[{\"name\":\"A\",\"value\":\"0\"}]'. It must be a non-empty array of objects with only the keys name and value (a missing one defaults to 'Item' / '0'); one bad item refuses the whole list before the list is touched",
+                        "A value list keeps its selection by item name where that item still exists; otherwise item 0 is selected",
+                        "Refused before anything is applied: a non-numeric 'value' (parity with action='set'), decimals outside 0-8, a min, max or value that is not finite or beyond ±7.92E+28, and min greater than max. A lone min or max is checked against the slider's current other bound, so pass both to move the range; min equal to max is allowed",
+                        "Settings equal to the current ones record nothing; a call that changes nothing returns no undo"
                     }
                 },
                 ["preview"] = new ActionInfo
@@ -213,7 +229,8 @@ namespace Cordyceps.Tools.Unified
                     Example = "action='preview', id='abc', enabled=false",
                     Tips = new[] {
                         "Returns per-id results with changedCount/failedCount; unresolvable ids or components without preview support are per-id failures and overall success is false",
-                        "enabled accepts true/false, 1/0, yes/no (case-insensitive); anything else is a validation error"
+                        "enabled accepts true/false, 1/0, yes/no (case-insensitive); anything else is a validation error",
+                        "The ids that change are one undo step. An id already in the requested state counts in changedCount but records nothing"
                     }
                 },
                 ["enable"] = new ActionInfo
@@ -225,7 +242,8 @@ namespace Cordyceps.Tools.Unified
                     Example = "action='enable', id='abc', enabled=false",
                     Tips = new[] {
                         "Returns per-id results with changedCount/failedCount; unresolvable ids or components that can't be locked are per-id failures and overall success is false",
-                        "enabled accepts true/false, 1/0, yes/no (case-insensitive); anything else is a validation error"
+                        "enabled accepts true/false, 1/0, yes/no (case-insensitive); anything else is a validation error",
+                        "The ids that change are one undo step. An id already in the requested state counts in changedCount but records nothing"
                     }
                 },
                 // Group actions (from gh_group)
@@ -236,7 +254,7 @@ namespace Cordyceps.Tools.Unified
                     Required = new[] { "name" },
                     Optional = new[] { "ids", "color" },
                     Example = "action='group_create', name='Inputs', ids='[\"a\",\"b\"]', color='#FF6B6B'",
-                    Tips = new[] { "Malformed 'ids' JSON is rejected with an error — no group is created", MembersTip }
+                    Tips = new[] { "Malformed 'ids' JSON is rejected with an error — no group is created", MembersTip, InvalidColorTip }
                 },
                 ["group_delete"] = new ActionInfo
                 {
@@ -244,7 +262,7 @@ namespace Cordyceps.Tools.Unified
                     Description = "Delete a visual group (components remain)",
                     Required = new[] { "id" },
                     Example = "action='group_delete', id='abc-123'",
-                    Tips = new[] { GroupIdTip, "The default group name 'Group' never selects what group_delete removes, even when only one group has it: the error prints the id to pass, or rename the group first (action='group_rename') and pass the new name" }
+                    Tips = new[] { GroupIdTip, "The default group name 'Group' never selects what group_delete removes, even when only one group has it: the error prints the id to pass, or rename the group first (action='group_rename') and pass the new name", "A group that does not report itself as in this document is refused: its removal cannot be recorded for undo" }
                 },
                 ["group_add"] = new ActionInfo
                 {
@@ -253,7 +271,7 @@ namespace Cordyceps.Tools.Unified
                     Required = new[] { "ids" },
                     Optional = new[] { "id", "name", "color" },
                     Example = "action='group_add', ids='[\"a\",\"b\"]', name='MyGroup'",
-                    Tips = new[] { "If 'id' is provided it must resolve to an existing group (error otherwise); omit 'id' to create a new group", GroupIdTip, MembersTip }
+                    Tips = new[] { "If 'id' is provided it must resolve to an existing group (error otherwise); omit 'id' to create a new group", GroupIdTip, MembersTip, InvalidColorTip, "Ids already in the group are reported as added. A call where every id is already a member and no new color is given changes nothing and returns no undo" }
                 },
                 ["group_remove"] = new ActionInfo
                 {
@@ -261,7 +279,7 @@ namespace Cordyceps.Tools.Unified
                     Description = "Remove components from a group",
                     Required = new[] { "id", "ids" },
                     Example = "action='group_remove', id='group-id', ids='[\"comp-a\"]'",
-                    Tips = new[] { GroupIdTip, MembersTip, "An entry that resolves but is not in the group is listed in 'notMembers'" }
+                    Tips = new[] { GroupIdTip, MembersTip, "An entry that resolves but is not in the group is listed in 'notMembers'. A call where no entry is a member changes nothing and returns no undo" }
                 },
                 ["group_list"] = new ActionInfo
                 {
@@ -291,7 +309,7 @@ namespace Cordyceps.Tools.Unified
                     Description = "Move all components in a group by offset",
                     Required = new[] { "id", "dx", "dy" },
                     Example = "action='group_move', id='abc', dx=100, dy=50",
-                    Tips = new[] { GroupIdTip }
+                    Tips = new[] { GroupIdTip, "movedCount counts the members with a position on the canvas. dx=0 and dy=0 moves nothing and returns no undo, with the same movedCount, offset and bounds" }
                 },
                 ["zoomable"] = new ActionInfo
                 {
@@ -306,7 +324,9 @@ namespace Cordyceps.Tools.Unified
                         "count: target number for 'set_count'",
                         "index: specific position for 'add'/'remove'",
                         "remove, and a set_count below the current count, cut the wires on the ports they remove, so they never select the component by a default nickname (one every new object of the type gets, like 'Merge'), even a unique one: pass the id the error prints. add and a growing set_count accept it",
-                        "On a C# or Python script component the program is compiled against its ports, so a reshape rebuilds it before the call returns and the reply carries rebuilt/rebuildSkipped/rebuildFailed and verified/verificationSkipped, meaning exactly what they do for gh_script(action='configure'). Other components (Merge, Entwine, Gate) have no program and get no rebuild fields"
+                        "On a C# or Python script component the program is compiled against its ports, so a reshape rebuilds it before the call returns and the reply carries rebuilt/rebuildSkipped/rebuildFailed and verified/verificationSkipped, meaning exactly what they do for gh_script(action='configure'). Other components (Merge, Entwine, Gate) have no program and get no rebuild fields",
+                        "One undo step: Ctrl+Z restores the ports, their wires and, on a script component, its source",
+                        "A set_count the component cannot finish (it refuses a port partway) rolls back: success=false, rolledBack=true, and the component is unchanged. A finished set_count replies targetCount, actualCount, added and removed, with errors=null. A set_count already at its count returns no undo"
                     }
                 },
                 ["modifier"] = new ActionInfo
@@ -323,7 +343,8 @@ namespace Cordyceps.Tools.Unified
                         "param: the port's exact name or nickname (case ignored only when that leaves one match), or its 0-based index; not needed for a free-floating parameter. Partial names are refused with suggestions.",
                         "side: 'input' or 'output' (default: 'input')",
                         "Clear everything with mapping='none', simplify=false, reverse=false",
-                        "action='info' reports the same modifiers for every param of a component"
+                        "action='info' reports the same modifiers for every param of a component",
+                        "A write that changes something is one undo step; a read, or a write whose values are already set, records nothing and returns no undo"
                     }
                 }
             },
@@ -332,8 +353,12 @@ namespace Cordyceps.Tools.Unified
                 "Disable solver before bulk operations: gh_document(action='solver', enabled=false)",
                 "Recommended spacing: 150px horizontal, 70px vertical between components",
                 "Use action='zoom' before capturing to ensure all components are visible",
-                "Groups are visual containers - deleting a group doesn't delete its components",
-                "Ids: an object is named by its GUID, an 8+ hex GUID prefix, or its unique nickname (exact, case-sensitive); a group action's 'id' takes the group's name or id. Nothing is guessed: a name that fits two things acts on nothing and lists their ids, and a near miss gets a 'Did you mean'"
+                "Groups are visual containers - deleting a group doesn't delete its components. Each group action is one undo step; Ctrl+Z restores membership, name, colour and member positions",
+                "Ids: an object is named by its GUID, an 8+ hex GUID prefix, or its unique nickname (exact, case-sensitive); a group action's 'id' takes the group's name or id. Nothing is guessed: a name that fits two things acts on nothing and lists their ids, and a near miss gets a 'Did you mean'",
+                "Undo: every call that changes the canvas is one Grasshopper undo step, so a human's Ctrl+Z reverts the whole call. The reply's undo field names the step ('Cordyceps: gh_canvas <action>') and is absent when nothing changed. bake is a Rhino undo record instead; zoom and view change only the view. Agents restore state with gh_document snapshot/revert",
+                "A call that fails partway rolls back: success=false, error, rolledBack=true, and the canvas is as it was. rolledBack=false with rollbackFailures means some changes could not be undone: check the canvas, because Ctrl+Z does not cover that call",
+                "Per-id actions (delete, move, preview, enable): an id refused at validation is reported in results and never touched, and the rest are one undo step. An unexpected failure while applying rolls the whole call back instead",
+                "A success can carry warning: the edit was made, but a step after it (restoring the solver, scheduling the solve) failed. Check gh_document(action='info'), then gh_document(action='recompute'). solve appears only when the solve the edit asked for was refused (solver_disabled while you have the solver off is expected); it never fails the edit. See gh://docs/common-errors"
             }
         };
 
@@ -508,43 +533,49 @@ namespace Cordyceps.Tools.Unified
         {
             Core.DebugLog.Info($"gh_canvas add: type='{type}', x={x}, y={y}, nickname='{nickname}'");
 
+            // A component's own constructor or attributes can throw while it is built, before the
+            // document is touched; that reaches the tool-invocation boundary, which answers it as a
+            // failed call. Everything from the add on runs inside the edit, so a throw there rolls
+            // the add back instead of leaving a half-configured object on the canvas.
             return _context.ExecuteOnUiThread(() =>
             {
-                try
+                if (!ToolHelpers.TryGetActiveDocument(_context, out var doc, out var error))
+                    return ToolHelpers.ErrorResponse(error);
+
+                var (component, resolution, typeError) = ComponentRegistry.TryCreate(type);
+
+                if (component == null)
+                    return JsonConvert.SerializeObject(TypeNameRule.ErrorPayload(resolution, typeError));
+
+                if (component.Attributes == null)
+                    component.CreateAttributes();
+
+                if (!string.IsNullOrEmpty(nickname))
+                    component.NickName = nickname;
+
+                component.Attributes.Pivot = new PointF((float)x, (float)y);
+
+                // Validate slider configuration BEFORE adding to the document, so a setting the
+                // slider cannot hold refuses the call and never leaves a half-configured slider on
+                // the canvas. A lone min or max is checked against the new slider's own range.
+                SliderConfigPlan sliderPlan = null;
+                if (component is GH_NumberSlider newSlider)
                 {
-                    if (!ToolHelpers.TryGetActiveDocument(_context, out var doc, out var error))
-                        return ToolHelpers.ErrorResponse(error);
+                    sliderPlan = SliderConfig.Plan(min, max, value, decimals,
+                        newSlider.Slider.Minimum, newSlider.Slider.Maximum);
+                    if (sliderPlan.Error != null)
+                        return ToolHelpers.ErrorResponse(sliderPlan.Error);
+                }
 
-                    var (component, resolution, typeError) = ComponentRegistry.TryCreate(type);
-
-                    if (component == null)
-                        return JsonConvert.SerializeObject(TypeNameRule.ErrorPayload(resolution, typeError));
-
-                    if (component.Attributes == null)
-                        component.CreateAttributes();
-
-                    if (!string.IsNullOrEmpty(nickname))
-                        component.NickName = nickname;
-
-                    component.Attributes.Pivot = new PointF((float)x, (float)y);
-
-                    // Validate slider configuration BEFORE adding to the document so an
-                    // unparseable value never leaves a half-configured slider on the canvas.
-                    // Parity with action='config': an invalid value is an explicit error,
-                    // never a silent success with the value ignored.
-                    SliderConfigPlan sliderPlan = null;
-                    if (component is GH_NumberSlider)
-                    {
-                        sliderPlan = SliderConfig.Plan(min, max, value, decimals);
-                        if (sliderPlan.ValueInvalid)
-                            return ToolHelpers.ErrorResponse($"Invalid number: {value}");
-                    }
-
-                    doc.AddObject(component, false);
+                return _context.Edit(doc, EditReplies.RecordName("gh_canvas", "add"), tx =>
+                {
+                    // Tracked, added and recorded by the transaction, which also recomputes it at commit.
+                    tx.AddObject(component);
 
                     // Apply slider configuration when the caller passed min/max/value/decimals on add.
-                    // Non-slider components ignore these params (GHC-7X4B). Shares Core.SliderConfig
-                    // with the 'config' action so add and config configure a slider identically.
+                    // Non-slider components ignore these params. Shares Core.SliderConfig with the
+                    // 'config' action so add and config configure a slider identically. The slider
+                    // is new in this edit, so its range and value need no undo record of their own.
                     if (component is GH_NumberSlider addedSlider)
                     {
                         var plan = sliderPlan;
@@ -553,9 +584,6 @@ namespace Cordyceps.Tools.Unified
                         if (plan.SetDecimals) addedSlider.Slider.DecimalPlaces = plan.Decimals;
                         if (plan.SetValue) addedSlider.SetSliderValue(plan.Value);
                     }
-
-                    if (component is IGH_ActiveObject activeAdd)
-                        activeAdd.ExpireSolution(false);
 
                     var bounds = component.Attributes.Bounds;
                     int inputCount = 0, outputCount = 0;
@@ -606,12 +634,7 @@ namespace Cordyceps.Tools.Unified
                     }
 
                     return JsonConvert.SerializeObject(added);
-                }
-                catch (Exception ex)
-                {
-                    Core.DebugLog.Error($"gh_canvas add failed: {ex.Message}");
-                    return ToolHelpers.ErrorResponse(ex.Message);
-                }
+                });
             });
         }
 
@@ -626,7 +649,7 @@ namespace Cordyceps.Tools.Unified
                 if (!string.IsNullOrEmpty(ids))
                 {
                     try { idList = JsonConvert.DeserializeObject<List<string>>(ids); }
-                    catch (Exception ex) { return ToolHelpers.ErrorResponse($"Invalid ids format: {ex.Message}"); }
+                    catch (JsonException ex) { return ToolHelpers.ErrorResponse($"Invalid ids format: {ex.Message}"); }
                     if (idList == null) return ToolHelpers.ErrorResponse("Invalid ids format: expected a JSON array");
                 }
                 else if (!string.IsNullOrEmpty(id))
@@ -638,21 +661,20 @@ namespace Cordyceps.Tools.Unified
                     return ToolHelpers.ErrorResponse("Either 'id' or 'ids' is required");
                 }
 
-                // Every id resolves against one lookup before the first RemoveObject, so a bad or
-                // ambiguous id deletes nothing of its own and cannot leave the call half-applied
-                // by failing midway. Ids that resolve are deleted; each failure is reported.
+                // Pass 1: every id resolves against one lookup before the first removal, so a bad or
+                // ambiguous id, or an object whose removal cannot be recorded, deletes nothing of its
+                // own and is reported. Pass 2 removes every id
+                // that resolved, as one edit: either all of them go, as one undo step, or an
+                // unexpected failure rolls the whole call back.
                 var lookup = new ObjectLookup(doc);
                 var outcomes = ToolHelpers.ResolveIds(lookup, idList, acceptGroups: true, Core.Canvas.ResolveIntent.Destructive, out var resolved);
 
                 var results = new List<object>();
                 var deletedIds = new List<string>();
+                var toDelete = new List<IGH_DocumentObject>();
+                var deletedGuids = new HashSet<Guid>();
                 int succeeded = 0, failed = 0;
 
-                // Recipients must be captured BEFORE RemoveObject severs the wires — expiring the
-                // deleted object afterwards reaches nothing. Collect every deleted object's former
-                // recipients (top-level owners) and expire the survivors once all deletions are done.
-                var deletedGuids = new HashSet<Guid>();
-                var formerRecipients = new Dictionary<Guid, IGH_DocumentObject>();
                 foreach (var outcome in outcomes)
                 {
                     if (!outcome.IsResolved)
@@ -665,7 +687,7 @@ namespace Cordyceps.Tools.Unified
                     var resolvedId = outcome.Id.Value.ToString();
                     if (!outcome.ActOn)
                     {
-                        // A repeat of an earlier entry, which already acted on the object; report its result.
+                        // A repeat of an earlier entry, which acts on the object; report its result.
                         if (deletedGuids.Contains(outcome.Id.Value))
                         {
                             results.Add(new { id = resolvedId, success = true, note = outcome.Note });
@@ -679,54 +701,50 @@ namespace Cordyceps.Tools.Unified
                         continue;
                     }
 
-                    var component = resolved[outcome.Id.Value];
-                    try
+                    // An object that does not report itself as in this document cannot have its
+                    // removal recorded; it is that id's error, and the rest still go.
+                    var target = resolved[outcome.Id.Value];
+                    if (!EditTransaction.CanRemove(doc, target))
                     {
-                        IEnumerable<IGH_Param> outputs = component is IGH_Component comp
-                            ? comp.Params.Output
-                            : component is IGH_Param param ? new[] { param } : Enumerable.Empty<IGH_Param>();
-                        foreach (var output in outputs)
-                        {
-                            foreach (var recipient in output.Recipients)
-                            {
-                                var recObj = recipient.Attributes?.GetTopLevel?.DocObject;
-                                if (recObj != null)
-                                    formerRecipients[recObj.InstanceGuid] = recObj;
-                            }
-                        }
-
-                        var ownerDoc = ToolHelpers.GetOwnerDocument(component, doc);
-                        ownerDoc.RemoveObject(component, true);
-                        deletedGuids.Add(component.InstanceGuid);
-                        deletedIds.Add(resolvedId);
-                        results.Add(new { id = resolvedId, success = true });
-                        succeeded++;
-                    }
-                    catch (Exception ex)
-                    {
-                        results.Add(new { id = outcome.Text, success = false, error = ex.Message });
+                        results.Add(new { id = outcome.Text, success = false, error = EditTransaction.NotInDocumentError(target) });
                         failed++;
+                        continue;
                     }
+
+                    toDelete.Add(target);
+                    deletedGuids.Add(outcome.Id.Value);
+                    deletedIds.Add(resolvedId);
+                    results.Add(new { id = resolvedId, success = true });
+                    succeeded++;
                 }
 
-                foreach (var kvp in formerRecipients)
+                string Reply()
                 {
-                    if (deletedGuids.Contains(kvp.Key)) continue;
-                    if (kvp.Value is IGH_ActiveObject activeRec)
-                        activeRec.ExpireSolution(false);
-                }
-
-                if (idList.Count == 1)
-                {
-                    return JsonConvert.SerializeObject(new
+                    if (idList.Count == 1)
                     {
-                        success = succeeded == 1,
-                        deleted = deletedIds.FirstOrDefault(),
-                        error = failed > 0 ? ((dynamic)results[0]).error : null
-                    });
+                        return JsonConvert.SerializeObject(new
+                        {
+                            success = succeeded == 1,
+                            deleted = deletedIds.FirstOrDefault(),
+                            error = failed > 0 ? ((dynamic)results[0]).error : null
+                        });
+                    }
+
+                    return JsonConvert.SerializeObject(new { success = failed == 0, total = idList.Count, succeeded, failed, deletedIds, results });
                 }
 
-                return JsonConvert.SerializeObject(new { success = failed == 0, total = idList.Count, succeeded, failed, deletedIds, results });
+                if (toDelete.Count == 0)
+                    return Reply();
+
+                // Each removal records the object's wires (its inputs and every input it feeds)
+                // and then the object, so undo brings back the objects and every wire, upstream and
+                // downstream. The objects they fed are recomputed once, by one solve at commit.
+                return _context.Edit(doc, EditReplies.RecordName("gh_canvas", "delete"), tx =>
+                {
+                    foreach (var obj in toDelete)
+                        tx.RemoveObject(obj);
+                    return Reply();
+                });
             });
         }
 
@@ -755,14 +773,16 @@ namespace Cordyceps.Tools.Unified
 
                 // Pass 1: resolve every entry's id against one lookup, before anything moves. Each
                 // entry carries its own position, so a second entry for one object is a failed
-                // entry, never a dropped position (IdBatch.RefuseRepeats). Pass 2 moves only the
-                // entries that passed.
+                // entry, never a dropped position (IdBatch.RefuseRepeats). An object with no
+                // attributes has no position to set, so it is refused here, not partway through.
+                // Pass 2 moves only the entries that passed, as one undo step.
                 var lookup = new ObjectLookup(doc);
                 var outcomes = IdBatch.RefuseRepeats(
                     ToolHelpers.ResolveIds(lookup, entries.Select(e => e.Id).ToList(), acceptGroups: true, Core.Canvas.ResolveIntent.Ordinary, out var resolved),
                     "give one position per object");
 
                 var results = new List<object>();
+                var pending = new List<(IGH_DocumentObject Obj, PointF Pivot)>();
                 int successCount = 0, failCount = 0;
                 foreach (var outcome in outcomes)
                 {
@@ -775,31 +795,47 @@ namespace Cordyceps.Tools.Unified
                     }
 
                     var guid = outcome.Id.Value;
-                    try
+                    var component = resolved[guid];
+                    if (component.Attributes == null)
                     {
-                        var component = resolved[guid];
-                        component.Attributes.Pivot = new PointF((float)entry.X, (float)entry.Y);
-                        component.Attributes.ExpireLayout();
-
-                        results.Add(new { success = true, id = guid.ToString(), x = entry.X, y = entry.Y });
-                        successCount++;
-                    }
-                    catch (Exception ex)
-                    {
-                        results.Add(new { success = false, id = outcome.Text, error = ex.Message });
+                        results.Add(new { success = false, id = outcome.Text, error = $"'{component.NickName}' ({guid}) has no canvas attributes, so it has no position to set" });
                         failCount++;
+                        continue;
                     }
+
+                    pending.Add((component, new PointF((float)entry.X, (float)entry.Y)));
+                    results.Add(new { success = true, id = guid.ToString(), x = entry.X, y = entry.Y });
+                    successCount++;
                 }
 
-                Instances.ActiveCanvas?.Invalidate();
-
-                if (entries.Count == 1 && successCount == 1)
+                string Reply()
                 {
-                    var r = (dynamic)results[0];
-                    return JsonConvert.SerializeObject(new { success = true, id = r.id, x = r.x, y = r.y });
+                    if (entries.Count == 1 && successCount == 1)
+                    {
+                        var r = (dynamic)results[0];
+                        return JsonConvert.SerializeObject(new { success = true, id = r.id, x = r.x, y = r.y });
+                    }
+
+                    return JsonConvert.SerializeObject(new { success = failCount == 0, total = entries.Count, succeeded = successCount, failed = failCount, results });
                 }
 
-                return JsonConvert.SerializeObject(new { success = failCount == 0, total = entries.Count, succeeded = successCount, failed = failCount, results });
+                // An object already at its position is reported as moved but records nothing, so a
+                // call that moves nothing pushes no undo step.
+                var moving = pending.Where(p => p.Obj.Attributes.Pivot != p.Pivot).ToList();
+                if (moving.Count == 0)
+                    return Reply();
+
+                return _context.Edit(doc, EditReplies.RecordName("gh_canvas", "move"), tx =>
+                {
+                    foreach (var (obj, pivot) in moving)
+                    {
+                        tx.RecordPivot(obj);
+                        obj.Attributes.Pivot = pivot;
+                        obj.Attributes.ExpireLayout();
+                    }
+                    Instances.ActiveCanvas?.Invalidate();
+                    return Reply();
+                });
             });
         }
 
@@ -807,14 +843,25 @@ namespace Cordyceps.Tools.Unified
         {
             return _context.ExecuteOnUiThread(() =>
             {
-                if (!ToolHelpers.TryGetUnprotectedObject(_context, id, out var component, out var error))
+                if (!ToolHelpers.TryGetActiveDocument(_context, out var doc, out var error))
+                    return ToolHelpers.ErrorResponse(error);
+                if (!ToolHelpers.TryGetUnprotectedObject(new ObjectLookup(doc), id, out var component, out error))
                     return ToolHelpers.ErrorResponse(error);
 
-                component.NickName = nickname;
-                component.Attributes?.ExpireLayout();
-                Instances.ActiveCanvas?.Invalidate();
+                string Reply() => JsonConvert.SerializeObject(new { success = true, id = component.InstanceGuid.ToString(), nickname });
 
-                return JsonConvert.SerializeObject(new { success = true, id = component.InstanceGuid.ToString(), nickname });
+                // Renaming to the current name changes nothing, so it records nothing and pushes no undo step.
+                if (string.Equals(component.NickName, nickname, StringComparison.Ordinal))
+                    return Reply();
+
+                return _context.Edit(doc, EditReplies.RecordName("gh_canvas", "rename"), tx =>
+                {
+                    tx.RecordNickName(component);
+                    component.NickName = nickname;
+                    component.Attributes?.ExpireLayout();
+                    Instances.ActiveCanvas?.Invalidate();
+                    return Reply();
+                });
             });
         }
 
@@ -1029,21 +1076,29 @@ namespace Cordyceps.Tools.Unified
                 var panel = new GH_Panel();
                 panel.CreateAttributes();
                 panel.Attributes.Pivot = new PointF((float)x, (float)y);
-                panel.SetUserText(value);
+                // UserText, not SetUserText: SetUserText also calls ExpireSolution(true), which
+                // would solve outside the edit. The rest of what it does, expiring the layout so
+                // the panel draws the new text, is done here; the commit's solve fills its data.
+                panel.UserText = value;
+                panel.Attributes.ExpireLayout();
                 panel.NickName = nickname ?? "";
 
-                doc.AddObject(panel, false);
-                panel.ExpireSolution(false);
-
-                return JsonConvert.SerializeObject(new
+                // The panel is new, so its text is set before the add and needs no record; the
+                // transaction tracks, adds and records it, and recomputes it at commit.
+                return _context.Edit(doc, EditReplies.RecordName("gh_canvas", "constant"), tx =>
                 {
-                    success = true,
-                    id = panel.InstanceGuid.ToString(),
-                    type = "Panel",
-                    value,
-                    nickname = panel.NickName,
-                    x = panel.Attributes.Pivot.X,
-                    y = panel.Attributes.Pivot.Y
+                    tx.AddObject(panel);
+
+                    return JsonConvert.SerializeObject(new
+                    {
+                        success = true,
+                        id = panel.InstanceGuid.ToString(),
+                        type = "Panel",
+                        value,
+                        nickname = panel.NickName,
+                        x = panel.Attributes.Pivot.X,
+                        y = panel.Attributes.Pivot.Y
+                    });
                 });
             });
         }
