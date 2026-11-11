@@ -22,8 +22,11 @@ bring CLAUDE.md under its ~150-line guideline.
   frontmatter and no `## Status` section (backlog #79). Both were ticked, with a note that the live
   checks VRF-009 and VRF-010 stay pending in the operator queue.
 - CLAUDE.md drops from 204 to under 150 lines: the component and tool inventory moved to
-  `docs/architecture.md`, and the binding rules it carried stay in CLAUDE.md as a short list.
+  `docs/architecture.md`, and the binding rules it carried stay in CLAUDE.md as a short list. The
+  Prawduct governance section and its `PRAWDUCT:ANCHOR` marker are unchanged.
 - `.prawduct/owner-rulings.md` is new and records the 2026-11-11 rulings.
+- The learnings rule about hand-ticked Status boxes, which cited the reliability plan as still unticked,
+  is rewritten as one line in the format the learnings files now require; its rule is unchanged.
 
 ## Consumer note
 none: governance records only; no product behaviour changed.

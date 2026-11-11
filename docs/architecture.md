@@ -62,8 +62,8 @@ Grasshopper tools:
 Rhino tools:
 - **RhinoSceneTool** (`rhino_scene`) - Object management, selection, layers (full CRUD),
   visibility
-- **RhinoRenderTool** (`rhino_render`) - Display modes, camera, render settings, materials,
-  environments
+- **RhinoRenderTool** (`rhino_render`) - Display modes, camera and named views, render settings,
+  materials, environments, lights, ground plane, sun and skylight
 
 ## The user-facing documentation system
 

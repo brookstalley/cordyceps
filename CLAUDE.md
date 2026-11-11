@@ -36,7 +36,7 @@ output, and what differs from its pytest-shaped instructions: read `docs/testing
   resolution or aliases there, not in the `ComponentRegistry` adapter.
 - Object and group ids resolve in `Core/Canvas/ObjectResolver.cs`. Change name resolution there,
   not at a call site.
-- Decision logic goes in a host-free `Core/` file linked into `Cordyceps.Tests`, with tests.
+- New decision logic goes in a host-free `Core/` file linked into `Cordyceps.Tests`, with tests.
 - Tool methods return JSON strings with a `success` field (Newtonsoft.Json); log with
   `Core.DebugLog`. Component parameters can be referenced by name or 0-based index.
 
@@ -98,6 +98,8 @@ git checkout main && git pull
 Prerequisites, the post-release Prawduct bookkeeping (`prawduct-hook cut-change-log --release vX.Y.Z`,
 then `prawduct-hook plan-backfill --apply`) and the full flow are in [`docs/release-process.md`](docs/release-process.md).
 
+<!-- PRAWDUCT:ANCHOR — static governance pointer managed by the prawduct plugin. Keep it small and version-free: principles, methodology, and the active version live in the plugin and are injected at session start. -->
+
 ## Governance (Prawduct)
 
 This repo is governed by **Prawduct**, installed as a Claude Code plugin — not as
@@ -126,7 +128,8 @@ stays version-free.
 **There is no `.prawduct/backlog.md`.** The backlog lives in **GitHub Issues on
 `brookstalley/cordyceps`** (cut over 2026-08-29). Use `/prawduct:backlog`, which routes there;
 the plugin owns the item shape, labels and commands. Reading or filing needs network access and
-an authenticated `gh` (`gh auth status`); an auth or network error is about your environment, not
+an authenticated `gh` (`gh auth status`); there is no offline copy, and a fresh clone has no
+backlog content until the cache is built. An auth or network error is about your environment, not
 the backlog.
 
 Migrated items kept their `PFX-XXXX` ids as `id:PFX` aliases, so citations like `RSC-2H9K` still
