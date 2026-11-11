@@ -11,20 +11,14 @@ namespace Cordyceps.Core
     /// reverts nothing.
     /// </summary>
     /// <remarks>
-    /// Each answer mirrors what its action's edit would do, read from the same inputs, and errs
-    /// toward "changes something" wherever a change cannot be ruled out: an empty undo step costs a
-    /// keystroke, while a change answered as "nothing" would go unrecorded.
+    /// Each answer compares the values its action's edit would write, taken from the same functions
+    /// the edit writes them with (<see cref="SignatureSync"/>, <see cref="ParamSyncPlan"/>,
+    /// <see cref="ScriptParamDefs.AccessToWrite"/>), with what the document holds now. Where a value
+    /// cannot be compared, the answer is "changes something": an empty undo step costs a keystroke,
+    /// while a change answered as "nothing" would go unrecorded and unapplied.
     /// </remarks>
     public static class NoChange
     {
-        /// <summary>
-        /// The rebuild reason a <c>gh_script</c> call reports when the component already has the
-        /// source and parameters it asks for.
-        /// </summary>
-        public const string ScriptAlreadyAppliedReason =
-            "The component already stores this source and has these parameters, so nothing was "
-            + "written and its program was left as it is.";
-
         /// <summary>
         /// <c>gh_canvas(action='group_add')</c> on an existing group: true when every id is already a
         /// member and no new colour is asked for. Grasshopper's own <c>AddObject</c> skips a member
@@ -55,36 +49,28 @@ namespace Cordyceps.Core
         /// write would leave its ports as they are, so the call would write the same text and move
         /// nothing.
         /// </summary>
-        /// <param name="componentTypeName">The script component's .NET type name, which decides how its signature is read.</param>
         /// <param name="storedSource">The source the component stores now, or null when it cannot be read.</param>
         /// <param name="finalSource">The source the call would store, with the language line kept.</param>
-        /// <param name="syncsPorts">True when the component can vary its parameters, the only kind the sync reshapes.</param>
-        /// <param name="existingInputs">Current input names.</param>
-        /// <param name="existingOutputs">Current output names past the built-in leading output.</param>
-        public static bool ScriptSourceSync(string componentTypeName, string storedSource, string finalSource, bool syncsPorts,
-            IReadOnlyList<string> existingInputs, IReadOnlyList<string> existingOutputs)
-        {
-            if (!SameSource(storedSource, finalSource)) return false;
-            if (!syncsPorts) return true;
-
-            var declared = ScriptSignature.Parse(componentTypeName, finalSource);
-            if (declared == null) return true;
-
-            return SameNames(existingInputs, declared.Value.inputs) && SameNames(existingOutputs, declared.Value.outputs);
-        }
+        /// <param name="sync">
+        /// The port sync the write would run, the same value the sync itself executes, or null when it
+        /// would run none (code that declares no ports, or a component that cannot vary them).
+        /// </param>
+        public static bool ScriptSourceSync(string storedSource, string finalSource, SignatureSync sync)
+            => SameSource(storedSource, finalSource) && (sync == null || !sync.ChangesPorts);
 
         /// <summary>
         /// <c>gh_script(action='configure')</c> with <c>inputs</c> and/or <c>outputs</c> on a component
-        /// that can vary its parameters: true when every side given already has those names in that
-        /// order, every input <c>access</c> given is already the input's, no <c>type</c> is given, and
-        /// <paramref name="finalSource"/> (when code is passed) is already stored.
+        /// that can vary its parameters: true when the sync of every side given would move no port
+        /// (<see cref="ParamSyncPlan"/>, the plan the sync executes), every input <c>access</c> it would
+        /// write (<see cref="ScriptParamDefs.AccessToWrite"/>) is already the input's, no <c>type</c>
+        /// is given, and <paramref name="finalSource"/> (when code is passed) is already stored.
         /// </summary>
         /// <remarks>
         /// A <c>type</c> always counts as a change: the script parameter's current type hint is held
         /// by a converter that cannot be compared with a type name without setting it, so a call that
         /// gives one is recorded even when the hint was already that type.
         /// </remarks>
-        /// <param name="existingInputs">Current inputs as name and access (<c>item</c>, <c>list</c> or <c>tree</c>).</param>
+        /// <param name="existingInputs">Current inputs as name and access, the access being the name of its <c>GH_ParamAccess</c> member.</param>
         /// <param name="existingOutputs">Current output names past the built-in leading output.</param>
         /// <param name="inputDefs">The requested inputs, or null when the side is left alone.</param>
         /// <param name="outputDefs">The requested outputs, or null when the side is left alone.</param>
@@ -102,43 +88,26 @@ namespace Cordyceps.Core
 
             if (inputDefs != null)
             {
-                if (!SameNames(existingInputs.Select(p => p.Name).ToList(), inputDefs.Select(d => d.Name).ToList()))
+                if (!ParamSyncPlan.Compute(existingInputs.Select(p => p.Name).ToList(), inputDefs.Select(d => d.Name).ToList()).IsNoOp)
                     return false;
                 for (int i = 0; i < inputDefs.Count; i++)
                 {
                     var def = inputDefs[i];
                     if (!string.IsNullOrEmpty(def.Type)) return false;
-                    if (!string.IsNullOrEmpty(def.Access)
-                        && !string.Equals(AccessOf(def.Access), existingInputs[i].Access, StringComparison.OrdinalIgnoreCase))
+                    var access = ScriptParamDefs.AccessToWrite(def.Access);
+                    if (access != null && !string.Equals(access, existingInputs[i].Access, StringComparison.Ordinal))
                         return false;
                 }
             }
 
             if (outputDefs != null)
             {
-                if (!SameNames(existingOutputs, outputDefs.Select(d => d.Name).ToList()))
+                if (!ParamSyncPlan.Compute(existingOutputs, outputDefs.Select(d => d.Name).ToList()).IsNoOp)
                     return false;
                 if (outputDefs.Any(d => !string.IsNullOrEmpty(d.Type))) return false;
             }
 
             return true;
         }
-
-        /// <summary>
-        /// The access a requested <c>access</c> value sets, as <c>configure</c> applies it:
-        /// <c>list</c> and <c>tree</c> (any case) are themselves, and anything else is <c>item</c>.
-        /// </summary>
-        public static string AccessOf(string requested)
-        {
-            switch ((requested ?? "").ToLowerInvariant())
-            {
-                case "list": return "list";
-                case "tree": return "tree";
-                default: return "item";
-            }
-        }
-
-        private static bool SameNames(IReadOnlyList<string> existing, IReadOnlyList<string> target)
-            => (existing ?? Array.Empty<string>()).SequenceEqual(target ?? (IReadOnlyList<string>)Array.Empty<string>(), StringComparer.Ordinal);
     }
 }

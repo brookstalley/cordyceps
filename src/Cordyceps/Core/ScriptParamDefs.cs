@@ -76,5 +76,27 @@ namespace Cordyceps.Core
             defs = result;
             return true;
         }
+
+        /// <summary>
+        /// The access <c>configure</c> writes to an input for a def's <c>access</c>, as the name of
+        /// Grasshopper's <c>GH_ParamAccess</c> member: <c>list</c> and <c>tree</c> (any case) are
+        /// themselves, any other word is <c>item</c>, and an empty or missing value is <c>null</c>,
+        /// meaning the input's access is not written.
+        /// </summary>
+        /// <remarks>
+        /// The one mapping for both the write and the check that a call would change nothing, so the
+        /// check compares exactly the value the write would set.
+        /// </remarks>
+        public static string AccessToWrite(string requested)
+        {
+            if (string.IsNullOrEmpty(requested))
+                return null;
+            switch (requested.ToLowerInvariant())
+            {
+                case "list": return "list";
+                case "tree": return "tree";
+                default: return "item";
+            }
+        }
     }
 }

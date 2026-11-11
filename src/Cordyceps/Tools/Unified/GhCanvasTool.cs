@@ -23,7 +23,8 @@ namespace Cordyceps.Tools.Unified
         private readonly GrasshopperContext _context;
 
         private const string GroupIdTip = "'id' names the group: its exact name (case-sensitive), its GUID, or an 8+ hex GUID prefix. A name two groups share acts on nothing and lists both ids";
-        private const string MembersTip = "Every entry of 'ids' is an object (GUID, 8+ hex GUID prefix, or unique nickname; a group by its id). If any entry does not resolve, the call fails naming it and nothing is changed; a repeated object is acted on once, with a note";
+        private const string InvalidColorTip = "A 'color' that does not parse (hex #RRGGBB, R,G,B, or a color name) is refused with 'Invalid color: …' and nothing is changed; an omitted 'color' sets no color";
+        private const string MembersTip ="Every entry of 'ids' is an object (GUID, 8+ hex GUID prefix, or unique nickname; a group by its id). If any entry does not resolve, the call fails naming it and nothing is changed; a repeated object is acted on once, with a note";
 
         private static readonly UnifiedToolInfo ToolInfo = new UnifiedToolInfo
         {
@@ -65,7 +66,7 @@ namespace Cordyceps.Tools.Unified
                         "Use 'id' for single, 'ids' (JSON array) for bulk",
                         "Each id may be a GUID, an 8+ hex GUID prefix, or a unique nickname you set. Every id is resolved before anything is deleted",
                         "A default nickname (the one every new object of the type gets, like 'Circle') never selects what delete removes, even when only one object has it: the error prints the id to pass, or rename the object first (action='rename') and pass the new name",
-                        "A name that fits two objects, a default nickname, or an id that fits nothing, deletes nothing for that entry (an ambiguous name's error lists the candidates by id); the other entries are still deleted (per-id results)",
+                        "A name that fits two objects, a default nickname, an id that fits nothing, or an object that does not report itself as in this document (its removal cannot be recorded for undo), deletes nothing for that entry (an ambiguous name's error lists the candidates by id); the other entries are still deleted (per-id results)",
                         "A repeated object is deleted once; the later entry carries note 'same object as entry i'",
                         "Everything one call deletes is one undo step: Ctrl+Z brings back the objects and every wire, upstream and downstream. One solve is scheduled for the whole call",
                         "Deleting a Relay drops its wires; unlike Grasshopper's own Delete, it does not reconnect the relay's source to its targets"
@@ -253,7 +254,7 @@ namespace Cordyceps.Tools.Unified
                     Required = new[] { "name" },
                     Optional = new[] { "ids", "color" },
                     Example = "action='group_create', name='Inputs', ids='[\"a\",\"b\"]', color='#FF6B6B'",
-                    Tips = new[] { "Malformed 'ids' JSON is rejected with an error — no group is created", MembersTip }
+                    Tips = new[] { "Malformed 'ids' JSON is rejected with an error — no group is created", MembersTip, InvalidColorTip }
                 },
                 ["group_delete"] = new ActionInfo
                 {
@@ -261,7 +262,7 @@ namespace Cordyceps.Tools.Unified
                     Description = "Delete a visual group (components remain)",
                     Required = new[] { "id" },
                     Example = "action='group_delete', id='abc-123'",
-                    Tips = new[] { GroupIdTip, "The default group name 'Group' never selects what group_delete removes, even when only one group has it: the error prints the id to pass, or rename the group first (action='group_rename') and pass the new name" }
+                    Tips = new[] { GroupIdTip, "The default group name 'Group' never selects what group_delete removes, even when only one group has it: the error prints the id to pass, or rename the group first (action='group_rename') and pass the new name", "A group that does not report itself as in this document is refused: its removal cannot be recorded for undo" }
                 },
                 ["group_add"] = new ActionInfo
                 {
@@ -270,7 +271,7 @@ namespace Cordyceps.Tools.Unified
                     Required = new[] { "ids" },
                     Optional = new[] { "id", "name", "color" },
                     Example = "action='group_add', ids='[\"a\",\"b\"]', name='MyGroup'",
-                    Tips = new[] { "If 'id' is provided it must resolve to an existing group (error otherwise); omit 'id' to create a new group", GroupIdTip, MembersTip, "Ids already in the group are reported as added. A call where every id is already a member and no new color is given changes nothing and returns no undo" }
+                    Tips = new[] { "If 'id' is provided it must resolve to an existing group (error otherwise); omit 'id' to create a new group", GroupIdTip, MembersTip, InvalidColorTip, "Ids already in the group are reported as added. A call where every id is already a member and no new color is given changes nothing and returns no undo" }
                 },
                 ["group_remove"] = new ActionInfo
                 {
@@ -308,7 +309,7 @@ namespace Cordyceps.Tools.Unified
                     Description = "Move all components in a group by offset",
                     Required = new[] { "id", "dx", "dy" },
                     Example = "action='group_move', id='abc', dx=100, dy=50",
-                    Tips = new[] { GroupIdTip }
+                    Tips = new[] { GroupIdTip, "movedCount counts the members with a position on the canvas. dx=0 and dy=0 moves nothing and returns no undo, with the same movedCount, offset and bounds" }
                 },
                 ["zoomable"] = new ActionInfo
                 {
@@ -661,7 +662,8 @@ namespace Cordyceps.Tools.Unified
                 }
 
                 // Pass 1: every id resolves against one lookup before the first removal, so a bad or
-                // ambiguous id deletes nothing of its own and is reported. Pass 2 removes every id
+                // ambiguous id, or an object whose removal cannot be recorded, deletes nothing of its
+                // own and is reported. Pass 2 removes every id
                 // that resolved, as one edit: either all of them go, as one undo step, or an
                 // unexpected failure rolls the whole call back.
                 var lookup = new ObjectLookup(doc);
@@ -699,7 +701,17 @@ namespace Cordyceps.Tools.Unified
                         continue;
                     }
 
-                    toDelete.Add(resolved[outcome.Id.Value]);
+                    // An object that does not report itself as in this document cannot have its
+                    // removal recorded; it is that id's error, and the rest still go.
+                    var target = resolved[outcome.Id.Value];
+                    if (!EditTransaction.CanRemove(doc, target))
+                    {
+                        results.Add(new { id = outcome.Text, success = false, error = EditTransaction.NotInDocumentError(target) });
+                        failed++;
+                        continue;
+                    }
+
+                    toDelete.Add(target);
                     deletedGuids.Add(outcome.Id.Value);
                     deletedIds.Add(resolvedId);
                     results.Add(new { id = resolvedId, success = true });

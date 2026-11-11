@@ -187,7 +187,7 @@ namespace Cordyceps.Tests
         public void ForSourceSync_SignatureDropsAnInput_RemovesIt()
         {
             const string code = "private void RunScript(double x, ref object a)\n{\n  a = x;\n}";
-            var r = PortRemoval.ForSourceSync("CSharpComponent", code, new[] { "x", "y" }, new[] { "a" });
+            var r = PortRemoval.ForSourceSync(SignatureSync.For("CSharpComponent", code, new[] { "x", "y" }, new[] { "a" }));
 
             Assert.Equal(new[] { "y" }, r.Inputs);
             Assert.Empty(r.Outputs);
@@ -197,7 +197,7 @@ namespace Cordyceps.Tests
         public void ForSourceSync_SignatureRenamesAnOutput_RemovesTheOldName()
         {
             const string code = "private void RunScript(double x, ref object result) { }";
-            var r = PortRemoval.ForSourceSync("CSharpComponent", code, new[] { "x" }, new[] { "a" });
+            var r = PortRemoval.ForSourceSync(SignatureSync.For("CSharpComponent", code, new[] { "x" }, new[] { "a" }));
 
             Assert.Equal(new[] { "a" }, r.Outputs);
         }
@@ -206,7 +206,7 @@ namespace Cordyceps.Tests
         public void ForSourceSync_SignatureMatchesThePorts_RemovesNothing()
         {
             const string code = "private void RunScript(double x, double y, ref object a) { a = x + y; }";
-            var r = PortRemoval.ForSourceSync("CSharpComponent", code, new[] { "x", "y" }, new[] { "a" });
+            var r = PortRemoval.ForSourceSync(SignatureSync.For("CSharpComponent", code, new[] { "x", "y" }, new[] { "a" }));
 
             Assert.True(r.IsEmpty);
         }
@@ -215,7 +215,7 @@ namespace Cordyceps.Tests
         public void ForSourceSync_SignatureAddsAPort_RemovesNothing()
         {
             const string code = "private void RunScript(double x, double y, double z, ref object a) { }";
-            var r = PortRemoval.ForSourceSync("CSharpComponent", code, new[] { "x", "y" }, new[] { "a" });
+            var r = PortRemoval.ForSourceSync(SignatureSync.For("CSharpComponent", code, new[] { "x", "y" }, new[] { "a" }));
 
             Assert.True(r.IsEmpty);
         }
@@ -225,7 +225,7 @@ namespace Cordyceps.Tests
         {
             // Python ports are managed by zooming, not derived from the source, so set never syncs them.
             const string code = "def RunScript(x):\n    return x";
-            var r = PortRemoval.ForSourceSync("Python3Component", code, new[] { "x", "y" }, new[] { "a" });
+            var r = PortRemoval.ForSourceSync(SignatureSync.For("Python3Component", code, new[] { "x", "y" }, new[] { "a" }));
 
             Assert.True(r.IsEmpty);
         }
@@ -236,7 +236,7 @@ namespace Cordyceps.Tests
             // The unified Script component's type name names no language. Python there must not
             // read as a C# signature with no typed parameters, which would remove every input.
             const string code = "#! python 3\ndef RunScript(self, x, y):\n    return x";
-            var r = PortRemoval.ForSourceSync("ScriptComponent", code, new[] { "x", "y" }, new[] { "a" });
+            var r = PortRemoval.ForSourceSync(SignatureSync.For("ScriptComponent", code, new[] { "x", "y" }, new[] { "a" }));
 
             Assert.True(r.IsEmpty);
         }
@@ -247,7 +247,7 @@ namespace Cordyceps.Tests
             // The source as it will be stored keeps the component's language line, so a Python body
             // that calls RunScript without defining it is still Python, not an untyped C# signature.
             const string code = "#! python 3\nresult = RunScript(x, y)";
-            var r = PortRemoval.ForSourceSync("ScriptComponent", code, new[] { "x", "y" }, new[] { "a" });
+            var r = PortRemoval.ForSourceSync(SignatureSync.For("ScriptComponent", code, new[] { "x", "y" }, new[] { "a" }));
 
             Assert.True(r.IsEmpty);
         }
@@ -256,7 +256,7 @@ namespace Cordyceps.Tests
         public void ForSourceSync_NoSignature_RemovesNothing()
         {
             // Top-level statements declare no ports, so the sync leaves them alone.
-            var r = PortRemoval.ForSourceSync("CSharpComponent", "a = x + 1;", new[] { "x", "y" }, new[] { "a" });
+            var r = PortRemoval.ForSourceSync(SignatureSync.For("CSharpComponent", "a = x + 1;", new[] { "x", "y" }, new[] { "a" }));
 
             Assert.True(r.IsEmpty);
         }

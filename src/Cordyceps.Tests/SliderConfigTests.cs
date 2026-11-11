@@ -112,13 +112,19 @@ namespace Cordyceps.Tests
         [InlineData("   ", false)]     // whitespace counts as not provided, not invalid
         [InlineData("50", false)]      // parses → valid
         [InlineData("3.14", false)]
-        public void Plan_ValueInvalid_FlagsOnlySubstantiveUnparseableValues(string value, bool expectedInvalid)
+        public void Plan_UnparseableValue_RefusesOnlySubstantiveValues(string value, bool expectedInvalid)
         {
             var plan = SliderConfig.Plan(NoMin, NoMax, value, NoDecimals);
 
-            Assert.Equal(expectedInvalid, plan.ValueInvalid);
             if (expectedInvalid)
+            {
+                Assert.Equal($"Invalid number: {value}", plan.Error);
                 Assert.False(plan.SetValue); // invalid implies not applied
+            }
+            else
+            {
+                Assert.Null(plan.Error);
+            }
         }
 
         [Fact]
@@ -191,7 +197,7 @@ namespace Cordyceps.Tests
             Assert.StartsWith("value must be a finite number", plan.Error);
             Assert.Contains(value, plan.Error);
             Assert.False(plan.HasAny);
-            Assert.False(plan.ValueInvalid); // it is a number, just not one a slider holds
+            Assert.DoesNotContain("Invalid number", plan.Error); // it is a number, just not one a slider holds
         }
 
         [Fact]

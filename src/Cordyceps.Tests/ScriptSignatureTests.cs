@@ -73,5 +73,47 @@ namespace Cordyceps.Tests
 
             Assert.Equal(new[] { "A<B, C> x", " int y" }, parts);
         }
+
+        // ---- SignatureSync: the one reading of the sync a source write runs ----
+
+        [Fact]
+        public void SignatureSync_ReadsTheDeclaredNamesAndWhichSidesChange()
+        {
+            var sync = SignatureSync.For("CSharpComponent",
+                "private void RunScript(double x, double z, ref object a) { }", new[] { "x", "y" }, new[] { "a" });
+
+            Assert.NotNull(sync);
+            Assert.Equal(new[] { "x", "y" }, sync.ExistingInputs);
+            Assert.Equal(new[] { "a" }, sync.ExistingOutputs);
+            Assert.Equal(new[] { "x", "z" }, sync.Inputs);
+            Assert.Equal(new[] { "a" }, sync.Outputs);
+            Assert.True(sync.InputsChange);
+            Assert.False(sync.OutputsChange);
+            Assert.True(sync.ChangesPorts);
+        }
+
+        [Theory]
+        // Names are compared exactly: case and order both count.
+        [InlineData(new[] { "X" }, new[] { "a" }, true, false)]
+        [InlineData(new[] { "x" }, new[] { "b" }, false, true)]
+        [InlineData(new[] { "x" }, new[] { "a" }, false, false)]
+        public void SignatureSync_ComparesNamesOrdinally(string[] inputs, string[] outputs, bool inputsChange, bool outputsChange)
+        {
+            var sync = SignatureSync.For("CSharpComponent", "private void RunScript(double x, ref object a) { }", inputs, outputs);
+
+            Assert.Equal(inputsChange, sync.InputsChange);
+            Assert.Equal(outputsChange, sync.OutputsChange);
+            Assert.Equal(inputsChange || outputsChange, sync.ChangesPorts);
+        }
+
+        [Theory]
+        [InlineData("Python3Component", "def RunScript(x):\n    return x")]
+        [InlineData("ScriptComponent", "#! python 3\na = x")]
+        [InlineData("CSharpComponent", "a = x + 1;")]
+        [InlineData("CSharpComponent", null)]
+        public void SignatureSync_CodeThatDeclaresNoPorts_RunsNoSync(string typeName, string code)
+        {
+            Assert.Null(SignatureSync.For(typeName, code, new[] { "x" }, new[] { "a" }));
+        }
     }
 }

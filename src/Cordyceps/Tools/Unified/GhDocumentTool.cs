@@ -403,7 +403,7 @@ namespace Cordyceps.Tools.Unified
                 // A removal is recorded against this document, so an object that does not report
                 // itself as in it (an orphan) cannot be recorded; it is refused before anything is
                 // removed rather than discovered partway through.
-                var orphans = toRemove.Where(o => !ReferenceEquals(o.OnPingDocument(), doc)).ToList();
+                var orphans = toRemove.Where(o => !EditTransaction.CanRemove(doc, o)).ToList();
                 if (orphans.Count > 0)
                     return ToolHelpers.ErrorResponse(
                         $"Nothing was cleared: {orphans.Count} object(s) on the canvas do not report themselves as in this document, so their removal cannot be recorded for undo: " +

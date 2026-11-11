@@ -22,6 +22,11 @@ namespace Cordyceps.Tools.Unified
                 if (!ToolHelpers.TryGetActiveDocument(_context, out var doc, out var error))
                     return ToolHelpers.ErrorResponse(error);
 
+                // A colour that does not parse is refused, not dropped: a group created without it
+                // under success:true would tell the caller the colour was applied.
+                if (!ParseHelpers.TryParseOptionalColor(color, out var groupColor, out var colorError))
+                    return ToolHelpers.ErrorResponse(colorError);
+
                 // Resolve every member BEFORE creating the group: a member that does not resolve
                 // (malformed JSON, unknown, ambiguous, or infrastructure, which reads as not found)
                 // is an error and nothing is created. A group half-built from a typo is a
@@ -40,8 +45,8 @@ namespace Cordyceps.Tools.Unified
                 group.NickName = name;
                 group.Name = name;
 
-                if (ToolHelpers.TryParseColor(color, out var groupColor))
-                    group.Colour = groupColor;
+                if (groupColor.HasValue)
+                    group.Colour = groupColor.Value;
 
                 return _context.Edit(doc, EditReplies.RecordName("gh_canvas", "group_create"), tx =>
                 {
@@ -77,6 +82,9 @@ namespace Cordyceps.Tools.Unified
                 if (!ToolHelpers.TryGetUnprotectedGroup(_context, id, Core.Canvas.ResolveIntent.Destructive, out var doc, out var group, out var error))
                     return ToolHelpers.ErrorResponse(error);
 
+                if (!EditTransaction.CanRemove(doc, group))
+                    return ToolHelpers.ErrorResponse(EditTransaction.NotInDocumentError(group));
+
                 var deletedId = group.InstanceGuid.ToString();
                 return _context.Edit(doc, EditReplies.RecordName("gh_canvas", "group_delete"), tx =>
                 {
@@ -97,6 +105,11 @@ namespace Cordyceps.Tools.Unified
             {
                 if (!ToolHelpers.TryGetActiveDocument(_context, out var doc, out var error))
                     return ToolHelpers.ErrorResponse(error);
+
+                // A colour that does not parse is refused first, before "nothing changes" is
+                // decided: read as "no colour", it would answer success for a colour never applied.
+                if (!ParseHelpers.TryParseOptionalColor(color, out var parsedColor, out var colorError))
+                    return ToolHelpers.ErrorResponse(colorError);
 
                 // Everything resolves before anything changes: the group (when named) and every
                 // member. One member that does not resolve fails the call and nothing is added.
@@ -125,8 +138,6 @@ namespace Cordyceps.Tools.Unified
                         return ToolHelpers.ErrorResponse($"Nothing was changed: ids[{self.Index}] '{self.Text}' is the group itself; a group cannot contain itself");
                 }
 
-                bool colourGiven = ToolHelpers.TryParseColor(color, out var parsedColor);
-
                 string Reply()
                 {
                     var bounds = group.Attributes?.Bounds ?? RectangleF.Empty;
@@ -146,7 +157,7 @@ namespace Cordyceps.Tools.Unified
                 // Every id already a member, and no new colour, changes nothing: no edit opens, so
                 // no undo step is pushed. The ids are still reported as added, as they always were.
                 if (group != null && NoChange.GroupAdd(group.ObjectIDs, objects.Select(o => o.InstanceGuid),
-                        group.Colour.ToArgb(), colourGiven ? parsedColor.ToArgb() : (int?)null))
+                        group.Colour.ToArgb(), parsedColor?.ToArgb()))
                     return Reply();
 
                 return _context.Edit(doc, EditReplies.RecordName("gh_canvas", "group_add"), tx =>
@@ -164,8 +175,8 @@ namespace Cordyceps.Tools.Unified
                         tx.RecordGeneric(group);
                     }
 
-                    if (colourGiven)
-                        group.Colour = parsedColor;
+                    if (parsedColor.HasValue)
+                        group.Colour = parsedColor.Value;
 
                     foreach (var obj in objects)
                         group.AddObject(obj.InstanceGuid);
@@ -335,7 +346,7 @@ namespace Cordyceps.Tools.Unified
                     return ToolHelpers.ErrorResponse(error);
 
                 if (!ToolHelpers.TryParseColor(color, out var groupColor))
-                    return ToolHelpers.ErrorResponse($"Invalid color: {color}");
+                    return ToolHelpers.ErrorResponse(ParseHelpers.InvalidColorError(color));
 
                 // The colour it already has changes nothing, so it records no undo step.
                 if (group.Colour.ToArgb() == groupColor.ToArgb())
@@ -379,17 +390,6 @@ namespace Cordyceps.Tools.Unified
                     return ToolHelpers.ErrorResponse(error);
 
                 var memberIds = targetGroup.ObjectIDs?.ToList() ?? new List<Guid>();
-                // A zero offset moves nothing, so it records no undo step.
-                if (dx == 0 && dy == 0)
-                {
-                    return JsonConvert.SerializeObject(new
-                    {
-                        success = true,
-                        groupId = targetGroup.InstanceGuid.ToString(),
-                        movedCount = 0,
-                        message = "Nothing to move: dx and dy are both 0"
-                    });
-                }
                 if (memberIds.Count == 0)
                 {
                     return JsonConvert.SerializeObject(new
@@ -401,35 +401,43 @@ namespace Cordyceps.Tools.Unified
                     });
                 }
 
-                return _context.Edit(doc, EditReplies.RecordName("gh_canvas", "group_move"), tx =>
+                // The members a move shifts: every member found with attributes. A zero offset
+                // reports the same members and bounds as any other move, without opening an edit.
+                var movable = memberIds
+                    .Select(memberId => doc.FindObject(memberId, true))
+                    .Where(member => member?.Attributes != null)
+                    .ToList();
+
+                string Reply()
                 {
-                    int movedCount = 0;
-                    foreach (var memberId in memberIds)
-                    {
-                        var member = doc.FindObject(memberId, true);
-                        if (member?.Attributes != null)
-                        {
-                            tx.RecordPivot(member);
-                            var pivot = member.Attributes.Pivot;
-                            member.Attributes.Pivot = new PointF(pivot.X + (float)dx, pivot.Y + (float)dy);
-                            member.Attributes.ExpireLayout();
-                            movedCount++;
-                        }
-                    }
-
                     targetGroup.ExpireCaches();
-                    Instances.ActiveCanvas?.Invalidate();
-
                     var bounds = targetGroup.Attributes?.Bounds ?? RectangleF.Empty;
-
                     return JsonConvert.SerializeObject(new
                     {
                         success = true,
                         groupId = targetGroup.InstanceGuid.ToString(),
-                        movedCount,
+                        movedCount = movable.Count,
                         offset = new { dx, dy },
                         bounds = new { x = bounds.X, y = bounds.Y, width = bounds.Width, height = bounds.Height }
                     });
+                }
+
+                // A zero offset moves nothing, so it records no undo step.
+                if (dx == 0 && dy == 0)
+                    return Reply();
+
+                return _context.Edit(doc, EditReplies.RecordName("gh_canvas", "group_move"), tx =>
+                {
+                    foreach (var member in movable)
+                    {
+                        tx.RecordPivot(member);
+                        var pivot = member.Attributes.Pivot;
+                        member.Attributes.Pivot = new PointF(pivot.X + (float)dx, pivot.Y + (float)dy);
+                        member.Attributes.ExpireLayout();
+                    }
+
+                    Instances.ActiveCanvas?.Invalidate();
+                    return Reply();
                 });
             });
         }

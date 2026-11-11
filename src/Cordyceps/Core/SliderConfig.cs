@@ -66,9 +66,8 @@ namespace Cordyceps.Core
 
             // A substantive-but-unparseable value ("abc") is a caller error, distinct from
             // "not provided" (null/empty/whitespace): it is refused, never ignored.
-            bool valueInvalid = !string.IsNullOrWhiteSpace(value) && !setValue;
-            if (valueInvalid)
-                return SliderConfigPlan.Refused($"Invalid number: {value}", valueInvalid: true);
+            if (!string.IsNullOrWhiteSpace(value) && !setValue)
+                return SliderConfigPlan.Refused($"Invalid number: {value}");
 
             decimal minimum = 0m, maximum = 0m, target = 0m;
             if (setMin && !TryToDecimal(min, out minimum))
@@ -155,11 +154,10 @@ namespace Cordyceps.Core
         }
 
         /// <summary>A plan that applies nothing and refuses the call with <paramref name="error"/>.</summary>
-        internal static SliderConfigPlan Refused(string error, bool valueInvalid = false) =>
+        internal static SliderConfigPlan Refused(string error) =>
             new SliderConfigPlan(false, 0m, false, 0m, false, 0, false, 0m)
             {
-                Error = error,
-                ValueInvalid = valueInvalid
+                Error = error
             };
 
         public bool SetMinimum { get; }
@@ -170,12 +168,6 @@ namespace Cordyceps.Core
         public int Decimals { get; }
         public bool SetValue { get; }
         public decimal Value { get; }
-
-        /// <summary>
-        /// True when the caller provided a substantive <c>value</c> string that did not parse as a
-        /// number (e.g. "abc"). Null/empty/whitespace count as "not provided", not invalid.
-        /// </summary>
-        public bool ValueInvalid { get; private set; }
 
         /// <summary>
         /// Why the arguments are refused, written for the caller, or null when the plan can be

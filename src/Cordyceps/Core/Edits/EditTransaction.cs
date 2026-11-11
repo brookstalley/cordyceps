@@ -123,16 +123,32 @@ namespace Cordyceps.Core.Edits
         /// Remove <paramref name="obj"/> from the document. Its wires (its inputs and every input it
         /// feeds) are recorded first and the object second, so undo brings it back and then
         /// reconnects it. The objects it fed are recomputed once, at commit, not once per removal.
+        /// Every caller checks <see cref="CanRemove"/> before its edit opens, so the throw below is a
+        /// guard nothing reaches.
         /// </summary>
         public void RemoveObject(IGH_DocumentObject obj)
         {
             if (obj == null) throw new ArgumentNullException(nameof(obj));
-            if (!ReferenceEquals(obj.OnPingDocument(), Document))
-                throw new InvalidOperationException($"'{obj.NickName}' is not in the document this edit changes.");
+            if (!CanRemove(Document, obj))
+                throw new InvalidOperationException(NotInDocumentError(obj));
 
             _journal.RecordRemove(obj);
             Document.RemoveObject(obj, false);
         }
+
+        /// <summary>
+        /// Whether an edit of <paramref name="doc"/> can remove <paramref name="obj"/>: its removal is
+        /// recorded against <paramref name="doc"/>, so the object must report itself as in it. An
+        /// object that does not (an orphan the canvas still lists) cannot be recorded for undo, and
+        /// a call refuses it before its edit opens rather than meet the throw in
+        /// <see cref="RemoveObject"/> partway through.
+        /// </summary>
+        public static bool CanRemove(GH_Document doc, IGH_DocumentObject obj)
+            => obj != null && ReferenceEquals(obj.OnPingDocument(), doc);
+
+        /// <summary>The refusal for one object <see cref="CanRemove"/> rejects.</summary>
+        public static string NotInDocumentError(IGH_DocumentObject obj)
+            => $"'{obj.NickName}' ({obj.InstanceGuid}) does not report itself as in this document, so its removal cannot be recorded for undo; nothing was removed for it.";
 
         // ------------------------------------------------------------------ running a transaction
 

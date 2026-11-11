@@ -88,7 +88,7 @@ namespace Cordyceps.Tools.Unified
                         "A call that changed nothing (no code and no inputs/outputs, or one refused up front) returns rebuilt=false with rebuildSkipped and verificationSkipped saying so — every response answers the rebuild question, so an absent rebuilt field is never the answer",
                         "runningSource can arrive WITHOUT a verified field: whenever nothing was verified, the program the component will run is still read and handed back unjudged. Present with verified=false it is the divergence; present with verificationSkipped it is simply what runs",
                         "One undo step: Ctrl+Z restores the source and ports, with their wires. A call that changes nothing records nothing and returns no undo",
-                        "A call changes nothing when its code is already stored and every side it gives already has those port names in that order, with the access it gives: success=true, message 'Nothing to change', codeSet/parametersApplied=true when given, and no undo. Code that was given is still rebuilt (rebuilt=true), as in set; a sides-only call rebuilds nothing (rebuilt=false, rebuildSkipped). A 'type' in any input or output always counts as a change (the current type hint cannot be compared), so that call is recorded"
+                        "A code-only call whose code is already stored, with ports that already match it, changes nothing: success=true, message 'Nothing to change', codeSet=true and no undo, and the program is still rebuilt (rebuilt=true), as in set. A call with inputs or outputs is always applied and recorded, because every port it describes carries a type hint ('object' when none is given) and the current hint cannot be compared"
                     }
                 },
                 ["info"] = new ActionInfo
@@ -286,13 +286,7 @@ namespace Cordyceps.Tools.Unified
         /// runs after the write would leave its ports as they are. Read before the edit opens.
         /// </summary>
         private static bool SourceSyncChangesNothing(IGH_DocumentObject component, string finalSource)
-        {
-            var ghComponent = component as IGH_Component;
-            bool syncsPorts = ghComponent != null && component is IGH_VariableParameterComponent;
-            return NoChange.ScriptSourceSync(component.GetType().Name, ScriptComponents.ReadSource(component), finalSource, syncsPorts,
-                syncsPorts ? ghComponent.Params.Input.Select(p => p.NickName).ToList() : new List<string>(),
-                syncsPorts ? ghComponent.Params.Output.Skip(1).Select(p => p.NickName).ToList() : new List<string>());
-        }
+            => NoChange.ScriptSourceSync(ScriptComponents.ReadSource(component), finalSource, SourceSyncFor(component, finalSource));
 
         /// <summary>
         /// The reply of a <c>set</c> that stands: the component's ports, the rebuild outcome, and the
@@ -414,7 +408,9 @@ namespace Cordyceps.Tools.Unified
             bool nothing;
             if (anyParamSide)
             {
-                // A side on a component that cannot vary its parameters is refused before this.
+                // A side on a component that cannot vary its parameters is refused before this. Each
+                // input's access is its GH_ParamAccess member name, the form ApplyParamHints parses
+                // from ScriptParamDefs.AccessToWrite, so the two compare like for like.
                 nothing = NoChange.ScriptParameters(
                     ghComponent.Params.Input.Select(p => (p.NickName, p.Access.ToString())).ToList(),
                     ghComponent.Params.Output.Skip(1).Select(p => p.NickName).ToList(),
@@ -444,7 +440,7 @@ namespace Cordyceps.Tools.Unified
             // forces a recompile. A parameter-only call that changes nothing has nothing to rebuild.
             var rebuildFields = codeGiven
                 ? RebuildUnchanged(doc, ghComponent, finalSource)
-                : ScriptProgram.DescribeUnchanged(NoChange.ScriptAlreadyAppliedReason);
+                : ScriptProgram.DescribeUnchanged(ScriptConfigurePlan.For(parametersChanged: false, sourceWritten: false).SkipReason);
             foreach (var field in rebuildFields)
                 response[field.Key] = field.Value;
             if (codeGiven)
@@ -724,11 +720,21 @@ namespace Cordyceps.Tools.Unified
         /// leading output is never touched.
         /// </summary>
         private static PortRemoval SourceSyncRemoval(IGH_DocumentObject component, string code)
+            => PortRemoval.ForSourceSync(SourceSyncFor(component, code));
+
+        /// <summary>
+        /// The port sync a write of <paramref name="code"/> runs on <paramref name="component"/> as it
+        /// is now, or null when it runs none: only a variable-parameter component whose ports the code
+        /// declares is synced, and the built-in leading output is never touched. The one reading of
+        /// the sync: <see cref="SyncScriptParams"/> executes it, and the removal check and the
+        /// no-change check read it.
+        /// </summary>
+        private static SignatureSync SourceSyncFor(IGH_DocumentObject component, string code)
         {
             if (!(component is IGH_Component ghComponent) || !(component is IGH_VariableParameterComponent))
-                return PortRemoval.None;
+                return null;
 
-            return PortRemoval.ForSourceSync(component.GetType().Name, code,
+            return SignatureSync.For(component.GetType().Name, code,
                 ghComponent.Params.Input.Select(p => p.NickName).ToList(),
                 ghComponent.Params.Output.Skip(1).Select(p => p.NickName).ToList());
         }
@@ -765,45 +771,32 @@ namespace Cordyceps.Tools.Unified
         {
             lostConnections = new List<object>();
 
-            var parsed = ScriptSignature.Parse(component.GetType().Name, code);
-            if (parsed == null)
-                return; // Can't parse or not applicable — leave params alone
-
-            if (!(component is IGH_Component ghComponent))
+            // Code that declares no ports, or a component that cannot vary them: leave the ports alone.
+            var sync = SourceSyncFor(component, code);
+            if (sync == null)
                 return;
 
-            if (!(component is IGH_VariableParameterComponent varParamComp))
-            {
-                DebugLog.Warn("[SyncScriptParams] Component is not IGH_VariableParameterComponent, cannot sync params");
-                return;
-            }
+            var ghComponent = (IGH_Component)component;
+            var varParamComp = (IGH_VariableParameterComponent)component;
 
-            var (codeInputs, codeOutputs) = parsed.Value;
-
-            var existingInputs = ghComponent.Params.Input.Select(p => p.NickName).ToList();
-            // C# scripts have a built-in "out" output at index 0
-            var existingOutputs = ghComponent.Params.Output.Skip(1).Select(p => p.NickName).ToList();
-
-            bool inputsMatch = existingInputs.SequenceEqual(codeInputs, StringComparer.Ordinal);
-            bool outputsMatch = existingOutputs.SequenceEqual(codeOutputs, StringComparer.Ordinal);
-
-            if (inputsMatch && outputsMatch)
+            if (!sync.ChangesPorts)
             {
                 DebugLog.Info("[SyncScriptParams] Params unchanged, no sync needed (cluster-safe)");
                 return;
             }
 
-            DebugLog.Info($"[SyncScriptParams] Syncing params — inputs: [{string.Join(",", existingInputs)}] -> [{string.Join(",", codeInputs)}], outputs: [{string.Join(",", existingOutputs)}] -> [{string.Join(",", codeOutputs)}]");
+            DebugLog.Info($"[SyncScriptParams] Syncing params — inputs: [{string.Join(",", sync.ExistingInputs)}] -> [{string.Join(",", sync.Inputs)}], outputs: [{string.Join(",", sync.ExistingOutputs)}] -> [{string.Join(",", sync.Outputs)}]");
 
-            if (!inputsMatch)
+            if (sync.InputsChange)
             {
-                SyncParamSide(ghComponent, varParamComp, GH_ParameterSide.Input, codeInputs, 0, out var inputLost);
+                SyncParamSide(ghComponent, varParamComp, GH_ParameterSide.Input, sync.Inputs, 0, out var inputLost);
                 lostConnections.AddRange(inputLost);
             }
 
-            if (!outputsMatch)
+            // C# scripts have a built-in "out" output at index 0, which the sync skips.
+            if (sync.OutputsChange)
             {
-                SyncParamSide(ghComponent, varParamComp, GH_ParameterSide.Output, codeOutputs, 1, out var outputLost);
+                SyncParamSide(ghComponent, varParamComp, GH_ParameterSide.Output, sync.Outputs, 1, out var outputLost);
                 lostConnections.AddRange(outputLost);
             }
 
@@ -820,7 +813,7 @@ namespace Cordyceps.Tools.Unified
         /// <param name="skipCount">Number of built-in params to skip (e.g., 1 for C# outputs to skip "out")</param>
         /// <param name="lostConnections">Connections on removed params, directly usable with gh_wire(action='connect')</param>
         private void SyncParamSide(IGH_Component ghComponent, IGH_VariableParameterComponent varParamComp,
-            GH_ParameterSide side, List<string> targetNames, int skipCount, out List<object> lostConnections)
+            GH_ParameterSide side, IReadOnlyList<string> targetNames, int skipCount, out List<object> lostConnections)
         {
             lostConnections = new List<object>();
             var paramList = side == GH_ParameterSide.Input ? ghComponent.Params.Input : ghComponent.Params.Output;
@@ -997,15 +990,11 @@ namespace Cordyceps.Tools.Unified
                     var param = ghComponent.Params.Input[i];
                     if (!string.IsNullOrEmpty(def.Type))
                         SetParameterTypeHint(param, def.Type);
-                    if (!string.IsNullOrEmpty(def.Access))
-                    {
-                        switch (def.Access.ToLowerInvariant())
-                        {
-                            case "list": param.Access = GH_ParamAccess.list; break;
-                            case "tree": param.Access = GH_ParamAccess.tree; break;
-                            default: param.Access = GH_ParamAccess.item; break;
-                        }
-                    }
+                    // The access comes from ScriptParamDefs.AccessToWrite, the mapping the no-change
+                    // check compares, so the check and this write cannot disagree about the value.
+                    var access = ScriptParamDefs.AccessToWrite(def.Access);
+                    if (access != null)
+                        param.Access = (GH_ParamAccess)Enum.Parse(typeof(GH_ParamAccess), access);
                 }
             }
 

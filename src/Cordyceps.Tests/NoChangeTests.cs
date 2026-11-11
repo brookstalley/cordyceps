@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using Cordyceps.Core;
 using Xunit;
 
@@ -69,18 +70,22 @@ namespace Cordyceps.Tests
 
         private const string CSharp = "// #! csharp\nprivate void RunScript(double x, double y, ref object a) { a = x + y; }";
 
+        /// <summary>The sync a write of <paramref name="code"/> runs, read as gh_script reads it.</summary>
+        private static SignatureSync Sync(string typeName, string code, string[] inputs, string[] outputs)
+            => SignatureSync.For(typeName, code, inputs, outputs);
+
         [Fact]
         public void ScriptSourceSync_SameSource_PortsAsDeclared_ChangesNothing()
         {
-            Assert.True(NoChange.ScriptSourceSync("CSharpComponent", CSharp, CSharp, syncsPorts: true,
-                new[] { "x", "y" }, new[] { "a" }));
+            Assert.True(NoChange.ScriptSourceSync(CSharp, CSharp,
+                Sync("CSharpComponent", CSharp, new[] { "x", "y" }, new[] { "a" })));
         }
 
         [Fact]
         public void ScriptSourceSync_DifferentSource_IsAChange()
         {
-            Assert.False(NoChange.ScriptSourceSync("CSharpComponent", CSharp + " ", CSharp, syncsPorts: true,
-                new[] { "x", "y" }, new[] { "a" }));
+            Assert.False(NoChange.ScriptSourceSync(CSharp + " ", CSharp,
+                Sync("CSharpComponent", CSharp, new[] { "x", "y" }, new[] { "a" })));
         }
 
         /// <summary>
@@ -94,22 +99,39 @@ namespace Cordyceps.Tests
         [InlineData(new[] { "x", "Y" }, new[] { "a" })]
         public void ScriptSourceSync_SameSource_PortsTheSyncWouldMove_IsAChange(string[] inputs, string[] outputs)
         {
-            Assert.False(NoChange.ScriptSourceSync("CSharpComponent", CSharp, CSharp, syncsPorts: true, inputs, outputs));
+            Assert.False(NoChange.ScriptSourceSync(CSharp, CSharp, Sync("CSharpComponent", CSharp, inputs, outputs)));
         }
 
+        /// <summary>A component that cannot vary its ports runs no sync, which gh_script passes as null.</summary>
         [Fact]
         public void ScriptSourceSync_SameSource_OnAComponentThatCannotVaryItsPorts_ChangesNothing()
         {
-            Assert.True(NoChange.ScriptSourceSync("CSharpComponent", CSharp, CSharp, syncsPorts: false,
-                new[] { "anything" }, new string[0]));
+            Assert.True(NoChange.ScriptSourceSync(CSharp, CSharp, null));
         }
 
         [Fact]
         public void ScriptSourceSync_SameSource_WithNoSignature_LeavesThePortsAlone()
         {
             const string python = "#! python 3\na = x + y";
-            Assert.True(NoChange.ScriptSourceSync("ScriptComponent", python, python, syncsPorts: true,
-                new[] { "x", "y" }, new[] { "a" }));
+            Assert.True(NoChange.ScriptSourceSync(python, python,
+                Sync("ScriptComponent", python, new[] { "x", "y" }, new[] { "a" })));
+        }
+
+        /// <summary>
+        /// Would write X, current is X: ports already named what the sync would write leave nothing
+        /// to change, whatever names the code declares.
+        /// </summary>
+        [Theory]
+        [InlineData("private void RunScript(double x, ref object a) { }")]
+        [InlineData("private void RunScript(int count, List<Point3d> pts, ref object a, ref object b) { }")]
+        [InlineData("private void RunScript() { }")]
+        public void ScriptSourceSync_PortsAlreadyWhatTheSyncWrites_ChangesNothing(string code)
+        {
+            var declared = Sync("CSharpComponent", code, new string[0], new string[0]);
+            var sync = Sync("CSharpComponent", code, declared.Inputs.ToArray(), declared.Outputs.ToArray());
+
+            Assert.False(sync.ChangesPorts);
+            Assert.True(NoChange.ScriptSourceSync(code, code, sync));
         }
 
         // ---------------------------------------------------------------- configure with inputs/outputs
@@ -199,15 +221,27 @@ namespace Cordyceps.Tests
             Assert.False(NoChange.ScriptParameters(XListY, new[] { "a" }, same, null, null, "a = x;"));
         }
 
+        /// <summary>
+        /// Would write X, current is X: an input whose access is already what
+        /// <see cref="ScriptParamDefs.AccessToWrite"/> gives for the requested word is unchanged, and
+        /// any other access is a change.
+        /// </summary>
         [Theory]
-        [InlineData("list", "list")]
-        [InlineData("TREE", "tree")]
-        [InlineData("item", "item")]
-        [InlineData("anything", "item")]
-        [InlineData(null, "item")]
-        public void AccessOf_IsWhatConfigureApplies(string requested, string expected)
+        [InlineData("list")]
+        [InlineData("LIST")]
+        [InlineData("tree")]
+        [InlineData("item")]
+        [InlineData("anything")]
+        public void ScriptParameters_AccessAlreadyWhatConfigureWrites_ChangesNothing(string requested)
         {
-            Assert.Equal(expected, NoChange.AccessOf(requested));
+            var written = ScriptParamDefs.AccessToWrite(requested);
+            var defs = Defs(("x", null, requested));
+
+            Assert.True(NoChange.ScriptParameters(new List<(string, string)> { ("x", written) }, new string[0],
+                defs, null, "src", null));
+            foreach (var other in new[] { "item", "list", "tree" }.Where(a => a != written))
+                Assert.False(NoChange.ScriptParameters(new List<(string, string)> { ("x", other) }, new string[0],
+                    defs, null, "src", null));
         }
     }
 }
