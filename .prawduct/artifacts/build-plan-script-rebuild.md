@@ -65,6 +65,7 @@ Critic mode: one `cumulative` review at the end (a three-chunk plan; Chunk 03 is
   - Ports Rhino itself may change while storing or building source (the code-only `configure` route's `SyncParameters`, the rebuild) are outside the prediction; recorded in VRF-022 step 9 rather than guessed at.
   - A removal the component itself would refuse (index out of range, `CanRemoveParameter` false for the first port set_count would remove) counts as no removal, so the call fails on its own error, not on the id; settled by "only when the call would actually remove an existing port".
   - `zoomable set_count` already at its count on a script component reports `rebuildSkipped` (nothing changed) so every successful script reply answers the rebuild question; settled by Chunk 02's acceptance criterion.
+  - Two older defects the delegate reported, fixed at integration because the port-removal rule made them bite harder: the signature reader treated Python in the unified Script component (type name `ScriptComponent`) as a C# signature with no inputs, so the sync removed every input. It now recognises Python from the source too. And `configure` accepted non-script components, treating a Merge's output 0 as a script's `out`; it now refuses them as `set` does. Settled by the no-pre-existing-exception rule.
 - **Level:** High for 01 (ported, already reviewed once on its own branch). Medium for 02 and 03:
   the rebuild on a `zoomable` reshape and the removal-set computation are host behaviour checked
   only by code reading until VRF-022 runs.

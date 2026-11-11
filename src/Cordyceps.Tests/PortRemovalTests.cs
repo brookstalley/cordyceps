@@ -231,6 +231,17 @@ namespace Cordyceps.Tests
         }
 
         [Fact]
+        public void ForSourceSync_PythonInTheUnifiedScriptComponent_RemovesNothing()
+        {
+            // The unified Script component's type name names no language. Python there must not
+            // read as a C# signature with no typed parameters, which would remove every input.
+            const string code = "#! python 3\ndef RunScript(self, x, y):\n    return x";
+            var r = PortRemoval.ForSourceSync("ScriptComponent", code, new[] { "x", "y" }, new[] { "a" });
+
+            Assert.True(r.IsEmpty);
+        }
+
+        [Fact]
         public void ForSourceSync_NoSignature_RemovesNothing()
         {
             // Top-level statements declare no ports, so the sync leaves them alone.

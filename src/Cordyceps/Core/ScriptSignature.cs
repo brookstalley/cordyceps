@@ -33,6 +33,12 @@ namespace Cordyceps.Core
             if (componentTypeName != null && componentTypeName.Contains("Python"))
                 return null;
 
+            // The unified Script component's type name names no language, so the source has to:
+            // Python there declares `def RunScript(self, x)`, whose untyped parameters would read
+            // as no inputs at all, and a sync to that would remove every port.
+            if (IsPythonSource(code))
+                return null;
+
             var match = RunScriptSignature.Match(code);
             if (!match.Success)
                 return null;
@@ -57,6 +63,22 @@ namespace Cordyceps.Core
             }
 
             return (inputs, outputs);
+        }
+
+        private static readonly Regex PythonRunScript = new Regex(@"\bdef\s+RunScript\s*\(", RegexOptions.CultureInvariant);
+
+        /// <summary>
+        /// True when <paramref name="code"/> is Python: a Python directive on its first line
+        /// (<c>#!</c> with no leading <c>//</c>, which is C#'s form), or a <c>def RunScript</c>.
+        /// </summary>
+        public static bool IsPythonSource(string code)
+        {
+            if (string.IsNullOrEmpty(code))
+                return false;
+            var directive = ScriptDirective.ExtractDirective(code);
+            if (directive != null && directive.TrimStart('﻿', ' ', '\t').StartsWith("#!", StringComparison.Ordinal))
+                return true;
+            return PythonRunScript.IsMatch(code);
         }
 
         /// <summary>

@@ -43,12 +43,27 @@ namespace Cordyceps.Tests
 
         [Theory]
         [InlineData("Python3Component", "def RunScript(self, x):\n    return x")]
+        // The unified Script component's type name names no language; the source does.
+        [InlineData("ScriptComponent", "def RunScript(self, x, y):\n    return x")]
+        [InlineData("ScriptComponent", "#! python 3\nclass MyComponent:\n    def RunScript(self, x):\n        return x")]
+        [InlineData("ScriptComponent", "#! python 3\nimport RunScript_helpers\nRunScript(a b)")]
         [InlineData("CSharpComponent", "a = x + 1;")]
         [InlineData("CSharpComponent", "")]
         [InlineData("CSharpComponent", null)]
         public void Parse_PortsNotDerivedFromCode_ReturnsNull(string typeName, string code)
         {
             Assert.Null(ScriptSignature.Parse(typeName, code));
+        }
+
+        [Fact]
+        public void Parse_UnifiedScriptWithCSharpDirective_ReadsTheSignature()
+        {
+            var parsed = ScriptSignature.Parse("ScriptComponent",
+                "// #! csharp\nprivate void RunScript(double x, ref object a) { }");
+
+            Assert.NotNull(parsed);
+            Assert.Equal(new[] { "x" }, parsed.Value.inputs);
+            Assert.Equal(new[] { "a" }, parsed.Value.outputs);
         }
 
         [Fact]

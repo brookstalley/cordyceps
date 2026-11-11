@@ -67,6 +67,7 @@ namespace Cordyceps.Tools.Unified
                     Example = "action='configure', id='abc', inputs='[{\"name\":\"x\",\"type\":\"double\"}]', code='...'",
                     Tips = new[] {
                         "inputs: [{name, type, access}]", "outputs: [{name, type}]", "types: int, double, bool, string, Point3d, etc.",
+                        "Script components only: any other component is refused before anything changes. To add or remove ports on Merge, Entwine and other variable-parameter components, use gh_canvas(action='zoomable')",
                         "Partial update: omit a side (don't pass inputs/outputs) to leave it untouched; pass [] to clear that side. Passing inputs without outputs no longer wipes outputs.",
                         "Malformed inputs/outputs JSON is rejected with an error before anything changes — it is never treated as an empty array",
                         "Params matching by name keep their wires (like 'set'); renamed/removed params lose connections, reported in lostConnections — pass it to gh_wire(action='connect') to restore",
@@ -174,7 +175,7 @@ namespace Cordyceps.Tools.Unified
 
                 // 'source' is the text stored on the component. The program it actually runs is the
                 // built code, which Rhino keeps separately — so a clean round-trip of 'source' is
-                // not on its own evidence that a write took effect (issue #33).
+                // not on its own evidence that a write took effect.
                 var comparison = ScriptProgram.CompareRunning(component, source);
                 ScriptComponents.LogProbes(comparison.Probes);
                 if (!comparison.Readable)
@@ -230,7 +231,7 @@ namespace Cordyceps.Tools.Unified
 
                     // Storing source does not recompile: Rhino builds a Code from the script and
                     // keeps running that until something invalidates it, so a write alone leaves the
-                    // component executing its previous program (issue #33). Ask for the rebuild
+                    // component executing its previous program. Ask for the rebuild
                     // after the params are settled — the rebuild reads them — and verify the write
                     // landed by reading the running program back.
                     var rebuildFields = ScriptComponents.RebuildAndVerify(component, finalSource);
@@ -268,7 +269,7 @@ namespace Cordyceps.Tools.Unified
                     // The source is stored, but a unified Script component with no language directive
                     // compiles to nothing ("Can not determine input code language") — and SetSource
                     // reports no error. The failure only surfaces at solve time, which we can't observe
-                    // here without forcing a (cluster-unsafe) recompute, so flag it up front (issue #15).
+                    // here without forcing a (cluster-unsafe) recompute, so flag it up front.
                     var languageWarning = ScriptDirective.LanguageWarning(component.GetType().Name, finalSource);
                     if (languageWarning != null)
                         response["languageWarning"] = languageWarning;
@@ -304,6 +305,18 @@ namespace Cordyceps.Tools.Unified
 
                 if (!(component is IGH_Component ghComponent))
                     return ToolHelpers.ErrorResponse("Not an IGH_Component");
+
+                // configure treats output 0 as a script's built-in 'out' and rebuilds a program, so
+                // on any other component it would misplace ports; zoomable is the path for those.
+                if (!ScriptComponents.IsScriptComponent(component))
+                {
+                    return JsonConvert.SerializeObject(new
+                    {
+                        success = false,
+                        error = $"Component '{component.NickName}' is not a script component. To add or remove ports on other variable-parameter components, use gh_canvas(action='zoomable').",
+                        componentType = component.GetType().Name
+                    });
+                }
 
                 // Partial-update contract: a side is "provided" only when its JSON arg is non-empty.
                 // Omitted (null/"") => leave that side (and its wires) untouched; "[]" => clear it.
@@ -354,7 +367,7 @@ namespace Cordyceps.Tools.Unified
                     {
                         // Sync only the provided sides via the same LCS helper 'set' uses, so
                         // name-matched params keep their wires and removed-param wires surface in
-                        // lostConnections (GHS-3W9N). Replaces the old "unregister everything" rebuild.
+                        // lostConnections.
                         SyncParamsForConfigure(ghComponent, varParamComp, inputDefs, outputDefs, out var lost);
                         configured = true;
                         parametersChanged = true;
@@ -515,7 +528,7 @@ namespace Cordyceps.Tools.Unified
                     configureResponse["languageWarning"] = languageWarning;
 
                 // Same lostConnections contract as 'set': removed-param wires are returned so the
-                // caller can restore them with gh_wire(action='connect') (GHS-3W9N).
+                // caller can restore them with gh_wire(action='connect').
                 if (lostConnections != null)
                 {
                     configureResponse["lostConnections"] = lostConnections;
@@ -824,8 +837,8 @@ namespace Cordyceps.Tools.Unified
         /// side") to match the given defs <em>by name</em>, routing through the same LCS-based
         /// <see cref="SyncParamSide"/> that <c>set</c> uses. Params whose names are unchanged keep
         /// their wires; wires on removed params are captured into <paramref name="lostConnections"/>
-        /// in the gh_wire(action='connect')-ready shape. This replaces the previous
-        /// unregister-everything rebuild that destroyed all wires (GHS-3W9N).
+        /// in the gh_wire(action='connect')-ready shape, instead of unregistering every
+        /// param and losing every wire.
         ///
         /// <para>Type hints and access are NOT set here — <see cref="ApplyParamHints"/> applies them
         /// after <c>SetSource</c>, which can reset type hints.</para>

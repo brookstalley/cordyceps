@@ -802,10 +802,9 @@ Note each component's GUID; the GUID steps re-run a refused call by id.
    with a reason); `codeSet` is absent; a Panel on `a` shows values from the new program on the
    next solve. A follow-up `gh_script(action='get')` shows the running program's signature carries
    `z`.
-2. **configure that changes nothing:** `configure` on a component that cannot vary its parameters
-   (any non-script, non-variable component, by GUID) with `inputs` returns `success: false`,
-   `parametersApplied: false`, a `parametersError`, `rebuilt: false` and `rebuildSkipped` saying
-   nothing changed.
+2. **configure refuses a non-script component:** `configure` with `inputs` on a Merge (by GUID)
+   returns `success: false` with `is not a script component` naming `gh_canvas(action='zoomable')`,
+   and the Merge's ports and wires are unchanged.
 3. **zoomable on a Python script rebuilds:** `gh_canvas(action='zoomable', id='<py>', operation='add')`
    adds an input and the reply carries `rebuilt` and `verified`/`verificationSkipped`. Write code
    that reads the new input (`gh_script set` by GUID) and confirm on the canvas that it runs with
@@ -839,3 +838,8 @@ Note each component's GUID; the GUID steps re-run a refused call by id.
    building the source (the code-only `configure` route also calls the component's own
    `SyncParameters`). The refusal predicts only the ports Cordyceps' own sync removes; a port Rhino
    removes is outside it. Record what you see.
+10. **Python in the unified Script component keeps its ports:** place the language-neutral Script
+   component, give it inputs `x` and `y` with a wire into each, then `gh_script(action='set')` by
+   GUID with `#! python 3` on line 1 and a `def RunScript(self, x, y):` body. The reply has no
+   `lostConnections`, both inputs and both wires remain, and the same call by its default nickname
+   is not refused.
