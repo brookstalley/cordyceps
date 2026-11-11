@@ -185,7 +185,9 @@ Chunk 06 is `cumulative-final`).
   pushes nothing and schedules nothing; the expire set reaches the solve request exactly once per
   object.
 - **Acceptance criteria:** a `connect`, `disconnect` or `clear` call produces one undo record
-  named for the call. A forced failure after the first wire leaves the wires as they were. The
+  named for the call. Rollback leaving the canvas as it was is proven by the journal and scope
+  tests (a host-side forced failure has no trigger in `gh_wire`; VRF-024 forces one through
+  `zoomable set_count`). The
   suite is green.
 
 ### Chunk 02: values and state (set, config, modifier, preview, enable)
@@ -214,9 +216,6 @@ Chunk 06 is `cumulative-final`).
   - `move` records `CreatePivotEvent`.
   - `rename` records `CreateNickNameEvent`.
   - `add` no longer leaves an object on the canvas when a step after `AddObject` throws.
-  - Settle first (Chunk 01 review, observation): `EditJournal.Add` can't record an add that
-    Grasshopper refused. Decide what rollback does then, given an id that might collide with an
-    existing object, and test it.
   - Carried from solve-policy's verify pass (observation): `GhDocumentTool.WaitsForSolve`, which
     decides which actions read `timeout`, moves into `src/Cordyceps/Core/SolvePolicy.cs` with a
     test, because this chunk edits `GhDocumentTool.cs` anyway.
