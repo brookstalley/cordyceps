@@ -147,9 +147,11 @@ Cordyceps provides **7 tools with over 100 actions** — consolidated to minimiz
 |------|-------------|
 | `gh_canvas` | Components, values, groups, a compact outline of the whole definition, baking, variable parameters, data modifiers (flatten/graft/simplify/reverse) |
 | `gh_wire` | Connection management |
-| `gh_document` | Save, clear, snapshots (max 20 kept, oldest evicted), solver control, canvas capture (undo/redo are disabled — use snapshots) |
+| `gh_document` | Save, clear, snapshots (max 20 kept, oldest evicted), solver control, canvas capture (agents cannot call undo/redo — use snapshots) |
 | `gh_script` | Script component configuration |
 | `gh_inspect` | Connection/liveness probe, status, outputs, data-tree shape (paths and counts without the data), data tracing, debugging |
+
+Every call that changes the Grasshopper canvas is one Grasshopper undo step: press Ctrl+Z in Grasshopper to undo an agent's last call. A call that fails partway leaves the canvas as it was.
 
 ### Rhino
 

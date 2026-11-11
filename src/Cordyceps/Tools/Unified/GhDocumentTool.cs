@@ -67,7 +67,9 @@ namespace Cordyceps.Tools.Unified
                     Tips = new[]
                     {
                         "Inside a cluster editor, cluster input/output hooks are preserved (reported as preservedClusterHooks) so the cluster interface stays intact",
-                        "The follow-up solve is scheduled, not waited for: the reply carries solve.state='scheduled' (or solver_disabled / solutions_locked / not_watched with solve.remedy when it could not be scheduled) and returns before the solve runs. Call action='recompute' before reading results if you need them settled"
+                        "The follow-up solve is scheduled, not waited for: the reply carries solve.state='scheduled' (or solver_disabled / solutions_locked / not_watched with solve.remedy when it could not be scheduled) and returns before the solve runs. Call action='recompute' before reading results if you need them settled",
+                        "One undo step: Ctrl+Z brings the whole canvas back, wired. A clear with nothing to remove has no solve and no undo; a reply with a warning has no solve (check action='info', then recompute)",
+                        "Refused before anything is removed when an object does not report itself as in this document, since its removal could not be recorded for undo"
                     }
                 },
                 ["solver"] = new ActionInfo
@@ -106,13 +108,13 @@ namespace Cordyceps.Tools.Unified
                 ["undo"] = new ActionInfo
                 {
                     Name = "undo",
-                    Description = "DISABLED (threading issues) - always returns an error. Use action='snapshot' before changes and action='revert' to restore instead",
+                    Description = "Not available to agents - always returns an error. Each Cordyceps edit is one Grasshopper undo step that a human undoes with Ctrl+Z; to restore state yourself, take action='snapshot' before changes and action='revert' to restore",
                     Example = "action='snapshot', name='before_changes' (instead of undo)"
                 },
                 ["redo"] = new ActionInfo
                 {
                     Name = "redo",
-                    Description = "DISABLED (threading issues) - always returns an error. Use snapshots (action='snapshot'/'revert') instead",
+                    Description = "Not available to agents - always returns an error. A human redoes an undone Cordyceps edit with Grasshopper's Redo (Ctrl+Y on Windows, Cmd+Shift+Z on macOS); to restore state yourself, use snapshots (action='snapshot'/'revert')",
                     Example = "action='revert', name='before_changes' (instead of redo)"
                 },
                 ["snapshot"] = new ActionInfo
@@ -129,7 +131,10 @@ namespace Cordyceps.Tools.Unified
                     Required = new[] { "name" },
                     Optional = new[] { "timeout" },
                     Example = "action='revert', name='before_changes'",
-                    Tips = new[] { "Waits up to timeout seconds (1-300, default 30) and replies with revertedTo and the same solve object and states as recompute; success is true only when solve.state is completed. The revert itself has happened whatever the solve did" }
+                    Tips = new[] {
+                        "Waits up to timeout seconds (1-300, default 30) and replies with revertedTo and the same solve object and states as recompute; success is true only when solve.state is completed. The revert itself has happened whatever the solve did",
+                        "Not undoable with Ctrl+Z: revert installs a new document, whose undo history starts empty, so edits made before the revert can no longer be undone either"
+                    }
                 },
                 ["snapshots"] = new ActionInfo
                 {
@@ -185,7 +190,8 @@ namespace Cordyceps.Tools.Unified
             {
                 "IMPORTANT: Disable solver before bulk operations with action='solver', enabled=false",
                 "Re-enable solver when done with action='solver', enabled=true",
-                "Capture supports .png, .jpg, .bmp formats"
+                "Capture supports .png, .jpg, .bmp formats",
+                "Undo: clear is one Grasshopper undo step a human reverts with Ctrl+Z; solver, revert and the capture actions record none. undo and redo are not callable by agents: snapshot and revert are the agent-side restore"
             }
         };
 
@@ -507,13 +513,13 @@ namespace Cordyceps.Tools.Unified
             // Grasshopper undo system interacts with the UI thread in ways that cause the HTTP
             // response to be disposed before it can be sent. Snapshots (action='snapshot'/
             // 'revert') are the supported alternative.
-            return ToolHelpers.ErrorResponse("Undo is disabled (threading issues with the Grasshopper undo stack). Use snapshots instead: gh_document(action='snapshot', name='...') before changes, gh_document(action='revert', name='...') to restore.");
+            return ToolHelpers.ErrorResponse("Undo is not available to agents. Each Cordyceps call that changes the canvas is one Grasshopper undo step, which a human undoes with Ctrl+Z (Cmd+Z on macOS) in Grasshopper. To restore state yourself, use snapshots: gh_document(action='snapshot', name='...') before changes, gh_document(action='revert', name='...') to restore.");
         }
 
         private string ActionRedo()
         {
             // Redo is formally cut alongside undo — see ActionUndo for details.
-            return ToolHelpers.ErrorResponse("Redo is disabled (threading issues with the Grasshopper undo stack). Use snapshots instead (action='snapshot'/'revert').");
+            return ToolHelpers.ErrorResponse("Redo is not available to agents. A human redoes an undone Cordyceps call with Grasshopper's Redo (Ctrl+Y on Windows, Cmd+Shift+Z on macOS). To restore state yourself, use snapshots (action='snapshot'/'revert').");
         }
 
         private string ActionSnapshot(string name)
