@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Drawing;
 using System.Linq;
 using Cordyceps.Core;
+using Cordyceps.Core.Edits;
 using Grasshopper;
 using Grasshopper.Kernel;
 using Grasshopper.Kernel.Special;
@@ -42,7 +43,10 @@ namespace Cordyceps.Tools.Unified
                 if (ToolHelpers.TryParseColor(color, out var groupColor))
                     group.Colour = groupColor;
 
-                doc.AddObject(group, false);
+                return _context.Edit(doc, EditReplies.RecordName("gh_canvas", "group_create"), tx =>
+                {
+                // The group is new, so its membership and colour need no record; the add does.
+                tx.AddObject(group);
 
                 foreach (var obj in members)
                     group.AddObject(obj.InstanceGuid);
@@ -62,6 +66,7 @@ namespace Cordyceps.Tools.Unified
                 };
                 AddDuplicateNotes(result, outcomes);
                 return JsonConvert.SerializeObject(result);
+                });
             });
         }
 
@@ -73,12 +78,15 @@ namespace Cordyceps.Tools.Unified
                     return ToolHelpers.ErrorResponse(error);
 
                 var deletedId = group.InstanceGuid.ToString();
-                doc.RemoveObject(group, true);
-
-                return JsonConvert.SerializeObject(new
+                return _context.Edit(doc, EditReplies.RecordName("gh_canvas", "group_delete"), tx =>
                 {
-                    success = true,
-                    deleted = deletedId
+                    tx.RemoveObject(group);
+
+                    return JsonConvert.SerializeObject(new
+                    {
+                        success = true,
+                        deleted = deletedId
+                    });
                 });
             });
         }
@@ -117,12 +125,19 @@ namespace Cordyceps.Tools.Unified
                         return ToolHelpers.ErrorResponse($"Nothing was changed: ids[{self.Index}] '{self.Text}' is the group itself; a group cannot contain itself");
                 }
 
+                return _context.Edit(doc, EditReplies.RecordName("gh_canvas", "group_add"), tx =>
+                {
                 if (group == null)
                 {
                     group = new GH_Group();
                     group.NickName = groupName ?? Core.Canvas.ObjectEntry.DefaultGroupName;
                     group.Name = groupName ?? Core.Canvas.ObjectEntry.DefaultGroupName;
-                    doc.AddObject(group, false);
+                    tx.AddObject(group);
+                }
+                else
+                {
+                    // Membership and colour live in the group's archive.
+                    tx.RecordGeneric(group);
                 }
 
                 if (ToolHelpers.TryParseColor(color, out var parsedColor))
@@ -147,6 +162,7 @@ namespace Cordyceps.Tools.Unified
                 };
                 AddDuplicateNotes(result, outcomes);
                 return JsonConvert.SerializeObject(result);
+                });
             });
         }
 
@@ -166,9 +182,15 @@ namespace Cordyceps.Tools.Unified
                 if (!ToolHelpers.TryResolveIdArray(lookup, componentIds, "ids", out var objects, out var outcomes, out error))
                     return ToolHelpers.ErrorResponse(error);
 
+                return _context.Edit(doc, EditReplies.RecordName("gh_canvas", "group_remove"), tx =>
+                {
                 var memberIds = new HashSet<Guid>(group.ObjectIDs ?? new List<Guid>());
                 var removedIds = new List<string>();
                 var notMembers = new List<string>();
+
+                // Recorded only when a member will leave: a call that changes nothing pushes nothing.
+                if (objects.Any(o => memberIds.Contains(o.InstanceGuid)))
+                    tx.RecordGeneric(group);
 
                 foreach (var obj in objects)
                 {
@@ -197,6 +219,7 @@ namespace Cordyceps.Tools.Unified
                 if (notMembers.Count > 0) result["notMembers"] = notMembers;
                 AddDuplicateNotes(result, outcomes);
                 return JsonConvert.SerializeObject(result);
+                });
             });
         }
 
@@ -254,20 +277,27 @@ namespace Cordyceps.Tools.Unified
         {
             return _context.ExecuteOnUiThread(() =>
             {
-                if (!ToolHelpers.TryGetUnprotectedGroup(_context, id, out _, out var group, out var error))
+                if (!ToolHelpers.TryGetUnprotectedGroup(_context, id, out var doc, out var group, out var error))
                     return ToolHelpers.ErrorResponse(error);
 
                 string oldName = group.NickName;
-                group.NickName = newName;
-                group.Name = newName;
-                Instances.ActiveCanvas?.Invalidate();
 
-                return JsonConvert.SerializeObject(new
+                return _context.Edit(doc, EditReplies.RecordName("gh_canvas", "group_rename"), tx =>
                 {
-                    success = true,
-                    id = group.InstanceGuid.ToString(),
-                    oldName,
-                    name = group.NickName
+                    // A group's name is two properties (NickName and Name); the generic record
+                    // archives both, where the nickname event restores only NickName.
+                    tx.RecordGeneric(group);
+                    group.NickName = newName;
+                    group.Name = newName;
+                    Instances.ActiveCanvas?.Invalidate();
+
+                    return JsonConvert.SerializeObject(new
+                    {
+                        success = true,
+                        id = group.InstanceGuid.ToString(),
+                        oldName,
+                        name = group.NickName
+                    });
                 });
             });
         }
@@ -276,20 +306,24 @@ namespace Cordyceps.Tools.Unified
         {
             return _context.ExecuteOnUiThread(() =>
             {
-                if (!ToolHelpers.TryGetUnprotectedGroup(_context, id, out _, out var group, out var error))
+                if (!ToolHelpers.TryGetUnprotectedGroup(_context, id, out var doc, out var group, out var error))
                     return ToolHelpers.ErrorResponse(error);
 
                 if (!ToolHelpers.TryParseColor(color, out var groupColor))
                     return ToolHelpers.ErrorResponse($"Invalid color: {color}");
 
-                group.Colour = groupColor;
-                Instances.ActiveCanvas?.Invalidate();
-
-                return JsonConvert.SerializeObject(new
+                return _context.Edit(doc, EditReplies.RecordName("gh_canvas", "group_color"), tx =>
                 {
-                    success = true,
-                    id = group.InstanceGuid.ToString(),
-                    color = ColorTranslator.ToHtml(group.Colour)
+                    tx.RecordGeneric(group);
+                    group.Colour = groupColor;
+                    Instances.ActiveCanvas?.Invalidate();
+
+                    return JsonConvert.SerializeObject(new
+                    {
+                        success = true,
+                        id = group.InstanceGuid.ToString(),
+                        color = ColorTranslator.ToHtml(group.Colour)
+                    });
                 });
             });
         }
@@ -320,12 +354,15 @@ namespace Cordyceps.Tools.Unified
                     });
                 }
 
+                return _context.Edit(doc, EditReplies.RecordName("gh_canvas", "group_move"), tx =>
+                {
                 int movedCount = 0;
                 foreach (var memberId in memberIds)
                 {
                     var member = doc.FindObject(memberId, true);
                     if (member?.Attributes != null)
                     {
+                        tx.RecordPivot(member);
                         var pivot = member.Attributes.Pivot;
                         member.Attributes.Pivot = new PointF(pivot.X + (float)dx, pivot.Y + (float)dy);
                         member.Attributes.ExpireLayout();
@@ -345,6 +382,7 @@ namespace Cordyceps.Tools.Unified
                     movedCount,
                     offset = new { dx, dy },
                     bounds = new { x = bounds.X, y = bounds.Y, width = bounds.Width, height = bounds.Height }
+                });
                 });
             });
         }
