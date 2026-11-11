@@ -38,6 +38,82 @@ namespace Cordyceps.Core
         public DateTime StartedUtc { get; }
     }
 
+    /// <summary>
+    /// The last solve a document finished, as Grasshopper reported it at <c>SolutionEnd</c>.
+    /// Immutable and swapped whole, so a reader never sees a generation from one solve paired with
+    /// the aborted flag of another.
+    /// </summary>
+    public sealed class SolveRecord
+    {
+        public SolveRecord(long generation, DateTime? endedUtc, TimeSpan? span, bool aborted)
+        {
+            Generation = generation;
+            EndedUtc = endedUtc;
+            Span = span;
+            Aborted = aborted;
+        }
+
+        /// <summary>
+        /// How many solves this document has finished since it was first tracked. A waiter compares
+        /// it with the value it saw when it scheduled, so "a solve ended after I asked" needs no
+        /// event subscription of its own.
+        /// </summary>
+        public long Generation { get; }
+
+        /// <summary>When the last solve ended; null while no solve has ended since tracking began.</summary>
+        public DateTime? EndedUtc { get; }
+
+        /// <summary>How long Grasshopper says the last solve took, when it said.</summary>
+        public TimeSpan? Span { get; }
+
+        /// <summary>
+        /// True when the last solve was stopped before it finished (the human pressed Escape, or
+        /// something asked Grasshopper to abort). Read from <c>GH_Document.AbortRequested</c> at
+        /// <c>SolutionEnd</c>: Grasshopper overwrites <c>SolutionState = Aborted</c> with
+        /// <c>PostProcess</c> before raising that event, so the solution state never shows it.
+        /// </summary>
+        public bool Aborted { get; }
+    }
+
+    /// <summary>
+    /// A claim on "the next solve of this document to finish": the document and the generation a
+    /// finished solve must pass. Taken when a solve is scheduled, redeemed by <see cref="SolveWait"/>.
+    /// </summary>
+    public readonly struct SolveTicket
+    {
+        public SolveTicket(Guid documentId, long generation)
+        {
+            DocumentId = documentId;
+            Generation = generation;
+        }
+
+        public Guid DocumentId { get; }
+
+        /// <summary>The generation a finished solve must exceed to answer this ticket.</summary>
+        public long Generation { get; }
+    }
+
+    /// <summary>
+    /// One lock-free reading of a document's solve state, for a waiter: whether it is still
+    /// tracked, its last finished solve, and whether it is solving now.
+    /// </summary>
+    public sealed class SolveObservation
+    {
+        /// <summary>The reading for a document that is not tracked (never ticketed, or forgotten).</summary>
+        public static readonly SolveObservation Untracked = new SolveObservation(false, null, false);
+
+        public SolveObservation(bool tracked, SolveRecord record, bool solving)
+        {
+            Tracked = tracked;
+            Record = record;
+            Solving = solving;
+        }
+
+        public bool Tracked { get; }
+        public SolveRecord Record { get; }
+        public bool Solving { get; }
+    }
+
     /// <summary>The document the bridge last saw focused, captured on the UI thread.</summary>
     public sealed class ActiveDocumentRef
     {
@@ -189,6 +265,11 @@ namespace Cordyceps.Core
         private readonly ConcurrentDictionary<Guid, DocumentSolve> _solving =
             new ConcurrentDictionary<Guid, DocumentSolve>();
 
+        // The last finished solve per document. Kept apart from _solving because it must outlive
+        // the solve it describes: the waiter, outline and tree read it after the solve has ended.
+        private readonly ConcurrentDictionary<Guid, SolveRecord> _lastSolve =
+            new ConcurrentDictionary<Guid, SolveRecord>();
+
         // 0 means "never stamped". Written by the UI thread, read by HTTP worker threads.
         private long _lastHeartbeatTicks;
 
@@ -292,21 +373,86 @@ namespace Cordyceps.Core
         }
 
         /// <summary>
-        /// Record that <paramref name="documentId"/> finished solving. Ending a document that was
-        /// never marked solving is a no-op: the state must be self-correcting, because a missed
-        /// start event must not make a later end throw, and a stuck "solving" flag would report a
-        /// healthy bridge as permanently busy.
+        /// Record that <paramref name="documentId"/> finished solving, and how. Ending a document
+        /// that was never marked solving must not throw: the state is self-correcting, because a
+        /// missed start event must not make a later end fail, and a stuck "solving" flag would
+        /// report a healthy bridge as permanently busy.
+        ///
+        /// <para>Every call advances the document's generation, whether or not its start was seen.
+        /// Grasshopper raised the end, so a solve did finish, and a waiter must not miss it because
+        /// the matching start went unrecorded.</para>
         /// </summary>
-        public void EndSolution(Guid documentId) => _solving.TryRemove(documentId, out _);
+        /// <param name="documentId">The document whose solve ended.</param>
+        /// <param name="span">How long Grasshopper says the solve took, when known.</param>
+        /// <param name="aborted">True when the solve was stopped before it finished.</param>
+        public void EndSolution(Guid documentId, TimeSpan? span = null, bool aborted = false)
+        {
+            // Clear "solving" before publishing the new generation, the reverse of the order
+            // Observe reads them in: a waiter that sees the new generation and then reads "not
+            // solving" is looking at a finished solve, never at the gap between the two writes.
+            _solving.TryRemove(documentId, out _);
+
+            var ended = _clock();
+            _lastSolve.AddOrUpdate(
+                documentId,
+                _ => new SolveRecord(1, ended, span, aborted),
+                (_, existing) => new SolveRecord(existing.Generation + 1, ended, span, aborted));
+        }
+
+        /// <summary>
+        /// The last solve <paramref name="documentId"/> finished, or <c>null</c> when none has been
+        /// recorded or the document was forgotten.
+        /// </summary>
+        public SolveRecord LastSolve(Guid documentId)
+            => _lastSolve.TryGetValue(documentId, out var record) ? record : null;
+
+        /// <summary>
+        /// True when the last solve recorded for <paramref name="documentId"/> was aborted. The one
+        /// place outline and tree read "the last solution was aborted" from.
+        /// </summary>
+        public bool LastSolutionAborted(Guid documentId) => LastSolve(documentId)?.Aborted ?? false;
+
+        /// <summary>
+        /// Claim the next solve of <paramref name="documentId"/> to finish. Call on the UI thread
+        /// when the solve is scheduled, after the expiry that solve must pick up.
+        ///
+        /// <para>A solve already running when the ticket is taken does not answer it: that solve
+        /// began before the expiry, so it may not include it, and the scheduled one runs after it.
+        /// The ticket then asks for one generation more.</para>
+        ///
+        /// <para>Taking a ticket starts tracking the document (generation 0 when nothing has ended
+        /// yet). That is what lets a waiter tell "not finished yet" from "forgotten": a tracked
+        /// document's record disappears only through <see cref="ForgetDocument"/>.</para>
+        /// </summary>
+        public SolveTicket TakeTicket(Guid documentId)
+        {
+            var record = _lastSolve.GetOrAdd(documentId, _ => new SolveRecord(0, null, null, false));
+            var generation = IsSolving(documentId) ? record.Generation + 1 : record.Generation;
+            return new SolveTicket(documentId, generation);
+        }
+
+        /// <summary>
+        /// One reading of <paramref name="documentId"/> for a waiter, without a lock. The record is
+        /// read before the solving flag, the reverse of the order <see cref="EndSolution"/> writes
+        /// them, so a new generation seen with "not solving" belongs to a finished solve.
+        /// </summary>
+        public SolveObservation Observe(Guid documentId)
+        {
+            var record = LastSolve(documentId);
+            if (record == null) return SolveObservation.Untracked;
+            return new SolveObservation(true, record, IsSolving(documentId));
+        }
 
         /// <summary>
         /// Drop all state for a document that is closing. Without this, a document unloaded
         /// mid-solve (so its <c>SolutionEnd</c> never arrives) would be reported as solving
-        /// forever.
+        /// forever, and a waiter on it would wait out its whole budget instead of learning it is
+        /// gone.
         /// </summary>
         public void ForgetDocument(Guid documentId)
         {
-            EndSolution(documentId);
+            _solving.TryRemove(documentId, out _);
+            _lastSolve.TryRemove(documentId, out _);
             var active = Volatile.Read(ref _activeDocument);
             if (active != null && active.DocumentId == documentId)
                 Volatile.Write(ref _activeDocument, null);

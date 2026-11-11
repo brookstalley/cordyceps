@@ -84,6 +84,11 @@ Critic mode: one `cumulative` review at the end (a two-chunk plan; Chunk 02 is `
 - **Not in scope:** the edit transaction and undo (#91); batch (#96); sweep (#97); cancelling a
   solve; the bridge component's own refresh scheduling (`src/Cordyceps/CordycepsComponent.cs`).
 - **Decisions made mid-build:** *(one line each, naming what settled it)*
+  - Every `EndSolution` advances the generation, even with no recorded start: Grasshopper raised the end, so a solve finished, and a waiter must not miss it (01).
+  - `SolverState.TakeTicket` starts tracking the document (generation 0), so a missing record means "forgotten" (`Gone`), never "not solved yet"; a ticket taken while that document is solving asks for one generation more, because the running solve began before the expiry (01).
+  - `tree` keeps its documented contract that `solver` appears only when the solver is off (`DataTreesGuide.md`, a `TreeSummaryTests` assertion); with the solver on, an aborted last solve shows in the `note` of each owner that did not compute ("not computed: the last solution was aborted before it reached this object"). Settled by not weakening a test-pinned contract while still making tree say so (01).
+  - A disabled document's `SolutionEnd` carries the previous solve's span (the SDK skips the profiler when `Enabled` is off), so the watcher records no span for it (verify-api reading of `NewSolution`, 01).
+  - `SolveWait` measures its budget on a stopwatch-backed clock by default; a wall clock stepped backwards would stretch the wait past its budget (01).
 - **Level:** Medium. The SDK facts come from decompiled source, not a live run. A scheduled solve
   depends on `Instances.DocumentEditor` existing, which holds whenever the canvas is open. The
   cluster-editor path is code-read only. Raised by VRF-023, which runs in live Rhino.

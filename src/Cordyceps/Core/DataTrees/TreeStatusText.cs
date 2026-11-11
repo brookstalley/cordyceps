@@ -48,9 +48,11 @@ namespace Cordyceps.Core.DataTrees
         /// <summary>
         /// The note for a tree whose owner has not finished computing, or null when it has.
         /// <paramref name="solverOffReason"/> is <see cref="SolverOff"/>'s Reason, or null when the
-        /// solver is on.
+        /// solver is on. <paramref name="lastSolutionAborted"/> names an aborted last solution as
+        /// the reason an owner did not compute while the solver is on: an Escape stops the solve
+        /// before it reaches every object, and the tree is the place a reader meets the gap.
         /// </summary>
-        public static string OwnerNote(OwnerState state, string solverOffReason)
+        public static string OwnerNote(OwnerState state, string solverOffReason, bool lastSolutionAborted = false)
         {
             switch (state)
             {
@@ -63,8 +65,10 @@ namespace Cordyceps.Core.DataTrees
                 case OwnerState.Computing:
                     return "the owner is computing right now, so the tree is not final";
                 default:
-                    return solverOffReason != null
-                        ? $"not solved: {solverOffReason}, so the tree may be empty or out of date"
+                    if (solverOffReason != null)
+                        return $"not solved: {solverOffReason}, so the tree may be empty or out of date";
+                    return lastSolutionAborted
+                        ? "not computed: the last solution was aborted before it reached this object, so the tree may be empty or out of date"
                         : "not computed in the current solution yet, so the tree may be empty or out of date";
             }
         }

@@ -138,7 +138,15 @@ namespace Cordyceps.Core
 
             try
             {
-                SolverState.Shared.EndSolution(document.DocumentID);
+                // AbortRequested is the only trace an Escape leaves by now: Grasshopper has already
+                // overwritten SolutionState = Aborted with PostProcess before raising this event,
+                // and the flag survives until the next solution starts. The span comes from the
+                // event, which carries the profiler's measure of the last solve; a disabled
+                // document skips the profiler, so its span would describe an older solve.
+                SolverState.Shared.EndSolution(
+                    document.DocumentID,
+                    document.Enabled ? e?.Duration : null,
+                    document.AbortRequested);
             }
             catch (Exception ex) // prawduct:allow prawduct/broad-except -- runs inside Grasshopper's solution dispatch: a throw here would abort the user's solve, so failing liveness bookkeeping is logged and swallowed rather than taking the solve down with it
             {
