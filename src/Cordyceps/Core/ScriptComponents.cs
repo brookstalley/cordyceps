@@ -87,7 +87,9 @@ namespace Cordyceps.Core
         /// <c>zoomable</c>), so a way of changing one cannot slip past unrebuilt <em>and</em>
         /// unreported, as a gate reading "was source written?" lets a parameter-only change do.
         /// <c>set</c> always writes source, so it calls <see cref="RebuildAndVerify"/> directly. The decision itself lives in
-        /// <see cref="ScriptConfigurePlan"/>, where it is unit-testable.
+        /// <see cref="ScriptConfigurePlan"/>, where it is unit-testable. A failed source write never
+        /// reaches here: it rolls its call back, ports and all, so a rebuild is never asked to stand
+        /// in for code that was not written.
         /// </remarks>
         /// <param name="parametersChanged">True when the call actually reshaped the component's ports.</param>
         /// <param name="writtenSource">
@@ -95,9 +97,8 @@ namespace Cordyceps.Core
         /// is checked against the text the component already stores instead: after a rebuild the
         /// two must agree, so it is the right expectation to hold the running program to.
         /// </param>
-        /// <param name="sourceWriteFailed">True when the call tried to write source and the write threw.</param>
         public static Dictionary<string, object> RebuildForChange(
-            IGH_DocumentObject component, bool parametersChanged, string writtenSource, bool sourceWriteFailed = false)
+            IGH_DocumentObject component, bool parametersChanged, string writtenSource)
         {
             var plan = ScriptConfigurePlan.For(parametersChanged, writtenSource != null);
             if (!plan.RebuildRequired)
@@ -105,18 +106,6 @@ namespace Cordyceps.Core
 
             if (writtenSource != null)
                 return RebuildAndVerify(component, writtenSource);
-
-            // The params moved but the source write threw, so the component was rebuilt from the
-            // text it held BEFORE the failed write. Report no verification rather than a 'verified'
-            // about source the caller never sent — that field is read as "the new code is what will
-            // run", which would be a false confirmation.
-            if (sourceWriteFailed)
-            {
-                return RebuildAndVerify(component, expectedSource: null, noExpectationReason:
-                    "The source write failed, so the component was rebuilt from the text it already "
-                    + "held. Verifying against that would say nothing about the code you sent — see "
-                    + "codeSet and sourceError.");
-            }
 
             return RebuildAndVerify(component, ReadSource(component));
         }
@@ -142,13 +131,8 @@ namespace Cordyceps.Core
         /// The text the running program should be built from; <c>null</c> when the caller has none
         /// to offer, which is reported rather than compared against.
         /// </param>
-        /// <param name="noExpectationReason">
-        /// What to report when <paramref name="expectedSource"/> is <c>null</c> and the caller knows
-        /// why better than this does. Omitted, the reason is that the component has no readable
-        /// stored source.
-        /// </param>
         public static Dictionary<string, object> RebuildAndVerify(
-            IGH_DocumentObject component, string expectedSource, string noExpectationReason = null)
+            IGH_DocumentObject component, string expectedSource)
         {
             var typeName = component.GetType().Name;
 
@@ -168,8 +152,8 @@ namespace Cordyceps.Core
                 // Nothing to hold the program against, so no verdict is reported. The program
                 // itself is a separate fact and the most useful one such a response can carry, so
                 // hand it over unjudged rather than dropping it with the verdict.
-                var uncomparable = ScriptProgram.NotCompared(noExpectationReason
-                    ?? $"'{typeName}' has no readable stored source to compare its running program against.");
+                var uncomparable = ScriptProgram.NotCompared(
+                    $"'{typeName}' has no readable stored source to compare its running program against.");
                 DebugLog.Info($"[RebuildAndVerify] nothing to verify the rebuild against on {typeName} — {uncomparable.Reason}");
 
                 var fields = ScriptProgram.DescribeWrite(rebuild, uncomparable);

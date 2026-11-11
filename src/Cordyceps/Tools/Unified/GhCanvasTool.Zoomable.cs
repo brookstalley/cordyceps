@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using Cordyceps.Core;
+using Cordyceps.Core.Edits;
 using Grasshopper.Kernel;
 using Newtonsoft.Json;
 
@@ -44,40 +45,55 @@ namespace Cordyceps.Tools.Unified
                 // Default operation to add
                 var op = operation?.ToLowerInvariant() ?? "add";
 
+                // Every check runs here, before anything changes: each one asks the component
+                // (CanInsertParameter, CanRemoveParameter), and a third-party component may throw
+                // from those. Nothing has been touched yet, so such a throw is answered as a plain
+                // error; the reshape itself runs below, inside the edit, where a throw rolls back.
+                Func<EditTransaction, string> apply;
+                string reply;
                 try
                 {
-                    int initialCount = paramSide == GH_ParameterSide.Input
-                        ? ghComponent.Params.Input.Count
-                        : ghComponent.Params.Output.Count;
-
                     switch (op)
                     {
                         case "add":
-                            return AddParameter(ghComponent, varParamComp, paramSide, index, doc);
+                            reply = PrepareAdd(ghComponent, varParamComp, paramSide, index, out apply);
+                            break;
 
                         case "remove":
-                            return RemoveParameter(ghComponent, varParamComp, paramSide, index, doc, id);
+                            reply = PrepareRemove(ghComponent, varParamComp, paramSide, index, doc, id, out apply);
+                            break;
 
                         case "set_count":
                             if (count < 0)
                                 return ToolHelpers.ErrorResponse("'count' parameter required for set_count operation");
-                            return SetParameterCount(ghComponent, varParamComp, paramSide, count, doc, id);
+                            reply = PrepareSetCount(ghComponent, varParamComp, paramSide, count, doc, id, out apply);
+                            break;
 
                         default:
                             return ToolHelpers.ErrorResponse($"Invalid operation: {operation}. Use 'add', 'remove', or 'set_count'");
                     }
                 }
-                catch (Exception ex)
+                catch (Exception ex) // prawduct:allow prawduct/broad-except -- validation only: a third-party component's Can*Parameter may throw anything, and nothing has changed yet
                 {
                     Core.DebugLog.Error($"gh_canvas zoomable failed: {ex.Message}");
                     return ToolHelpers.ErrorResponse($"Failed to manage zoomable parameters: {ex.Message}");
                 }
+
+                if (apply == null)
+                    return reply;
+
+                return _context.Edit(doc, EditReplies.RecordName("gh_canvas", "zoomable"), apply);
             });
         }
 
-        private string AddParameter(IGH_Component ghComponent, IGH_VariableParameterComponent varParamComp,
-            GH_ParameterSide side, int index, GH_Document doc)
+        /// <summary>
+        /// Check an <c>add</c>. Returns the refusal, or null with <paramref name="apply"/> set to
+        /// the edit that adds the port.
+        /// </summary>
+        private static string PrepareAdd(IGH_Component ghComponent, IGH_VariableParameterComponent varParamComp,
+            GH_ParameterSide side, int index, out Func<EditTransaction, string> apply)
         {
+            apply = null;
             var paramList = side == GH_ParameterSide.Input ? ghComponent.Params.Input : ghComponent.Params.Output;
 
             // If index not specified, add at the end
@@ -94,36 +110,48 @@ namespace Cordyceps.Tools.Unified
                 });
             }
 
-            var newParam = varParamComp.CreateParameter(side, insertIndex);
-            if (newParam == null)
+            apply = tx =>
             {
-                return ToolHelpers.ErrorResponse("Failed to create parameter");
-            }
+                // Recorded before CreateParameter, which belongs to the component and may set
+                // the component up for the port it makes.
+                tx.RecordGeneric(ghComponent);
 
-            // Indexed overloads (like GhScriptTool's SyncParamSide) so an explicit index inserts
-            // at that position — the non-indexed overloads append, making the reported index wrong.
-            if (side == GH_ParameterSide.Input)
-                ghComponent.Params.RegisterInputParam(newParam, insertIndex);
-            else
-                ghComponent.Params.RegisterOutputParam(newParam, insertIndex);
+                var newParam = varParamComp.CreateParameter(side, insertIndex);
+                if (newParam == null)
+                    throw new EditRollbackException("Failed to create parameter");
 
-            var rebuildFields = FinishReshape(ghComponent, varParamComp, parametersChanged: true);
+                // Indexed overloads (like GhScriptTool's SyncParamSide) so an explicit index inserts
+                // at that position — the non-indexed overloads append, making the reported index wrong.
+                if (side == GH_ParameterSide.Input)
+                    ghComponent.Params.RegisterInputParam(newParam, insertIndex);
+                else
+                    ghComponent.Params.RegisterOutputParam(newParam, insertIndex);
 
-            return ZoomableReply(new Dictionary<string, object>
-            {
-                ["success"] = true,
-                ["id"] = ghComponent.InstanceGuid.ToString(),
-                ["operation"] = "add",
-                ["side"] = side.ToString().ToLower(),
-                ["index"] = insertIndex,
-                ["parameterName"] = newParam.Name,
-                ["newCount"] = paramList.Count
-            }, rebuildFields);
+                var rebuildFields = FinishReshape(ghComponent, varParamComp, parametersChanged: true);
+
+                return ZoomableReply(new Dictionary<string, object>
+                {
+                    ["success"] = true,
+                    ["id"] = ghComponent.InstanceGuid.ToString(),
+                    ["operation"] = "add",
+                    ["side"] = side.ToString().ToLower(),
+                    ["index"] = insertIndex,
+                    ["parameterName"] = newParam.Name,
+                    ["newCount"] = paramList.Count
+                }, rebuildFields);
+            };
+            return null;
         }
 
-        private string RemoveParameter(IGH_Component ghComponent, IGH_VariableParameterComponent varParamComp,
-            GH_ParameterSide side, int index, GH_Document doc, string id)
+        /// <summary>
+        /// Check a <c>remove</c>, including the destructive id resolution a port removal needs.
+        /// Returns the refusal, or null with <paramref name="apply"/> set to the edit that removes
+        /// the port.
+        /// </summary>
+        private static string PrepareRemove(IGH_Component ghComponent, IGH_VariableParameterComponent varParamComp,
+            GH_ParameterSide side, int index, GH_Document doc, string id, out Func<EditTransaction, string> apply)
         {
+            apply = null;
             var paramList = side == GH_ParameterSide.Input ? ghComponent.Params.Input : ghComponent.Params.Output;
 
             // If index not specified, remove from the end
@@ -158,31 +186,44 @@ namespace Cordyceps.Tools.Unified
             if (!ToolHelpers.TryConfirmPortRemoval(doc, id, ghComponent, removal, out var refusal))
                 return ToolHelpers.ErrorResponse(refusal);
 
-            var param = paramList[removeIndex];
-            string paramName = param.Name;
-
-            if (side == GH_ParameterSide.Input)
-                ghComponent.Params.UnregisterInputParameter(param);
-            else
-                ghComponent.Params.UnregisterOutputParameter(param);
-
-            var rebuildFields = FinishReshape(ghComponent, varParamComp, parametersChanged: true);
-
-            return ZoomableReply(new Dictionary<string, object>
+            apply = tx =>
             {
-                ["success"] = true,
-                ["id"] = ghComponent.InstanceGuid.ToString(),
-                ["operation"] = "remove",
-                ["side"] = side.ToString().ToLower(),
-                ["index"] = removeIndex,
-                ["removedParameterName"] = paramName,
-                ["newCount"] = paramList.Count
-            }, rebuildFields);
+                // The generic record takes the port's wires first, so undo rebuilds the port and
+                // then reconnects it.
+                tx.RecordGeneric(ghComponent);
+
+                var param = paramList[removeIndex];
+                string paramName = param.Name;
+
+                if (side == GH_ParameterSide.Input)
+                    ghComponent.Params.UnregisterInputParameter(param);
+                else
+                    ghComponent.Params.UnregisterOutputParameter(param);
+
+                var rebuildFields = FinishReshape(ghComponent, varParamComp, parametersChanged: true);
+
+                return ZoomableReply(new Dictionary<string, object>
+                {
+                    ["success"] = true,
+                    ["id"] = ghComponent.InstanceGuid.ToString(),
+                    ["operation"] = "remove",
+                    ["side"] = side.ToString().ToLower(),
+                    ["index"] = removeIndex,
+                    ["removedParameterName"] = paramName,
+                    ["newCount"] = paramList.Count
+                }, rebuildFields);
+            };
+            return null;
         }
 
-        private string SetParameterCount(IGH_Component ghComponent, IGH_VariableParameterComponent varParamComp,
-            GH_ParameterSide side, int targetCount, GH_Document doc, string id)
+        /// <summary>
+        /// Check a <c>set_count</c>. Returns the reply when there is nothing to do or the call is
+        /// refused, or null with <paramref name="apply"/> set to the edit that reshapes the side.
+        /// </summary>
+        private static string PrepareSetCount(IGH_Component ghComponent, IGH_VariableParameterComponent varParamComp,
+            GH_ParameterSide side, int targetCount, GH_Document doc, string id, out Func<EditTransaction, string> apply)
         {
+            apply = null;
             var paramList = side == GH_ParameterSide.Input ? ghComponent.Params.Input : ghComponent.Params.Output;
             int currentCount = paramList.Count;
 
@@ -215,20 +256,21 @@ namespace Cordyceps.Tools.Unified
             if (!ToolHelpers.TryConfirmPortRemoval(doc, id, ghComponent, removal, out var refusal))
                 return ToolHelpers.ErrorResponse(refusal);
 
-            int added = 0, removed = 0;
-            var errors = new List<string>();
-
-            try
+            apply = tx =>
             {
-                // Remove excess parameters
+                tx.RecordGeneric(ghComponent);
+
+                int added = 0, removed = 0;
+
+                // Whether the component accepts each step is known only once the steps before it
+                // have run, so a refusal can come partway. It rolls the whole call back: a
+                // component left with some of the requested ports is the half-edit a call must
+                // never leave.
                 while (paramList.Count > targetCount)
                 {
                     int removeIdx = paramList.Count - 1;
                     if (!varParamComp.CanRemoveParameter(side, removeIdx))
-                    {
-                        errors.Add($"Cannot remove parameter at index {removeIdx}");
-                        break;
-                    }
+                        throw SetCountStopped(side, targetCount, paramList.Count, $"Cannot remove parameter at index {removeIdx}");
 
                     var param = paramList[removeIdx];
                     if (side == GH_ParameterSide.Input)
@@ -238,22 +280,15 @@ namespace Cordyceps.Tools.Unified
                     removed++;
                 }
 
-                // Add missing parameters
                 while (paramList.Count < targetCount)
                 {
                     int insertIdx = paramList.Count;
                     if (!varParamComp.CanInsertParameter(side, insertIdx))
-                    {
-                        errors.Add($"Cannot add parameter at index {insertIdx}");
-                        break;
-                    }
+                        throw SetCountStopped(side, targetCount, paramList.Count, $"Cannot add parameter at index {insertIdx}");
 
                     var newParam = varParamComp.CreateParameter(side, insertIdx);
                     if (newParam == null)
-                    {
-                        errors.Add($"Failed to create parameter at index {insertIdx}");
-                        break;
-                    }
+                        throw SetCountStopped(side, targetCount, paramList.Count, $"Failed to create parameter at index {insertIdx}");
 
                     if (side == GH_ParameterSide.Input)
                         ghComponent.Params.RegisterInputParam(newParam);
@@ -262,14 +297,11 @@ namespace Cordyceps.Tools.Unified
                     added++;
                 }
 
-                // A set_count that stopped partway still moved the ports it got to, and those
-                // need the rebuild as much as a complete one does.
-                var rebuildFields = FinishReshape(ghComponent, varParamComp, parametersChanged: added + removed > 0);
+                var rebuildFields = FinishReshape(ghComponent, varParamComp, parametersChanged: true);
 
-                bool success = paramList.Count == targetCount;
                 return ZoomableReply(new Dictionary<string, object>
                 {
-                    ["success"] = success,
+                    ["success"] = true,
                     ["id"] = ghComponent.InstanceGuid.ToString(),
                     ["operation"] = "set_count",
                     ["side"] = side.ToString().ToLower(),
@@ -277,19 +309,23 @@ namespace Cordyceps.Tools.Unified
                     ["actualCount"] = paramList.Count,
                     ["added"] = added,
                     ["removed"] = removed,
-                    ["errors"] = errors.Count > 0 ? errors : null
+                    ["errors"] = null
                 }, rebuildFields);
-            }
-            catch (Exception ex)
-            {
-                return ToolHelpers.ErrorResponse($"Failed during set_count: {ex.Message}");
-            }
+            };
+            return null;
         }
+
+        /// <summary>The rollback for a <c>set_count</c> the component stopped partway.</summary>
+        private static EditRollbackException SetCountStopped(GH_ParameterSide side, int targetCount, int reached, string reason)
+            => new EditRollbackException(
+                $"set_count could not reach {targetCount} {side.ToString().ToLower()} parameters: {reason} (it had reached {reached})");
 
         /// <summary>
         /// Settle a component whose ports this call reshaped, and on a script component rebuild its
-        /// program before the solution is expired. Returns the rebuild fields for a script
-        /// component, <c>null</c> for any other.
+        /// program. Returns the rebuild fields for a script component, <c>null</c> for any other.
+        /// Runs inside the edit, after the component's generic record: the rebuild itself is not
+        /// recorded, because undo restores the ports and the source and the component rebuilds
+        /// when it is next solved.
         /// </summary>
         /// <remarks>
         /// A script component's program is compiled against its ports, so a reshape leaves it
@@ -307,7 +343,8 @@ namespace Cordyceps.Tools.Unified
             if (ScriptComponents.IsScriptComponent(ghComponent))
                 rebuildFields = ScriptComponents.RebuildForChange(ghComponent, parametersChanged, writtenSource: null);
 
-            ghComponent.ExpireSolution(false);
+            // No expire here: the component's generic record has the edit recompute it, and
+            // everything downstream, once at commit.
             return rebuildFields;
         }
 
