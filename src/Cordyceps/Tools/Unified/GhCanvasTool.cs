@@ -4,6 +4,7 @@ using System.ComponentModel;
 using System.Drawing;
 using System.Linq;
 using Cordyceps.Core;
+using Cordyceps.Core.Edits;
 using Cordyceps.Core.Naming;
 using Grasshopper;
 using Grasshopper.Kernel;
@@ -508,43 +509,49 @@ namespace Cordyceps.Tools.Unified
         {
             Core.DebugLog.Info($"gh_canvas add: type='{type}', x={x}, y={y}, nickname='{nickname}'");
 
+            // A component's own constructor or attributes can throw while it is built, before the
+            // document is touched; that reaches the tool-invocation boundary, which answers it as a
+            // failed call. Everything from the add on runs inside the edit, so a throw there rolls
+            // the add back instead of leaving a half-configured object on the canvas.
             return _context.ExecuteOnUiThread(() =>
             {
-                try
+                if (!ToolHelpers.TryGetActiveDocument(_context, out var doc, out var error))
+                    return ToolHelpers.ErrorResponse(error);
+
+                var (component, resolution, typeError) = ComponentRegistry.TryCreate(type);
+
+                if (component == null)
+                    return JsonConvert.SerializeObject(TypeNameRule.ErrorPayload(resolution, typeError));
+
+                if (component.Attributes == null)
+                    component.CreateAttributes();
+
+                if (!string.IsNullOrEmpty(nickname))
+                    component.NickName = nickname;
+
+                component.Attributes.Pivot = new PointF((float)x, (float)y);
+
+                // Validate slider configuration BEFORE adding to the document so an
+                // unparseable value never leaves a half-configured slider on the canvas.
+                // Parity with action='config': an invalid value is an explicit error,
+                // never a silent success with the value ignored.
+                SliderConfigPlan sliderPlan = null;
+                if (component is GH_NumberSlider)
                 {
-                    if (!ToolHelpers.TryGetActiveDocument(_context, out var doc, out var error))
-                        return ToolHelpers.ErrorResponse(error);
+                    sliderPlan = SliderConfig.Plan(min, max, value, decimals);
+                    if (sliderPlan.ValueInvalid)
+                        return ToolHelpers.ErrorResponse($"Invalid number: {value}");
+                }
 
-                    var (component, resolution, typeError) = ComponentRegistry.TryCreate(type);
-
-                    if (component == null)
-                        return JsonConvert.SerializeObject(TypeNameRule.ErrorPayload(resolution, typeError));
-
-                    if (component.Attributes == null)
-                        component.CreateAttributes();
-
-                    if (!string.IsNullOrEmpty(nickname))
-                        component.NickName = nickname;
-
-                    component.Attributes.Pivot = new PointF((float)x, (float)y);
-
-                    // Validate slider configuration BEFORE adding to the document so an
-                    // unparseable value never leaves a half-configured slider on the canvas.
-                    // Parity with action='config': an invalid value is an explicit error,
-                    // never a silent success with the value ignored.
-                    SliderConfigPlan sliderPlan = null;
-                    if (component is GH_NumberSlider)
-                    {
-                        sliderPlan = SliderConfig.Plan(min, max, value, decimals);
-                        if (sliderPlan.ValueInvalid)
-                            return ToolHelpers.ErrorResponse($"Invalid number: {value}");
-                    }
-
-                    doc.AddObject(component, false);
+                return _context.Edit(doc, EditReplies.RecordName("gh_canvas", "add"), tx =>
+                {
+                    // Tracked, added and recorded by the transaction, which also recomputes it at commit.
+                    tx.AddObject(component);
 
                     // Apply slider configuration when the caller passed min/max/value/decimals on add.
-                    // Non-slider components ignore these params (GHC-7X4B). Shares Core.SliderConfig
-                    // with the 'config' action so add and config configure a slider identically.
+                    // Non-slider components ignore these params. Shares Core.SliderConfig with the
+                    // 'config' action so add and config configure a slider identically. The slider
+                    // is new in this edit, so its range and value need no undo record of their own.
                     if (component is GH_NumberSlider addedSlider)
                     {
                         var plan = sliderPlan;
@@ -553,9 +560,6 @@ namespace Cordyceps.Tools.Unified
                         if (plan.SetDecimals) addedSlider.Slider.DecimalPlaces = plan.Decimals;
                         if (plan.SetValue) addedSlider.SetSliderValue(plan.Value);
                     }
-
-                    if (component is IGH_ActiveObject activeAdd)
-                        activeAdd.ExpireSolution(false);
 
                     var bounds = component.Attributes.Bounds;
                     int inputCount = 0, outputCount = 0;
@@ -606,12 +610,7 @@ namespace Cordyceps.Tools.Unified
                     }
 
                     return JsonConvert.SerializeObject(added);
-                }
-                catch (Exception ex)
-                {
-                    Core.DebugLog.Error($"gh_canvas add failed: {ex.Message}");
-                    return ToolHelpers.ErrorResponse(ex.Message);
-                }
+                });
             });
         }
 
@@ -626,7 +625,7 @@ namespace Cordyceps.Tools.Unified
                 if (!string.IsNullOrEmpty(ids))
                 {
                     try { idList = JsonConvert.DeserializeObject<List<string>>(ids); }
-                    catch (Exception ex) { return ToolHelpers.ErrorResponse($"Invalid ids format: {ex.Message}"); }
+                    catch (JsonException ex) { return ToolHelpers.ErrorResponse($"Invalid ids format: {ex.Message}"); }
                     if (idList == null) return ToolHelpers.ErrorResponse("Invalid ids format: expected a JSON array");
                 }
                 else if (!string.IsNullOrEmpty(id))
@@ -638,21 +637,19 @@ namespace Cordyceps.Tools.Unified
                     return ToolHelpers.ErrorResponse("Either 'id' or 'ids' is required");
                 }
 
-                // Every id resolves against one lookup before the first RemoveObject, so a bad or
-                // ambiguous id deletes nothing of its own and cannot leave the call half-applied
-                // by failing midway. Ids that resolve are deleted; each failure is reported.
+                // Pass 1: every id resolves against one lookup before the first removal, so a bad or
+                // ambiguous id deletes nothing of its own and is reported. Pass 2 removes every id
+                // that resolved, as one edit: either all of them go, as one undo step, or an
+                // unexpected failure rolls the whole call back.
                 var lookup = new ObjectLookup(doc);
                 var outcomes = ToolHelpers.ResolveIds(lookup, idList, acceptGroups: true, Core.Canvas.ResolveIntent.Destructive, out var resolved);
 
                 var results = new List<object>();
                 var deletedIds = new List<string>();
+                var toDelete = new List<IGH_DocumentObject>();
+                var deletedGuids = new HashSet<Guid>();
                 int succeeded = 0, failed = 0;
 
-                // Recipients must be captured BEFORE RemoveObject severs the wires — expiring the
-                // deleted object afterwards reaches nothing. Collect every deleted object's former
-                // recipients (top-level owners) and expire the survivors once all deletions are done.
-                var deletedGuids = new HashSet<Guid>();
-                var formerRecipients = new Dictionary<Guid, IGH_DocumentObject>();
                 foreach (var outcome in outcomes)
                 {
                     if (!outcome.IsResolved)
@@ -665,7 +662,7 @@ namespace Cordyceps.Tools.Unified
                     var resolvedId = outcome.Id.Value.ToString();
                     if (!outcome.ActOn)
                     {
-                        // A repeat of an earlier entry, which already acted on the object; report its result.
+                        // A repeat of an earlier entry, which acts on the object; report its result.
                         if (deletedGuids.Contains(outcome.Id.Value))
                         {
                             results.Add(new { id = resolvedId, success = true, note = outcome.Note });
@@ -679,54 +676,40 @@ namespace Cordyceps.Tools.Unified
                         continue;
                     }
 
-                    var component = resolved[outcome.Id.Value];
-                    try
+                    toDelete.Add(resolved[outcome.Id.Value]);
+                    deletedGuids.Add(outcome.Id.Value);
+                    deletedIds.Add(resolvedId);
+                    results.Add(new { id = resolvedId, success = true });
+                    succeeded++;
+                }
+
+                string Reply()
+                {
+                    if (idList.Count == 1)
                     {
-                        IEnumerable<IGH_Param> outputs = component is IGH_Component comp
-                            ? comp.Params.Output
-                            : component is IGH_Param param ? new[] { param } : Enumerable.Empty<IGH_Param>();
-                        foreach (var output in outputs)
+                        return JsonConvert.SerializeObject(new
                         {
-                            foreach (var recipient in output.Recipients)
-                            {
-                                var recObj = recipient.Attributes?.GetTopLevel?.DocObject;
-                                if (recObj != null)
-                                    formerRecipients[recObj.InstanceGuid] = recObj;
-                            }
-                        }
-
-                        var ownerDoc = ToolHelpers.GetOwnerDocument(component, doc);
-                        ownerDoc.RemoveObject(component, true);
-                        deletedGuids.Add(component.InstanceGuid);
-                        deletedIds.Add(resolvedId);
-                        results.Add(new { id = resolvedId, success = true });
-                        succeeded++;
+                            success = succeeded == 1,
+                            deleted = deletedIds.FirstOrDefault(),
+                            error = failed > 0 ? ((dynamic)results[0]).error : null
+                        });
                     }
-                    catch (Exception ex)
-                    {
-                        results.Add(new { id = outcome.Text, success = false, error = ex.Message });
-                        failed++;
-                    }
+
+                    return JsonConvert.SerializeObject(new { success = failed == 0, total = idList.Count, succeeded, failed, deletedIds, results });
                 }
 
-                foreach (var kvp in formerRecipients)
+                if (toDelete.Count == 0)
+                    return Reply();
+
+                // Each removal records the object's wires (its inputs and every input it feeds)
+                // and then the object, so undo brings back the objects and every wire, upstream and
+                // downstream. The objects they fed are recomputed once, by one solve at commit.
+                return _context.Edit(doc, EditReplies.RecordName("gh_canvas", "delete"), tx =>
                 {
-                    if (deletedGuids.Contains(kvp.Key)) continue;
-                    if (kvp.Value is IGH_ActiveObject activeRec)
-                        activeRec.ExpireSolution(false);
-                }
-
-                if (idList.Count == 1)
-                {
-                    return JsonConvert.SerializeObject(new
-                    {
-                        success = succeeded == 1,
-                        deleted = deletedIds.FirstOrDefault(),
-                        error = failed > 0 ? ((dynamic)results[0]).error : null
-                    });
-                }
-
-                return JsonConvert.SerializeObject(new { success = failed == 0, total = idList.Count, succeeded, failed, deletedIds, results });
+                    foreach (var obj in toDelete)
+                        tx.RemoveObject(obj);
+                    return Reply();
+                });
             });
         }
 
@@ -755,14 +738,16 @@ namespace Cordyceps.Tools.Unified
 
                 // Pass 1: resolve every entry's id against one lookup, before anything moves. Each
                 // entry carries its own position, so a second entry for one object is a failed
-                // entry, never a dropped position (IdBatch.RefuseRepeats). Pass 2 moves only the
-                // entries that passed.
+                // entry, never a dropped position (IdBatch.RefuseRepeats). An object with no
+                // attributes has no position to set, so it is refused here, not partway through.
+                // Pass 2 moves only the entries that passed, as one undo step.
                 var lookup = new ObjectLookup(doc);
                 var outcomes = IdBatch.RefuseRepeats(
                     ToolHelpers.ResolveIds(lookup, entries.Select(e => e.Id).ToList(), acceptGroups: true, Core.Canvas.ResolveIntent.Ordinary, out var resolved),
                     "give one position per object");
 
                 var results = new List<object>();
+                var pending = new List<(IGH_DocumentObject Obj, PointF Pivot)>();
                 int successCount = 0, failCount = 0;
                 foreach (var outcome in outcomes)
                 {
@@ -775,31 +760,47 @@ namespace Cordyceps.Tools.Unified
                     }
 
                     var guid = outcome.Id.Value;
-                    try
+                    var component = resolved[guid];
+                    if (component.Attributes == null)
                     {
-                        var component = resolved[guid];
-                        component.Attributes.Pivot = new PointF((float)entry.X, (float)entry.Y);
-                        component.Attributes.ExpireLayout();
-
-                        results.Add(new { success = true, id = guid.ToString(), x = entry.X, y = entry.Y });
-                        successCount++;
-                    }
-                    catch (Exception ex)
-                    {
-                        results.Add(new { success = false, id = outcome.Text, error = ex.Message });
+                        results.Add(new { success = false, id = outcome.Text, error = $"'{component.NickName}' ({guid}) has no canvas attributes, so it has no position to set" });
                         failCount++;
+                        continue;
                     }
+
+                    pending.Add((component, new PointF((float)entry.X, (float)entry.Y)));
+                    results.Add(new { success = true, id = guid.ToString(), x = entry.X, y = entry.Y });
+                    successCount++;
                 }
 
-                Instances.ActiveCanvas?.Invalidate();
-
-                if (entries.Count == 1 && successCount == 1)
+                string Reply()
                 {
-                    var r = (dynamic)results[0];
-                    return JsonConvert.SerializeObject(new { success = true, id = r.id, x = r.x, y = r.y });
+                    if (entries.Count == 1 && successCount == 1)
+                    {
+                        var r = (dynamic)results[0];
+                        return JsonConvert.SerializeObject(new { success = true, id = r.id, x = r.x, y = r.y });
+                    }
+
+                    return JsonConvert.SerializeObject(new { success = failCount == 0, total = entries.Count, succeeded = successCount, failed = failCount, results });
                 }
 
-                return JsonConvert.SerializeObject(new { success = failCount == 0, total = entries.Count, succeeded = successCount, failed = failCount, results });
+                // An object already at its position is reported as moved but records nothing, so a
+                // call that moves nothing pushes no undo step.
+                var moving = pending.Where(p => p.Obj.Attributes.Pivot != p.Pivot).ToList();
+                if (moving.Count == 0)
+                    return Reply();
+
+                return _context.Edit(doc, EditReplies.RecordName("gh_canvas", "move"), tx =>
+                {
+                    foreach (var (obj, pivot) in moving)
+                    {
+                        tx.RecordPivot(obj);
+                        obj.Attributes.Pivot = pivot;
+                        obj.Attributes.ExpireLayout();
+                    }
+                    Instances.ActiveCanvas?.Invalidate();
+                    return Reply();
+                });
             });
         }
 
@@ -807,14 +808,25 @@ namespace Cordyceps.Tools.Unified
         {
             return _context.ExecuteOnUiThread(() =>
             {
-                if (!ToolHelpers.TryGetUnprotectedObject(_context, id, out var component, out var error))
+                if (!ToolHelpers.TryGetActiveDocument(_context, out var doc, out var error))
+                    return ToolHelpers.ErrorResponse(error);
+                if (!ToolHelpers.TryGetUnprotectedObject(new ObjectLookup(doc), id, out var component, out error))
                     return ToolHelpers.ErrorResponse(error);
 
-                component.NickName = nickname;
-                component.Attributes?.ExpireLayout();
-                Instances.ActiveCanvas?.Invalidate();
+                string Reply() => JsonConvert.SerializeObject(new { success = true, id = component.InstanceGuid.ToString(), nickname });
 
-                return JsonConvert.SerializeObject(new { success = true, id = component.InstanceGuid.ToString(), nickname });
+                // Renaming to the current name changes nothing, so it records nothing and pushes no undo step.
+                if (string.Equals(component.NickName, nickname, StringComparison.Ordinal))
+                    return Reply();
+
+                return _context.Edit(doc, EditReplies.RecordName("gh_canvas", "rename"), tx =>
+                {
+                    tx.RecordNickName(component);
+                    component.NickName = nickname;
+                    component.Attributes?.ExpireLayout();
+                    Instances.ActiveCanvas?.Invalidate();
+                    return Reply();
+                });
             });
         }
 
@@ -1032,18 +1044,22 @@ namespace Cordyceps.Tools.Unified
                 panel.SetUserText(value);
                 panel.NickName = nickname ?? "";
 
-                doc.AddObject(panel, false);
-                panel.ExpireSolution(false);
-
-                return JsonConvert.SerializeObject(new
+                // The panel is new, so its text is set before the add and needs no record; the
+                // transaction tracks, adds and records it, and recomputes it at commit.
+                return _context.Edit(doc, EditReplies.RecordName("gh_canvas", "constant"), tx =>
                 {
-                    success = true,
-                    id = panel.InstanceGuid.ToString(),
-                    type = "Panel",
-                    value,
-                    nickname = panel.NickName,
-                    x = panel.Attributes.Pivot.X,
-                    y = panel.Attributes.Pivot.Y
+                    tx.AddObject(panel);
+
+                    return JsonConvert.SerializeObject(new
+                    {
+                        success = true,
+                        id = panel.InstanceGuid.ToString(),
+                        type = "Panel",
+                        value,
+                        nickname = panel.NickName,
+                        x = panel.Attributes.Pivot.X,
+                        y = panel.Attributes.Pivot.Y
+                    });
                 });
             });
         }

@@ -378,5 +378,76 @@ namespace Cordyceps.Tests
             Assert.Equal("not_watched", unwatched.Value<string>("state"));
             Assert.Equal(SolvePolicy.Remedy(SolveState.NotWatched), unwatched.Value<string>("remedy"));
         }
+
+        // ---------------------------------------------------------------- which actions read timeout
+
+        [Theory]
+        [InlineData("recompute", false, true)]
+        [InlineData("recompute", true, true)]
+        [InlineData("REVERT", false, true)]
+        [InlineData("revert", true, true)]
+        [InlineData("solver", true, true)]
+        [InlineData("Solver", true, true)]
+        [InlineData("solver", false, false)]
+        [InlineData("clear", true, false)]
+        [InlineData("info", true, false)]
+        [InlineData("snapshot", true, false)]
+        [InlineData(null, true, false)]
+        public void WaitsForSolve_OnlyTheActionsThatWaitForTheirSolve(string action, bool enabled, bool expected)
+        {
+            Assert.Equal(expected, SolvePolicy.WaitsForSolve(action, enabled));
+        }
+
+        // ---------------------------------------------------------------- an edit's scheduled solve (clear)
+
+        [Fact]
+        public void WithScheduledEditSolve_ACommittedRecord_IsScheduled()
+        {
+            var reply = JObject.Parse(SolvePolicy.WithScheduledEditSolve(
+                "{\"success\":true,\"removedCount\":3,\"undo\":\"Cordyceps: gh_document clear\"}"));
+
+            Assert.Equal("scheduled", reply["solve"].Value<string>("state"));
+            Assert.Equal(3, reply.Value<int>("removedCount"));
+            Assert.Equal("Cordyceps: gh_document clear", reply.Value<string>("undo"));
+        }
+
+        [Fact]
+        public void WithScheduledEditSolve_ARefusedSolve_KeepsTheRefusal()
+        {
+            var refusal = SolvePolicy.ScheduledField(SolveState.SolverDisabled, documentEnabled: false);
+            var body = new JObject { ["success"] = true, ["undo"] = "Cordyceps: gh_document clear", ["solve"] = refusal };
+
+            var reply = JObject.Parse(SolvePolicy.WithScheduledEditSolve(body.ToString()));
+
+            Assert.Equal("solver_disabled", reply["solve"].Value<string>("state"));
+            Assert.Equal(refusal.Value<string>("remedy"), reply["solve"].Value<string>("remedy"));
+        }
+
+        [Theory]
+        // Nothing pushed: nothing changed, so nothing was scheduled.
+        [InlineData("{\"success\":true,\"removedCount\":0}")]
+        // A step after the push failed; it may be the schedule, so it is not claimed.
+        [InlineData("{\"success\":true,\"undo\":\"Cordyceps: gh_document clear\",\"warning\":\"scheduling failed\"}")]
+        // Rolled back.
+        [InlineData("{\"success\":false,\"error\":\"boom\",\"rolledBack\":true}")]
+        // success that is not a boolean is not a success.
+        [InlineData("{\"success\":\"true\",\"undo\":\"Cordyceps: gh_document clear\"}")]
+        // Not an object.
+        [InlineData("[1,2]")]
+        public void WithScheduledEditSolve_ClaimsNoSolveItCannotVouchFor(string raw)
+        {
+            Assert.Equal(raw, SolvePolicy.WithScheduledEditSolve(raw));
+        }
+
+        [Fact]
+        public void WithScheduledEditSolve_KeepsDateShapedTextAsWritten()
+        {
+            var raw = "{\"success\":true,\"note\":\"2026-01-01T00:00:00\",\"undo\":\"Cordyceps: gh_document clear\"}";
+
+            var result = SolvePolicy.WithScheduledEditSolve(raw);
+
+            Assert.Contains("\"note\":\"2026-01-01T00:00:00\"", result);
+            Assert.Contains("\"solve\":{\"state\":\"scheduled\"}", result);
+        }
     }
 }

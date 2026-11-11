@@ -6,6 +6,7 @@ using System.Drawing.Imaging;
 using System.Linq;
 using System.Windows.Forms;
 using Cordyceps.Core;
+using Cordyceps.Core.Edits;
 using Grasshopper;
 using Grasshopper.GUI.Canvas;
 using Grasshopper.Kernel;
@@ -252,7 +253,7 @@ namespace Cordyceps.Tools.Unified
             // Validated before anything touches the document: an out-of-range or non-numeric
             // timeout is refused, never clamped or defaulted.
             int timeoutSeconds = SolvePolicy.DefaultTimeoutSeconds;
-            if (WaitsForSolve(action, enabledBool))
+            if (SolvePolicy.WaitsForSolve(action, enabledBool))
             {
                 if (!SolvePolicy.TryParseTimeout(timeout, out timeoutSeconds, out var timeoutError))
                     return ToolHelpers.ErrorResponse(timeoutError);
@@ -373,41 +374,51 @@ namespace Cordyceps.Tools.Unified
                     .ToList();
 
                 int count = toRemove.Count;
-                foreach (var obj in toRemove)
-                {
-                    doc.RemoveObject(obj, false);
-                }
 
-                // Scheduled, not solved here: only what the removal expired needs recomputing, and
-                // solving inside this call would hold the document lock for the whole solve.
-                var solve = SolveCoordinator.Schedule(doc, expireAll: false).ToField();
-
-                if (hookIds != null)
+                string Reply()
                 {
-                    return JsonConvert.SerializeObject(new
+                    if (hookIds != null)
                     {
-                        success = true,
-                        removedCount = count,
-                        preservedClusterHooks = hookIds.Count,
-                        note = "Inside a cluster editor: cluster input/output hooks were preserved to keep the cluster interface intact",
-                        solve
-                    });
+                        return JsonConvert.SerializeObject(new
+                        {
+                            success = true,
+                            removedCount = count,
+                            preservedClusterHooks = hookIds.Count,
+                            note = "Inside a cluster editor: cluster input/output hooks were preserved to keep the cluster interface intact"
+                        });
+                    }
+
+                    return JsonConvert.SerializeObject(new { success = true, removedCount = count });
                 }
 
-                return JsonConvert.SerializeObject(new
+                // Nothing to remove changes nothing: no undo step and no solve.
+                if (count == 0)
+                    return Reply();
+
+                // A removal is recorded against this document, so an object that does not report
+                // itself as in it (an orphan) cannot be recorded; it is refused before anything is
+                // removed rather than discovered partway through.
+                var orphans = toRemove.Where(o => !ReferenceEquals(o.OnPingDocument(), doc)).ToList();
+                if (orphans.Count > 0)
+                    return ToolHelpers.ErrorResponse(
+                        $"Nothing was cleared: {orphans.Count} object(s) on the canvas do not report themselves as in this document, so their removal cannot be recorded for undo: " +
+                        string.Join(", ", orphans.Take(5).Select(o => $"'{o.NickName}' ({o.InstanceGuid})")) +
+                        (orphans.Count > 5 ? ", ..." : ""));
+
+                // One undo step: each removal records the object's wires and then the object, so
+                // Ctrl+Z brings the whole canvas back, wired. The commit schedules one solve rather
+                // than solving here, which would hold the document lock for the whole solve; the
+                // transaction reports a solve only when a solver switch refused it, so the scheduled
+                // case is named here.
+                var reply = _context.Edit(doc, EditReplies.RecordName("gh_document", "clear"), tx =>
                 {
-                    success = true,
-                    removedCount = count,
-                    solve
+                    foreach (var obj in toRemove)
+                        tx.RemoveObject(obj);
+                    return Reply();
                 });
+                return SolvePolicy.WithScheduledEditSolve(reply);
             });
         }
-
-        // The actions that wait for the solve they start, and so read timeout.
-        private static bool WaitsForSolve(string action, bool enabled)
-            => string.Equals(action, "recompute", StringComparison.OrdinalIgnoreCase)
-               || string.Equals(action, "revert", StringComparison.OrdinalIgnoreCase)
-               || (enabled && string.Equals(action, "solver", StringComparison.OrdinalIgnoreCase));
 
         private string ActionSolver(bool enabled, int timeoutSeconds)
         {
