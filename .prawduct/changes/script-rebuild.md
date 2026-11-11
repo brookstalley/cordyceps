@@ -56,5 +56,10 @@ additions, `PortRemovalTests`, `ScriptSignatureTests`); Release build clean. The
 `zoomable` reshape and the refusal's live re-resolution need a running Rhino and are enqueued as
 VRF-022.
 
+**Review:** one cumulative review (rev-20261111T155548Z-a21a8834): 0 blocking, 6 warnings (fixed 2,
+accepted 2, filed 2 as #109), 8 observations; one observation was a real gap (a stored Python
+directive was not read) and was fixed. The verify-resolutions pass (rev-20261111T160255Z-d4ec9e45)
+found nothing.
+
 ## Consumer note
 breaking: a call that removes an existing port no longer selects its component by a default nickname, even a unique one: `gh_canvas zoomable` with `operation='remove'` or a `set_count` below the current count, and `gh_script set`/`configure` whose `RunScript` signature or `inputs`/`outputs` drop or rename a port. The error starts `This call removes …` and prints the id to pass; nothing is changed. Calls that only add or keep ports on a script are unaffected. breaking: `gh_script configure` on a component that is not a script (a Merge, an Entwine) is refused with `is not a script component`; use `gh_canvas zoomable` for those. Also: `gh_script configure` with only `inputs`/`outputs` now rebuilds and every `configure` response carries `rebuilt`/`rebuildSkipped`; a refused parameter side reports `parametersApplied:false` and `success:false`; `gh_canvas zoomable` on a script component rebuilds and carries the same rebuild fields.
