@@ -28,6 +28,13 @@
 
      Newest first. Plain prose; nothing parses this file. -->
 
+**2026-11-11 (transaction wave).** On #91's Windows spike: "yes we can't test on windows, and
+cannot block the release. Please get to as high confidence as you can, but we will not block on
+that." On agent-callable `gh_document undo`/`redo`: "yes leave undo/redo off for agents for now."
+On moving `.prawduct/change-log.md` onto change fragments: "yes move to fragments." Landed in #91
+(the Windows acceptance box becomes non-blocking) and in the edit-transaction plan's Goals once
+drafted; the fragment move rides its own chore branch.
+
 **2026-11-11 (later).** On the script-rebuild plan's inferences: "agreed" — `zoomable` on a
 script component rebuilds and reports rather than refusing (#84), and the default-nickname refusal
 applies only when a call would actually remove a port, a rename counting as a removal. On
