@@ -161,7 +161,9 @@ even when everything else is stuck. `ui: "blocked"` with `solving: true` means *
 `modal_inferred: true` means a dialog is open in Rhino and **only a human can clear it**.
 
 `gh_document(action='recompute')` refuses (with `solving: true`) while a solution is already
-running, rather than queueing silently. See `gh://docs/common-errors`.
+running, rather than queueing silently. Otherwise it waits for the solve (up to `timeout` seconds,
+default 30) and reports how it ended in `solve.state` (`completed`, `aborted`, `over_budget`, ...);
+`solver`, `clear` and `revert` schedule their solve and return at once. See `gh://docs/common-errors`.
 
 ## Clusters
 

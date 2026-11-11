@@ -116,7 +116,8 @@ Each tree is `{target, object, id, port, side, type, branches, items, …}`, and
 `object` is the nickname as the canvas shows it (a label: two objects can share it); `id` is the
 full GUID to pass to a follow-up call. Optional fields appear only when they apply: `nulls`,
 `invalid` (non-null items whose `IsValid` is false), `emptyBranches`, `morePathGroups`, `notes`,
-`solved: false` with a `note` saying why (locked, failed, still computing, or not computed),
+`solved: false` with a `note` saying why (locked, failed, still computing, not computed, or not
+reached because the last solution was aborted),
 and `message` (the owner's first warning or error, clipped at 160 characters, with `(+K more)`).
 `depth` and `perBranch` are a number, or `{min, max}` when they vary. A `solver` field at the top
 appears only when the solver is off.

@@ -843,3 +843,67 @@ Note each component's GUID; the GUID steps re-run a refused call by id.
    GUID with `#! python 3` on line 1 and a `def RunScript(self, x, y):` body. The reply has no
    `lostConnections`, both inputs and both wires remain, and the same call by its default nickname
    is not refused.
+
+## VRF-023 — solve-policy Chunks 01–02 — recompute waits and reports how the solve ended; solver, clear and revert schedule
+
+**Status:** pending
+**Added:** 2026-11-11 (solve-policy)
+**Where to verify:** Rhino 8 + Grasshopper with the Cordyceps component placed and an MCP client connected.
+
+**Why this needs a human:** the decisions are unit-tested host-free (`Core/SolvePolicy`,
+`Core/SolveWait`, the solve record in `Core/SolverState`), but whether they are true depends on the
+running host: that `GH_Document.ScheduleSolution` fires through the document editor, that
+`AbortRequested` is still set when `SolutionEnd` is raised after an Escape, that the global "Lock
+Solver" switch suppresses the solution events, and that the source-object expiry inside a cluster
+editor keeps the hook data. The SDK facts were read from the decompiled assembly, not run.
+
+**Canvas for the checks:** a definition with a slow chain you can stretch (for example a Number
+Slider into a C# Script whose body is `System.Threading.Thread.Sleep((int)(x * 1000)); a = x;`,
+slider 0-60), plus a few ordinary components. Keep a second MCP client (or a second call in flight)
+ready for the liveness checks.
+
+**Verify:**
+
+1. **completed:** with the slider at 1, `gh_document(action='recompute')` replies `success: true`,
+   `recomputed: true`, `solve.state: "completed"`, an `elapsedMs` of about a second or more, and
+   `errors`/`warnings` equal to the counts in `gh_inspect(action='status')`'s summary.
+2. **Escape reports aborted:** slider at 20, call `recompute` with `timeout=60`, then press Escape
+   in Grasshopper while it solves. The reply is `success: false`, `solve.state: "aborted"` with a
+   `remedy` that says a human stopped it. `gh_canvas(action='outline')` then shows
+   `solver: on; the last solution was aborted`, and `gh_inspect(action='tree')` on an output
+   downstream of the slow script carries `not computed: the last solution was aborted …` in its
+   `note` (if the abort left it uncomputed). A following `recompute` that completes clears both.
+3. **Over budget, and the probe stays live:** slider at 20, `recompute` with `timeout=3`. The reply
+   comes back after about 3 s with `solve.state: "over_budget"`, no `errors`/`warnings`, and a
+   remedy that says it cannot cancel. While the solve continues, `gh_inspect(action='connection')`
+   answers at once with `solving: true` and no `modal_inferred`; a second `recompute` is refused
+   with `solving: true`. Once the solve ends, `connection` reports idle.
+4. **No lock held during the wait:** slider at 20, `recompute` with `timeout=60`; while it waits,
+   `gh_inspect(action='connection')` from the second client answers at once (it never queues behind
+   the recompute call).
+5. **Lock solver reports locked:** turn on Grasshopper's "Lock Solver". `recompute` replies at once
+   (no wait) with `solve.state: "solutions_locked"` and a remedy naming a human. `solver
+   enabled=true` replies `success: true` with `solve.state: "solutions_locked"`, and
+   `gh_document(action='info')` shows `solutionsLocked: true`. Unlock the solver; `info` shows
+   `solutionsLocked: false`.
+5a. **over_budget only while solving:** `not_started` (a scheduled solve that never ran) is hard to
+   provoke by hand. Whenever a `recompute` replies `over_budget` in these checks, confirm
+   `gh_inspect(action='connection')` shows `solving: true` at that moment; an idle document at the
+   deadline must read `not_started`, never `over_budget`.
+6. **Document solver off:** `gh_document(action='solver', enabled=false)`, then `recompute`:
+   `solve.state: "solver_disabled"`, remedy naming `solver enabled=true`. Then `solver enabled=true`
+   replies `solve.state: "scheduled"` at once and the canvas solves on its own.
+7. **clear and revert schedule:** `snapshot name='v'`, `clear`, then `revert name='v'`. Each reply
+   carries `solve: {state: "scheduled"}` and returns before the definition finishes solving; the
+   reverted definition solves on its own. Then `recompute` on the reverted document completes (it is
+   watched although it never passed through the document server).
+8. **Inside a cluster editor:** open a cluster whose inputs are fed from the parent, then
+   `recompute`. The reply is `completed`, and the cluster's input hooks still carry the parent's
+   data (no null inputs); outputs downstream of the hooks recompute.
+9. **A solver-exception dialog reads as a dialog:** make the script throw
+   (`throw new System.Exception("x");`), clear the ignore list, and `recompute`. While Grasshopper's
+   exception dialog is open, `gh_inspect(action='connection')` answers at once and reports the
+   host blocked. Record whether it says `solving: true` (the solve is still open, so the hint says
+   to ask a human to check for a dialog if it persists) or `modal_inferred: true`, and confirm its
+   `hint` never says a Cordyceps operation is holding the UI thread. The `recompute` call itself
+   returns `over_budget` at its timeout rather than hanging.
