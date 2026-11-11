@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.ComponentModel;
 using System.Linq;
 using Cordyceps.Core;
+using Cordyceps.Core.Edits;
 using Grasshopper;
 using Grasshopper.Kernel;
 using Newtonsoft.Json;
@@ -201,33 +202,42 @@ namespace Cordyceps.Tools.Unified
                     pending.Add((i, srcObj, sourceOutput, tgtObj, targetInput));
                 }
 
-                // Every distinct target must be expired — expiring only the last one leaves the
-                // other targets of a bulk connect stale until something else recomputes them.
-                var targetsToExpire = new Dictionary<Guid, IGH_DocumentObject>();
-                foreach (var (index, srcObj, sourceOutput, tgtObj, targetInput) in pending)
+                if (pending.Count == 0)
+                    return ConnectReply(connectionList.Count, results, successCount, failCount);
+
+                // Pass 2, one undo step: each target input's sources are recorded before its first
+                // new wire, which also has every distinct target recomputed once at commit.
+                return _context.Edit(doc, EditReplies.RecordName("gh_wire", "connect"), tx =>
                 {
-                    targetInput.AddSource(sourceOutput);
-                    targetsToExpire[tgtObj.InstanceGuid] = tgtObj;
-                    results[index] = new
+                    foreach (var (index, srcObj, sourceOutput, tgtObj, targetInput) in pending)
                     {
-                        success = true,
-                        source = new { id = srcObj.InstanceGuid.ToString(), name = srcObj.NickName ?? srcObj.Name, param = sourceOutput.Name },
-                        target = new { id = tgtObj.InstanceGuid.ToString(), name = tgtObj.NickName ?? tgtObj.Name, param = targetInput.Name }
-                    };
-                    successCount++;
-                }
-
-                foreach (var target in targetsToExpire.Values)
-                {
-                    if (target is IGH_ActiveObject activeTarget)
-                        activeTarget.ExpireSolution(false);
-                }
-
-                if (connectionList.Count == 1)
-                    return JsonConvert.SerializeObject(results[0]);
-
-                return JsonConvert.SerializeObject(new { success = failCount == 0, total = connectionList.Count, succeeded = successCount, failed = failCount, results });
+                        // AddSource ignores a wire that already exists and a param wired to
+                        // itself; such a connection changes nothing, so it records nothing and an
+                        // all-existing call pushes no undo step.
+                        if (!ReferenceEquals(targetInput, sourceOutput) && !targetInput.Sources.Contains(sourceOutput))
+                        {
+                            tx.RecordWires(targetInput);
+                            targetInput.AddSource(sourceOutput);
+                        }
+                        results[index] = new
+                        {
+                            success = true,
+                            source = new { id = srcObj.InstanceGuid.ToString(), name = srcObj.NickName ?? srcObj.Name, param = sourceOutput.Name },
+                            target = new { id = tgtObj.InstanceGuid.ToString(), name = tgtObj.NickName ?? tgtObj.Name, param = targetInput.Name }
+                        };
+                        successCount++;
+                    }
+                    return ConnectReply(connectionList.Count, results, successCount, failCount);
+                });
             });
+        }
+
+        private static string ConnectReply(int total, object[] results, int successCount, int failCount)
+        {
+            if (total == 1)
+                return JsonConvert.SerializeObject(results[0]);
+
+            return JsonConvert.SerializeObject(new { success = failCount == 0, total, succeeded = successCount, failed = failCount, results });
         }
 
         private string ActionDisconnect(string sourceId, string sourceParam, string targetId, string targetParam)
@@ -276,16 +286,18 @@ namespace Cordyceps.Tools.Unified
                     });
                 }
 
-                targetInput.RemoveSource(sourceOutput);
-                if (tgtObj is IGH_ActiveObject activeDisc)
-                    activeDisc.ExpireSolution(false);
-
-                return JsonConvert.SerializeObject(new
+                return _context.Edit(doc, EditReplies.RecordName("gh_wire", "disconnect"), tx =>
                 {
-                    success = true,
-                    disconnected = true,
-                    source = new { id = srcObj.InstanceGuid.ToString(), param = sourceOutput.Name },
-                    target = new { id = tgtObj.InstanceGuid.ToString(), param = targetInput.Name }
+                    tx.RecordWires(targetInput);
+                    targetInput.RemoveSource(sourceOutput);
+
+                    return JsonConvert.SerializeObject(new
+                    {
+                        success = true,
+                        disconnected = true,
+                        source = new { id = srcObj.InstanceGuid.ToString(), param = sourceOutput.Name },
+                        target = new { id = tgtObj.InstanceGuid.ToString(), param = targetInput.Name }
+                    });
                 });
             });
         }
@@ -370,30 +382,33 @@ namespace Cordyceps.Tools.Unified
                 if (inputs == null)
                     return ToolHelpers.ErrorResponse("Component has no inputs");
 
-                int clearedCount = 0;
-                var clearedInputs = new List<string>();
-
-                foreach (var input in inputs)
+                // Only inputs that have sources are recorded and cleared, so a component with nothing
+                // wired yields no undo record and no solve.
+                return _context.Edit(doc, EditReplies.RecordName("gh_wire", "clear"), tx =>
                 {
-                    int sourceCount = input.SourceCount;
-                    if (sourceCount > 0)
+                    int clearedCount = 0;
+                    var clearedInputs = new List<string>();
+
+                    foreach (var input in inputs.ToList())
                     {
-                        input.RemoveAllSources();
-                        clearedCount += sourceCount;
-                        clearedInputs.Add($"{input.Name} ({sourceCount})");
+                        int sourceCount = input.SourceCount;
+                        if (sourceCount > 0)
+                        {
+                            tx.RecordWires(input);
+                            input.RemoveAllSources();
+                            clearedCount += sourceCount;
+                            clearedInputs.Add($"{input.Name} ({sourceCount})");
+                        }
                     }
-                }
 
-                if (clearedCount > 0 && component is IGH_ActiveObject activeClear)
-                    activeClear.ExpireSolution(false);
-
-                return JsonConvert.SerializeObject(new
-                {
-                    success = true,
-                    componentId = component.InstanceGuid.ToString(),
-                    componentName = component.Name,
-                    clearedCount,
-                    clearedInputs
+                    return JsonConvert.SerializeObject(new
+                    {
+                        success = true,
+                        componentId = component.InstanceGuid.ToString(),
+                        componentName = component.Name,
+                        clearedCount,
+                        clearedInputs
+                    });
                 });
             });
         }
