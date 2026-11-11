@@ -28,6 +28,20 @@
 
      Newest first. Plain prose; nothing parses this file. -->
 
+**2026-11-11 (later).** On the script-rebuild plan's inferences: "agreed" — `zoomable` on a
+script component rebuilds and reports rather than refusing (#84), and the default-nickname refusal
+applies only when a call would actually remove a port, a rename counting as a removal. On
+`group_remove`: "agreed" — it stays outside the destructive rule. Replaces the open part of the
+#107 entry below. Landed in `.prawduct/artifacts/build-plan-script-rebuild.md` § Goals.
+
+**2026-11-11 (later).** On outline dropping unprintable or shared nicknames: "yes file" — a
+`labels` map in the outline response (handle → nickname, only for objects whose nickname was not
+printed). Landed as a backlog item.
+
+**2026-11-11 (later).** "PR and merge both" (`chore/records-catchup`, then `feature/script-rebuild`)
+and "delete both" (the `fix/configure-rebuild-decision` branch and its worktree, now that its code
+is merged).
+
 **2026-11-11.** On #107 (removing a port with a default-nicknamed id): "yes I think that's
 destructive." Landed in `.prawduct/artifacts/build-plan-script-rebuild.md` § Goals and #107.
 The question as put also named `group_remove`; the agent recommended leaving that one out
