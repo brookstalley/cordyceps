@@ -28,6 +28,11 @@
 
      Newest first. Plain prose; nothing parses this file. -->
 
+**2026-11-11 (transaction wave, PRs).** "yes please PR and merge once ready" — open the
+solve-policy PR, then the edit-transaction PR, each merged (merge commit) once `build-test` passes
+and review coverage holds. (The prawduct plugin retired the separate PR reviewer during this
+session; the cumulative Critic is now the PR boundary's one reviewer.)
+
 **2026-11-11 (transaction wave, later).** On the inferences in both plans, put as two numbered
 lists (solve-policy: schedule rather than solve inside the call; `recompute`/`solver`/`revert` wait
 up to `timeout` and fail unless the solve completed; no agent cancel. Edit-transaction: per-id
