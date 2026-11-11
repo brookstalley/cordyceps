@@ -28,9 +28,8 @@ namespace Cordyceps.Tools.Unified
         private readonly GrasshopperContext _context;
 
         // Snapshot storage (GHD-6M2J): bounded with oldest-first eviction — snapshots are full
-        // document serializations, and with undo/redo disabled every documented mutation
-        // workflow funnels through this store, so it must not grow for the life of the Rhino
-        // session. Written under ExecuteOnUiThread (snapshot/revert/delete); the list path
+        // document serializations, and with undo/redo closed to agents every agent-side restore
+        // funnels through this store, so it must not grow for the life of the Rhino session. Written under ExecuteOnUiThread (snapshot/revert/delete); the list path
         // reads it off the HTTP worker thread (SnapshotStore is internally locked).
         private const int MaxSnapshots = 20;
         private static readonly SnapshotStore _snapshots = new SnapshotStore(MaxSnapshots);
@@ -509,16 +508,16 @@ namespace Cordyceps.Tools.Unified
 
         private string ActionUndo()
         {
-            // Undo is formally cut (2026-07-02 janitor close-out), not pending work: the
-            // Grasshopper undo system interacts with the UI thread in ways that cause the HTTP
-            // response to be disposed before it can be sent. Snapshots (action='snapshot'/
-            // 'revert') are the supported alternative.
+            // Agents do not perform undo: running Grasshopper's undo from an HTTP call interacts
+            // with the UI thread in ways that dispose the response before it is sent. Every edit
+            // still records one undo step for the human's Ctrl+Z, and snapshots are the agent-side
+            // restore.
             return ToolHelpers.ErrorResponse("Undo is not available to agents. Each Cordyceps call that changes the canvas is one Grasshopper undo step, which a human undoes with Ctrl+Z (Cmd+Z on macOS) in Grasshopper. To restore state yourself, use snapshots: gh_document(action='snapshot', name='...') before changes, gh_document(action='revert', name='...') to restore.");
         }
 
         private string ActionRedo()
         {
-            // Redo is formally cut alongside undo — see ActionUndo for details.
+            // Redo is closed to agents for the same reason as undo — see ActionUndo.
             return ToolHelpers.ErrorResponse("Redo is not available to agents. A human redoes an undone Cordyceps call with Grasshopper's Redo (Ctrl+Y on Windows, Cmd+Shift+Z on macOS). To restore state yourself, use snapshots (action='snapshot'/'revert').");
         }
 

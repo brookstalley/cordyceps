@@ -282,6 +282,19 @@ namespace Cordyceps.Tools.Unified
 
                 string oldName = group.NickName;
 
+                // A rename to the name it already has changes nothing, so it records no undo step,
+                // as every other action does when nothing changes.
+                if (group.NickName == newName && group.Name == newName)
+                {
+                    return JsonConvert.SerializeObject(new
+                    {
+                        success = true,
+                        id = group.InstanceGuid.ToString(),
+                        oldName,
+                        name = group.NickName
+                    });
+                }
+
                 return _context.Edit(doc, EditReplies.RecordName("gh_canvas", "group_rename"), tx =>
                 {
                     // A group's name is two properties (NickName and Name); the generic record
@@ -311,6 +324,17 @@ namespace Cordyceps.Tools.Unified
 
                 if (!ToolHelpers.TryParseColor(color, out var groupColor))
                     return ToolHelpers.ErrorResponse($"Invalid color: {color}");
+
+                // The colour it already has changes nothing, so it records no undo step.
+                if (group.Colour.ToArgb() == groupColor.ToArgb())
+                {
+                    return JsonConvert.SerializeObject(new
+                    {
+                        success = true,
+                        id = group.InstanceGuid.ToString(),
+                        color = ColorTranslator.ToHtml(group.Colour)
+                    });
+                }
 
                 return _context.Edit(doc, EditReplies.RecordName("gh_canvas", "group_color"), tx =>
                 {
@@ -343,6 +367,17 @@ namespace Cordyceps.Tools.Unified
                     return ToolHelpers.ErrorResponse(error);
 
                 var memberIds = targetGroup.ObjectIDs?.ToList() ?? new List<Guid>();
+                // A zero offset moves nothing, so it records no undo step.
+                if (dx == 0 && dy == 0)
+                {
+                    return JsonConvert.SerializeObject(new
+                    {
+                        success = true,
+                        groupId = targetGroup.InstanceGuid.ToString(),
+                        movedCount = 0,
+                        message = "Nothing to move: dx and dy are both 0"
+                    });
+                }
                 if (memberIds.Count == 0)
                 {
                     return JsonConvert.SerializeObject(new
