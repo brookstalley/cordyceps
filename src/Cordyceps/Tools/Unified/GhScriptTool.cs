@@ -51,7 +51,7 @@ namespace Cordyceps.Tools.Unified
                         "A bare unified 'Script' component (no language picked) returns a languageWarning until code starts with a directive — add '#! python 3' or '// #! csharp'",
                         "Components that expose their code as a visible input parameter can't be written directly — the error says so and nothing is changed; remove that parameter, or feed the code through it with gh_wire",
                         "The component is rebuilt from the new source before the call returns: rebuilt=true means it will run the new program on its next solve",
-                        "rebuilt=false comes two ways: rebuildSkipped (no rebuild hooks — that component recompiles on its own) and rebuildFailed (a hook threw — the component is probably still running the old program)",
+                        "rebuilt=false always carries the reason beside it: rebuildSkipped (nothing needed rebuilding, or the component has no rebuild hooks and recompiles on its own — the string says which) or rebuildFailed (a hook threw; the component is probably still running the old program). Read the reason, not the count",
                         "verified=true means the running program was read back and matches what was written. verified=false adds sourceDiverged and runningSource — expected for C# SDK-mode scripts, whose RunScript signature Rhino rewrites as it builds",
                         "If the program could not be read there is no verified field at all, and verificationSkipped says why — never read an absent verified as a match",
                         "Code that fails to compile still reports success here — the write and the rebuild both succeeded. Build errors surface on the component; after setting code, check gh_inspect(action='status') (it takes no id and lists every component's status and messages) or gh_inspect(action='tree', id=...) (each tree carries its owner's error or warning)",
@@ -73,8 +73,14 @@ namespace Cordyceps.Tools.Unified
                         "Script language is preserved automatically; start code with '#! python 3' or '// #! csharp' to set it explicitly",
                         "A bare unified 'Script' component (no language picked) returns a languageWarning until code starts with a directive — add '#! python 3' or '// #! csharp'",
                         "When 'code' is provided the response includes codeSet (bool); if setting the source fails after params were applied, success is false, codeSet=false, and sourceError holds the reason — the params DID change",
+                        "The parameter half reports the same way: parametersApplied (bool) with parametersError when a component cannot vary its parameters and the requested inputs/outputs were refused. success is false whenever either half failed, so never read a written code as the whole request landing",
+                        "The inputs/outputs echoed back are the component's actual surface, not what you asked for — with parametersApplied=false they are unchanged, so check that field before wiring to a port you assume exists",
                         "Components that expose their code as a visible input parameter can't be written directly — sourceError says so and the code is left unchanged",
-                        "When code is written the component is rebuilt from it and the result read back: rebuilt/rebuildSkipped and verified/runningSource mean exactly what they do for action='set'"
+                        "Any call that changes something — new code, new parameters, or both — rebuilds the component's program and reads it back: rebuilt/rebuildSkipped and verified/runningSource mean exactly what they do for action='set'",
+                        "Changing inputs/outputs alone rebuilds too: the build reads the parameters to shape the program's ports, so a program compiled against the old ones is stale. Its verified/sourceDiverged compares the running program against the source already stored on the component",
+                        "A call that changed nothing (no code, and no parameter change this component could apply) returns rebuilt=false with rebuildSkipped and verificationSkipped saying so — every response answers the rebuild question, so an absent rebuilt field is never the answer",
+                        "With codeSet=false the params still changed, so the rebuild still runs — but there is no verified field, and verificationSkipped says the component was rebuilt from the text it already held. Nothing here describes the code you sent; read codeSet and sourceError",
+                        "runningSource can arrive WITHOUT a verified field: whenever nothing was verified, the program the component will run is still read and handed back unjudged. Present with verified=false it is the divergence; present with verificationSkipped it is simply what runs"
                     }
                 },
                 ["info"] = new ActionInfo
@@ -94,7 +100,7 @@ namespace Cordyceps.Tools.Unified
             {
                 "Works with C# Script and Python 3 Script components",
                 "Source is written through the component's SetSource method when it has one, otherwise its writable Code property; a component with neither fails with an error naming the type and what was probed — never a silent no-op",
-                "Writing source does not recompile on its own — set/configure ask the component to rebuild and then read the running program back, so 'success' means the new code is the one that will run",
+                "Neither writing source nor reshaping parameters recompiles on its own — set/configure ask the component to rebuild whenever they changed something, then read the running program back, so 'success' means the new program is the one that will run",
                 "access values: 'item' (default), 'list', 'tree'",
                 "Ids: 'id' names the script component by its GUID, an 8+ hex GUID prefix, or its unique nickname (exact, case-sensitive); a name two objects share is refused with both ids"
             }
@@ -309,9 +315,20 @@ namespace Cordyceps.Tools.Unified
                 // code-failed outcome is machine-readable (and overall success is false).
                 bool? codeSet = null;
                 string sourceError = null;
+                // The mirror of codeSet/sourceError for the parameter half: null when no side was
+                // asked for, true when it was applied, false when the component refused it. A
+                // request half-dropped under success:true is the failure mode this pair exists to
+                // make machine-readable — see the codeSet note above.
+                bool? parametersApplied = null;
+                string parametersError = null;
                 // Set once the source lands, so the rebuild that follows the parameter work can
                 // check itself against the text that was actually written.
                 string writtenSource = null;
+                // Set once the parameter surface is actually reshaped — the other half of what
+                // decides the rebuild. Distinct from 'configured', which a source-only call also
+                // sets, and from "inputs/outputs were supplied", which a component that cannot
+                // vary its parameters leaves undone.
+                bool parametersChanged = false;
                 Dictionary<string, object> rebuildFields = null;
 
                 try
@@ -326,6 +343,8 @@ namespace Cordyceps.Tools.Unified
                         // lostConnections (GHS-3W9N). Replaces the old "unregister everything" rebuild.
                         SyncParamsForConfigure(ghComponent, varParamComp, inputDefs, outputDefs, out var lost);
                         configured = true;
+                        parametersChanged = true;
+                        parametersApplied = true;
                         message = $"Parameters configured ({ghComponent.Params.Input.Count} inputs, {ghComponent.Params.Output.Count} outputs)";
 
                         if (!string.IsNullOrEmpty(code))
@@ -354,13 +373,26 @@ namespace Cordyceps.Tools.Unified
                         varParamComp.VariableParameterMaintenance();
 
                         // Rebuild last, once the params are final: storing source doesn't recompile,
-                        // and the rebuild reads the params to shape the code's inputs and outputs.
-                        if (writtenSource != null)
-                            rebuildFields = RebuildAndVerify(component, writtenSource);
+                        // and the rebuild reads the params to shape the code's inputs and outputs —
+                        // which is why reshaping those params needs the rebuild every bit as much
+                        // as writing new code does, even when this call wrote none.
+                        rebuildFields = RebuildForConfigure(component, parametersChanged, writtenSource, codeSet == false);
 
                         ghComponent.ExpireSolution(false);
 
                         if (lost.Count > 0) lostConnections = lost;
+                    }
+
+                    // Reaching here with a parameter side requested means the branch above declined
+                    // it — the component cannot vary its parameters. Record the refusal before the
+                    // code write, so it is reported whether or not that write succeeds: writing the
+                    // source is not permission to drop the other half of the request silently.
+                    if (!configured && anyParamSide)
+                    {
+                        parametersApplied = false;
+                        parametersError = $"'{component.GetType().Name}' cannot vary its parameters, "
+                            + "so the requested inputs/outputs were not applied. The inputs/outputs "
+                            + "in this response are the component's unchanged surface.";
                     }
 
                     if (!configured && !string.IsNullOrEmpty(code))
@@ -385,30 +417,54 @@ namespace Cordyceps.Tools.Unified
 
                             // See the parameter branch above: the write alone leaves the previous
                             // program running, so ask for the rebuild once the params are final.
-                            rebuildFields = RebuildAndVerify(component, finalSource);
+                            rebuildFields = RebuildForConfigure(component, parametersChanged, finalSource, sourceWriteFailed: false);
 
                             ghComponent.ExpireSolution(false);
                             configured = true;
                             codeSet = true;
                             writtenSource = finalSource;
+                            // The port counts here are the component's own, not the requested ones —
+                            // say so when a parameter request was refused, or the numbers read as
+                            // confirmation that it was applied.
                             message = $"Source set ({ghComponent.Params.Input.Count} inputs, {ghComponent.Params.Output.Count} outputs)";
+                            if (parametersError != null)
+                                message += $" — but {parametersError}";
                         }
                         catch (Exception ex)
                         {
                             codeSet = false;
                             sourceError = ex.Message;
+                            // Both halves can fail at once; this message replaces the other's, so
+                            // carry the parameter refusal forward rather than letting the source
+                            // error be the only thing the prose reports.
                             message = $"Configuration failed: {ex.Message}";
+                            if (parametersError != null)
+                                message += $" Also: {parametersError}";
                         }
                     }
                     else if (!configured)
                     {
-                        message = "No configuration applied. Provide 'code' and/or 'inputs'/'outputs' parameters.";
+                        // Tell the two no-op cases apart. One message for both told a caller who
+                        // HAD passed inputs to pass inputs, which reads as though the request never
+                        // arrived — and it sits beside a rebuildSkipped that correctly reports
+                        // nothing changed, so the pair has to agree on why.
+                        message = parametersError != null
+                            ? $"No configuration applied: {parametersError} Pass 'code' to set its source instead."
+                            : "No configuration applied. Provide 'code' and/or 'inputs'/'outputs' parameters.";
                     }
                 }
                 catch (Exception ex)
                 {
                     return JsonConvert.SerializeObject(new { success = false, error = $"Configuration failed: {ex.Message}" });
                 }
+
+                // The paths above rebuild whenever they changed something; this covers the ones
+                // that changed nothing — a component that cannot vary its parameters, a source
+                // write that threw, a call that supplied neither side. They report why instead of
+                // returning nothing, so a caller never has to read an absent rebuild field as an
+                // answer.
+                if (rebuildFields == null)
+                    rebuildFields = RebuildForConfigure(component, parametersChanged, writtenSource, codeSet == false);
 
                 var finalInputs = new List<object>();
                 var finalOutputs = new List<object>();
@@ -418,25 +474,29 @@ namespace Cordyceps.Tools.Unified
                 foreach (var param in ghComponent.Params.Output)
                     finalOutputs.Add(new { name = param.Name, type = param.TypeName });
 
-                // A failed SetSource makes the overall call a failure even when the params were
-                // applied — a partial apply must be detectable, not reported as success:true.
+                // Either half of the request failing makes the whole call a failure: a failed
+                // SetSource when the params were applied, and a refused parameter change when the
+                // source landed. A partial apply must be detectable, not reported as success:true.
                 var configureResponse = new Dictionary<string, object>
                 {
-                    ["success"] = configured && codeSet != false,
+                    ["success"] = configured && codeSet != false && parametersApplied != false,
                     ["id"] = component.InstanceGuid.ToString(),
                     ["message"] = message,
                     ["inputs"] = finalInputs,
                     ["outputs"] = finalOutputs
                 };
-                if (rebuildFields != null)
-                {
-                    foreach (var field in rebuildFields)
-                        configureResponse[field.Key] = field.Value;
-                }
+                // Unconditional: every route to here has filled these, so the response always
+                // states whether the component's program was rebuilt.
+                foreach (var field in rebuildFields)
+                    configureResponse[field.Key] = field.Value;
                 if (codeSet.HasValue)
                     configureResponse["codeSet"] = codeSet.Value;
                 if (sourceError != null)
                     configureResponse["sourceError"] = sourceError;
+                if (parametersApplied.HasValue)
+                    configureResponse["parametersApplied"] = parametersApplied.Value;
+                if (parametersError != null)
+                    configureResponse["parametersError"] = parametersError;
                 if (languageWarning != null)
                     configureResponse["languageWarning"] = languageWarning;
 
@@ -783,21 +843,73 @@ namespace Cordyceps.Tools.Unified
         }
 
         /// <summary>
-        /// Ask <paramref name="component"/> to rebuild the program after its source was written,
-        /// then check that write by reading back the program it will actually run. Returns the
-        /// fields to merge into the tool response.
+        /// The rebuild half of a <c>configure</c> response: rebuild when the call changed something,
+        /// and name the reason when it did not. Returns the fields to merge into the response.
+        /// </summary>
+        /// <remarks>
+        /// The single gate for every <c>configure</c> path, so a way of changing a component that
+        /// nobody thought to re-check cannot slip past unrebuilt <em>and</em> unreported — which is
+        /// what a gate reading "was source written?" let a parameter-only call do. The decision
+        /// itself lives in <see cref="ScriptConfigurePlan"/>, where it is unit-testable.
+        /// </remarks>
+        /// <param name="writtenSource">
+        /// The source this call wrote, or <c>null</c> when it wrote none. A parameter-only rebuild
+        /// is checked against the text the component already stores instead: after a rebuild the
+        /// two must agree, so it is the right expectation to hold the running program to.
+        /// </param>
+        private Dictionary<string, object> RebuildForConfigure(
+            IGH_DocumentObject component, bool parametersChanged, string writtenSource, bool sourceWriteFailed)
+        {
+            var plan = ScriptConfigurePlan.For(parametersChanged, writtenSource != null);
+            if (!plan.RebuildRequired)
+                return ScriptProgram.DescribeUnchanged(plan.SkipReason);
+
+            if (writtenSource != null)
+                return RebuildAndVerify(component, writtenSource);
+
+            // The params moved but the source write threw, so the component was rebuilt from the
+            // text it held BEFORE the failed write. Report no verification rather than a 'verified'
+            // about source the caller never sent — that field is read as "the new code is what will
+            // run", which is the false confirmation this whole path exists to remove.
+            if (sourceWriteFailed)
+            {
+                return RebuildAndVerify(component, expectedSource: null, noExpectationReason:
+                    "The source write failed, so the component was rebuilt from the text it already "
+                    + "held. Verifying against that would say nothing about the code you sent — see "
+                    + "codeSet and sourceError.");
+            }
+
+            return RebuildAndVerify(component, TryGetScriptSource(component));
+        }
+
+        /// <summary>
+        /// Ask <paramref name="component"/> to rebuild its program, then check the result by reading
+        /// back the program it will actually run and comparing it with
+        /// <paramref name="expectedSource"/>. Returns the fields to merge into the tool response.
         /// </summary>
         /// <remarks>
         /// <para>Writing source stores text; it does not recompile. Rhino builds a <c>Code</c> from
         /// the script and keeps running that one, so a component whose source was replaced goes on
         /// executing its previous program until something invalidates the build (issue #33). Every
-        /// source-changing path inside Rhino pairs the store with a rebuild; this is ours.</para>
+        /// source-changing path inside Rhino pairs the store with a rebuild; this is ours. The build
+        /// also reads the component's parameters to shape the program's inputs and outputs, so a
+        /// call that only reshaped those parameters needs this just as much.</para>
         /// <para>A component with no rebuild hooks is reported, not failed — Rhino 7's GhPython and
         /// other <c>Code</c>-property components rebuild from their own source member instead. A
         /// hook that <em>threw</em> is the opposite fact and gets its own key and a warning in the
         /// log, because such a component is probably still running its previous program.</para>
         /// </remarks>
-        private static Dictionary<string, object> RebuildAndVerify(IGH_DocumentObject component, string finalSource)
+        /// <param name="expectedSource">
+        /// The text the running program should be built from; <c>null</c> when the caller has none
+        /// to offer, which is reported rather than compared against.
+        /// </param>
+        /// <param name="noExpectationReason">
+        /// What to report when <paramref name="expectedSource"/> is <c>null</c> and the caller knows
+        /// why better than this does. Omitted, the reason is that the component has no readable
+        /// stored source.
+        /// </param>
+        private static Dictionary<string, object> RebuildAndVerify(
+            IGH_DocumentObject component, string expectedSource, string noExpectationReason = null)
         {
             var typeName = component.GetType().Name;
 
@@ -808,8 +920,25 @@ namespace Cordyceps.Tools.Unified
             else if (!rebuild.Rebuilt)
                 DebugLog.Info($"[RebuildAndVerify] no rebuild hook on {typeName} — {rebuild.Reason}");
 
-            var comparison = ScriptProgram.CompareRunning(component, finalSource);
+            // A null expectation still reads the program — it just does not judge it.
+            var comparison = ScriptProgram.CompareRunning(component, expectedSource);
             LogProbes(comparison.Probes);
+
+            if (expectedSource == null)
+            {
+                // Nothing to hold the program against, so no verdict is reported. The program
+                // itself is a separate fact and the most useful one such a response can carry, so
+                // hand it over unjudged rather than dropping it with the verdict.
+                var uncomparable = ScriptProgram.NotCompared(noExpectationReason
+                    ?? $"'{typeName}' has no readable stored source to compare its running program against.");
+                DebugLog.Info($"[RebuildAndVerify] nothing to verify the rebuild against on {typeName} — {uncomparable.Reason}");
+
+                var fields = ScriptProgram.DescribeWrite(rebuild, uncomparable);
+                if (comparison.Readable)
+                    fields["runningSource"] = comparison.RunningSource;
+                return fields;
+            }
+
             if (!comparison.Readable)
                 DebugLog.Info($"[RebuildAndVerify] could not verify the write on {typeName} — {comparison.Reason}");
 

@@ -66,7 +66,10 @@ namespace Cordyceps.Core
         /// </summary>
         public bool Readable { get; }
 
-        /// <summary>True when the running program was read and differs from the expected text.</summary>
+        /// <summary>
+        /// True when the running program was read and differs from the expected text. Always false
+        /// when there was no expected text to differ from — see <see cref="ScriptProgram.CompareRunning"/>.
+        /// </summary>
         public bool Diverged { get; }
 
         /// <summary>The running program's source; <c>null</c> unless <see cref="Readable"/>.</summary>
@@ -134,8 +137,16 @@ namespace Cordyceps.Core
             + "for C# script components; runningSource is what executes.";
 
         /// <summary>
-        /// The response fields describing a write: whether the rebuild ran, and whether the program
-        /// the component will run was read back and matches what was written.
+        /// Said by <see cref="DescribeUnchanged"/> in place of a verification outcome: a call that
+        /// changed nothing produced no new program to hold against anything.
+        /// </summary>
+        public const string NothingToVerifyNote =
+            "Nothing was written to the component, so there was no program change to verify.";
+
+        /// <summary>
+        /// The response fields describing a change to a component's program: whether the rebuild
+        /// ran, and whether the program the component will run was read back and matches the text
+        /// it was expected to be built from.
         /// </summary>
         /// <remarks>
         /// Every branch says something. An outcome that cannot be determined is reported as such
@@ -169,6 +180,37 @@ namespace Cordyceps.Core
             }
 
             return fields;
+        }
+
+        /// <summary>
+        /// The response fields describing a call that changed nothing, and so asked for no rebuild.
+        /// </summary>
+        /// <remarks>
+        /// The counterpart to <see cref="DescribeWrite"/>, in the same vocabulary: a caller that
+        /// learned <c>rebuildSkipped</c> from a write finds the same word here instead of finding
+        /// no rebuild field at all. A response with neither a rebuild outcome nor a reason for its
+        /// absence leaves the caller to interpret silence.
+        /// </remarks>
+        /// <param name="reason">Why nothing was rebuilt — see <see cref="ScriptConfigurePlan"/>.</param>
+        public static Dictionary<string, object> DescribeUnchanged(string reason)
+        {
+            return new Dictionary<string, object>
+            {
+                ["rebuilt"] = false,
+                ["rebuildSkipped"] = reason,
+                ["verificationSkipped"] = NothingToVerifyNote
+            };
+        }
+
+        /// <summary>
+        /// A comparison that was never attempted, for a caller holding no text to compare the
+        /// running program against. Reported the same way an unreadable program is — named, not
+        /// omitted — so <c>verified</c> is absent rather than guessed at.
+        /// </summary>
+        /// <param name="reason">Why there was nothing to compare against.</param>
+        public static RunningSourceComparison NotCompared(string reason)
+        {
+            return new RunningSourceComparison(false, false, null, reason, null);
         }
 
         /// <summary>
@@ -252,7 +294,8 @@ namespace Cordyceps.Core
 
         /// <summary>
         /// Read the program <paramref name="component"/> will actually run and compare it with
-        /// <paramref name="expected"/> — the text the caller believes it wrote, or holds.
+        /// <paramref name="expected"/> — the text the caller believes it wrote, or holds. Pass
+        /// <c>null</c> to read the program without judging it.
         /// </summary>
         /// <remarks>
         /// The single place the stored-vs-running question is answered, so every surface that
@@ -260,6 +303,12 @@ namespace Cordyceps.Core
         /// defect: Rhino rewrites the <c>RunScript</c> signature of SDK-mode scripts as it builds
         /// them, so a legitimate write can come back changed.
         /// </remarks>
+        /// <param name="expected">
+        /// The text to compare against, or <c>null</c> for a read with no expectation — a caller
+        /// that holds no text still wants the running program, which is the most useful thing such
+        /// a response can carry. With <c>null</c>, <see cref="RunningSourceComparison.Diverged"/> is
+        /// always false: nothing was compared, so nothing diverged.
+        /// </param>
         public static RunningSourceComparison CompareRunning(object component, string expected)
         {
             var probes = new List<string>();
@@ -324,8 +373,10 @@ namespace Cordyceps.Core
                     probes);
             }
 
-            bool diverged = !string.Equals(runningSource, expected, StringComparison.Ordinal);
-            probes.Add($"running program read from {code.GetType().Name} — {(diverged ? "differs from" : "matches")} the expected source");
+            bool diverged = expected != null && !string.Equals(runningSource, expected, StringComparison.Ordinal);
+            probes.Add(expected == null
+                ? $"running program read from {code.GetType().Name} — nothing to compare it against"
+                : $"running program read from {code.GetType().Name} — {(diverged ? "differs from" : "matches")} the expected source");
             return new RunningSourceComparison(true, diverged, runningSource, null, probes);
         }
 
