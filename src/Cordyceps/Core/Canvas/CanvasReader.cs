@@ -55,7 +55,9 @@ namespace Cordyceps.Core.Canvas
                 {
                     DocumentEnabled = doc.Enabled,
                     SolutionsEnabled = GH_Document.EnableSolutions,
-                    LastSolutionAborted = doc.SolutionState == GH_ProcessStep.Aborted
+                    // From the solve record, not doc.SolutionState: Grasshopper overwrites Aborted
+                    // with PostProcess before the solve returns, so the state never shows it.
+                    LastSolutionAborted = SolverState.Shared.LastSolutionAborted(doc.DocumentID)
                 }
                 : new SolverFlags();
 

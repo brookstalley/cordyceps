@@ -18,72 +18,6 @@ namespace Cordyceps.Core
     /// </summary>
     public static class ToolHelpers
     {
-        #region Document Operations
-
-        /// <summary>
-        /// Trigger a recompute that's safe inside cluster editors.
-        /// On main canvas: normal NewSolution(true).
-        /// Inside a cluster: expires only source objects (those with no non-hook upstream
-        /// connections), then NewSolution(false). ExpireSolution cascades downstream through
-        /// wires automatically, so all dependent objects get expired without needing to
-        /// touch every object in the document. Input hooks are never expired, preserving
-        /// their volatile data (populated by the parent cluster).
-        /// </summary>
-        public static void ClusterSafeRecompute(GH_Document doc)
-        {
-            if (doc.Owner != null)
-            {
-                // Inside a cluster editor — only expire source objects, cascade handles the rest
-                var hookIds = new HashSet<Guid>(
-                    doc.ClusterInputHooks().Select(h => h.InstanceGuid));
-
-                foreach (var obj in doc.Objects)
-                {
-                    if (hookIds.Contains(obj.InstanceGuid)) continue;
-                    if (obj is IGH_ActiveObject active && !HasNonHookSources(obj, hookIds))
-                        active.ExpireSolution(false);
-                }
-
-                doc.NewSolution(false);
-            }
-            else
-            {
-                doc.NewSolution(true);
-            }
-        }
-
-        /// <summary>
-        /// Check if a document object has any upstream source that is NOT an input hook.
-        /// Objects that return false are "source" objects in the cluster graph and need
-        /// explicit expiration — everything downstream will cascade from them.
-        /// </summary>
-        private static bool HasNonHookSources(IGH_DocumentObject obj, HashSet<Guid> hookIds)
-        {
-            IEnumerable<IGH_Param> inputs;
-            if (obj is IGH_Component comp)
-                inputs = comp.Params.Input;
-            else if (obj is IGH_Param param)
-                inputs = new[] { param };
-            else
-                return false;
-
-            foreach (var input in inputs)
-            {
-                foreach (var src in input.Sources)
-                {
-                    // Source is the hook itself (standalone param)
-                    if (hookIds.Contains(src.InstanceGuid)) continue;
-                    // Source's parent object is a hook
-                    var parent = src.Attributes?.GetTopLevel?.DocObject;
-                    if (parent != null && hookIds.Contains(parent.InstanceGuid)) continue;
-                    return true;
-                }
-            }
-            return false;
-        }
-
-        #endregion
-
         #region Document Validation
 
         /// <summary>
@@ -108,7 +42,7 @@ namespace Cordyceps.Core
         /// <summary>
         /// Get the document that owns a component. For components inside clusters,
         /// this returns the cluster's internal document, not the main canvas document.
-        /// Always use this when calling NewSolution() after modifying a specific component.
+        /// Use this to find the document a solve must run in after modifying a specific component.
         /// </summary>
         /// <param name="obj">The document object</param>
         /// <param name="fallback">Fallback document if OnPingDocument returns null</param>

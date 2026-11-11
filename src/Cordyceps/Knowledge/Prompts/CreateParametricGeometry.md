@@ -43,4 +43,6 @@ gh_document(action='solver', enabled='true')
 gh_inspect(action='status')
 ```
 
-Check for any errors or warnings in the status output.
+Turning the solver on waits for the solve and reports it in `solve.state`. When it is `completed`,
+check the status output for errors and warnings. When it is `over_budget`, the solve is still
+running: poll `gh_inspect(action='connection')` until `solving` is false, then read status.

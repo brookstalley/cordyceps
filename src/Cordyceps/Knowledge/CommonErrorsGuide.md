@@ -103,6 +103,11 @@ blocking, and returns `success: false` with `solving: true` and `solving_since`.
 failure to fix — it means "already working, come back". `gh_inspect(action='status')` answers the
 same way instead of hanging when the UI thread is not responding.
 
+When it does run, `recompute` schedules the solve and waits for it (up to `timeout` seconds, 1-300,
+default 30) without holding the document, so other calls and the `connection` probe keep answering
+while Grasshopper solves. `solver` with `enabled=true` and `revert` wait the same way. The reply
+carries `solve.state`; see [How a solve ended](#how-a-solve-ended).
+
 The `GET /health` endpoint carries the same three-layer picture under `host`, for a caller outside
 the MCP protocol.
 
@@ -111,7 +116,33 @@ the MCP protocol.
 | Error | Cause | Fix |
 |-------|-------|-----|
 | Not responding / loop | Cyclic dependency | `gh_document(action='solver', enabled=false)`, fix cycle |
-| "Solver is disabled" | Not re-enabled | `gh_document(action='solver', enabled=true)` |
+| Nothing recomputes; `recompute` replies `solve.state: "solver_disabled"`, or `gh_document(action='info')` shows `solverEnabled: false` | The document's solver was turned off and not turned back on | `gh_document(action='solver', enabled=true)` |
+| `solve.state: "solutions_locked"`, or `info` shows `solutionsLocked: true` | Grasshopper's global solver lock is on | Only a human can unlock it; see the table below |
+
+### How a solve ended
+
+`gh_document(action='recompute')`, `gh_document(action='solver', enabled=true)` and
+`gh_document(action='revert')` wait for their solve and report
+`solve: {state, elapsedMs, solveMs, errors, warnings, remedy}`. `elapsedMs` is how long Cordyceps
+waited; `solveMs` is Grasshopper's own solve time, present when a solve ended. `success` (and
+`recomputed` for recompute) is true only for `completed`; every other state comes with
+`solve.remedy` saying what to do. For `solver` and `revert` the switch or the revert has happened
+either way; only the solve's outcome differs.
+
+| `solve.state` | What happened | What to do |
+|---|---|---|
+| `completed` | The solve finished. `errors`/`warnings` count objects at that level, as `gh_inspect(action='status')` does | Read `status` for details when either is non-zero |
+| `aborted` | The solve was stopped before it finished: someone pressed **Escape** in Grasshopper, or an abort was requested. Outputs may be partial or stale | A human usually stops a solve on purpose. Ask before recomputing again; `outline` shows `the last solution was aborted` and `tree` notes which owners it did not reach |
+| `over_budget` | The wait ran out while the solve was **still running**. Cordyceps cannot cancel a solve | Poll `gh_inspect(action='connection')` until `solving` is false, then `gh_inspect(action='status')`. `recompute` is refused while it runs. Pass a larger `timeout` (up to 300) next time |
+| `solver_disabled` | This document's own solver is off, so nothing was computed | `gh_document(action='solver', enabled=true)` — Cordyceps can flip this switch, and so can the human |
+| `solutions_locked` | Grasshopper's **global** solver switch is off — the "Lock Solver" toggle, or Rhino is mid-command — so no document solves | Cordyceps never changes the global lock: ask a human to unlock it. If Rhino was only busy with a command, retry once it is idle |
+| `not_started` | The wait ran out with nothing solving and no solve finished: the scheduled solve never ran. The solver was locked meanwhile, the Grasshopper editor window was not available to start it, or the document raises no solution events | Check `gh_inspect(action='connection')` and `gh_inspect(action='status')`, then retry `recompute` |
+| `not_watched` | Cordyceps could not watch the document's solution events — the Cordyceps component's solution watcher is not running — so it could not have told when a solve ended, and scheduled none | Make sure the Cordyceps component is on the canvas and enabled, then retry |
+| `document_closed` | The document closed before the solve finished | The outcome is unknown; reopen it and recompute if you still need it |
+
+`clear` only schedules its solve and returns before it runs, with `solve.state: "scheduled"` (or
+`solver_disabled` / `solutions_locked` / `not_watched` with a `remedy`). Call `recompute` before
+reading results after a `clear`.
 
 ## Cluster Editor Errors
 

@@ -28,6 +28,30 @@
 
      Newest first. Plain prose; nothing parses this file. -->
 
+**2026-11-11 (transaction wave, PRs).** "yes please PR and merge once ready" — open the
+solve-policy PR, then the edit-transaction PR, each merged (merge commit) once `build-test` passes
+and the independent PR review is clean.
+
+**2026-11-11 (transaction wave, later).** On the inferences in both plans, put as two numbered
+lists (solve-policy: schedule rather than solve inside the call; `recompute`/`solver`/`revert` wait
+up to `timeout` and fail unless the solve completed; no agent cancel. Edit-transaction: per-id
+successes commit as one undo step and an unexpected failure rolls back the whole call; the solver
+paused during each edit; whole-object undo where no dedicated event exists, with lossy third-party
+objects accepted; `delete`/`group_delete`/`clear` schedule one solve and return before it runs;
+`solver`, `revert`, `bake` and the view actions not recorded; edits never wait for their solve;
+the `undo` field is the Grasshopper undo-list name): "yes all confirmed". Landed in the Goals of
+`.prawduct/artifacts/build-plan-solve-policy.md` (Inferences 1-4) and
+`.prawduct/artifacts/build-plan-edit-transaction.md` (Inferences 1-6), now owner-confirmed.
+
+**2026-11-11 (transaction wave).** On #91's Windows spike: "yes we can't test on windows, and
+cannot block the release. Please get to as high confidence as you can, but we will not block on
+that." On agent-callable `gh_document undo`/`redo`: "yes leave undo/redo off for agents for now."
+On moving `.prawduct/change-log.md` onto change fragments: "yes move to fragments." Landed in #91
+(the Windows acceptance box becomes non-blocking) and in the edit-transaction plan's Goals once
+drafted. The fragment move needed no work: c5710df had already moved every pending entry, and
+`prawduct-hook migrate-change-log` (dry run, 2026-11-11) reports nothing to do; `change-log.md`
+holds shipped history only.
+
 **2026-11-11 (later).** On the script-rebuild plan's inferences: "agreed" — `zoomable` on a
 script component rebuilds and reports rather than refusing (#84), and the default-nickname refusal
 applies only when a call would actually remove a port, a rename counting as a removal. On

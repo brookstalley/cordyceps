@@ -223,6 +223,23 @@ namespace Cordyceps.Tests
         }
 
         [Fact]
+        public void OwnerNote_NotComputedAfterAnAbortedSolve_SaysTheSolveWasAborted()
+        {
+            Assert.Equal(
+                "not computed: the last solution was aborted before it reached this object, so the tree may be empty or out of date",
+                TreeStatusText.OwnerNote(OwnerState.NotComputed, null, lastSolutionAborted: true));
+
+            // An off solver is the reason the owner did not compute; its own text already carries
+            // the aborted clause from SolverOff, so the note keeps the solver wording.
+            Assert.StartsWith("not solved: ",
+                TreeStatusText.OwnerNote(OwnerState.NotComputed, "this document's solver is disabled", lastSolutionAborted: true));
+
+            // A computed, locked or failed owner says what it says regardless of the abort.
+            Assert.Null(TreeStatusText.OwnerNote(OwnerState.Computed, null, lastSolutionAborted: true));
+            Assert.Contains("locked", TreeStatusText.OwnerNote(OwnerState.Locked, null, lastSolutionAborted: true));
+        }
+
+        [Fact]
         public void FormatMessage_ClipsAtOneSixtyAndCountsTheRest()
         {
             var text = TreeStatusText.FormatMessage("Warning", new[] { new string('x', 300), "b", "c" });
