@@ -1,3 +1,17 @@
+---
+artifact: build-plan
+version: 1
+scope: janitor-2026-07-02
+depends_on: []
+last_validated: 2026-07-02
+lifecycle: completed
+archived: 2026-11-11
+released_in: v1.5.0
+maintained: false
+---
+
+> **Archived — no longer maintained.** This plan records what was built, not what will be. Do not edit it to reflect later changes; write those where they are true.
+
 # Build Plan — janitor-2026-07-02 (full reliability audit execution)
 
 Branch: `chore/janitor-2026-07-02` (off `develop`)
@@ -26,6 +40,15 @@ approved by the user chunk-by-chunk; no unvalidated assumptions remain.
 2. Success: every approved finding fixed with regression tests where host-free; docs match
    dispatch reality; repo hygiene clean; suite green; Critic clean per chunk.
 3. Out of scope: new features, redesigns listed above, applying branch protection, releases.
+
+## Status
+
+- [x] Chunk 01: Repo + governance hygiene (no product code)
+- [x] Chunk 02: Documentation-contract fixes (docs/metadata text only, no behavior)
+- [x] Chunk 03: HIGH code bugs (each with host-free regression tests where possible)
+- [x] Chunk 04: MEDIUM sweep — Grasshopper tools + MCP boundary
+- [x] Chunk 05: MEDIUM sweep — Rhino tools
+- [x] Chunk 06: Testability extraction + test hygiene
 
 ## Chunks
 
@@ -142,4 +165,6 @@ approved by the user chunk-by-chunk; no unvalidated assumptions remain.
 ### Close-out
 - [x] Backlog: file deferred items; update GHC-2N8K (resolved if dedup lands via Chunk 04),
       note GHS-4D8M upstream filing still pending (user action).
-- [ ] Cumulative Critic; reflection; change-log entries per chunk (scope=janitor-2026-07-02).
+- [x] Cumulative Critic; reflection; change-log entries per chunk (scope=janitor-2026-07-02).
+      (Ticked 2026-11-11: merged as PR #25, which `/prawduct:pr` gated on the cumulative review;
+      the change-log entry is in `.prawduct/change-log-archive/2026-07.md`; released in v1.5.0.)

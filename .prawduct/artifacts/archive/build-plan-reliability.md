@@ -1,24 +1,21 @@
-<!-- Scope-named plan per the gitflow plan lifecycle. The janitor PR (#25)
-     merged to develop on 2026-07-02 and `active_build_plan` now points here
-     (project-state.yaml).
-
-     THE BOXES BELOW ARE UNTICKED AND NOBODY IS TICKING THEM. They were written
-     as a derived view flipped by `prawduct-hook regen-views`; that command is
-     now inert, so the flip never came and never will. All six chunks shipped in
-     PR #26 (see the Context line). Ticking them is a live decision, not
-     bookkeeping — the Context line also lists trailing work (VRF-009/VRF-010
-     operator burn-down in live Rhino) that has not been discharged, so the
-     honest state is "built and merged, verification outstanding", which no
-     checkbox expresses. Resolve deliberately before archiving this plan. -->
 ---
 artifact: build-plan
 version: 2
 scope: reliability
 depends_on: []
 last_validated: 2026-07-02
+lifecycle: completed
+archived: 2026-11-11
+released_in: v1.5.0
+maintained: false
 ---
 
+> **Archived — no longer maintained.** This plan records what was built, not what will be. Do not edit it to reflect later changes; write those where they are true.
+
 # Build Plan — reliability follow-through
+
+All six chunks shipped in PR #26 and released in v1.5.0 (ticked 2026-11-11). Their live checks,
+VRF-009 and VRF-010, stay pending in `.prawduct/operator-verification.md`, which tracks them.
 
 Branch: `feat/reliability-follow-through` (originally stacked on
 `chore/janitor-2026-07-02`; rebased onto `develop` after PR #25 merged).
@@ -62,12 +59,12 @@ sufficient).
 
 ## Status
 
-- [ ] Chunk 01: DrainWithin timeout-vs-fault decision + regression test
-- [ ] Chunk 02: ServerState enum as single source of truth
-- [ ] Chunk 03: Stop() drain off the UI thread
-- [ ] Chunk 04: Bound the snapshot store + snapshot_delete
-- [ ] Chunk 05: Rhino undo records around mutating actions
-- [ ] Chunk 06: Rename-guidance audit — annotate via groups
+- [x] Chunk 01: DrainWithin timeout-vs-fault decision + regression test
+- [x] Chunk 02: ServerState enum as single source of truth
+- [x] Chunk 03: Stop() drain off the UI thread
+- [x] Chunk 04: Bound the snapshot store + snapshot_delete
+- [x] Chunk 05: Rhino undo records around mutating actions
+- [x] Chunk 06: Rename-guidance audit — annotate via groups
 Context: All six chunks built and committed 2026-07-02 (chunks 01-05 Critic-clean
 per chunk; chunk 06 is Type: cumulative-final — its cumulative review found 0
 blocking plus warnings/notes, resolved in the close-out commit). Tagged change-log
