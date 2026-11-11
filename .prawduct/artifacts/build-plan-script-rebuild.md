@@ -59,6 +59,12 @@ Critic mode: one `cumulative` review at the end (a three-chunk plan; Chunk 03 is
 - **Not in scope:** the outline/tree naming questions (owner, open); `group_remove`; #92 (python
   pin creates a Script with no language).
 - **Decisions made mid-build:** *(one line each, naming what settled it)*
+  - The rebuild gate, source reader and script-component test moved from `GhScriptTool` to a new host-coupled `src/Cordyceps/Core/ScriptComponents.cs` (not linked into tests), so `GhCanvasTool` reaches the one copy; settled by Chunk 02's "no duplicate copies".
+  - develop has no zoomable hazard tip to replace (the old branch's tip never merged), so Chunk 02 adds a behaviour tip instead; settled by reading develop's `zoomable` `ActionInfo`.
+  - `set` uses the precise removal path, not the fallback: Cordyceps' own sync is computable from the code and the port nicknames, so `RunScript` parsing moved to host-free `Core/ScriptSignature.cs`, which the sync and the prediction now share; settled by Inference 2's "say so instead of guessing" only where a guess was needed.
+  - Ports Rhino itself may change while storing or building source (the code-only `configure` route's `SyncParameters`, the rebuild) are outside the prediction; recorded in VRF-022 step 9 rather than guessed at.
+  - A removal the component itself would refuse (index out of range, `CanRemoveParameter` false for the first port set_count would remove) counts as no removal, so the call fails on its own error, not on the id; settled by "only when the call would actually remove an existing port".
+  - `zoomable set_count` already at its count on a script component reports `rebuildSkipped` (nothing changed) so every successful script reply answers the rebuild question; settled by Chunk 02's acceptance criterion.
 - **Level:** High for 01 (ported, already reviewed once on its own branch). Medium for 02 and 03:
   the rebuild on a `zoomable` reshape and the removal-set computation are host behaviour checked
   only by code reading until VRF-022 runs.

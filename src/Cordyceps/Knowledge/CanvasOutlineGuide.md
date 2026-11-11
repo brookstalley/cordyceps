@@ -250,8 +250,11 @@ adds a second `COUNT`) stops resolving: the error lists both ids, and nothing is
 Outline never prints a default nickname or the default group name, because the actions that remove
 things refuse them: `delete`, `group_delete`, `gh_wire(action='disconnect')` and
 `gh_wire(action='clear')` do not resolve a default nickname (`Circle`, `Pt`) or the group name
-`Group`, even when only one object carries it. The error prints the id to pass, or rename the object
-first (`gh_canvas(action='rename')`, or `group_rename` for a group) and pass the new name. Every
-other action still accepts a unique default nickname.
+`Group`, even when only one object carries it. Nor does a call that removes an existing port, which
+cuts its wires: `gh_canvas(action='zoomable')` removing a port or shrinking `set_count`, and
+`gh_script` `set`/`configure` dropping or renaming one. The error prints the id to pass, or rename
+the object first (`gh_canvas(action='rename')`, or `group_rename` for a group) and pass the new
+name. Every other action, and those same actions when they only add or keep ports, still accepts a
+unique default nickname.
 
 To see one data tree's shape, follow up with `gh_inspect(action='tree', id='NAME')`.

@@ -378,6 +378,37 @@ namespace Cordyceps.Core
         }
 
         /// <summary>
+        /// For a call that resolved <paramref name="id"/> ordinarily and then learned, before
+        /// changing anything, that it removes ports: re-resolve the id with
+        /// <see cref="ResolveIntent.Destructive"/> so a default nickname never selects the component
+        /// whose wires are cut. An empty <paramref name="removal"/> passes without resolving again,
+        /// because a call that removes nothing is not destructive. On refusal the error says which
+        /// ports the call would have removed, then the resolver's teaching error. Must be called on
+        /// the UI thread, before the first mutation.
+        /// </summary>
+        public static bool TryConfirmPortRemoval(GH_Document doc, string id, IGH_DocumentObject resolved,
+            PortRemoval removal, out string error)
+        {
+            error = null;
+            if (removal == null || removal.IsEmpty)
+                return true;
+
+            if (!TryGetUnprotectedComponent(new ObjectLookup(doc), id, ResolveIntent.Destructive, out var obj, out var resolverError))
+            {
+                error = removal.Refusal(resolverError);
+                return false;
+            }
+            if (obj.InstanceGuid != resolved.InstanceGuid)
+            {
+                // Intent changes only whether a default nickname may select; a different object
+                // here means the document changed between the two lookups, so act on neither.
+                error = $"'{id}' resolved to two different objects; nothing was changed. Pass the id {resolved.InstanceGuid}.";
+                return false;
+            }
+            return true;
+        }
+
+        /// <summary>
         /// Resolve an object id for an action that acts on groups as well as components and
         /// parameters (delete, move, rename, info, bounds, zoom, group member arrays): a group's
         /// GUID or GUID prefix resolves to the group. A nickname never matches a group: names are scoped, ids are not.

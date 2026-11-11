@@ -2,7 +2,6 @@ using System;
 using System.Collections.Generic;
 using System.ComponentModel;
 using System.Linq;
-using System.Text.RegularExpressions;
 using Cordyceps.Core;
 using Grasshopper;
 using Grasshopper.Kernel;
@@ -46,6 +45,7 @@ namespace Cordyceps.Tools.Unified
                     Tips = new[] {
                         "Params matching by name keep their wires (LCS diffing)",
                         "Renamed/removed params lose connections — reported in lostConnections",
+                        "A C# RunScript signature that drops or renames an existing port removes it and cuts its wires, so that call never selects the component by its default nickname, even a unique one: pass the id the error prints. Code that keeps or only adds ports accepts it",
                         "Use gh_wire(action='connect', connections='<lostConnections>') to restore",
                         "Script language is preserved automatically; start code with '#! python 3' or '// #! csharp' to set it explicitly",
                         "A bare unified 'Script' component (no language picked) returns a languageWarning until code starts with a directive — add '#! python 3' or '// #! csharp'",
@@ -70,6 +70,7 @@ namespace Cordyceps.Tools.Unified
                         "Partial update: omit a side (don't pass inputs/outputs) to leave it untouched; pass [] to clear that side. Passing inputs without outputs no longer wipes outputs.",
                         "Malformed inputs/outputs JSON is rejected with an error before anything changes — it is never treated as an empty array",
                         "Params matching by name keep their wires (like 'set'); renamed/removed params lose connections, reported in lostConnections — pass it to gh_wire(action='connect') to restore",
+                        "A call that drops or renames an existing port (including inputs='[]' on a side that has ports) cuts its wires, so it never selects the component by its default nickname, even a unique one: pass the id the error prints. Nothing is changed when it is refused. A call that keeps or only adds ports accepts it",
                         "Script language is preserved automatically; start code with '#! python 3' or '// #! csharp' to set it explicitly",
                         "A bare unified 'Script' component (no language picked) returns a languageWarning until code starts with a directive — add '#! python 3' or '// #! csharp'",
                         "When 'code' is provided the response includes codeSet (bool); if setting the source fails after params were applied, success is false, codeSet=false, and sourceError holds the reason — the params DID change",
@@ -102,7 +103,8 @@ namespace Cordyceps.Tools.Unified
                 "Source is written through the component's SetSource method when it has one, otherwise its writable Code property; a component with neither fails with an error naming the type and what was probed — never a silent no-op",
                 "Neither writing source nor reshaping parameters recompiles on its own — set/configure ask the component to rebuild whenever they changed something, then read the running program back, so 'success' means the new program is the one that will run",
                 "access values: 'item' (default), 'list', 'tree'",
-                "Ids: 'id' names the script component by its GUID, an 8+ hex GUID prefix, or its unique nickname (exact, case-sensitive); a name two objects share is refused with both ids"
+                "Ids: 'id' names the script component by its GUID, an 8+ hex GUID prefix, or its unique nickname (exact, case-sensitive); a name two objects share is refused with both ids. A set or configure that removes an existing port never takes a default nickname",
+                "gh_canvas(action='zoomable') also reshapes a script component's ports, and rebuilds and reports the same way configure does"
             }
         };
 
@@ -114,7 +116,7 @@ namespace Cordyceps.Tools.Unified
         [McpServerTool, Description("Script operations. Actions: get|set|configure|info|help")]
         public string GhScript(
             [Description("Action to perform")] string action,
-            [Description("Script component. Object: GUID, 8+ hex GUID prefix, or unique nickname")] string id = null,
+            [Description("Script component. Object: GUID, 8+ hex GUID prefix, or unique nickname (not a default nickname when set/configure removes a port)")] string id = null,
             [Description("Source code")] string code = null,
             [Description("JSON array of input definitions")] string inputs = null,
             [Description("JSON array of output definitions")] string outputs = null)
@@ -201,6 +203,12 @@ namespace Cordyceps.Tools.Unified
                         componentType = component.GetType().Name
                     });
                 }
+
+                // The ports a C# RunScript signature declares replace the current ones by name, so
+                // a signature that drops or renames a port cuts its wires. Decided before the write,
+                // so a refused call changes nothing.
+                if (!ToolHelpers.TryConfirmPortRemoval(doc, id, component, SourceSyncRemoval(component, code), out var refusal))
+                    return ToolHelpers.ErrorResponse(refusal);
 
                 try
                 {
@@ -305,6 +313,12 @@ namespace Cordyceps.Tools.Unified
                     return ToolHelpers.ErrorResponse($"Invalid inputs JSON: {inputsError}");
                 if (!ScriptParamDefs.TryParse(outputs, out var outputDefs, out var outputsError))
                     return ToolHelpers.ErrorResponse($"Invalid outputs JSON: {outputsError}");
+
+                // A configure that drops or renames an existing port cuts its wires, so it is decided
+                // here, before the first mutation, from the same plan each route below executes.
+                if (!ToolHelpers.TryConfirmPortRemoval(doc, id, component,
+                        ConfigureRemoval(ghComponent, inputDefs, outputDefs, code), out var refusal))
+                    return ToolHelpers.ErrorResponse(refusal);
 
                 bool configured = false;
                 string message = "";
@@ -580,48 +594,41 @@ namespace Cordyceps.Tools.Unified
         #region Helper Methods
 
         /// <summary>
-        /// Parse the C# RunScript signature to extract declared input/output parameter names.
-        /// Returns null if parsing isn't possible or applicable (Python scripts, unparseable code).
+        /// The existing ports <see cref="SyncScriptParams"/> would remove when syncing to
+        /// <paramref name="code"/>, computed without changing anything. Mirrors its guards: only a
+        /// variable-parameter component whose ports the code declares is synced, and the built-in
+        /// leading output is never touched.
         /// </summary>
-        private (List<string> inputs, List<string> outputs)? ParseScriptParams(IGH_DocumentObject component, string code)
+        private static PortRemoval SourceSyncRemoval(IGH_DocumentObject component, string code)
         {
-            if (string.IsNullOrEmpty(code))
-                return null;
+            if (!(component is IGH_Component ghComponent) || !(component is IGH_VariableParameterComponent))
+                return PortRemoval.None;
 
-            var typeName = component.GetType().Name;
+            return PortRemoval.ForSourceSync(component.GetType().Name, code,
+                ghComponent.Params.Input.Select(p => p.NickName).ToList(),
+                ghComponent.Params.Output.Skip(1).Select(p => p.NickName).ToList());
+        }
 
-            // Python scripts manage params via ZUI, not from code
-            if (typeName.Contains("Python"))
-                return null;
-
-            // For C# scripts, parse the RunScript signature
-            var match = Regex.Match(code, @"RunScript\s*\(([^)]*)\)");
-            if (!match.Success)
-                return null;
-
-            var signature = match.Groups[1].Value;
-            var codeInputs = new List<string>();
-            var codeOutputs = new List<string>();
-
-            var paramStrings = SplitSignatureParams(signature);
-
-            foreach (var paramStr in paramStrings)
+        /// <summary>
+        /// The existing ports a <c>configure</c> call would remove, computed without changing
+        /// anything, for whichever route the call takes: the parameter route syncs the provided
+        /// sides to the defs' names (<see cref="SyncParamsForConfigure"/>); the code route, taken
+        /// when no side applies, syncs to the code's signature (<see cref="SyncScriptParams"/>).
+        /// </summary>
+        private static PortRemoval ConfigureRemoval(IGH_Component ghComponent,
+            List<ScriptParamDef> inputDefs, List<ScriptParamDef> outputDefs, string code)
+        {
+            bool anyParamSide = inputDefs != null || outputDefs != null;
+            if (ghComponent is IGH_VariableParameterComponent && anyParamSide)
             {
-                var trimmed = paramStr.Trim();
-                if (string.IsNullOrEmpty(trimmed))
-                    continue;
-
-                var tokens = trimmed.Split(new[] { ' ', '\t' }, StringSplitOptions.RemoveEmptyEntries);
-                if (tokens.Length < 2)
-                    continue;
-
-                if (tokens[0] == "ref" || tokens[0] == "out")
-                    codeOutputs.Add(tokens[tokens.Length - 1]);
-                else
-                    codeInputs.Add(tokens[tokens.Length - 1]);
+                return PortRemoval.ForSync(
+                    ghComponent.Params.Input.Select(p => p.NickName).ToList(),
+                    inputDefs?.Select(d => d.Name).ToList(),
+                    ghComponent.Params.Output.Skip(1).Select(p => p.NickName).ToList(),
+                    outputDefs?.Select(d => d.Name).ToList());
             }
 
-            return (codeInputs, codeOutputs);
+            return string.IsNullOrEmpty(code) ? PortRemoval.None : SourceSyncRemoval(ghComponent, code);
         }
 
         /// <summary>
@@ -634,7 +641,7 @@ namespace Cordyceps.Tools.Unified
         {
             lostConnections = new List<object>();
 
-            var parsed = ParseScriptParams(component, code);
+            var parsed = ScriptSignature.Parse(component.GetType().Name, code);
             if (parsed == null)
                 return; // Can't parse or not applicable — leave params alone
 
@@ -775,34 +782,6 @@ namespace Cordyceps.Tools.Unified
                 else
                     ghComponent.Params.RegisterOutputParam(newParam, actualIdx);
             }
-        }
-
-        /// <summary>
-        /// Split a C# method signature into individual parameter strings,
-        /// correctly handling generic types like List&lt;Point3d&gt;.
-        /// </summary>
-        private List<string> SplitSignatureParams(string signature)
-        {
-            var result = new List<string>();
-            int depth = 0;
-            int start = 0;
-
-            for (int i = 0; i < signature.Length; i++)
-            {
-                char c = signature[i];
-                if (c == '<') depth++;
-                else if (c == '>') depth--;
-                else if (c == ',' && depth == 0)
-                {
-                    result.Add(signature.Substring(start, i - start));
-                    start = i + 1;
-                }
-            }
-
-            if (start < signature.Length)
-                result.Add(signature.Substring(start));
-
-            return result;
         }
 
         /// <summary>

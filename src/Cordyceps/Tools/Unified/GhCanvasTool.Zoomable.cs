@@ -56,12 +56,12 @@ namespace Cordyceps.Tools.Unified
                             return AddParameter(ghComponent, varParamComp, paramSide, index, doc);
 
                         case "remove":
-                            return RemoveParameter(ghComponent, varParamComp, paramSide, index, doc);
+                            return RemoveParameter(ghComponent, varParamComp, paramSide, index, doc, id);
 
                         case "set_count":
                             if (count < 0)
                                 return ToolHelpers.ErrorResponse("'count' parameter required for set_count operation");
-                            return SetParameterCount(ghComponent, varParamComp, paramSide, count, doc);
+                            return SetParameterCount(ghComponent, varParamComp, paramSide, count, doc, id);
 
                         default:
                             return ToolHelpers.ErrorResponse($"Invalid operation: {operation}. Use 'add', 'remove', or 'set_count'");
@@ -122,7 +122,7 @@ namespace Cordyceps.Tools.Unified
         }
 
         private string RemoveParameter(IGH_Component ghComponent, IGH_VariableParameterComponent varParamComp,
-            GH_ParameterSide side, int index, GH_Document doc)
+            GH_ParameterSide side, int index, GH_Document doc, string id)
         {
             var paramList = side == GH_ParameterSide.Input ? ghComponent.Params.Input : ghComponent.Params.Output;
 
@@ -151,6 +151,13 @@ namespace Cordyceps.Tools.Unified
                 });
             }
 
+            // Removing a port cuts its wires, so the id must pass destructive resolution before
+            // anything changes: a default nickname never selects the component that loses them.
+            var removal = PortRemoval.ForRemove(PortNames(paramList), side == GH_ParameterSide.Input, removeIndex,
+                i => varParamComp.CanRemoveParameter(side, i));
+            if (!ToolHelpers.TryConfirmPortRemoval(doc, id, ghComponent, removal, out var refusal))
+                return ToolHelpers.ErrorResponse(refusal);
+
             var param = paramList[removeIndex];
             string paramName = param.Name;
 
@@ -174,7 +181,7 @@ namespace Cordyceps.Tools.Unified
         }
 
         private string SetParameterCount(IGH_Component ghComponent, IGH_VariableParameterComponent varParamComp,
-            GH_ParameterSide side, int targetCount, GH_Document doc)
+            GH_ParameterSide side, int targetCount, GH_Document doc, string id)
         {
             var paramList = side == GH_ParameterSide.Input ? ghComponent.Params.Input : ghComponent.Params.Output;
             int currentCount = paramList.Count;
@@ -200,6 +207,13 @@ namespace Cordyceps.Tools.Unified
                     ["message"] = "Already at target count"
                 }, unchanged);
             }
+
+            // Shrinking removes ports from the end and cuts their wires; growing removes nothing
+            // and still accepts any id that resolves.
+            var removal = PortRemoval.ForSetCount(PortNames(paramList), side == GH_ParameterSide.Input, targetCount,
+                i => varParamComp.CanRemoveParameter(side, i));
+            if (!ToolHelpers.TryConfirmPortRemoval(doc, id, ghComponent, removal, out var refusal))
+                return ToolHelpers.ErrorResponse(refusal);
 
             int added = 0, removed = 0;
             var errors = new List<string>();
@@ -295,6 +309,15 @@ namespace Cordyceps.Tools.Unified
 
             ghComponent.ExpireSolution(false);
             return rebuildFields;
+        }
+
+        /// <summary>The nicknames of a side's ports, in order: the names the removal rule reports.</summary>
+        private static List<string> PortNames(List<IGH_Param> ports)
+        {
+            var names = new List<string>(ports.Count);
+            foreach (var p in ports)
+                names.Add(p.NickName);
+            return names;
         }
 
         /// <summary>Serialize a zoomable reply, with the rebuild fields merged in when there are any.</summary>
