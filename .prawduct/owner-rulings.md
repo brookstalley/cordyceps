@@ -28,6 +28,17 @@
 
      Newest first. Plain prose; nothing parses this file. -->
 
+**2026-11-11 (transaction wave, later).** On the inferences in both plans, put as two numbered
+lists (solve-policy: schedule rather than solve inside the call; `recompute`/`solver`/`revert` wait
+up to `timeout` and fail unless the solve completed; no agent cancel. Edit-transaction: per-id
+successes commit as one undo step and an unexpected failure rolls back the whole call; the solver
+paused during each edit; whole-object undo where no dedicated event exists, with lossy third-party
+objects accepted; `delete`/`group_delete`/`clear` schedule one solve and return before it runs;
+`solver`, `revert`, `bake` and the view actions not recorded; edits never wait for their solve;
+the `undo` field is the Grasshopper undo-list name): "yes all confirmed". Landed in the Goals of
+`.prawduct/artifacts/build-plan-solve-policy.md` (Inferences 1-4) and
+`.prawduct/artifacts/build-plan-edit-transaction.md` (Inferences 1-6), now owner-confirmed.
+
 **2026-11-11 (transaction wave).** On #91's Windows spike: "yes we can't test on windows, and
 cannot block the release. Please get to as high confidence as you can, but we will not block on
 that." On agent-callable `gh_document undo`/`redo`: "yes leave undo/redo off for agents for now."
