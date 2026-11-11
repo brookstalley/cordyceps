@@ -31,7 +31,7 @@ namespace Cordyceps.Tools.Unified
                     Required = new string[0],
                     Optional = new[] { "sourceId", "sourceParam", "targetId", "targetParam", "connections" },
                     Example = "action='connect', sourceId='a', sourceParam='0', targetId='b', targetParam='R'",
-                    Tips = new[] { "Name a port by its exact name or nickname, or by 0-based index. Case is ignored only when that leaves one match; partial names are never matched, and the error suggests the port you probably meant and lists every port on that side", "On a component, an index that does not exist is refused with the valid range — it never falls back to a name match; a free-floating param object is itself the target and ignores the spec", "For bulk: connections='[{sourceId,sourceParam,targetId,targetParam},...]'" }
+                    Tips = new[] { "Name a port by its exact name or nickname, or by 0-based index. Case is ignored only when that leaves one match; partial names are never matched, and the error suggests the port you probably meant and lists every port on that side", "On a component, an index that does not exist is refused with the valid range — it never falls back to a name match; a free-floating param object is itself the target and ignores the spec", "For bulk: connections='[{sourceId,sourceParam,targetId,targetParam},...]'", "Bulk: an entry that fails to resolve is reported in results and never wired; the wires that are made are one undo step", "A wire that already exists, or a param wired to itself, changes nothing and records nothing, so a call that adds no new wire returns no undo" }
                 },
                 ["disconnect"] = new ActionInfo
                 {
@@ -39,7 +39,7 @@ namespace Cordyceps.Tools.Unified
                     Description = "Remove a wire between components",
                     Required = new[] { "sourceId", "sourceParam", "targetId", "targetParam" },
                     Example = "action='disconnect', sourceId='a', sourceParam='0', targetId='b', targetParam='R'",
-                    Tips = new[] { "Removes a wire, so sourceId and targetId never resolve by a default nickname (one every new object of the type gets, like 'Circle'), even a unique one: pass the GUID or prefix the error prints, or a nickname you set with gh_canvas(action='rename')", "If the wire doesn't exist, the error lists the target input's current sources (currentSources) so you can correct the call", "On a component, an index that does not exist is refused with the valid range — it never falls back to a name match; a free-floating param object is itself the target and ignores the spec" }
+                    Tips = new[] { "Removes a wire, so sourceId and targetId never resolve by a default nickname (one every new object of the type gets, like 'Circle'), even a unique one: pass the GUID or prefix the error prints, or a nickname you set with gh_canvas(action='rename')", "If the wire doesn't exist, the error lists the target input's current sources (currentSources) so you can correct the call, and nothing is recorded", "On a component, an index that does not exist is refused with the valid range — it never falls back to a name match; a free-floating param object is itself the target and ignores the spec" }
                 },
                 ["list"] = new ActionInfo
                 {
@@ -54,7 +54,7 @@ namespace Cordyceps.Tools.Unified
                     Description = "Clear all inputs on a component",
                     Required = new[] { "id" },
                     Example = "action='clear', id='abc-123'",
-                    Tips = new[] { "Removes wires, so id never resolves by a default nickname (one every new object of the type gets, like 'Circle'), even a unique one: pass the GUID or prefix the error prints, or a nickname you set with gh_canvas(action='rename')" }
+                    Tips = new[] { "Removes wires, so id never resolves by a default nickname (one every new object of the type gets, like 'Circle'), even a unique one: pass the GUID or prefix the error prints, or a nickname you set with gh_canvas(action='rename')", "One undo step restores every wire it removed. A component with no wired inputs records nothing and returns no undo" }
                 },
                 ["validate"] = new ActionInfo
                 {
@@ -74,7 +74,8 @@ namespace Cordyceps.Tools.Unified
             {
                 "On a component, parameters are specified by exact name or nickname, or by 0-based index; an index outside the port list is refused with the valid range rather than matched as a name. Case is ignored only when that leaves one match; a partial or ambiguous name is refused with the candidates, never guessed. sourceParam is always an output and targetParam always an input. A free-floating param object is itself the target",
                 "Disable solver before bulk wiring: gh_document(action='solver', enabled=false)",
-                "Ids: an object is named by its GUID, an 8+ hex GUID prefix, or its unique nickname (exact, case-sensitive). A name two objects share is refused with both ids. disconnect and clear remove wires, so a default nickname never selects their objects, even when unique; bulk connect resolves every connection before adding any wire. list with an id that names nothing is an error, not an empty list"
+                "Ids: an object is named by its GUID, an 8+ hex GUID prefix, or its unique nickname (exact, case-sensitive). A name two objects share is refused with both ids. disconnect and clear remove wires, so a default nickname never selects their objects, even when unique; bulk connect resolves every connection before adding any wire. list with an id that names nothing is an error, not an empty list",
+                "Undo: each connect, disconnect or clear is one Grasshopper undo step, so a human's Ctrl+Z reverts the whole call; the reply's undo field names the step (absent when nothing changed). A call that fails partway rolls back and answers success=false with rolledBack. Agents restore state with gh_document snapshot/revert, not undo"
             }
         };
 

@@ -49,7 +49,9 @@ namespace Cordyceps.Tools.Unified
                         "Adding a slider: pass min/max/value/decimals to configure it in one call (e.g. type='slider', min=0, max=100, value=50, decimals=2). Non-slider components ignore these.",
                         "Set min/max before value: value is clamped to the range. Same slider config as action='config'.",
                         "A slider value that doesn't parse as a number is an error — the component is NOT added (parity with action='config').",
-                        "Leave 'nickname' unset during normal building — renamed components are hard to find on the canvas. Annotate with labeled groups (group_create) instead and track the returned id."
+                        "Also refused before anything is added: decimals outside 0-8, a min, max or value that is not finite or beyond ±7.92E+28, and min greater than max. A lone min or max is checked against the new slider's default 0-1 range, so pass both to move the range; min equal to max is allowed.",
+                        "Leave 'nickname' unset during normal building — renamed components are hard to find on the canvas. Annotate with labeled groups (group_create) instead and track the returned id.",
+                        "One undo step: Ctrl+Z removes the object. A failure after the object is placed rolls the call back, so nothing is left on the canvas."
                     }
                 },
                 ["delete"] = new ActionInfo
@@ -64,7 +66,9 @@ namespace Cordyceps.Tools.Unified
                         "Each id may be a GUID, an 8+ hex GUID prefix, or a unique nickname you set. Every id is resolved before anything is deleted",
                         "A default nickname (the one every new object of the type gets, like 'Circle') never selects what delete removes, even when only one object has it: the error prints the id to pass, or rename the object first (action='rename') and pass the new name",
                         "A name that fits two objects, a default nickname, or an id that fits nothing, deletes nothing for that entry (an ambiguous name's error lists the candidates by id); the other entries are still deleted (per-id results)",
-                        "A repeated object is deleted once; the later entry carries note 'same object as entry i'"
+                        "A repeated object is deleted once; the later entry carries note 'same object as entry i'",
+                        "Everything one call deletes is one undo step: Ctrl+Z brings back the objects and every wire, upstream and downstream. One solve is scheduled for the whole call",
+                        "Deleting a Relay drops its wires; unlike Grasshopper's own Delete, it does not reconnect the relay's source to its targets"
                     }
                 },
                 ["move"] = new ActionInfo
@@ -76,7 +80,8 @@ namespace Cordyceps.Tools.Unified
                     Example = "action='move', id='abc', x=100, y=200",
                     Tips = new[] {
                         "Use id/x/y for single, 'moves' JSON array for bulk",
-                        "Each id may be a GUID, an 8+ hex GUID prefix, or a unique nickname; every entry is resolved before anything moves, and failures are per-entry"
+                        "Each id may be a GUID, an 8+ hex GUID prefix, or a unique nickname; every entry is resolved before anything moves, and failures are per-entry",
+                        "The entries that move are one undo step. An object already at its target is reported as moved but records nothing; an object with no canvas attributes fails its entry. A call that moves nothing returns no undo"
                     }
                 },
                 ["rename"] = new ActionInfo
@@ -87,7 +92,8 @@ namespace Cordyceps.Tools.Unified
                     Example = "action='rename', id='abc-123', nickname='MyCircle'",
                     Tips = new[]
                     {
-                        "Avoid renaming components as part of normal building — renamed components are hard to find on the canvas and it is not the Grasshopper convention. Annotate with labeled groups (group_create), panels, or scribbles instead; only rename when the user explicitly asks for it"
+                        "Avoid renaming components as part of normal building — renamed components are hard to find on the canvas and it is not the Grasshopper convention. Annotate with labeled groups (group_create), panels, or scribbles instead; only rename when the user explicitly asks for it",
+                        "Renaming to the current nickname records nothing and returns no undo"
                     }
                 },
                 ["find"] = new ActionInfo
@@ -145,7 +151,8 @@ namespace Cordyceps.Tools.Unified
                     Description = "Add a pre-configured constant panel",
                     Required = new[] { "value", "x", "y" },
                     Optional = new[] { "nickname" },
-                    Example = "action='constant', value='3.14159', x=50, y=100"
+                    Example = "action='constant', value='3.14159', x=50, y=100",
+                    Tips = new[] { "One undo step: Ctrl+Z removes the panel. A failure after the panel is placed rolls the call back, so nothing is left on the canvas" }
                 },
                 ["bake"] = new ActionInfo
                 {
@@ -191,7 +198,12 @@ namespace Cordyceps.Tools.Unified
                     Description = "Set value on a component (slider, panel, toggle)",
                     Required = new[] { "id", "value" },
                     Example = "action='set', id='abc-123', value='42'",
-                    Tips = new[] { "For sliders, value must be within range", "For toggles, use 'true' or 'false'" }
+                    Tips = new[] {
+                        "For sliders, value must be a finite number within the slider's range",
+                        "For toggles, value is true/false, 1/0 or yes/no (case-insensitive); anything else is an error, never read as false",
+                        "For value lists, value is an item's name or value (case ignored); that item becomes the only one selected",
+                        "A value equal to the current one records nothing and returns no undo"
+                    }
                 },
                 ["config"] = new ActionInfo
                 {
@@ -201,8 +213,10 @@ namespace Cordyceps.Tools.Unified
                     Optional = new[] { "min", "max", "value", "decimals", "items" },
                     Example = "action='config', id='abc', min=0, max=100, value=50",
                     Tips = new[] {
-                        "For value lists: items='[{\"name\":\"A\",\"value\":\"0\"}]'",
-                        "A non-numeric 'value' is rejected with an error before anything is applied (parity with action='set')"
+                        "For value lists, items is required: items='[{\"name\":\"A\",\"value\":\"0\"}]'. It must be a non-empty array of objects with only the keys name and value (a missing one defaults to 'Item' / '0'); one bad item refuses the whole list before the list is touched",
+                        "A value list keeps its selection by item name where that item still exists; otherwise item 0 is selected",
+                        "Refused before anything is applied: a non-numeric 'value' (parity with action='set'), decimals outside 0-8, a min, max or value that is not finite or beyond ±7.92E+28, and min greater than max. A lone min or max is checked against the slider's current other bound, so pass both to move the range; min equal to max is allowed",
+                        "Settings equal to the current ones record nothing; a call that changes nothing returns no undo"
                     }
                 },
                 ["preview"] = new ActionInfo
@@ -214,7 +228,8 @@ namespace Cordyceps.Tools.Unified
                     Example = "action='preview', id='abc', enabled=false",
                     Tips = new[] {
                         "Returns per-id results with changedCount/failedCount; unresolvable ids or components without preview support are per-id failures and overall success is false",
-                        "enabled accepts true/false, 1/0, yes/no (case-insensitive); anything else is a validation error"
+                        "enabled accepts true/false, 1/0, yes/no (case-insensitive); anything else is a validation error",
+                        "The ids that change are one undo step. An id already in the requested state counts in changedCount but records nothing"
                     }
                 },
                 ["enable"] = new ActionInfo
@@ -226,7 +241,8 @@ namespace Cordyceps.Tools.Unified
                     Example = "action='enable', id='abc', enabled=false",
                     Tips = new[] {
                         "Returns per-id results with changedCount/failedCount; unresolvable ids or components that can't be locked are per-id failures and overall success is false",
-                        "enabled accepts true/false, 1/0, yes/no (case-insensitive); anything else is a validation error"
+                        "enabled accepts true/false, 1/0, yes/no (case-insensitive); anything else is a validation error",
+                        "The ids that change are one undo step. An id already in the requested state counts in changedCount but records nothing"
                     }
                 },
                 // Group actions (from gh_group)
@@ -262,7 +278,7 @@ namespace Cordyceps.Tools.Unified
                     Description = "Remove components from a group",
                     Required = new[] { "id", "ids" },
                     Example = "action='group_remove', id='group-id', ids='[\"comp-a\"]'",
-                    Tips = new[] { GroupIdTip, MembersTip, "An entry that resolves but is not in the group is listed in 'notMembers'" }
+                    Tips = new[] { GroupIdTip, MembersTip, "An entry that resolves but is not in the group is listed in 'notMembers'. A call where no entry is a member changes nothing and returns no undo" }
                 },
                 ["group_list"] = new ActionInfo
                 {
@@ -307,7 +323,9 @@ namespace Cordyceps.Tools.Unified
                         "count: target number for 'set_count'",
                         "index: specific position for 'add'/'remove'",
                         "remove, and a set_count below the current count, cut the wires on the ports they remove, so they never select the component by a default nickname (one every new object of the type gets, like 'Merge'), even a unique one: pass the id the error prints. add and a growing set_count accept it",
-                        "On a C# or Python script component the program is compiled against its ports, so a reshape rebuilds it before the call returns and the reply carries rebuilt/rebuildSkipped/rebuildFailed and verified/verificationSkipped, meaning exactly what they do for gh_script(action='configure'). Other components (Merge, Entwine, Gate) have no program and get no rebuild fields"
+                        "On a C# or Python script component the program is compiled against its ports, so a reshape rebuilds it before the call returns and the reply carries rebuilt/rebuildSkipped/rebuildFailed and verified/verificationSkipped, meaning exactly what they do for gh_script(action='configure'). Other components (Merge, Entwine, Gate) have no program and get no rebuild fields",
+                        "One undo step: Ctrl+Z restores the ports, their wires and, on a script component, its source",
+                        "A set_count the component cannot finish (it refuses a port partway) rolls back: success=false, rolledBack=true, and the component is unchanged. A finished set_count replies targetCount, actualCount, added and removed, with errors=null. A set_count already at its count returns no undo"
                     }
                 },
                 ["modifier"] = new ActionInfo
@@ -324,7 +342,8 @@ namespace Cordyceps.Tools.Unified
                         "param: the port's exact name or nickname (case ignored only when that leaves one match), or its 0-based index; not needed for a free-floating parameter. Partial names are refused with suggestions.",
                         "side: 'input' or 'output' (default: 'input')",
                         "Clear everything with mapping='none', simplify=false, reverse=false",
-                        "action='info' reports the same modifiers for every param of a component"
+                        "action='info' reports the same modifiers for every param of a component",
+                        "A write that changes something is one undo step; a read, or a write whose values are already set, records nothing and returns no undo"
                     }
                 }
             },
@@ -333,8 +352,12 @@ namespace Cordyceps.Tools.Unified
                 "Disable solver before bulk operations: gh_document(action='solver', enabled=false)",
                 "Recommended spacing: 150px horizontal, 70px vertical between components",
                 "Use action='zoom' before capturing to ensure all components are visible",
-                "Groups are visual containers - deleting a group doesn't delete its components",
-                "Ids: an object is named by its GUID, an 8+ hex GUID prefix, or its unique nickname (exact, case-sensitive); a group action's 'id' takes the group's name or id. Nothing is guessed: a name that fits two things acts on nothing and lists their ids, and a near miss gets a 'Did you mean'"
+                "Groups are visual containers - deleting a group doesn't delete its components. Each group action is one undo step; Ctrl+Z restores membership, name, colour and member positions",
+                "Ids: an object is named by its GUID, an 8+ hex GUID prefix, or its unique nickname (exact, case-sensitive); a group action's 'id' takes the group's name or id. Nothing is guessed: a name that fits two things acts on nothing and lists their ids, and a near miss gets a 'Did you mean'",
+                "Undo: every call that changes the canvas is one Grasshopper undo step, so a human's Ctrl+Z reverts the whole call. The reply's undo field names the step ('Cordyceps: gh_canvas <action>') and is absent when nothing changed. bake is a Rhino undo record instead; zoom and view change only the view. Agents restore state with gh_document snapshot/revert",
+                "A call that fails partway rolls back: success=false, error, rolledBack=true, and the canvas is as it was. rolledBack=false with rollbackFailures means some changes could not be undone: check the canvas, because Ctrl+Z does not cover that call",
+                "Per-id actions (delete, move, preview, enable): an id refused at validation is reported in results and never touched, and the rest are one undo step. An unexpected failure while applying rolls the whole call back instead",
+                "A success can carry warning: the edit was made, but a step after it (restoring the solver, scheduling the solve) failed. Check gh_document(action='info'), then gh_document(action='recompute'). solve appears only when the solve the edit asked for was refused (solver_disabled while you have the solver off is expected); it never fails the edit. See gh://docs/common-errors"
             }
         };
 

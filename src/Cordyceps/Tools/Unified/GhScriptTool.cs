@@ -58,7 +58,8 @@ namespace Cordyceps.Tools.Unified
                         "verified=true means the running program was read back and matches what was written. verified=false adds sourceDiverged and runningSource — expected for C# SDK-mode scripts, whose RunScript signature Rhino rewrites as it builds",
                         "If the program could not be read there is no verified field at all, and verificationSkipped says why — never read an absent verified as a match",
                         "Code that fails to compile still reports success here — the write and the rebuild both succeeded. Build errors surface on the component; after setting code, check gh_inspect(action='status') (it takes no id and lists every component's status and messages) or gh_inspect(action='tree', id=...) (each tree carries its owner's error or warning)",
-                        "The compile happens inside this call rather than at the next solve, so the first script write of a session can take noticeably longer"
+                        "The compile happens inside this call rather than at the next solve, so the first script write of a session can take noticeably longer",
+                        "One undo step: Ctrl+Z restores the previous source and ports, with their wires. A source write or port sync that fails rolls the whole call back (success=false, rolledBack=true): nothing is changed"
                     }
                 },
                 ["configure"] = new ActionInfo
@@ -77,15 +78,15 @@ namespace Cordyceps.Tools.Unified
                         "A call that drops or renames an existing port (including inputs='[]' on a side that has ports) cuts its wires, so it never selects the component by its default nickname, even a unique one: pass the id the error prints. Nothing is changed when it is refused. A call that keeps or only adds ports accepts it",
                         "Script language is preserved automatically; start code with '#! python 3' or '// #! csharp' to set it explicitly",
                         "A bare unified 'Script' component (no language picked) returns a languageWarning until code starts with a directive — add '#! python 3' or '// #! csharp'",
-                        "When 'code' is provided the response includes codeSet (bool); if setting the source fails after params were applied, success is false, codeSet=false, and sourceError holds the reason — the params DID change",
-                        "The parameter half reports the same way: parametersApplied (bool) with parametersError when a component cannot vary its parameters and the requested inputs/outputs were refused. success is false whenever either half failed, so never read a written code as the whole request landing",
+                        "A failed source write or port sync rolls the whole call back, ports included (success=false, rolledBack=true): a configure never leaves new ports around old code. codeSet=true means the code was written",
+                        "inputs/outputs on a component that cannot vary its parameters refuse the whole call before anything changes, code included: success=false, an error starting 'No configuration applied', parametersApplied=false with parametersError, codeSet=false when code was passed, and no undo. To set only the source, call again without inputs/outputs",
                         "The inputs/outputs echoed back are the component's actual surface, not what you asked for — with parametersApplied=false they are unchanged, so check that field before wiring to a port you assume exists",
-                        "Components that expose their code as a visible input parameter can't be written directly — sourceError says so and the code is left unchanged",
+                        "Components that expose their code as a visible input parameter can't be written directly — the error says so and nothing is changed",
                         "Any call that changes something — new code, new parameters, or both — rebuilds the component's program and reads it back: rebuilt/rebuildSkipped and verified/runningSource mean exactly what they do for action='set'",
                         "Changing inputs/outputs alone rebuilds too: the build reads the parameters to shape the program's ports, so a program compiled against the old ones is stale. Its verified/sourceDiverged compares the running program against the source already stored on the component",
-                        "A call that changed nothing (no code, and no parameter change this component could apply) returns rebuilt=false with rebuildSkipped and verificationSkipped saying so — every response answers the rebuild question, so an absent rebuilt field is never the answer",
-                        "With codeSet=false the params still changed, so the rebuild still runs — but there is no verified field, and verificationSkipped says the component was rebuilt from the text it already held. Nothing here describes the code you sent; read codeSet and sourceError",
-                        "runningSource can arrive WITHOUT a verified field: whenever nothing was verified, the program the component will run is still read and handed back unjudged. Present with verified=false it is the divergence; present with verificationSkipped it is simply what runs"
+                        "A call that changed nothing (no code and no inputs/outputs, or one refused up front) returns rebuilt=false with rebuildSkipped and verificationSkipped saying so — every response answers the rebuild question, so an absent rebuilt field is never the answer",
+                        "runningSource can arrive WITHOUT a verified field: whenever nothing was verified, the program the component will run is still read and handed back unjudged. Present with verified=false it is the divergence; present with verificationSkipped it is simply what runs",
+                        "One undo step: Ctrl+Z restores the source and ports, with their wires. A call that changes nothing records nothing and returns no undo"
                     }
                 },
                 ["info"] = new ActionInfo
@@ -108,7 +109,8 @@ namespace Cordyceps.Tools.Unified
                 "Neither writing source nor reshaping parameters recompiles on its own — set/configure ask the component to rebuild whenever they changed something, then read the running program back, so 'success' means the new program is the one that will run",
                 "access values: 'item' (default), 'list', 'tree'",
                 "Ids: 'id' names the script component by its GUID, an 8+ hex GUID prefix, or its unique nickname (exact, case-sensitive); a name two objects share is refused with both ids. A set or configure that removes an existing port never takes a default nickname",
-                "gh_canvas(action='zoomable') also reshapes a script component's ports, and rebuilds and reports the same way configure does"
+                "gh_canvas(action='zoomable') also reshapes a script component's ports, and rebuilds and reports the same way configure does",
+                "Undo: set and configure are one Grasshopper undo step each, so a human's Ctrl+Z reverts the whole call; the reply's undo field names the step. Agents restore state with gh_document snapshot/revert"
             }
         };
 
