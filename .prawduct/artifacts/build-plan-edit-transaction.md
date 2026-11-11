@@ -105,8 +105,9 @@ Chunk 06 is `cumulative-final`).
   - per-action behaviour, each labelled Breaking in the CHANGELOG: `delete` and `group_delete`
     schedule one solve (Inference 4); toggle `set` parsing; value-list `config` `items`; slider
     `add`/`config` refusals; `zoomable set_count` rolls back; a failed `gh_script` write or sync
-    fails the whole call; `configure` refuses `inputs`/`outputs` on a fixed-parameter component;
-    `gh_script set`/`configure` that send what the component already has write nothing.
+    fails the whole call; `configure` refuses `inputs`/`outputs` on a fixed-parameter component.
+    Not breaking, and not labelled so: `gh_script set`/`configure` that send what the component
+    already has write nothing and push no undo step, while given code is still rebuilt as before.
 
   `boundary-patterns.md`: it forbids silent renames and removals; none of these is silent. Each is
   named Breaking in the changelog, and the owner ruled that this ships in the next major
@@ -181,6 +182,7 @@ Chunk 06 is `cumulative-final`).
   - (review) `CLAUDE.md` and `docs/architecture.md` say canvas content (objects, wires, values) goes through `_context.Edit`, and reads, the `solver` switch and `revert` use `ExecuteOnUiThread` by design, naming why `solver` inside an edit would be silently reverted (`EndApply` restores `Document.Enabled`). Settled by the review: the old wording, followed, breaks `solver`.
   - (review) `gh_inspect(action='connection')`'s hint for a blocked UI thread held by Cordyceps says a dialog may be waiting for a human once the heartbeat is older than `SolverState.UiWorkDialogSuspectedAfter` (60 s). Measured by the heartbeat's age, not the call's, so a call queued behind a human's open dialog is covered too. 60 s because Cordyceps' own UI work (bakes, captures, saves, script compiles) finishes in seconds to tens of seconds, and it is half the document lock's 120 s wait. `modal_inferred` is unchanged (it cannot tell our work from a dialog inside it). Settled by "a signal is only as trustworthy as what the rest of the system does to it" (learnings, core).
   - (review) Removed as unconsumed (grep of `src/` found no caller): `EditTransaction.RecordPersistentData`, `EditTransaction.Expire`, `UndoEvents`' persistent-data case, its `CreatePersistentDataEvent<T>` reflection helper and `StoredType`, and `EditKind.PersistentData`. The journal's own `Expire` stays: `Record` and `Add` use it for every kind that expires. Batch (#96) re-adds and proves what it needs. Settled by "no unexercised reflection beside verified recorders".
+  - (coordinator) The review's R-3 ("changes nothing → no undo" is decided per call site, not at commit) is accepted: the generic record cannot tell at commit whether an archived object changed without comparing whole archives, and every current site decides before its edit through host-free `src/Cordyceps/Core/NoChange.cs` or a guarded recorder (verified by the verify pass's grep). A new action must follow the same pattern, as the `CLAUDE.md` template shows.
 - **Level:** Medium. The design is proven on macOS through Hyperceps and is said to be tested on
   Windows. The per-family undo choices, lossy third-party serialization, and the pause's visible
   side effects are host behaviour that tests cannot reach. Raised by VRF-024.
@@ -339,7 +341,10 @@ Chunk 06 is `cumulative-final`).
     (`==`), not assignments, in `src/Cordyceps/Tools/Unified/GhCanvasTool.Groups.cs` (group_rename's unchanged check),
     `src/Cordyceps/Tools/Unified/GhCanvasTool.cs` (find) and `src/Cordyceps/Tools/Unified/GhInspectTool.Tree.cs` (a port label).
 
-  No code hit for `doc.AddObject`, `doc.RemoveObject`, `.ExpireSolution(` or `NewSolution` in a tool
-  class: adds and removes go through `tx.AddObject`/`tx.RemoveObject`, and solves through the
-  commit. The by-nature exceptions (Inference 5) do not match the pattern: `solver`'s
+  No code hit for `doc.AddObject`, `doc.RemoveObject` or `NewSolution` in a tool class: adds and
+  removes go through `tx.AddObject`/`tx.RemoveObject`, and solves through the commit. One
+  `.ExpireSolution(false)` hit stands outside a transaction by design: `RebuildUnchanged` in
+  `src/Cordyceps/Tools/Unified/GhScriptTool.cs`, which expires a script whose source and ports already match after rebuilding its
+  program, so the rebuilt program runs. Expiry is solve state, not document content, and nothing
+  about the component changes, so there is nothing to record. The by-nature exceptions (Inference 5) do not match the pattern: `solver`'s
   `doc.Enabled` and `revert`'s `canvas.Document`.

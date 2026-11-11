@@ -272,7 +272,11 @@ namespace Cordyceps.Tools.Unified
             var rebuildFields = ScriptComponents.RebuildAndVerify(component, finalSource);
             if (component is IGH_ActiveObject active)
                 active.ExpireSolution(false);
-            SolveCoordinator.Schedule(doc, expireAll: false);
+            // A solver switch that is off means the rebuilt program will not run until it is turned
+            // on; the reply says which switch, as an edit's reply does.
+            var scheduling = SolveCoordinator.Schedule(doc, expireAll: false);
+            if (scheduling.Refusal != null)
+                rebuildFields["solve"] = scheduling.ToField();
             return rebuildFields;
         }
 
