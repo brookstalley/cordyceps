@@ -28,6 +28,10 @@
 
      Newest first. Plain prose; nothing parses this file. -->
 
+**2026-11-11 (transaction wave, PRs).** "yes please PR and merge once ready" — open the
+solve-policy PR, then the edit-transaction PR, each merged (merge commit) once `build-test` passes
+and the independent PR review is clean.
+
 **2026-11-11 (transaction wave, later).** On the inferences in both plans, put as two numbered
 lists (solve-policy: schedule rather than solve inside the call; `recompute`/`solver`/`revert` wait
 up to `timeout` and fail unless the solve completed; no agent cancel. Edit-transaction: per-id
