@@ -28,6 +28,26 @@
 
      Newest first. Plain prose; nothing parses this file. -->
 
+**2026-11-11 (later).** On landing `docs/strategy-artifacts`: "yes commit, but I think we can
+include preferences? PR and merge." The owner's pre-existing "Stats contribution" line in
+`project-preferences.md` rides this branch. On `operational-spec.md` and
+`observability-strategy.md`: "Yes draft the documents" (real drafts, not not-relevant records;
+this answers the open item in the strategy-artifacts entry below). On norm ratification: "Ratify
+norms later, but yes" — deferred, not declined.
+
+**2026-11-11.** On the doctor health check's repairs (tripwire hook, anchor move to `AGENTS.md`,
+gitignore line, plan status import with block removal, notes-transport config): "Yes all five
+repairs".
+
+**2026-11-11.** API versioning: "Deferral is OK. Our API is tightly coupled from client to server
+to MCP, and version mismatches are unlikely." Landed in `project-state.yaml`
+`design_decisions.api_versioning_approach`.
+
+**2026-11-11.** Strategy artifacts: "We really need at least those three [api-contract,
+architecture, security-model]. Also data model and NFR. This project started ad hoc and now
+thousands of people rely on it. We need to get buttoned up." Landed as real (not stub) artifacts
+under `.prawduct/artifacts/`. Not yet ruled: `operational-spec.md`, `observability-strategy.md`.
+
 **2026-11-11 (transaction wave, PRs).** "yes please PR and merge once ready" — open the
 solve-policy PR, then the edit-transaction PR, each merged (merge commit) once `build-test` passes
 and review coverage holds. (The prawduct plugin retired the separate PR reviewer during this

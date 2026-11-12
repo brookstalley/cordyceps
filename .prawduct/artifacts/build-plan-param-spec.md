@@ -80,7 +80,3 @@ Unverified: the live half — that no wire is *created* — needs a running Rhin
 - [ ] Live check in Rhino: on a component with two inputs, `gh_wire(action='connect',
       targetParam='2')` must report the range and create no wire. Enqueued as VRF-015 in
       `.prawduct/operator-verification.md` — it needs a running Rhino.
-
-## Status
-
-- [x] Chunk 1
