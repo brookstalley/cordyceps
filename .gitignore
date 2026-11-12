@@ -86,3 +86,6 @@ releases/
 .prawduct/.test-report.xml.scope.json
 .prawduct/.critic-review-dispatch.json
 .prawduct/.pr-review-dispatch.json
+
+# Prawduct session files
+.prawduct/.pr-body.md

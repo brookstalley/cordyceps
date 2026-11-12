@@ -27,10 +27,10 @@ classification:
       platform: desktop        # runs inside Rhino 8 / Grasshopper
     # Runs without user interaction. trigger: scheduled|event-driven|always-on
     runs_unattended:
-      trigger: always-on       # in-process HTTP/SSE server listens while the component is placed and serves requests without a human watching
+      trigger: always-on       # in-process HTTP server listens while the component is placed and serves requests without a human watching
     # Exposes or consumes APIs. consumers: internal|external|both
     exposes_programmatic_interface:
-      consumers: external      # MCP / JSON-RPC over HTTP+SSE (default port 26929) — the defining trait
+      consumers: external      # MCP / JSON-RPC over Streamable HTTP, stateless, JSON responses (default port 26929) — the defining trait
     # Multiple distinct user types. parties: [list of distinct user types]
     has_multiple_party_types: null
     # Handles sensitive information. categories: [PII, financial, health, etc.]; regulatory: [list]
@@ -169,7 +169,7 @@ product_definition:
   scope:
     v1:                   # Already shipped (current capability as of v1.4.9)
       - "7 MCP tools (gh_canvas, gh_wire, gh_script, gh_inspect, gh_document, rhino_scene, rhino_render)"
-      - "HTTP/SSE MCP server with reflection-based tool discovery"
+      - "Streamable HTTP MCP server (stateless, JSON responses) with reflection-based tool discovery"
       - "Embedded documentation system (server instructions, action help, gh:// resources, prompt templates)"
     accommodate:          # Design for but don't build yet
       - "Additional Grasshopper/Rhino capabilities exposed as new actions on existing tools"
@@ -187,7 +187,7 @@ product_definition:
     personality: null     # Brand personality, mood (null for internal tools)
     visual_preferences: null  # Look/feel preferences (null for non-visual products)
 
-  platform: "Grasshopper plugin (.gha) for Rhino 8.21+ on .NET 8 (Windows & macOS); MCP over HTTP+SSE, default port 26929"
+  platform: "Grasshopper plugin (.gha) for Rhino 8.21+ on .NET 8 (Windows & macOS); MCP over Streamable HTTP (stateless, no SSE stream), loopback only, default port 26929"
 
   # Non-functional requirements, calibrated to risk.
   nonfunctional:
@@ -275,6 +275,8 @@ design_decisions:
   observability_approach: "Centralized Core.DebugLog (Info/Warn/Error/Debug), retrievable by agents via gh_inspect(action='log'). The component's DebugLevel input raises request/response verbosity. No metrics/tracing — single-user local tool."
   infrastructure_dependencies: "Depends on the Rhino 8 / Grasshopper host runtime (Grasshopper SDK, RhinoCommon). No external DB/queue/auth. The 'real infrastructure' is the live Grasshopper document; the xUnit test project (Cordyceps.Tests) covers host-independent logic (e.g. type marshaling), while document-touching behavior is verified live in Rhino."
   visual_direction: null
+  api_error_model_approach: "As built (recorded 2026-11-11; not yet an owner ruling). Three layers: HTTP status codes for transport refusals (403 origin, 406 Accept, 411 no Content-Length, 413 >10 MB, 400 unparseable, 405 wrong method); JSON-RPC error -32603 for an unknown method or tool; every failure of a known tool is a normal result with isError=true and {success:false, error:<sentence>}, plus structured fields where they apply (rolledBack, rollbackFailures, notFound, per-id results, solve.state/remedy). No stable machine-readable error code: error is prose for the agent. Open question for the owner: add an additive code field for the refusals scripts handle most, or record prose-only as the decision. Detail in .prawduct/artifacts/api-contract.md Error Model."
+  api_versioning_approach: "Deferred (owner, 2026-11-11). The MCP surface (tool names, action names, parameter names, the { success, ... } reply shape) is the contract, and server, tool schemas and server instructions ship together in one .gha, with clients reading the schema live on every connect; version skew between them is unlikely. No version scheme or deprecation window for now. Revisit trigger: the first rename or removal of a tool, action or parameter that an existing agent prompt or saved script would call, or the first consumer that pins against a recorded schema rather than reading it live. Detail in .prawduct/artifacts/api-contract.md."
 
 # =============================================================================
 # OPEN QUESTIONS

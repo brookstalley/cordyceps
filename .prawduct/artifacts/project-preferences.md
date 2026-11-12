@@ -59,6 +59,7 @@ Developer preferences for how code is written in this project. Captured during d
 **What belongs here**: How you want code written. Conventions, tools, style preferences, workflow preferences.
 
 **What doesn't belong here**: What to build (product-brief), system design (data-model, architecture), performance targets (nonfunctional-requirements), or deployment (operational-spec).
+- **Stats contribution**: always (owner, 2026-10-16: "it's our own system and we need the data" — standing consent for `prawduct-hook contribute` to send anonymous governance stats without asking; `prawduct-hook contribute` previews exactly what is sent)
 
 ## Enforcement
 

@@ -133,9 +133,3 @@ Critic mode: one `cumulative` review at the end (a three-chunk plan; Chunk 03 is
 - **Acceptance criteria:** the suite is green; every surface that lists the destructive actions
   lists the port removals.
 - **Done when:** committed, then `/prawduct:critic cumulative` run and blocking findings resolved.
-
-## Status
-
-- [x] Chunk 01: configure rebuilds whenever it reshapes ports, and always reports it
-- [x] Chunk 02: zoomable on a script component rebuilds and reports (#84)
-- [x] Chunk 03: removing a port refuses a default nickname (#107)

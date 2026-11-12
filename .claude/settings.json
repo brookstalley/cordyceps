@@ -32,5 +32,19 @@
   },
   "enabledPlugins": {
     "prawduct@prawduct": true
+  },
+  "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "startup|resume|clear|compact|fork",
+        "hooks": [
+          {
+            "type": "command",
+            "command": ": prawduct-unloaded-tripwire\nm=\"${CLAUDE_CONFIG_DIR:-$HOME/.claude}/plugins/installed_plugins.json\"\nif command -v python3 >/dev/null 2>&1; then\nv=$(python3 -c 'import json,os,sys\nf=os.path.expanduser(sys.argv[1]);p=os.path.realpath(sys.argv[2])\ndef out(v):\n print(v);sys.exit(0)\ndef rd(x):\n try:return open(x).read().strip()\n except (IOError,OSError,ValueError):return \"\"\nP=[p]\ng=rd(os.path.join(p,\".git\"))\nif g.startswith(\"gitdir:\"):\n x=os.path.join(p,g[7:].strip());c=rd(os.path.join(x,\"commondir\"))\n c=os.path.realpath(os.path.join(x,c)) if c else \"\"\n if os.path.basename(c)==\".git\":P.append(os.path.dirname(c))\ntry:\n m=json.load(open(f))\nexcept (IOError,OSError):\n out(\"unreadable\" if os.path.exists(f) else \"missing\")\nexcept ValueError:\n out(\"unreadable\")\nd=m.get(\"plugins\") if isinstance(m,dict) else None\nif not isinstance(d,dict):\n out(\"unreadable\")\nr=d.get(\"prawduct@prawduct\")\nif r is None:\n out(\"inactive\")\nif not isinstance(r,list):\n out(\"unreadable\")\nb=0\nfor x in r:\n if not isinstance(x,dict):\n  b=1;continue\n if x.get(\"scope\") in (\"user\",\"global\"):\n  out(\"active\")\n q=x.get(\"projectPath\")\n if not isinstance(q,str):\n  b=1;continue\n if os.path.realpath(os.path.expanduser(q)) in P:\n  out(\"active\")\nout(\"unreadable\" if b else \"inactive\")' \"$m\" \"${CLAUDE_PROJECT_DIR:-.}\" 2>/dev/null) || v=\"python3 exited $?, so the check did not finish\"\nelse v=\"python3 not found\"; fi\ncase \"$v\" in\nactive) ;;\ninactive) echo \"PRAWDUCT GOVERNANCE IS NOT ACTIVE IN THIS SESSION. This repo is governed by Prawduct, but prawduct@prawduct is not installed for it in this Claude Code profile ($m): no session banner, no /prawduct:* skills, no Stop gates. Tell the user before any work, and do not imitate the gates by reading the plugin's files. Fix: run claude plugin install prawduct@prawduct in this repo, then restart the session. (Loaded the plugin with --plugin-dir? Then ignore this line.)\" ;;\n*) echo \"PRAWDUCT: could not verify that prawduct@prawduct is installed for this repo ($v: $m). If no Prawduct session banner appeared at session start, governance is not loaded: tell the user before any work, and do not imitate its gates by reading the plugin's files.\" ;;\nesac\nexit 0",
+            "timeout": 10
+          }
+        ]
+      }
+    ]
   }
 }

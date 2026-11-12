@@ -8,8 +8,8 @@
 
 ### MCP Tool / Action Contract  (PRIMARY — external, consumed by AI agents & scripts)
 - **Producer:** `src/Cordyceps/Tools/Unified/*.cs` — 7 `[McpServerToolType]` classes, each a single `[McpServerTool]` method dispatching on an `action` parameter — surfaced by reflection in `src/Cordyceps/McpServer.cs`.
-- **Consumer:** External MCP clients — Claude Desktop/Code, Cursor, VS Code, or any MCP library — over HTTP+SSE (default port 26929).
-- **Contract:** Tool names (method name → snake_case, e.g. `GhCanvas` → `gh_canvas`), the per-tool `action` vocabulary, parameter names/types/`[Description]`s, and the JSON response shape (`{ success, ... }`). **Breaking any of these breaks installed users' agent workflows** — this is the medium-risk surface. Evolve with additive actions and `Core/DeprecationRegistry.cs`, never silent renames or removals.
+- **Consumer:** External MCP clients — Claude Desktop/Code, Cursor, VS Code, or any MCP library — over Streamable HTTP on loopback (default port 26929; JSON responses, no SSE stream).
+- **Contract:** Tool names (method name → snake_case, e.g. `GhCanvas` → `gh_canvas`), the per-tool `action` vocabulary, parameter names/types/`[Description]`s, and the JSON response shape (`{ success, ... }`). **Breaking any of these breaks installed users' agent workflows** — this is the medium-risk surface. Evolve with additive actions; a breaking change is a deliberate `**Breaking:**` CHANGELOG entry, never a silent rename or removal (`api-contract.md` → Deprecation & Compatibility). (`Core/DeprecationRegistry.cs` steers agents off deprecated *Grasshopper components*; it does not version this contract.)
 
 ### Embedded Documentation Contract  (agent-facing — must track the code)
 - **Producer:** `McpServer.GetServerInstructions()`, per-tool `UnifiedToolInfo` (`action='help'`), `Resources/ResourceRegistry.cs` (gh:// guides + `Knowledge/*.md`), `Prompts/PromptRegistry.cs`.

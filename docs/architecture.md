@@ -3,10 +3,16 @@
 How the plugin is put together. The rules that bind changes to this code are in `CLAUDE.md`; this
 file describes where things live.
 
+The specifications behind it are in `.prawduct/artifacts/`: `architecture.md` (process topology,
+failure modes), `api-contract.md` (the MCP surface and its error model), `security-model.md`,
+`data-model.md` and `nonfunctional-requirements.md`.
+
 ## Core components
 
-**McpServer.cs** - HTTP/SSE server implementing the MCP protocol. Listens on a configurable port
-(default 26929), handles JSON-RPC requests, and manages SSE sessions for streaming responses.
+**McpServer.cs** - HTTP server implementing MCP's Streamable HTTP transport in stateless mode.
+Listens on loopback only (`localhost` and `127.0.0.1`) on a configurable port (default 26929),
+handles JSON-RPC requests on `POST /mcp` with JSON responses (no SSE stream; `GET /mcp` is 405), and
+answers `GET /health` from cached state.
 Discovers tools via reflection using `[McpServerToolType]` and `[McpServerTool]` attributes.
 
 **CordycepsComponent.cs** - The Grasshopper component that users drop on the canvas. Manages the
